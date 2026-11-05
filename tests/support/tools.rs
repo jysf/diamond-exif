@@ -11,9 +11,12 @@
 //! Test support only: `#[path]`-included by `tests/metadata_oracle.rs` and by
 //! `examples/oracle_record.rs`; never compiled into the library. std only.
 //!
-//! The exit status is never inspected anywhere in this file. Measured with
-//! ExifTool 13.55 over the 29 committed `tiff_ifd` seeds (garbage included):
-//! exit status 0 every time, so only stdout carries signal.
+//! The exit status is not inspected anywhere in this file; only stdout is
+//! trusted. Measured (verifier, ExifTool 13.55, a time limit on each run) with
+//! `exiftool -T -n -s3 -IFD0:ImageWidth -IFD0:ImageHeight -IFD0:Orientation
+//! <seed>` over the 29 committed `tiff_ifd` seeds: `ifd0-offset-zero` and
+//! `truncated-header` exited 1, `two-hop-cycle` did not return (see
+//! `KNOWN_DIVERGENCES`), and the other 26 exited 0.
 
 #![allow(dead_code)]
 

@@ -170,3 +170,13 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 3. **If you did this task again, what would you do differently?**
    — Probe each seed with a short time-boxed single run before wiring the full sweep, and sample memory on the first slow one, instead of finding the runaway through a 60 s test run.
+
+### Follow-up round (after the HANDOFF-014 punch list)
+
+- **P1:** the `tests/support/tools.rs` header no longer says ExifTool exits 0 every time; it states the verifier's measurement (ExifTool 13.55, time-limited, `-T -n -s3 -IFD0:ImageWidth -IFD0:ImageHeight -IFD0:Orientation <seed>`: `ifd0-offset-zero` and `truncated-header` exit 1, `two-hop-cycle` does not return, 26 exit 0). `exiftool-two-hop-cycle-does-not-return` now lists the two exit-1 seeds. No other "always/never/every time" claim about ExifTool remains in tests/support, `tests/metadata_oracle.rs`, AGENTS.md or the docs I touched.
+- **F2:** the `KNOWN_DIVERGENCES` right-side sentence and the question now cite the TIFF Supplement / Tech Note 1 for SubIFDs. The citation was not part of the record header, so `just oracle-record` produced an empty diff (the recorder skips `two-hop-cycle`; ExifTool was not run on it).
+- **F3:** questions `exiftool-ascii-count-past-eof-ifd0-tags` and `exiftool-ascii-shapes-invalid-utf8-text` added, with exact commands and measured output. (`ascii-shapes` Orientation is a BYTE-typed tag, not ASCII; the spec's remark was inaccurate.)
+- **F5:** `diff_applies_the_float_tolerance` gained a must-fail case at 1e-8 relative. Plant: `REL_TOL = 5e-7` turned `oracle::tests::diff_applies_the_float_tolerance` red (21 passed, 1 failed); reverted, green again.
+- **F6:** a GPS coordinate with a count other than 3 now reads `None` (undecodable); only a real zero denominator reads as skipped.
+- **F7:** the required-mode test now also asserts the failure message names `DIAMOND_EXIF_REQUIRE_ORACLE=1`; AGENTS.md's SKIP line matches the code (em dash).
+- **F4 (known gap, SPEC-008 candidate):** signed integers and floats are red-proofed only on synthetic values, so an SSHORT-read-as-unsigned plant would survive the oracle tests.

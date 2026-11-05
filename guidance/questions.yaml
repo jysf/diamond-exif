@@ -119,11 +119,14 @@ questions:
       exif-core: Container::parse is Ok, records one CyclicIfd issue at offset
       8, and reads IFD0:ImageWidth = 1. The seed is IFD0 (offset 8) -> SubIFDs
       -> a Sub IFD (offset 38) -> SubIFDs -> offset 8 again.
-      Right side per the format: exif-core. TIFF 6.0 section 2 makes an IFD
-      chain a list ending at a zero offset; a pointer back to an earlier IFD is
-      malformed, and a reader has to survive it.
-      This also corrects the SPEC-005 context fact "exit status is 0 on every
-      one including garbage": not for this seed (137).
+      Right side per the format: exif-core. The TIFF Supplement / Tech Note 1
+      define SubIFDs as a list of IFDs hanging off IFD0; a SubIFD pointing back
+      at IFD0 is malformed, and a reader has to survive it.
+      This also corrects the SPEC-005 context claim that ExifTool exits 0 on
+      every seed. Measured by the verifier (ExifTool 13.55, time-limited runs of
+      the same command over each seed): ifd0-offset-zero and truncated-header
+      exit 1 (stderr "Error: Unknown file type", stdout "-<tab>-<tab>-"),
+      two-hop-cycle does not return (above), the other 26 exit 0.
       Handling now: the recorder and the live sweep do NOT run ExifTool on this
       seed (a guard against a 9 GB runaway); the committed record carries an
       "# outcome:" line, and the replay/live tests check that our side still
@@ -145,3 +148,36 @@ questions:
       -n -Composite:GPSLatitude prints -37.4252083333333. The oracle therefore
       uses Composite:GPSLatitude / Composite:GPSLongitude. Not a library
       divergence: both sides agree once the signed selector is used.
+
+  - id: exiftool-ascii-count-past-eof-ifd0-tags
+    question: "For ascii-count-past-eof, ExifTool reports no IFD0 tags while exif-core reads IFD0:ModifyDate; is the tolerant per-entry read the behaviour we want the oracle to bless?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-05
+    assigned_to: null
+    notes: |
+      Found by the SPEC-005 verifier; outside the three seed selectors, so not
+      in the seed sweep. Command: exiftool -T -n -s3 -IFD0:ModifyDate
+      -IFD0:Make fuzz/seeds/tiff_ifd/ascii-count-past-eof (ExifTool 13.55).
+      Measured: stdout "-<tab>-", exit 0, stderr "Warning: Error reading value
+      for IFD0 entry 0, ID 0x010f Make". exif-core: Container::parse Ok and
+      IFD0:ModifyDate (tag 306) reads "ok". Defensible under DEC-001 (each
+      entry addressed independently); not yet decided.
+
+  - id: exiftool-ascii-shapes-invalid-utf8-text
+    question: "How should the oracle compare ASCII values that are not valid UTF-8 (ascii-shapes IFD0:Copyright)?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-05
+    assigned_to: null
+    notes: |
+      Found by the SPEC-005 verifier; outside the three seed selectors.
+      Command: exiftool -T -n -s3 -IFD0:Copyright
+      fuzz/seeds/tiff_ifd/ascii-shapes (ExifTool 13.55). Measured stdout: raw
+      bytes beginning 0x43 then non-UTF-8 bytes (the terminal shows
+      "C" + replacement marks + "(..", exit 0). The oracle's read_ours renders
+      the same bytes with String::from_utf8_lossy (U+FFFD), and the harness
+      reads ExifTool's stdout lossily too, so the two renderings differ in
+      form. The oracle has no byte-exact path for non-UTF-8 text yet.

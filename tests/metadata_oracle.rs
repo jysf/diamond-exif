@@ -555,6 +555,13 @@ fn live_skip_is_loud_and_required_mode_fails() {
             !out.status.success(),
             "{test}: {REQUIRE_VAR}=1 with no exiftool must fail\n{stdout}\n{stderr}"
         );
+        // ...and for the right reason: the failure message names the variable.
+        assert!(
+            format!("{stdout}{stderr}").contains(&format!(
+                "{test}: exiftool is not on PATH and {REQUIRE_VAR}=1"
+            )),
+            "{test}: failed, but not with the required-mode message\n{stdout}\n{stderr}"
+        );
         assert!(
             !stdout.contains(&format!("SKIP {test}")),
             "{test}: must not skip"

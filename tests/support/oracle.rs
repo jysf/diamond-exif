@@ -177,15 +177,16 @@ pub fn read_one(container: &Container<'_>, s: &Selector) -> Option<String> {
                 b'S' | b'W' => -1.0,
                 _ => return None,
             };
-            let parts: Vec<f64> = r
-                .iter()
-                .map(|x| quotient(f64::from(x.num), f64::from(x.den)))
-                .collect::<Option<Vec<f64>>>()
-                .or_else(|| Some(Vec::new()))?;
-            if parts.len() != 3 {
+            // A coordinate is exactly three values; any other count is
+            // undecodable for this selector (None), not a zero denominator.
+            let [d, m, sec] = r.as_slice() else {
+                return None;
+            };
+            let part =
+                |x: &exif_core::tiff::URational| quotient(f64::from(x.num), f64::from(x.den));
+            let (Some(d), Some(m), Some(sec)) = (part(d), part(m), part(sec)) else {
                 return Some(SKIPPED.to_string());
-            }
-            let (d, m, sec) = (parts[0], parts[1], parts[2]);
+            };
             Some(render_f64(sign * (d + m / 60.0 + sec / 3600.0)))
         }
     }
@@ -312,9 +313,9 @@ pub const KNOWN_DIVERGENCES: &[Divergence] = &[Divergence {
                       'Deep recursion on subroutine ProcessDirectory' and \
                       'Deep recursion on subroutine ProcessExif' to stderr. exif-core reads \
                       IFD0:ImageWidth = 1, records a CyclicIfd issue at offset 8, and returns.",
-    right_side: "exif-core: TIFF 6.0 section 2 makes an IFD chain a list that ends at a zero \
-                 offset, so a SubIFD pointing back at IFD0 is malformed input that a reader \
-                 must survive, which exif-core does by reporting the cycle and keeping what \
+    right_side: "exif-core: the TIFF Supplement / Tech Note 1 define SubIFDs as a list of IFDs \
+                 hanging off IFD0, so one pointing back at IFD0 is malformed input that a \
+                 reader must survive, which exif-core does by reporting the cycle and keeping what \
                  it read.",
     question_id: "exiftool-two-hop-cycle-does-not-return",
 }];
@@ -393,6 +394,10 @@ mod tests {
         // 1e-10 relative passes.
         let close = [Some("1.0000000001".to_string())];
         assert!(diff(&ours, &close, &s).is_empty());
+        // 1e-8 relative fails: pins the tolerance within ~10x of 1e-9, so
+        // widening it by orders of magnitude turns this red.
+        let near = [Some("1.00000001".to_string())];
+        assert_eq!(diff(&ours, &near, &s).len(), 1);
         // 1e-6 relative fails.
         let far = [Some("1.000001".to_string())];
         assert_eq!(diff(&ours, &far, &s).len(), 1);
