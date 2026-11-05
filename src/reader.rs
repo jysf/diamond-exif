@@ -1,8 +1,8 @@
 //! Byte order and bounds-checked fixed-width reads over `&[u8]`.
 //!
 //! Provenance: copied from irradiance `src/ifd.rs:262-322` (DEC-003). Only the
-//! reads with a consumer in the strict walker are here; wider and signed reads
-//! arrive with their decoders.
+//! reads with a consumer are here; the signed and float reads arrived with
+//! their decoders (SPEC-007).
 
 use crate::error::Error;
 
@@ -36,6 +36,34 @@ impl ByteOrder {
         match self {
             ByteOrder::Little => i32::from_le_bytes(bytes),
             ByteOrder::Big => i32::from_be_bytes(bytes),
+        }
+    }
+}
+
+impl ByteOrder {
+    /// A **signed** 16-bit read: `SSHORT`. The byte order is the file's.
+    pub(crate) fn i16(self, bytes: [u8; 2]) -> i16 {
+        match self {
+            ByteOrder::Little => i16::from_le_bytes(bytes),
+            ByteOrder::Big => i16::from_be_bytes(bytes),
+        }
+    }
+
+    /// An IEEE 754 binary32 read: `FLOAT`. Bits are taken verbatim, so NaN
+    /// payloads and signed zeros survive.
+    pub(crate) fn f32(self, bytes: [u8; 4]) -> f32 {
+        match self {
+            ByteOrder::Little => f32::from_le_bytes(bytes),
+            ByteOrder::Big => f32::from_be_bytes(bytes),
+        }
+    }
+
+    /// An IEEE 754 binary64 read: `DOUBLE`. Same discipline as
+    /// [`ByteOrder::f32`].
+    pub(crate) fn f64(self, bytes: [u8; 8]) -> f64 {
+        match self {
+            ByteOrder::Little => f64::from_le_bytes(bytes),
+            ByteOrder::Big => f64::from_be_bytes(bytes),
         }
     }
 }
