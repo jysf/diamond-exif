@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: 25
+  tokens_total: 143237             # orchestrator-recorded from the metered sub-agent result (subagent_tokens)
+  estimated_usd: 0.95
+  duration_minutes: 6
   branch: worktree-agent-a6cd3ffb2817859ef
   pr: null
   completed_at: 2026-11-05         # YYYY-MM-DD
-  notes: "verdict APPROVED at 6981332 (code de5217c); verifier sub-agent has no token meter, orchestrator to transcribe the harness's metered sub-agent count (as for HANDOFF-007); .repo-context.yaml left untouched"
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "verdict APPROVED at 6981332 (code de5217c); tokens transcribed by the orchestrator from the sub-agent metered result"
+  synced_at: 2026-11-05
 ---
 
 # HANDOFF-008: Verify the tolerant-walk policy
@@ -158,10 +158,10 @@ Matches the builder's table exactly.
 
 ### Cost self-report
 
-- **Tokens (total):** null — the verifier sub-agent has no token meter in its interface; the orchestrator should transcribe the harness's metered sub-agent count (same path as HANDOFF-007). `.repo-context.yaml` deliberately not edited (out of a verifier's remit).
-- **Estimated USD:** null (follows from the token count)
-- **Duration (minutes):** ~25
-- **Source of the number:** none available to the sub-agent; harness report via the orchestrator
+- **Tokens (total):** 143,237 (recorded by the orchestrator from the sub-agent metered result).
+- **Estimated USD:** 0.95
+- **Duration (minutes):** ~6 (metered wall-clock)
+- **Source of the number:** harness report (subagent_tokens)
 
 ### Drift and new artifacts
 
