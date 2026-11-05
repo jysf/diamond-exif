@@ -110,3 +110,15 @@ signals:
     last_touched: 2026-06-12
     raised_by: claude
     notes: "No auto-action. Revisit at each project close: are the fresh-session, verify, and one-PR-per-spec habits still holding?"
+
+  - id: session-cannot-report-tokens
+    type: process-debt
+    summary: "Build/verify run as separate sessions (start_session) cannot run /cost, so the cost-audit gate cannot be satisfied by the executor; cost must be recovered from session transcripts or the cycle run as a metered sub-agent."
+    evidence: "SPEC-001 build and verify (HANDOFF-001/002): tokens_total null at handback; recovered by summing usage in ~/.claude/projects/<worktree>/*.jsonl (input+output+cache_creation, de-duplicated by message id)."
+    bar: null
+    status: accepted
+    disposition_at: project-close
+    first_flagged: 2026-11-05
+    last_touched: 2026-11-05
+    raised_by: claude
+    notes: "Decision 2026-11-05: run build/verify as sub-agents (subagent_tokens metering). Consider a script that recovers tokens from a transcript if sessions are used again."

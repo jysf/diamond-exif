@@ -6,14 +6,14 @@
 task:
   id: SPEC-001
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: S                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
-  complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
+  complexity_actual: S          # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: punch-list  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
@@ -63,11 +63,28 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: null
-  sessions: []
+  sessions:
+    - cycle: build
+      agent: claude-sonnet-5-5
+      interface: other
+      tokens_total: 100445
+      estimated_usd: 0.66
+      duration_minutes: 15
+      recorded_at: 2026-11-05
+      notes: "Recovered by the orchestrator from the session transcript usage records (de-duplicated by message id), not from /cost. tokens_total = input + output + cache_creation; cache_read tokens excluded (2,648,154). Input 49, output 16,957, cache_creation 83,439. Includes the punch-list rework turn."
+    - cycle: verify
+      agent: claude-opus-5-5
+      interface: other
+      tokens_total: 65662
+      estimated_usd: 0.43
+      duration_minutes: null
+      recorded_at: 2026-11-05
+      notes: "Recovered by the orchestrator from the session transcript usage records (de-duplicated by message id), not from /cost. tokens_total = input + output + cache_creation; cache_read tokens excluded (1,170,884). Input 24, output 9,177, cache_creation 56,461."
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 166107
+    estimated_usd: 1.09
+    session_count: 2
+shipped_at: 2026-11-05
 ---
 
 # SPEC-001: Scaffold the exif-core crate
@@ -143,34 +160,16 @@ Written during design; the build cycle makes them pass. Integration tests live o
 
 ## Reflection
 
-*Appended during **ship**. Three questions, short answers.*
-
 1. **What would I do differently next time?**
-   — <answer>
+   — Run build and verify as metered sub-agents (or capture usage up front): cost had to be recovered afterwards from session transcripts. Also have the first spec's tests assert behaviour, not substrings; verify's punch list caught tests that passed vacuously.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — Yes, process-debt: sessions started via `start_session` cannot run `/cost`, so the cost gate cannot be satisfied by the executor. Recorded in `guidance/signals.yaml`. The toolchain brief gained the Homebrew/rustup clippy-shadow facts.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — Already framed: SPEC-006 (fuzz target on the first parser). Rust CI jobs, lint-red-proof gates and fixtures remain repo setup (`guidance/questions.yaml`).
 
-4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
-   the defect-escape distribution is greppable across specs:
-   `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
-   `none` (clean first try).
-   — <one word>
-   *(Runtime/operational defects — the escape-prone class — only exist once the
-   artifact meets its real host. `escaped` here is a signal to strengthen the
-   §12 behavioral pre-flight for that surface.)*
+4. **Where was the worst defect caught?** — verify
+   *(vacuous policy tests: a commented-out lint still passed.)*
 
-5. **What can a user do now that they couldn't before?** — one sentence,
-   before → after; quote the confirming number if one exists, name the outcome
-   if not. Write `none` if this spec has no user-visible outcome — that is a
-   real, greppable result, not a blank. This is the line a downstream work-log's
-   `impact` field is transcribed from, and both halves are already written above
-   (## Context is the before, ## Goal is the after): confirm the prediction,
-   don't reconstruct it from memory.
-   — <answer | none>
+5. **What can a user do now that they couldn't before?** — none (infrastructure: a gated, licence-clean empty crate that SPEC-002 ports into).

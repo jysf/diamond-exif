@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
+  tokens_total: 100445               # REAL combined count — what cost-audit reads
+  estimated_usd: 0.66              # tokens_total × 6.60 USD/Mtok (.repo-context.yaml)
   duration_minutes: 15
   branch: claude/spec-001-scaffold-crate-0aa57b
   pr: null
   completed_at: 2026-11-05              # YYYY-MM-DD
-  notes: "tokens_total is null: /cost is not runnable from this session; only the context-window size (118,304 tokens, not cumulative billed usage) was readable. Orchestrator should supply the real figure."                      # one line if unusual (rework, no meter, etc.)
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "Recovered by the orchestrator from the session transcript usage records (de-duplicated by message id), not from /cost. tokens_total = input + output + cache_creation; cache_read tokens excluded (2,648,154). Input 49, output 16,957, cache_creation 83,439. Includes the punch-list rework turn."
+  synced_at: 2026-11-05
 ---
 
 # HANDOFF-001: Scaffold the exif-core crate
@@ -170,7 +170,7 @@ Mirror what you put in the `handback:` front-matter, and say where the number
 came from. **This is the number that lands in the spec** — the orchestrator
 transcribes it via `just handback-sync`, it does not estimate it.
 
-- **Tokens (total):** null — `/cost` not available in this session
+- **Tokens (total):** 100445 (orchestrator-recovered from the session transcript)
 - **Estimated USD:** null
 - **Duration (minutes):** ~15
 - **Source of the number:** none available (context window read 118,304 tokens at handback; that is not billed usage)
