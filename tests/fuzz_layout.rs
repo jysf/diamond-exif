@@ -29,7 +29,7 @@ const ALL_KINDS: [IfdKind; 7] = [
 ];
 
 /// Seed names are fixed by `examples/fuzz_seeds.rs`.
-const SEEDS: [&str; 20] = [
+const SEEDS: [&str; 21] = [
     "valid-le",
     "valid-be",
     "subifd",
@@ -50,6 +50,7 @@ const SEEDS: [&str; 20] = [
     "exif-points-at-ifd0",
     "pointer-bad-count",
     "subifds-count-over-cap",
+    "leaf-next-word",
 ];
 
 #[test]
@@ -138,6 +139,24 @@ fn exercise(data: &[u8]) {
         assert!(issue.from_ifd() < container.ifds().len());
         let _ = (issue.error(), issue.link(), issue.offset());
         assert!(!issue.to_string().is_empty());
+    }
+
+    // The attempt budget halts the walk, so TooManyIfds is always the last
+    // issue (iff-style: present implies last, and a non-last one is a bug).
+    let halts = container
+        .issues()
+        .iter()
+        .enumerate()
+        .filter(|(_, i)| matches!(i.error(), exif_core::Error::TooManyIfds { .. }))
+        .map(|(idx, _)| idx)
+        .collect::<Vec<usize>>();
+    assert!(halts.len() <= 1, "more than one TooManyIfds");
+    if let Some(idx) = halts.first() {
+        assert_eq!(
+            *idx + 1,
+            container.issues().len(),
+            "issue recorded after halt"
+        );
     }
 
     // Kinds and parents (DEC-005). Each rule is an iff where one exists, so a

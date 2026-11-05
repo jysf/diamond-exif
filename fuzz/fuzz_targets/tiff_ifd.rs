@@ -99,6 +99,24 @@ fuzz_target!(|data: &[u8]| {
         assert!(!issue.to_string().is_empty());
     }
 
+    // The attempt budget halts the walk, so TooManyIfds is always the last
+    // issue (iff-style: present implies last, and a non-last one is a bug).
+    let halts = container
+        .issues()
+        .iter()
+        .enumerate()
+        .filter(|(_, i)| matches!(i.error(), exif_core::Error::TooManyIfds { .. }))
+        .map(|(idx, _)| idx)
+        .collect::<Vec<usize>>();
+    assert!(halts.len() <= 1, "more than one TooManyIfds");
+    if let Some(idx) = halts.first() {
+        assert_eq!(
+            *idx + 1,
+            container.issues().len(),
+            "issue recorded after halt"
+        );
+    }
+
     // Kinds and parents (DEC-005). Each rule is an iff where one exists, so a
     // constant-true or constant-false labeller fails in one direction.
     for (i, ifd) in container.ifds().iter().enumerate() {

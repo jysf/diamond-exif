@@ -435,6 +435,21 @@ fn subifds_count_over_cap(w: &Writer) -> Vec<u8> {
     )])
 }
 
+/// The Exif IFD carries a non-zero next-word leading to a valid IFD. Leaf
+/// kinds never chain, so that IFD must not be followed.
+fn leaf_next_word(w: &Writer) -> Vec<u8> {
+    let ifds = [
+        small_ifd(
+            w,
+            Next::End,
+            vec![entry(EXIF_IFD, LONG, 1, Val::Refs(vec![1]))],
+        ),
+        small_ifd(w, Next::Ifd(2), vec![]),
+        small_ifd(w, Next::End, vec![]),
+    ];
+    w.build(&ifds)
+}
+
 fn main() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/tiff_ifd");
     fs::create_dir_all(&dir).expect("create seeds dir");
@@ -467,6 +482,7 @@ fn main() {
         ("exif-points-at-ifd0", exif_points_at_ifd0(&le)),
         ("pointer-bad-count", pointer_bad_count(&le)),
         ("subifds-count-over-cap", subifds_count_over_cap(&le)),
+        ("leaf-next-word", leaf_next_word(&le)),
     ];
     for (name, bytes) in &seeds {
         fs::write(dir.join(name), bytes).expect("write seed");

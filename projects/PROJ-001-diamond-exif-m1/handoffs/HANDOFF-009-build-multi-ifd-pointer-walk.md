@@ -169,3 +169,11 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 3. **If you did this task again, what would you do differently?**
    Put the plant scripts in the repo (for example under the spec's directory) so the verifier can re-run all plants with one command; they live only in the scratchpad now.
+
+### Follow-up round (verify punch list, HANDOFF-010)
+
+- **Fix 1 (medium):** once `walk.halted` is set, `walk_from` stops looping over the pointer table and `walk_pointer` returns before recording anything, so `TooManyIfds` is always the last issue. New test `nothing_is_recorded_after_the_budget_halts_the_walk` (600-IFD SubIFDs chain, then malformed Exif and GPS: exactly one issue). `the_issue_list_never_exceeds_max_issues` now ends its chain in `TooManyIfds` and asserts it is last (3 * 512 + 1 issues). Fuzz invariant added to the target and `exercise`: at most one `TooManyIfds`, and if present it is the last issue. Plant: removing both halt guards turns the new test red (either guard alone is sufficient, so single-guard plants stay green by design).
+- **Fix 2 (low):** `pointer_tags_in_unexpected_places_are_ignored_silently` now also puts 0xA005 inside the GPS IFD and inside a Sub IFD. Plant "Interop allowed from Gps" now fails it.
+- **Fix 3 (low):** `parse_issue_display_for_new_pointer_tags` is its own test. **Deviation to report:** in the first round I folded the `tag 0x8825` assertion into `parse_issue_display_names_error_and_location` instead of adding the spec-named test.
+- **Fix 4 (low):** `Ifd::depth` and `MAX_IFD_DEPTH` docs corrected; new seed `leaf-next-word` (26 seeds; existing 25 byte-identical) and added to `SEEDS`.
+- Gates re-run green; `just fuzz-smoke` 60 s: 502,577 executions, `cov: 756 ft: 3374`, no crash (decisions-audit shows 4 scope warnings, 0 errors, orchestrator-owned).
