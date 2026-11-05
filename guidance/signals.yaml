@@ -134,3 +134,15 @@ signals:
     last_touched: 2026-11-05
     raised_by: claude
     notes: "Upstream fix (accept flow lists, or fail loudly on an unparsed scope) belongs in the template and irradiance; also check the audit rejects a DEC with zero parsed globs."
+
+  - id: measure-exit-status-without-a-pipe
+    type: lesson
+    summary: "A shell loop that pipes a tool into another command reports the LAST command's exit status; a spec's 'measured fact' about a tool's exit codes was wrong for that reason."
+    evidence: "SPEC-005 design wrote 'ExifTool exits 0 on every seed' from `exiftool ... | tr; echo exit=$?`. Build and verify (HANDOFF-013/014) measured two-hop-cycle never returns and two seeds exit 1. The false claim reached a code comment before verify caught it. N=1."
+    bar: "N=2 occurrences, then add 'capture stdout to a file, read the tool's own status, run with a hard time limit' to the spec-design checklist"
+    status: open
+    disposition_at: project-close
+    first_flagged: 2026-11-05
+    last_touched: 2026-11-05
+    raised_by: claude
+    notes: "Related rule: measurement-over-generalised (exact command and scope for every measured claim)."

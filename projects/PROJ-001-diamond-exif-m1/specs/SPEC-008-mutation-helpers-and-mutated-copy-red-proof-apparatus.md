@@ -83,6 +83,11 @@ Split out of the original SPEC-005 at its design. SPEC-005 shows the *comparator
 
 `tests/support/mutate.rs` (`set_u32_at`, `flip_bit`, `truncate_at`, `swap_byte_order_mark`, all total and panic-free) and one shared `tests/support/probe.rs` (temp dir, stage a probe crate over a mutated copy of `src/`, build, run, capture output), with at least three red-proofs: corrupt an IFD offset (typed outcome changes, oracle names the field), swap the byte-order mark (values go wrong, oracle red), and an injected library fault in a copy (e.g. a wrong-endian read) caught by live ExifTool parity, each with its control run first.
 
+## Carry-ins from SPEC-005
+
+- Add a wall-clock and memory limit to the `run_tool` choke point (ExifTool 13.55 does not return on `two-hop-cycle`, about 9 GB before the OS kills it).
+- Give the oracle a selector or fixture that exercises signed integers and floats live (an SSHORT-read-as-unsigned plant survived every oracle test; only a library unit test caught it).
+
 ## Non-Goals
 
 - The comparator, `parse_fields`, fixtures and recording (SPEC-005); JPEG-level red-proofs (truncate between APP1 and SOS, pixel flip) which wait for the container stages

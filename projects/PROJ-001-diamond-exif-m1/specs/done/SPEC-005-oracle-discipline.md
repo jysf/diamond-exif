@@ -6,14 +6,14 @@
 task:
   id: SPEC-005
   type: story                      # epic | story | task | bug | chore
-  cycle: verify  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
-  complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
+  complexity_actual: L             # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: punch-list  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
@@ -80,10 +80,19 @@ cost:
       duration_minutes: 10
       recorded_at: 2026-11-05
       notes: "verdict PUNCH LIST at 7ce26d2; tokens transcribed by the orchestrator from the sub-agent metered result"
+    - cycle: build
+      agent: claude-sonnet-5-5
+      interface: other
+      tokens_total: 15859
+      estimated_usd: 0.10
+      duration_minutes: 2
+      recorded_at: 2026-11-05
+      notes: "punch-list fix round (resumed builder). The harness reported a cumulative 231,263 for the resumed agent; this is the 15,859 above the 215,404 already recorded for the first round."
   totals:
-    tokens_total: 423990
-    estimated_usd: 2.80
-    session_count: 2
+    tokens_total: 439849
+    estimated_usd: 2.90
+    session_count: 3
+shipped_at: 2026-11-05
 ---
 
 # SPEC-005: Oracle discipline — ExifTool read parity
@@ -94,7 +103,7 @@ Quality bar: **oracle-must-be-shown-red** (design §8; constraint `oracle-must-b
 
 Scope is the **TIFF/EXIF container only** (M1a). There is no JPEG/PNG/WebP yet; ExifTool reads a bare TIFF fine. Fixtures are **tier A**: hand-built, byte by byte, from the TIFF 6.0 / Exif 2.32 layout, so the licence question for M1a fixtures is closed (no real camera files are committed; `rust-ci-and-fixtures` keeps the CI-ownership half). The byte-mutation helpers and the mutated-copy red-proof (inject a fault into a copy of the library, show the oracle catches it) are split out as **SPEC-008**, which builds on this one.
 
-Facts measured on this machine (ExifTool 13.55, `exiftool -T -n -s3 -IFD0:ImageWidth -IFD0:ImageHeight -IFD0:Orientation <file>`, run over the 29 committed seeds; re-measure, do not generalise): exit status is 0 on every one including garbage; values come out tab-separated in the **order the selectors were requested**; a missing tag prints `-`; some seeds yield nothing or odd output (`two-hop-cycle` prints an empty line; `ascii-shapes` prints `97 98 99 0` for a tag we hold as ASCII). Only stdout is trusted, never the exit status.
+Facts measured on this machine (ExifTool 13.55, `exiftool -T -n -s3 -IFD0:ImageWidth -IFD0:ImageHeight -IFD0:Orientation <file>`, run over the 29 committed seeds; re-measure, do not generalise): values come out tab-separated in the **order the selectors were requested**; a missing tag prints `-`; some seeds yield nothing or odd output (`two-hop-cycle` prints an empty line; `ascii-shapes` prints `97 98 99 0` for a tag we hold as ASCII). (Correction, added at ship: the exit-status claims in this paragraph were wrong, see the reflection. The harness never reads exit status, which stays the rule.) Only stdout is trusted, never the exit status.
 
 ## Goal
 
@@ -191,34 +200,16 @@ All in `tests/metadata_oracle.rs` (and unit tests inside `tests/support/` module
 
 ## Reflection
 
-*Appended during **ship**. Three questions, short answers.*
-
 1. **What would I do differently next time?**
-   — <answer>
+   — Never write a measured fact into a spec from a shell pipeline's `$?`. I wrote "exit status is 0 on every seed, including garbage" after a loop that piped ExifTool into `tr`, so the `exit=` I printed was `tr`'s. The builder's real run found ExifTool does not return on `two-hop-cycle` (about 9 GB, killed by the OS), and the verifier found two seeds that exit 1. The claim then got copied into a code comment, and verify caught it as the one required fix. Measure with `set -o pipefail` or capture stdout to a file first, and put a hard time limit on any tool run over hostile input.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — No change to a decision. The `measurement-over-generalised` rule worked as intended: it is what let the verifier call the comment out. Worth recording as a lesson candidate: a spec's "measured facts" need the exact command and a note that exit codes were read directly. The oracle's `run_tool` has no time or memory limit; the builder suggests adding one (SPEC-008). Open questions recorded for four ExifTool behaviours: the `two-hop-cycle` non-return, `ascii-count-past-eof` (ExifTool reports no IFD0 tags, exif-core reads one), `ascii-shapes` (invalid-UTF-8 text rendered differently), and the answered GPS signed-composite selector.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — SPEC-008 (outline exists) should also take: a wall-clock and memory limit in `run_tool`, and an oracle-visible selector for signed integers and floats (an SSHORT-as-unsigned plant survived the oracle tests; only a library unit test catches it). CI must set `DIAMOND_EXIF_REQUIRE_ORACLE=1` (repo setup, open question `rust-ci-and-fixtures`), or a missing ExifTool becomes a silent skip there.
 
-4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
-   the defect-escape distribution is greppable across specs:
-   `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
-   `none` (clean first try).
-   — <one word>
-   *(Runtime/operational defects — the escape-prone class — only exist once the
-   artifact meets its real host. `escaped` here is a signal to strengthen the
-   §12 behavioral pre-flight for that surface.)*
+4. **Where was the worst defect caught?** — verify
+   *(the false "exit 0 every time" comment, originating in the spec. The code itself was correct and the oracle caught every realistic planted fault.)*
 
-5. **What can a user do now that they couldn't before?** — one sentence,
-   before → after; quote the confirming number if one exists, name the outcome
-   if not. Write `none` if this spec has no user-visible outcome — that is a
-   real, greppable result, not a blank. This is the line a downstream work-log's
-   `impact` field is transcribed from, and both halves are already written above
-   (## Context is the before, ## Goal is the after): confirm the prediction,
-   don't reconstruct it from memory.
-   — <answer | none>
+5. **What can a user do now that they couldn't before?** — Trust the parser's readings because an independent tool agrees: 47 values across hand-built TIFFs (text, integers, rationals, signed GPS coordinates in both byte orders) match ExifTool 13.55, with the comparison itself shown able to fail, and a hostile file that makes ExifTool run out of memory is handled by exif-core as a one-line issue.

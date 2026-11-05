@@ -86,10 +86,10 @@ First stage; everything else (containers, audit CLI, writer) depends on the IFD 
 - [x] SPEC-003 (shipped on 2026-11-05) — [M] Apply the tolerant-walk policy (`ParseIssue` channel), flipping the affected tests
 - [x] SPEC-004 (shipped on 2026-11-05) — [M] Multi-IFD pointer walk (Exif/GPS/Interop/SubIFDs), `IfdKind`, bounded per-tag work (DEC-005)
 - [x] SPEC-007 (shipped on 2026-11-05) — [M] ASCII, signed and float tag-value decoders (split out of SPEC-004 at its design)
-- [ ] SPEC-005 (design) — [L] Oracle discipline: ExifTool `tools.rs` subset, `parse_fields`, normalisation table, committed records, replay-perturb red-proof, live parity
+- [x] SPEC-005 (shipped on 2026-11-05) — [L] Oracle discipline: ExifTool `tools.rs` subset, `parse_fields`, normalisation table, committed records, replay-perturb red-proof, live parity
 - [ ] SPEC-008 (frame) — [M] `mutate.rs` byte-mutation helpers and the shared mutated-copy `probe.rs` red-proof (split out of SPEC-005 at its design)
 
-**Count:** 6 shipped / 2 active / 0 pending
+**Count:** 7 shipped / 1 active / 0 pending
 
 ## Design Notes
 
