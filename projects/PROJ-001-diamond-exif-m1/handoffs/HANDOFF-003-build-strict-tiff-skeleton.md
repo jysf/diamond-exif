@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-05
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-002
@@ -42,14 +42,14 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
+  status: completed                # completed | blocked | rejected
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # tokens_total × your rate, or your harness's number
   duration_minutes: null
-  branch: null
+  branch: worktree-agent-a790d2df452429634
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # one line if unusual (rework, no meter, etc.)
+  completed_at: 2026-11-05         # YYYY-MM-DD
+  notes: "tokens_total left for the orchestrator (metered from the task result); worktree base was stale and was fast-forwarded to claude/rust-exif-metadata-6351d5"
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -156,10 +156,11 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `worktree-agent-a790d2df452429634` (no push, no PR). Build commit `fa44c05`.
+- **Completed at:** 2026-11-05
+- **All acceptance criteria met?** yes. Gates run and green: `cargo fmt --all -- --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` (23 unit + 4 crate_policy), `cargo rustc --lib -- -F unsafe_code`, `cargo deny check licenses`, `just validate`, `just decisions-audit`; on 1.90.0: clippy 0.1.90 (`~/.cargo/bin/cargo-clippy +1.90.0`, confirmed by `--version`) and `cargo +1.90.0 test` green. The DNG-symbol grep returns only three provenance comments (types.rs, tags.rs, mod.rs headers saying "DNG removed"). irradiance `status --porcelain` is empty.
+- Test-first: the test module was written first and `cargo test` failed to compile (114 errors, `Container` undeclared); then the code was added and all passed.
+- Environment: the worktree was cut from `50aa761`, which lacks the SPEC-002 design and HANDOFF-003 (they live on `claude/rust-exif-metadata-6351d5`); I fast-forwarded the worktree branch to that branch (`--ff-only` merge) before starting.
 
 ### Cost self-report
 
@@ -167,27 +168,32 @@ Mirror what you put in the `handback:` front-matter, and say where the number
 came from. **This is the number that lands in the spec** — the orchestrator
 transcribes it via `just handback-sync`, it does not estimate it.
 
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null here; left for the orchestrator to transcribe from this task's metered result (instructed).
+- **Estimated USD:** null (same reason)
+- **Duration (minutes):** not measured
+- **Source of the number:** harness report (orchestrator)
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
+- **New decisions emitted:** none.
 - **Deviations from spec:**
-  - [list]
-- **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - `Error` variants dropped: `MalformedRationalValue` and `RationalValueOutOfRange`, plus all RAW/develop variants. Proof: `grep -rn "MalformedRationalValue\|RationalValueOutOfRange" src/` returns nothing; in irradiance `ifd.rs` their only producers are the integer-division arm of `uints` (`:1100`) and the `i32::try_from` narrowing in `rationals` (`:1179-1186`), both removed. 11 variants remain, as the spec expected.
+  - `Entry` gained a private `value_at: usize` (input offset of its 4-byte value field), and `Entry::parse` takes it. Reason: the spec's `payload` returns `&'a [u8]`, but irradiance's inline branch returned `entry.value.get(..len)`, a borrow of the (Copy) entry, which cannot outlive it. Inline payloads are now a slice of the input at `value_at`; the bytes are identical. The brief's "one-token change" claim (§1.4) does not hold for the inline branch. `Entry` stays `Copy`.
+  - `rationals` is two methods, `urationals` -> `Vec<URational>` and `srationals` -> `Vec<SRational>` (sharing a private `rational_chunks`), rather than one method returning both types. Each accepts only its own type (RATIONAL / SRATIONAL).
+  - Added `tags::X_RESOLUTION` (282) so the unsigned-RATIONAL tests use a baseline TIFF tag; the SRATIONAL tests use a test-local `EXPOSURE_BIAS_VALUE` (0x9204) const since Exif-IFD tags are SPEC-004's.
+  - `Build`: unused helpers (`bytes_word`, `two_shorts_word`, `longs_bytes`) were not ported to avoid dead test code; the rest is verbatim.
+  - The error-Display test additionally has an exhaustive, wildcard-free `match` plus an index check so the variant list provably equals the enum.
+  - irradiance HEAD is `b3725d4`, not the handoff's `2b6b07a`; `src/ifd.rs` (last changed `cc67ad6`) and `src/lib.rs`'s `Error` (last changed `bb4aab1`) predate `2b6b07a`, so the ported text is the same. Ledger rows record `b3725d44e7dd` plus the file's last-change commit.
+- **Test classification:** every ported test behaved as the brief classified it. The only edits were the ones the spec lists: tests that went through `sensor()` (`header_reads_both_byte_orders`, `an_ifd0_offset_of_zero_yields_no_ifds`) now read baseline tags via `required_scalar`/`ifd0()` (the `NoSensorIfd` assertion is gone); `a_readable_type_this_module_does_not_widen_is_typed` swapped `TAG_BLACK_LEVEL` for `IMAGE_WIDTH`. `an_inline_value_is_read_from_the_entry_not_the_file` keeps its name but, after the `value_at` change, reads the value field from the input; the assertion is unchanged.
+- **Follow-up work identified:** `Entry::value_at` and the `payload` signature should be noted for SPEC-003/004 (the writer will need an `Entry` constructor that supplies it). The spec's stale "HEAD `2b6b07a`" wording could be refreshed. The toolchain brief could record that `~/.cargo/bin/cargo-clippy +1.90.0` gives clippy 0.1.90 even when `cargo +1.90.0 clippy` picks up Homebrew's 0.1.99.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — The worktree base lacked the SPEC-002 design and HANDOFF-003 (stale branch point). Also the `&'a [u8]` requirement versus the inline-payload borrow: the brief called it a one-token change, but it needs the value field's input offset.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — DEC-002 should say that an `Entry` has to know where its value field sits in the input for inline payloads to be `&'a`. Otherwise no.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Check that the worktree contains the handoff before starting, and decide the `value_at` question up front by reading `payload` against the `&'a` requirement, instead of finding it while editing.
