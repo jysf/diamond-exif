@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-05
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-003
@@ -42,14 +42,14 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: null
-  branch: null
+  status: completed                # completed | blocked | rejected
+  tokens_total: null               # harness exposes no token count to this subagent (see notes)
+  estimated_usd: null
+  duration_minutes: 30
+  branch: worktree-agent-a05cce564e0999784
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # one line if unusual (rework, no meter, etc.)
+  completed_at: 2026-11-05
+  notes: "No token meter is exposed to this subagent harness (no /cost, no usage object), so tokens_total is null rather than invented; set cost.metering_source accordingly or have the orchestrator read the session total. Not pushed, no PR, per handoff."
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -113,38 +113,50 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** worktree branch `worktree-agent-a05cce564e0999784` (single commit on top of 6f4e022); not pushed, no PR.
+- **Completed at:** 2026-11-05
+- **All acceptance criteria met?** yes. Walk rules implemented as specified (`follow` for everything after IFD0; IFD0 read directly and fatal; global `halted`; attempts include IFD0). All named Failing Tests present and passing (36 lib tests, 4 fuzz_layout). The flood test's derived count (512 issues = 511 `CyclicIfd{8}` + one `TooManyIfds{512}`) matched exactly; no derived-number mismatch.
+- **For `verify`:** n/a (build cycle)
+
+**Mutation checks (each reverted afterwards; tree verified clean of mutants):**
+
+| Mutation | Tests that went red |
+|---|---|
+| (a) `depth > MAX_IFD_DEPTH` -> `>=` | `nesting_at_exactly_the_depth_limit_is_clean`, `nesting_past_the_depth_limit_terminates` |
+| (b) `depth > MAX_IFD_DEPTH` -> `> MAX_IFD_DEPTH + 1` | `nesting_past_the_depth_limit_terminates` |
+| (c) `attempts > MAX_IFDS` -> `>=` | `a_chain_of_exactly_max_ifds_is_clean`, `a_long_chain_stops_at_the_ifd_limit`, `a_hostile_subifds_array_cannot_flood_the_issue_list` |
+| (d) `attempts > MAX_IFDS` -> `> MAX_IFDS + 1` | `a_long_chain_stops_at_the_ifd_limit`, `a_hostile_subifds_array_cannot_flood_the_issue_list` |
+
+**Fuzz differential shown red:** planted `is_clean()` returning `true` unconditionally. First attempt was NOT caught: my initial invariant only checked "strict Ok implies clean" and "strict Err implies first issue's error", which a constant-true `is_clean` satisfies. The spec's "Ok iff is_clean" needs the converse, so I added `assert!(!container.is_clean())` on the strict-`Err` branch (target and `exercise`). With the plant: `every_seed_parses_or_errors_without_panicking` panicked ("strict Err but is_clean"), and `cargo fuzz run` crashed within seconds ("parse_strict Err but is_clean", libFuzzer deadly signal). Plant removed, `fuzz/artifacts` and `fuzz/corpus` deleted (gitignored anyway).
+
+**`just fuzz-smoke` (60 s, plant removed):** clean. 911,682 executions in 61 s (~14.9k exec/s), final `cov: 643 ft: 2916 corp: 446/178Kb`. Seeds: 20 (17 existing byte-identical, 3 new).
+
+**Gates run green:** `cargo fmt --check`; `just lint` (clippy `-D warnings`, five-lint set, clippy 0.1.90 path); `just lint-fuzz`; `rustfmt --check` on the fuzz target; `cargo test` on 1.90.0 and on Homebrew stable (36 + 4 + 4); `cargo rustc --lib -- -F unsafe_code`; `just deny`, `just deny-fuzz` (licenses ok; pre-existing "unmatched license allowance" Zlib warning only); `just validate`; `just decisions-audit`; `just cost-audit`. `[dependencies]` still empty; irradiance and `scripts/` untouched.
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null. This subagent harness exposes no token count (no `/cost`, no `usage` object), so I did not invent one.
+- **Estimated USD:** null
+- **Duration (minutes):** ~30
+- **Source of the number:** none available
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
+- **New decisions emitted:** none.
 - **Deviations from spec:**
-  - [list]
-- **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - Added a private `ParseIssue::into_error(self)` (`pub(crate)`) so `parse_strict` can take the first issue's error by value; not in the spec's signature list, not public API.
+  - Added `Walk` private struct and `walk_from` / `walk_sub_ifds` / `follow` private methods; `walk_chain` and `sub_ifd_offsets_of_last` removed.
+  - Test helpers `nested(n)` and `chained(n)` added to the test module (the spec's tests described the shapes but not helpers).
+  - Fuzz invariant strengthened beyond the first draft (see the shown-red note): strict `Err` also asserts `!is_clean()`.
+- **Follow-up work identified:** SPEC-004 must repeat the corrupt-GPS-pointer test with the real GPS pointer (already recorded as carry-in). `Error` is `#[non_exhaustive]` and now `Eq`; a future variant carrying a float would break `Eq`, worth remembering when SPEC-004 adds decoders.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   Almost nothing; the walk rules and test list were precise, and the derived 512-issue count was right. The only gap was the fuzz differential: "Ok iff is_clean" reads as one invariant but needs both directions asserted, and the plant check is what exposed that.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   No. The five-lint and no-index rules shaped the `get`-based walk helpers, and they were listed.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   Write the tests before the implementation in the literal order (I wrote them in one pass after the walk; the mutation checks and the plant supply the red evidence instead). I would also run the planted `is_clean` bug before declaring the differential done, as the spec asks, rather than after.

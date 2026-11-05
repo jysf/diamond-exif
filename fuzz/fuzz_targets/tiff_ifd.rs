@@ -4,6 +4,12 @@
 //! byte string, every entry point below returns, and none of them panics.** Any
 //! answer, including every `Err`, is acceptable. An abort is not.
 //!
+//! Since SPEC-003 (tolerant walk, DEC-001) the target also asserts the walk's
+//! invariants, so a violated one is a finding: `parse_strict` agrees with
+//! `parse`/`is_clean`/`issues` (differential); every recorded IFD lies inside
+//! the input (containment); IFD and issue counts stay within their bounds and
+//! every issue points at a recorded IFD (bounds).
+//!
 //! The walk must stay in sync with the public reader API: a spec that adds a
 //! reader must add it here in the same change.
 //!
@@ -23,17 +29,60 @@
 
 use libfuzzer_sys::fuzz_target;
 
-use exif_core::tiff::Container;
+use exif_core::tiff::{Container, MAX_IFDS};
 
 /// Tags worth probing with `scalar`/`values` on IFD0: width, length, bits per
 /// sample, orientation, SubIFDs, and one that is never present.
 const PROBE_TAGS: [u16; 6] = [256, 257, 258, 274, 330, 0xFFFF];
 
 fuzz_target!(|data: &[u8]| {
-    let Ok(container) = Container::parse(data) else {
-        // A rejected input is a SUCCESS: the reader said no with a typed error.
-        return;
+    let strict = Container::parse_strict(data);
+    let container = match Container::parse(data) {
+        Ok(container) => container,
+        Err(error) => {
+            // A rejected input is a SUCCESS: the reader said no with a typed
+            // error, and the strict entry point must say the same.
+            assert_eq!(
+                strict.err(),
+                Some(error),
+                "parse_strict disagrees on a fatal input"
+            );
+            return;
+        }
     };
+
+    // Differential: strict is Ok iff the walk was clean; otherwise it returns
+    // the first issue's error.
+    match strict {
+        Ok(_) => assert!(container.is_clean(), "parse_strict Ok but issues present"),
+        Err(error) => {
+            assert!(!container.is_clean(), "parse_strict Err but is_clean");
+            let first = container
+                .issues()
+                .first()
+                .expect("parse_strict Err on a container with no issues");
+            assert_eq!(
+                &error,
+                first.error(),
+                "parse_strict returned a different error"
+            );
+        }
+    }
+
+    // Containment: every recorded IFD lies fully inside the input.
+    for ifd in container.ifds() {
+        let end = u64::from(ifd.offset()) + 2 + 12 * ifd.entries().len() as u64 + 4;
+        assert!(end <= data.len() as u64, "an IFD escapes the input");
+    }
+
+    // Bounds, and exercise the issue getters and Display.
+    assert!(container.ifds().len() <= MAX_IFDS);
+    assert!(container.issues().len() <= 2 * MAX_IFDS + 1);
+    for issue in container.issues() {
+        assert!(issue.from_ifd() < container.ifds().len());
+        let _ = (issue.error(), issue.link(), issue.offset());
+        assert!(!issue.to_string().is_empty());
+    }
 
     // `parse` only reads entry HEADERS; payload resolution is where the hostile
     // `count x sizeof(type)` product is used, so it must be reached from here.
