@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads (not exposed to this agent)
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: null
+  tokens_total: 185074             # orchestrator-recorded from the metered sub-agent result (subagent_tokens)
+  estimated_usd: 1.22
+  duration_minutes: 10
   branch: worktree-agent-aa5abcc3ef1eff7d7
   pr: null
   completed_at: 2026-11-05         # YYYY-MM-DD
-  notes: "No token meter exposed to the sub-agent harness; orchestrator transcribes the metered figure"                      # one line if unusual (rework, no meter, etc.)
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "tokens transcribed by the orchestrator from the sub-agent metered result"
+  synced_at: 2026-11-05
 ---
 
 # HANDOFF-009: Multi-IFD pointer walk
@@ -143,10 +143,10 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Cost self-report
 
-- **Tokens (total):** null. No token count is exposed to this sub-agent.
-- **Estimated USD:** null
-- **Duration (minutes):** roughly 35 (estimate)
-- **Source of the number:** none available; orchestrator transcribes the metered figure.
+- **Tokens (total):** 185,074 (recorded by the orchestrator from the sub-agent metered result).
+- **Estimated USD:** 1.22
+- **Duration (minutes):** ~10 (metered wall-clock)
+- **Source of the number:** harness report (subagent_tokens)
 
 ### Drift and new artifacts
 
