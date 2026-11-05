@@ -6,10 +6,10 @@
 task:
   id: SPEC-006
   type: story                      # epic | story | task | bug | chore
-  cycle: design                    # frame | design | build | verify | ship
+  cycle: build  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
-  complexity: S                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
+  complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
   complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
@@ -31,8 +31,8 @@ handoff:
   created_at: null
 
 references:
-  decisions: []                    # [DEC-NNN, DEC-MMM]
-  constraints: []                  # [constraint-id-1, constraint-id-2]
+  decisions: [DEC-001, DEC-004]                    # [DEC-NNN, DEC-MMM]
+  constraints: [fuzz-target-per-surface, panic-free-library, license-policy, no-new-top-level-deps-without-decision]                  # [constraint-id-1, constraint-id-2]
   related_specs: []                # [SPEC-NNN]
 
 # Blocking dependencies: specs that must SHIP before this one can start.
@@ -47,7 +47,7 @@ claimed_by: null
 # One sentence on what this spec contributes to its stage's
 # value_contribution. For plumbing: "infrastructure enabling
 # STAGE-001's <capability>". Optional; null is acceptable.
-value_link: null
+value_link: "infrastructure enabling STAGE-001: executable proof that the parser never panics on hostile bytes"
 
 # Self-reported AI cost per cycle. Each cycle (design, build, verify,
 # ship) appends one entry to sessions[]. Totals are computed at ship.
@@ -82,51 +82,58 @@ A `fuzz/` crate with a `tiff_ifd` target that feeds arbitrary bytes to `Containe
 
 ## Inputs
 
-What the implementer will read or consume.
-
-- **Files to read:** `path/to/file.ext` — why
-- **External APIs:** <name, docs link, auth requirements>
-- **Related code paths:** `src/some/module/`
+- **Source to adapt (irradiance, READ ONLY, never modify):** `~/PSeven/experiments/crustimg_redo_plus/irradiance/fuzz/` — `Cargo.toml`, `fuzz_targets/ifd.rs` (the target; note irradiance names it `ifd`, we name ours `tiff_ifd`), `.gitignore`, and the seed approach (`examples/fuzz-seeds.rs` writing valid containers in both byte orders, truncated headers, cycles, absurd offsets, overflowing counts). Recipes: `app.just` (`deny-fuzz`, `lint-fuzz`, the 60 s smoke command). Rationale: irradiance DEC-011/DEC-027, restated in `decisions/DEC-004`.
+- **This repo:** `decisions/DEC-004`, `deny.toml` (already carries the `libfuzzer-sys` NCSA exception), `guidance/toolchain-brief.md`, the SPEC-002 public API in `src/tiff/`.
 
 ## Outputs
 
-What the implementer will produce.
-
-- **Files created:** `path/to/new.ext` — purpose
-- **Files modified:** `path/to/existing.ext` — what changes
-- **New endpoints / functions / components:** <names and signatures>
-- **New flags / options:** each flag's accepted values **and its default** — an
-  unstated default makes the implementer guess.
-- **Database changes:** <migrations, if any>
+- **Files created:**
+  - `fuzz/Cargo.toml` — package `exif-core-fuzz`, `publish = false`, `license = "MIT OR Apache-2.0"` (a missing licence field is an ERROR to cargo-deny), `[package.metadata] cargo-fuzz = true`, `libfuzzer-sys = "0.4"`, `exif-core = { path = ".." }`, one `[[bin]]` `tiff_ifd` (`test = false`, `doc = false`, `bench = false`).
+  - `fuzz/Cargo.lock` — committed.
+  - `fuzz/fuzz_targets/tiff_ifd.rs` — `#![no_main]`; for any bytes: `Container::parse`; on `Ok`, walk every `ifds()` / `entries()` and call `byte_len`, `payload`, `uints`, `urationals`, `srationals`, plus `scalar`/`values` on `ifd0`. The contract: every entry point returns and none panics; any `Err` is a success. Doc comment states the contract and the exact PATH-first-`~/.cargo/bin` + `+nightly` run command.
+  - `examples/fuzz_seeds.rs` — deterministic writer (std only, its own tiny byte builder; examples are not part of the library lint set) that creates `fuzz/seeds/tiff_ifd/*` : valid containers in both byte orders (inline value, external payload, SubIFDs, a chain), truncated header, IFD0 offset zero, entry count past EOF, payload past EOF, `count * size` overflow, self-referencing and two-hop SubIFD cycles, deep nesting. Seeds are committed (own work, a few hundred bytes each).
+  - `fuzz/seeds/tiff_ifd/` — the generated seeds, committed. `fuzz/.gitignore` ignoring `target`, `corpus`, `artifacts`, `coverage` (not `seeds`).
+- **Files modified:**
+  - `app.just` — add `deny-fuzz` (`cargo deny --manifest-path fuzz/Cargo.toml check licenses`), `lint-fuzz` (clippy on the fuzz manifest, `-D warnings`; pinned to `~/.cargo/bin/cargo +stable` with the PATH prefix, printing which clippy answered) and `fuzz-smoke` (the 60 s run below), each with a comment saying why it exists next to its library twin.
+  - `AGENTS.md` §6 and `guidance/toolchain-brief.md` — list the three recipes, the nightly + PATH trap, and "two invocations, both required".
+  - `deny.toml` — fix the stale "SPEC-005" reference in the `libfuzzer-sys` exception comment to SPEC-006.
+  - `docs/provenance-ledger.md` — one row for `fuzz/fuzz_targets/tiff_ifd.rs` and the seeds writer (class 3, irradiance fuzz target/seeds, same author; upstream class 1 TIFF 6.0 for the seed shapes).
+  - `CHANGELOG.md` — `[Unreleased] → Added`.
+- **Not created here (repo setup, tracked outside the backlog):** CI jobs, and `scripts/lint-fuzz-red-proof.sh`.
+- **Library untouched:** `src/` and `[dependencies]` do not change.
 
 ## Acceptance Criteria
 
-Testable outcomes. Each must map to at least one test. Cover happy
-path, error cases, edge cases.
-
-- [ ] Criterion 1 (testable)
-- [ ] Criterion 2 (testable)
-- [ ] Criterion 3 (testable)
+- [ ] `~/.cargo/bin/cargo +nightly fuzz build tiff_ifd` succeeds (with `PATH="$HOME/.cargo/bin:$PATH"`).
+- [ ] The 60 s smoke run — `PATH="$HOME/.cargo/bin:$PATH" ~/.cargo/bin/cargo +nightly fuzz run tiff_ifd fuzz/corpus/tiff_ifd fuzz/seeds/tiff_ifd -- -max_total_time=60` — finishes with no crash, and the handback records the executions count and coverage line.
+- [ ] **Shown red:** in a scratch copy, plant a deliberate panic that is reachable only through a hostile shape (e.g. `unwrap()` on `payload` of an entry whose `count` is huge, or an index past a short slice) and show libFuzzer finds and reports it within 60 s from the seeds. Record the crash file name and the panic text. Remove the plant; the tree stays clean.
+- [ ] `just deny` and `just deny-fuzz` both pass; `just lint` and `just lint-fuzz` both pass (clippy `-D warnings` on each graph).
+- [ ] Library gates unchanged and green: fmt, clippy, `cargo test`, `cargo rustc --lib -- -F unsafe_code`, tests on 1.90.0, `just validate`, `just decisions-audit`. `git diff` shows no change under `src/`.
+- [ ] `examples/fuzz_seeds.rs` is deterministic: running it twice produces byte-identical seeds (check with a hash of the directory).
+- [ ] The library's `[dependencies]` is still empty; `cargo tree` for the root shows no `libfuzzer-sys`.
+- [ ] No irradiance file was modified.
 
 ## Failing Tests
 
-Written during the **design** cycle, BEFORE handoff. The implementer's
-job in **build** is to make these pass.
+The artifact is a harness, so the "tests" are executable checks, written first:
 
-- **`path/to/test.file`**
-  - `"test description 1"` — asserts: ...
-  - `"test description 2"` — asserts: ...
+- **`tests/fuzz_layout.rs`** (std only): `"fuzz_crate_is_separate_and_licensed"` — `fuzz/Cargo.toml` exists, declares `license = "MIT OR Apache-2.0"` and a `tiff_ifd` bin, and the ROOT `Cargo.toml` does not mention `libfuzzer-sys`; `"fuzz_gitignore_keeps_seeds_and_ignores_corpus"` — `fuzz/.gitignore` lists `corpus` and `artifacts` but not `seeds`; `"seeds_are_committed_and_cover_the_hostile_shapes"` — `fuzz/seeds/tiff_ifd/` holds at least the named shapes (file names fixed by the seed writer: `valid-le`, `valid-be`, `subifd`, `chain`, `truncated-header`, `ifd0-offset-zero`, `entry-count-past-eof`, `payload-past-eof`, `count-overflow`, `self-cycle`, `two-hop-cycle`, `deep-nesting`).
+- **Seeds smoke (in the same file):** `"every_seed_parses_or_errors_without_panicking"` — each seed file is fed to `Container::parse` and, on `Ok`, to the same entry-point walk the target uses; this is the harness contract executed as a plain test, so a regression is caught without nightly.
+- The shown-red run above is the behavioural pre-flight (AGENTS §12): shape checks alone are not enough.
 
 ## Non-Goals
 
-- Corpus management, the 24 h clean run (M1f gate), CI wiring of the smoke job (repo setup)
-- `lint-fuzz-red-proof` gate script (repo setup, brought over from irradiance separately)
-- Fuzz targets for other surfaces (JPEG, PNG, WebP: with their parsers)
+- CI wiring of the smoke job and the `clippy-fuzz` / `licenses-fuzz` jobs; `lint-fuzz-red-proof` gate script (repo setup)
+- The 24 h clean run (M1f gate)
+- Fuzz targets for other surfaces, fuzz dictionaries, structure-aware (`arbitrary`) fuzzing
+- Any change to library code
 
 ## Notes for the Implementer
 
-Gotchas, style preferences, reuse opportunities. Keep short — the full
-context graph lives in the handoff file.
+- Host traps (measured on this machine; re-verify): `cargo fuzz` shells out to a bare `cargo`, which resolves to Homebrew's stable cargo and rejects `-Zsanitizer=address`. Always run with `PATH="$HOME/.cargo/bin:$PATH"` and `~/.cargo/bin/cargo +nightly fuzz ...`. The rustup default here is nightly; `cargo-fuzz` and `cargo-deny` are installed in `~/.cargo/bin`.
+- Keep the target's walk in sync with the public API at the time of the spec; SPEC-003/004 will extend it when they add readers (they must update this target in the same change, per "ship the reader with the field").
+- The fuzz crate may use `unwrap()` etc. (DEC-004) but the target is written defensively anyway (`let Ok(..) = .. else { return }`).
+- Do not add dependencies beyond `libfuzzer-sys` (no `arbitrary` structure-aware work). Do not push or open a PR.
 
 ---
 
