@@ -21,7 +21,10 @@ supersedes: null
 superseded_by: null
 status: accepted
 deciders: [jysf, claude]
-affected_scope: ["fuzz/**", "deny.toml", "app.just"]
+affected_scope:
+  - "fuzz/**"
+  - "deny.toml"
+  - "app.just"
 
 tags:
   - fuzzing

@@ -122,3 +122,15 @@ signals:
     last_touched: 2026-11-05
     raised_by: claude
     notes: "Decision 2026-11-05: run build/verify as sub-agents (subagent_tokens metering). Consider a script that recovers tokens from a transcript if sessions are used again."
+
+  - id: decisions-audit-reads-block-lists-only
+    type: process-debt
+    summary: "scripts/decisions-audit.sh get_affected_scope parses only block-style YAML lists, so `affected_scope: [a, b]` (flow style) extracts no globs and `--changed` silently matches nothing."
+    evidence: "SPEC-004 verify (HANDOFF-010, finding 2): `just decisions-audit --changed` reported no match for src/tiff/mod.rs although DEC-001/002/003/005 govern it. Worked around here by writing every DEC's affected_scope as a block list; the script itself is template/irradiance-owned and not modified."
+    bar: null
+    status: open
+    disposition_at: project-close
+    first_flagged: 2026-11-05
+    last_touched: 2026-11-05
+    raised_by: claude
+    notes: "Upstream fix (accept flow lists, or fail loudly on an unparsed scope) belongs in the template and irradiance; also check the audit rejects a DEC with zero parsed globs."

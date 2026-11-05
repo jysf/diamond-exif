@@ -72,10 +72,18 @@ cost:
       duration_minutes: 10
       recorded_at: 2026-11-05
       notes: "tokens transcribed by the orchestrator from the sub-agent metered result"
+    - cycle: verify
+      agent: claude-opus-5-5
+      interface: other
+      tokens_total: 181124
+      estimated_usd: 1.20
+      duration_minutes: 9
+      recorded_at: 2026-11-05
+      notes: "verdict PUNCH LIST at a68757d (code 06f1702); tokens transcribed by the orchestrator from the sub-agent metered result"
   totals:
-    tokens_total: 185074
-    estimated_usd: 1.22
-    session_count: 1
+    tokens_total: 366198
+    estimated_usd: 2.42
+    session_count: 2
 ---
 
 # SPEC-004: Multi-IFD pointer walk

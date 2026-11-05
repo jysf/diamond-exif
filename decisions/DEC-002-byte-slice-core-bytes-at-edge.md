@@ -21,7 +21,8 @@ supersedes: null
 superseded_by: null
 status: accepted
 deciders: [jysf, claude]
-affected_scope: ["src/**"]
+affected_scope:
+  - "src/**"
 
 tags:
   - api

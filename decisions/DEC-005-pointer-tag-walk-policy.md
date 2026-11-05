@@ -21,7 +21,9 @@ supersedes: null
 superseded_by: null
 status: accepted
 deciders: [jysf, claude]
-affected_scope: ["src/tiff/**", "src/error.rs"]
+affected_scope:
+  - "src/tiff/**"
+  - "src/error.rs"
 
 tags:
   - parser
@@ -44,6 +46,7 @@ The walker follows exactly four pointer tags, each only from the IFD kinds liste
 
 - **The next-word of `Exif`, `Gps` and `Interop` IFDs is recorded but not followed.** They are leaf directories by definition; real files carry garbage there often enough that following it would manufacture issues. The chain of `Ifd0` (giving `Ifd1`, then `Chain`) and of `Sub` IFDs is followed as before.
 - **Kinds:** the first IFD at the top is `Ifd0`, the next in its chain `Ifd1`, later ones `Chain`; a chain inside a `SubIFDs` branch stays `Sub`.
+- **Nesting through `Sub`.** Because `SubIFDs` may be followed from any IFD and `Sub` IFDs may themselves hold 0x8769/0x8825, a chain such as `Exif -> Sub -> Exif -> Interop` is reachable. That is accepted: it is bounded by the depth and attempt guards, each IFD is labelled by how it was reached, and `Exif -> Exif` direct nesting (the case the table exists to prevent) is still impossible.
 - **Duplicates:** if an IFD carries the same pointer tag twice, only the first entry is used.
 - **Pointer tag with a bad value** (wrong type, count other than one, offset unreadable) records an issue with `Link::Tag(tag)` and `offset: None`; the holding IFD is kept, its other pointers and its chain still walk (DEC-001).
 - **Work bound per tag.** A `SubIFDs` entry declaring more than `MAX_IFDS` offsets is rejected (`TagTooLarge`) before any offset is decoded. This closes the gap SPEC-003 verify found (a zero offset cost no attempt and a million offsets were decoded before the budget could halt the walk). The guaranteed issue bound becomes `MAX_ISSUES = 5 * MAX_IFDS + 1` (at most one failed attempt per budgeted visit plus one `TooManyIfds`, plus at most four pointer-tag issues per recorded IFD).

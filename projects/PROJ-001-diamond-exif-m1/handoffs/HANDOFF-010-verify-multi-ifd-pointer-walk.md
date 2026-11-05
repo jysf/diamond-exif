@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: 35
+  tokens_total: 181124             # orchestrator-recorded from the metered sub-agent result (subagent_tokens)
+  estimated_usd: 1.20
+  duration_minutes: 9
   branch: worktree-agent-aa55bda855552a680
   pr: null
   completed_at: 2026-11-05         # YYYY-MM-DD
-  notes: "verify verdict PUNCH LIST at a68757d (build 06f1702); tokens_total null because the verifier sub-agent has no in-session meter, the orchestrator transcribes the metered figure"
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "verdict PUNCH LIST at a68757d (code 06f1702); tokens transcribed by the orchestrator from the sub-agent metered result"
+  synced_at: 2026-11-05
 ---
 
 # HANDOFF-010: Verify the multi-IFD pointer walk
@@ -206,10 +206,10 @@ These match the builder's table exactly. I also ran these extra plants:
 
 ### Cost self-report
 
-- **Tokens (total):** null. This verifier sub-agent has no in-session token meter, and the orchestrator transcribes the metered figure from the harness result.
-- **Estimated USD:** null (same reason)
-- **Duration (minutes):** ~35 (estimate)
-- **Source of the number:** none available in-session; harness report via orchestrator
+- **Tokens (total):** 181,124 (recorded by the orchestrator from the sub-agent metered result).
+- **Estimated USD:** 1.20
+- **Duration (minutes):** ~9 (metered wall-clock)
+- **Source of the number:** harness report (subagent_tokens)
 
 ### Drift and new artifacts
 
