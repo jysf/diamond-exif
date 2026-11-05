@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: 45
+  tokens_total: 203715             # orchestrator-recorded from the metered sub-agent result (subagent_tokens)
+  estimated_usd: 1.34
+  duration_minutes: 14
   branch: worktree-agent-adb34d7a8e7bb9e91
   pr: null
   completed_at: 2026-11-05         # YYYY-MM-DD
-  notes: "verify sub-agent cannot see its own token count; the orchestrator transcribes the metered figure. Verdict APPROVED at 662aa5e (build commit 04c5711)."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "verdict APPROVED at 662aa5e; tokens transcribed by the orchestrator from the sub-agent metered result"
+  synced_at: 2026-11-05
 ---
 
 # HANDOFF-018: Verify the JPEG segment walker
@@ -191,10 +191,10 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Cost self-report
 
-- **Tokens (total):** null. The verify sub-agent cannot see its own token count; the orchestrator transcribes the metered figure.
-- **Estimated USD:** null
-- **Duration (minutes):** ~45 (estimate, including three fuzz runs of 60-121 s)
-- **Source of the number:** none available to the sub-agent (harness report via the orchestrator)
+- **Tokens (total):** 203,715 (recorded by the orchestrator from the sub-agent metered result).
+- **Estimated USD:** 1.34
+- **Duration (minutes):** ~14 (metered wall-clock)
+- **Source of the number:** harness report (subagent_tokens)
 
 ### Drift and new artifacts
 

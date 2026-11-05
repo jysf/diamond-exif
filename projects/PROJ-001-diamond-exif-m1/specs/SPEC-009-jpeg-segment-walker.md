@@ -72,10 +72,18 @@ cost:
       duration_minutes: 14
       recorded_at: 2026-11-05
       notes: "tokens transcribed by the orchestrator from the sub-agent metered result"
+    - cycle: verify
+      agent: claude-opus-5-5
+      interface: other
+      tokens_total: 203715
+      estimated_usd: 1.34
+      duration_minutes: 14
+      recorded_at: 2026-11-05
+      notes: "verdict APPROVED at 662aa5e; tokens transcribed by the orchestrator from the sub-agent metered result"
   totals:
-    tokens_total: 228956
-    estimated_usd: 1.51
-    session_count: 1
+    tokens_total: 432671
+    estimated_usd: 2.85
+    session_count: 2
 ---
 
 # SPEC-009: JPEG segment walker with tolerant issues and the jpeg_segments fuzz target
