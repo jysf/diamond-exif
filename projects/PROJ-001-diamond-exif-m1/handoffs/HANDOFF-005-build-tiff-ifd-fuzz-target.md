@@ -50,7 +50,7 @@ handback:
   pr: null
   completed_at: 2026-11-05         # YYYY-MM-DD
   notes: null                      # one line if unusual (rework, no meter, etc.)
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-05
 ---
 
 # HANDOFF-005: tiff_ifd fuzz target

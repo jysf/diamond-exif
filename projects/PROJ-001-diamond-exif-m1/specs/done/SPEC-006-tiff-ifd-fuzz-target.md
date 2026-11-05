@@ -6,14 +6,14 @@
 task:
   id: SPEC-006
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
-  complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
+  complexity_actual: M          # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: approved  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
@@ -63,11 +63,28 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: null
-  sessions: []
+  sessions:
+    - cycle: build
+      agent: claude-sonnet-5-5
+      interface: other
+      tokens_total: 133606
+      estimated_usd: 0.88
+      duration_minutes: 8
+      recorded_at: 2026-11-05
+      notes: transcribed from HANDOFF-005 by handback-sync
+    - cycle: verify
+      agent: claude-opus-5-5
+      interface: other
+      tokens_total: 112033
+      estimated_usd: 0.74
+      duration_minutes: 25
+      recorded_at: 2026-11-05
+      notes: "tokens left null for the orchestrator to transcribe from the metered count"                      # one line if unusual (rework, no meter, etc.)
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 245639
+    estimated_usd: 1.62
+    session_count: 2
+shipped_at: 2026-11-05
 ---
 
 # SPEC-006: tiff_ifd fuzz target
@@ -139,34 +156,16 @@ The artifact is a harness, so the "tests" are executable checks, written first:
 
 ## Reflection
 
-*Appended during **ship**. Three questions, short answers.*
-
 1. **What would I do differently next time?**
-   — <answer>
+   — Nothing structural. Naming the shown-red requirement in the spec worked: both builder and verifier planted panics and watched libFuzzer find them from the committed seeds in under a second. I would also list `rustfmt --check` on the fuzz crate in the acceptance criteria; the builder skipped it and the verifier had to catch it.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — No. DEC-004 held. Host trap recorded in the toolchain brief: `cargo fuzz` needs `~/.cargo/bin` first on PATH and `+nightly`, while `just lint` must run under the default PATH (nightly has no rustfmt).
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — No new spec. SPEC-003 and SPEC-004 must update `tiff_ifd` in the same change as any new reader. The target never reaches seven trivial public getters (`Entry::tag`, `Entry::field_type`, `Entry::count`, `Ifd::has`, `Container::byte_order`, `Container::ifd0_offset`, `Container::required_scalar`); benign, but worth a glance when the API grows. CI jobs and `lint-fuzz-red-proof` remain repo setup.
 
-4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
-   the defect-escape distribution is greppable across specs:
-   `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
-   `none` (clean first try).
-   — <one word>
-   *(Runtime/operational defects — the escape-prone class — only exist once the
-   artifact meets its real host. `escaped` here is a signal to strengthen the
-   §12 behavioral pre-flight for that surface.)*
+4. **Where was the worst defect caught?** — verify
+   *(the unrun `rustfmt --check` on the fuzz crate; clean when run.)*
 
-5. **What can a user do now that they couldn't before?** — one sentence,
-   before → after; quote the confirming number if one exists, name the outcome
-   if not. Write `none` if this spec has no user-visible outcome — that is a
-   real, greppable result, not a blank. This is the line a downstream work-log's
-   `impact` field is transcribed from, and both halves are already written above
-   (## Context is the before, ## Goal is the after): confirm the prediction,
-   don't reconstruct it from memory.
-   — <answer | none>
+5. **What can a user do now that they couldn't before?** — Run `just fuzz-smoke` to throw millions of hostile byte strings at the parser in a minute and see it never panics, instead of trusting the unit tests alone.
