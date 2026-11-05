@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-05
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-004
@@ -42,14 +42,14 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads
+  status: completed                # completed | blocked | rejected
+  tokens_total: null               # REAL combined count — what cost-audit reads (not exposed to this agent)
   estimated_usd: null              # tokens_total × your rate, or your harness's number
   duration_minutes: null
-  branch: null
+  branch: worktree-agent-aa5abcc3ef1eff7d7
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # one line if unusual (rework, no meter, etc.)
+  completed_at: 2026-11-05         # YYYY-MM-DD
+  notes: "No token meter exposed to the sub-agent harness; orchestrator transcribes the metered figure"                      # one line if unusual (rework, no meter, etc.)
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -113,38 +113,59 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `worktree-agent-aa5abcc3ef1eff7d7`, one commit on top of bad5fcb; no push, no PR (per instructions).
+- **Completed at:** 2026-11-05
+- **All acceptance criteria met?** yes. Walk, kinds, `ifd_of_kind`, GPS tolerance, rule-5 failure modes, the `SubIFDs` cap (100,000-count test plus exactly-512 test), `MAX_ISSUES`, five walk plants red, fuzz plants red, fuzz-smoke clean, gates green (below). The orchestrator re-runs the gates independently.
+- **Derived number:** the 512-issue count for a `SubIFDs` array of exactly 512 offsets matched the rules (511 `CyclicIfd` then one `TooManyIfds`). No mismatch.
+
+**Walk plants (each reverted; `cargo +1.90.0 test --lib` red, then green after revert):**
+
+| Plant | Named tests that went red |
+|---|---|
+| (a) `0xA005` allowed from any holder | `pointer_tags_in_unexpected_places_are_ignored_silently`, `the_issue_list_never_exceeds_max_issues` |
+| (b) follow the next-word of `Exif` IFDs | `a_chain_pointer_inside_a_leaf_ifd_is_not_followed` |
+| (c) `SubIFDs` cap `>` to `>=` | `a_subifds_count_at_the_cap_is_accepted` |
+| (d) never follow 0x8825 | 9 tests, including `a_corrupt_gps_ifd_leaves_ifd0_and_exif_readable`, `a_gps_pointer_past_eof_with_a_readable_exif_ifd`, `exif_gps_and_interop_are_reached_and_labelled` |
+| (e) `Ifd1` mislabelled `Chain` | `an_ifd0_chain_is_labelled_ifd1_then_chain` |
+
+**Fuzz invariant plants (shown red through `tests/fuzz_layout.rs::exercise`, the shared harness body; reverted):**
+
+- Interop children labelled `Gps`: red on the "Exif/Gps parent is not Exif/Gps/Interop" invariant.
+- Parent index pointing forward (`holder + 1`): red on "parent index is not earlier"; also run against the **real** `tiff_ifd` fuzz target for 20 s: libFuzzer hit the assertion in `tiff_ifd.rs` ("deadly signal"; the crash artifact is under the ignored `fuzz/artifacts`).
+- `ifd_of_kind` returning the last match instead of the first: red on the linear-scan agreement check.
+- `Ifd0` successor constant (Ifd0 to Ifd0): red on the "Ifd0 kind iff first IFD" assertion, written as `assert_eq!(kind == Ifd0, i == 0)` so it covers both directions (no one-directional check). The "top-level iff no parent" check is likewise an `assert_eq!` of two booleans.
+
+**Gates (all green on this worktree):** `cargo fmt --all -- --check` (via `just lint`), `just lint` (clippy five-lint set, -D warnings), `just lint-fuzz`, `rustfmt +1.90.0 --check` on `fuzz/fuzz_targets/tiff_ifd.rs`, `cargo test` on 1.90.0 and stable (53 lib tests, 4 + 4 integration), `cargo rustc --lib -- -F unsafe_code`, `just deny`, `just deny-fuzz`, `just validate`, `just decisions-audit`. `just cost-audit` not run by me (spec has no sessions yet; orchestrator). `[dependencies]` still empty; `scripts/` and irradiance untouched.
+
+**`just fuzz-smoke` (60 s, `tiff_ifd`, nightly, 25 seeds):** 833,475 executions in 61 s (about 13.7k exec/s), final `cov: 748 ft: 3287 corp: 480/270Kb`, no crash.
+
+**Seeds:** 5 new (`exif-gps-interop`, `gps-past-eof-exif-ok`, `exif-points-at-ifd0`, `pointer-bad-count`, `subifds-count-over-cap`); regenerating produced no change to the existing 20 (only 5 untracked files appeared).
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null. No token count is exposed to this sub-agent.
+- **Estimated USD:** null
+- **Duration (minutes):** roughly 35 (estimate)
+- **Source of the number:** none available; orchestrator transcribes the metered figure.
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
+- **New decisions emitted:** none.
 - **Deviations from spec:**
-  - [list]
+  - `follow` takes a `(depth, parent, kind)` tuple instead of three separate arguments, to stay under clippy's argument limit without an `allow`.
+  - `the_issue_list_never_exceeds_max_issues` also asserts the exact count `3 * MAX_IFDS` (Interop is ignored outside an Exif IFD, so the fourth malformed tag costs nothing; rule 3). Consequently this shape does not reach `MAX_ISSUES`; the bound holds by construction (DEC-005) and is not exercised at its limit.
+  - The fuzz layout test mirrors the harness, including a copy of `ALL_KINDS` and the kind checks.
 - **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - A test that approaches `MAX_ISSUES` itself would need the 512-IFD budget split across kinds (Exif IFDs with bad Interop plus the other tags). Low value, but a verifier may want it.
+  - Only the fuzz harness covers random shapes such as a `Sub` IFD chained under an Exif holder.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   Mostly nothing. Rule 2's "Interop is reached from inside the Exif IFD" together with the permitted-holders table took a moment to resolve into one four-row table walked in fixed order for every holder.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   The agent sandbox refuses a Bash call that combines a heredoc with other commands, which cost retries; a toolchain-brief note ("write scripts to the scratchpad, run them as separate calls") would help cold agents.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   Put the plant scripts in the repo (for example under the spec's directory) so the verifier can re-run all plants with one command; they live only in the scratchpad now.

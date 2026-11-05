@@ -1,7 +1,8 @@
 //! Baseline-TIFF tag numbers the walker and its tests use (TIFF 6.0 §8).
 //!
-//! No pointer tags (Exif/GPS/Interop) yet: they land with their consumer in
-//! SPEC-004. Copied from irradiance `src/ifd.rs:93-115`, DNG tags removed.
+//! The baseline tags are copied from irradiance `src/ifd.rs:93-115`, DNG tags
+//! removed. The three Exif pointer tags at the end are net-new (SPEC-004,
+//! DEC-005).
 
 /// TIFF 6.0: `NewSubfileType`.
 pub const NEW_SUBFILE_TYPE: u16 = 254;
@@ -29,3 +30,11 @@ pub const STRIP_BYTE_COUNTS: u16 = 279;
 pub const X_RESOLUTION: u16 = 282;
 /// TIFF/EP: `SubIFDs`, the offsets the walk recurses into.
 pub const SUB_IFDS: u16 = 330;
+/// Exif 2.32 (CIPA DC-008) section 4.6.3: `ExifIFDPointer`, the offset of the
+/// Exif IFD.
+pub const EXIF_IFD: u16 = 0x8769;
+/// Exif 2.32 section 4.6.3: `GPSInfoIFDPointer`, the offset of the GPS IFD.
+pub const GPS_INFO: u16 = 0x8825;
+/// Exif 2.32 section 4.6.3: `InteroperabilityIFDPointer`, the offset of the
+/// Interoperability IFD (found inside the Exif IFD).
+pub const INTEROP_IFD: u16 = 0xA005;

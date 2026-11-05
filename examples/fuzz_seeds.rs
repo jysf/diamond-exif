@@ -17,6 +17,9 @@ const LONG: u16 = 4;
 const RATIONAL: u16 = 5;
 const SRATIONAL: u16 = 10;
 const SUB_IFDS: u16 = 330;
+const EXIF_IFD: u16 = 0x8769;
+const GPS_INFO: u16 = 0x8825;
+const INTEROP_IFD: u16 = 0xA005;
 
 /// What goes in an entry's 4-byte value field.
 enum Val {
@@ -361,6 +364,77 @@ fn depth_limit_exact(w: &Writer) -> Vec<u8> {
     w.build(&ifds)
 }
 
+/// A valid file with all three pointer IFDs: IFD0 -> Exif -> Interop, and
+/// IFD0 -> GPS. Clean under the pointer-tag walk.
+fn exif_gps_interop(w: &Writer) -> Vec<u8> {
+    let ifds = [
+        small_ifd(
+            w,
+            Next::End,
+            vec![
+                entry(EXIF_IFD, LONG, 1, Val::Refs(vec![1])),
+                entry(GPS_INFO, LONG, 1, Val::Refs(vec![3])),
+            ],
+        ),
+        small_ifd(
+            w,
+            Next::End,
+            vec![entry(INTEROP_IFD, LONG, 1, Val::Refs(vec![2]))],
+        ),
+        small_ifd(w, Next::End, vec![]),
+        small_ifd(w, Next::End, vec![]),
+    ];
+    w.build(&ifds)
+}
+
+/// The GPS pointer leads far past the end; IFD0 and the Exif IFD stay
+/// readable and the walk records one issue.
+fn gps_past_eof_exif_ok(w: &Writer) -> Vec<u8> {
+    let ifds = [
+        small_ifd(
+            w,
+            Next::End,
+            vec![
+                entry(EXIF_IFD, LONG, 1, Val::Refs(vec![1])),
+                entry(GPS_INFO, LONG, 1, Val::Raw(0xFFFF_FF00)),
+            ],
+        ),
+        small_ifd(w, Next::End, vec![]),
+    ];
+    w.build(&ifds)
+}
+
+/// The Exif pointer leads back to IFD0: a cycle through a pointer tag.
+fn exif_points_at_ifd0(w: &Writer) -> Vec<u8> {
+    w.build(&[small_ifd(
+        w,
+        Next::End,
+        vec![entry(EXIF_IFD, LONG, 1, Val::Refs(vec![0]))],
+    )])
+}
+
+/// A pointer tag with count 2 (must be exactly 1) and one with count 0.
+fn pointer_bad_count(w: &Writer) -> Vec<u8> {
+    w.build(&[small_ifd(
+        w,
+        Next::End,
+        vec![
+            entry(EXIF_IFD, LONG, 2, Val::Raw(0xFFFF_FF00)),
+            entry(GPS_INFO, LONG, 0, Val::Raw(0)),
+        ],
+    )])
+}
+
+/// `SubIFDs` declares 100,000 offsets with no payload behind them: rejected by
+/// the count cap before any offset is decoded.
+fn subifds_count_over_cap(w: &Writer) -> Vec<u8> {
+    w.build(&[small_ifd(
+        w,
+        Next::End,
+        vec![entry(SUB_IFDS, LONG, 100_000, Val::Raw(0xFFFF_FF00))],
+    )])
+}
+
 fn main() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/tiff_ifd");
     fs::create_dir_all(&dir).expect("create seeds dir");
@@ -388,6 +462,11 @@ fn main() {
         ("corrupt-subifd", corrupt_subifd(&le)),
         ("malformed-subifds-tag", malformed_subifds_tag(&le)),
         ("depth-limit-exact", depth_limit_exact(&le)),
+        ("exif-gps-interop", exif_gps_interop(&le)),
+        ("gps-past-eof-exif-ok", gps_past_eof_exif_ok(&le)),
+        ("exif-points-at-ifd0", exif_points_at_ifd0(&le)),
+        ("pointer-bad-count", pointer_bad_count(&le)),
+        ("subifds-count-over-cap", subifds_count_over_cap(&le)),
     ];
     for (name, bytes) in &seeds {
         fs::write(dir.join(name), bytes).expect("write seed");
