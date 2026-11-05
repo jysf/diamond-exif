@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: 30
+  tokens_total: 217899             # orchestrator-recorded from the metered sub-agent result (subagent_tokens)
+  estimated_usd: 1.44
+  duration_minutes: 12
   branch: worktree-agent-a7515e2c3036deba3
   pr: null
   completed_at: 2026-11-05         # YYYY-MM-DD
-  notes: "verify verdict APPROVED at 8acb291 (build 390d2b8); the sub-agent cannot see its own token meter, the orchestrator transcribes the metered figure"
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "verdict APPROVED at 8acb291; tokens transcribed by the orchestrator from the sub-agent metered result"
+  synced_at: 2026-11-05
 ---
 
 # HANDOFF-016: Verify the mutation helpers and mutated-copy red-proofs
@@ -177,10 +177,10 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Cost self-report
 
-- **Tokens (total):** null. The verifier sub-agent cannot see its own token meter; the orchestrator transcribes the metered figure.
-- **Estimated USD:** null (same reason)
-- **Duration (minutes):** ~30
-- **Source of the number:** none available to the sub-agent; harness report via the orchestrator
+- **Tokens (total):** 217,899 (recorded by the orchestrator from the sub-agent metered result).
+- **Estimated USD:** 1.44
+- **Duration (minutes):** ~12 (metered wall-clock)
+- **Source of the number:** harness report (subagent_tokens)
 
 ### Drift and new artifacts
 

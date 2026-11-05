@@ -6,14 +6,14 @@
 task:
   id: SPEC-008
   type: story                      # epic | story | task | bug | chore
-  cycle: verify  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
-  complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
+  complexity_actual: L             # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: approved  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
@@ -72,10 +72,19 @@ cost:
       duration_minutes: 16
       recorded_at: 2026-11-05
       notes: "tokens transcribed by the orchestrator from the sub-agent metered result"
+    - cycle: verify
+      agent: claude-opus-5-5
+      interface: other
+      tokens_total: 217899
+      estimated_usd: 1.44
+      duration_minutes: 12
+      recorded_at: 2026-11-05
+      notes: "verdict APPROVED at 8acb291; tokens transcribed by the orchestrator from the sub-agent metered result"
   totals:
-    tokens_total: 261095
-    estimated_usd: 1.72
-    session_count: 1
+    tokens_total: 478994
+    estimated_usd: 3.16
+    session_count: 2
+shipped_at: 2026-11-05
 ---
 
 # SPEC-008: Mutation helpers and mutated-copy red-proof apparatus
@@ -195,34 +204,16 @@ Names are normative.
 
 ## Reflection
 
-*Appended during **ship**. Three questions, short answers.*
-
 1. **What would I do differently next time?**
-   — <answer>
+   — Specify the placement of a byte-order mutant, not just its effect. The spec put mutant 1 in `ByteOrder::u16`'s big-endian arm, but that arm also reads the header version word, so the mutated file fails at the header (`UnsupportedTiffVersion`) and can never name a selector; the builder correctly moved it to the SHORT use site in `Container::uints`. Also say explicitly that the probe's own build and run need a wall-clock limit: I limited ExifTool spawns but not the probe, so a looping mutant can hang the suite (verify finding F1).
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — No decision change. The "test the testers" instruction in the verify handoff paid off: the verifier weakened a control, changed expected selector sets, broke a needle, and wrote its own mutants, and all the apparatus checks held. It also found a real library-test gap the ExifTool comparison cannot see: an off-by-one `SubIFDs` cap (`n > MAX_IFDS + 1`) survived the whole suite. I closed that at ship with `a_subifds_count_one_over_the_cap_is_rejected_before_decoding` and mutation-checked it (the mutant now turns it red).
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — Small, none urgent: run the probe's cargo build and binary through the same poll-and-kill helper as ExifTool (F1); the marker-leak test scans only `src`, `examples`, `fuzz` and `scripts`, so it misses `tests/support/oracle.rs` which is copied into every probe crate (F4); an SBYTE oracle selector does not exist, so SBYTE-as-unsigned is caught only by a library unit test (F3). A mutant that breaks parsing reports an apparatus error rather than naming selectors (F5). Fixed at ship: an over-generalised comment about "most tags" in `oracle_tiff.rs` (F2; 3 of 17 candidate tags did not follow the declared type).
 
-4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
-   the defect-escape distribution is greppable across specs:
-   `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
-   `none` (clean first try).
-   — <one word>
-   *(Runtime/operational defects — the escape-prone class — only exist once the
-   artifact meets its real host. `escaped` here is a signal to strengthen the
-   §12 behavioral pre-flight for that surface.)*
+4. **Where was the worst defect caught?** — verify
+   *(the missing 513-count boundary test for the SubIFDs cap, a SPEC-004 gap that surfaced only because the verifier wrote its own mutants.)*
 
-5. **What can a user do now that they couldn't before?** — one sentence,
-   before → after; quote the confirming number if one exists, name the outcome
-   if not. Write `none` if this spec has no user-visible outcome — that is a
-   real, greppable result, not a blank. This is the line a downstream work-log's
-   `impact` field is transcribed from, and both halves are already written above
-   (## Context is the before, ## Goal is the after): confirm the prediction,
-   don't reconstruct it from memory.
-   — <answer | none>
+5. **What can a user do now that they couldn't before?** — Re-run `just mutation-oracle` in about three seconds and watch six deliberately broken copies of the parser (wrong byte order, dropped ASCII byte, swapped rational, unfollowed GPS pointer, lost sign, unsigned SSHORT) each get caught by the ExifTool comparison after their controls pass, so "the oracle would notice a real bug" is something that can be demonstrated rather than believed.

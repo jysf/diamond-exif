@@ -43,8 +43,8 @@ pub const T_DATE_TIME_ORIGINAL: u16 = 0x9003;
 pub const T_EXPOSURE_BIAS: u16 = 0x9204;
 // Tags read through the signed and float decoders (SPEC-008). The type in the
 // file is the point: ExifTool 13.55 was measured to print the value in the
-// DECLARED type for these (see the SPEC-008 handback), which most tags do not
-// expose.
+// DECLARED type for these (see the SPEC-008 handback, which lists the 17
+// candidate tags tried; 3 of them did not follow the declared type).
 pub const T_EXPOSURE_TIME: u16 = 0x829A;
 pub const T_EXPOSURE_PROGRAM: u16 = 0x8822;
 pub const T_FOCAL_LENGTH: u16 = 0x920A;
