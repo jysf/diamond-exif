@@ -165,7 +165,11 @@ just deny         # cargo deny check licenses (LIBRARY graph only)
 just deny-fuzz    # same gate over the fuzz/ graph (DEC-004)
 just lint-fuzz    # clippy -D warnings over the fuzz/ graph (DEC-004)
 just fuzz-smoke   # 60 s tiff_ifd run: needs nightly + ~/.cargo/bin first on PATH
+just oracle-record  # re-record ExifTool's output into tests/oracle-fixtures/exiftool/ (needs exiftool; never in CI)
+cargo test --test metadata_oracle   # ExifTool read-parity oracle (live + replay)
 ```
+
+**The oracle (SPEC-005).** `tests/metadata_oracle.rs` runs the installed ExifTool (`-T -n -s3`, run only, never read or linked) over hand-built fixtures and the `tiff_ifd` seeds. The replay tests need no tool; the live tests print `SKIP <test> -- exiftool not on PATH` and pass when it is missing. Set `DIAMOND_EXIF_REQUIRE_ORACLE=1` to make a missing ExifTool a failure (this is how CI must keep a skip from being a silent pass). Do not run ExifTool by hand over `fuzz/seeds/tiff_ifd/two-hop-cycle`: it grew to about 9 GB in 5 s before the OS killed it (question `exiftool-two-hop-cycle-does-not-return`); the recorder and the live sweep skip it on purpose.
 
 **Two invocations, both required (DEC-004).** `fuzz/` is a separate cargo graph, and `cargo deny` / `cargo clippy` evaluate one manifest per run: `just deny` and `just lint` never see `fuzz/`, so they need `just deny-fuzz` and `just lint-fuzz` beside them. `cargo fuzz` shells out to a bare `cargo`, which on this host is Homebrew's stable and rejects the sanitizer flags: run it as `PATH="$HOME/.cargo/bin:$PATH" ~/.cargo/bin/cargo +nightly fuzz ...` (`just fuzz-smoke` does).
 

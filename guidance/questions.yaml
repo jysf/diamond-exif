@@ -87,12 +87,61 @@ questions:
       Awaiting the plan-review session's verdict.
 
   - id: rust-ci-and-fixtures
-    question: "Who owns Rust CI jobs (ExifTool pinned version, cargo-deny, -sys gate, wasm32 check) and licence-clean tier-A fixtures?"
+    question: "Who owns Rust CI jobs (ExifTool pinned version, cargo-deny, -sys gate, wasm32 check, DIAMOND_EXIF_REQUIRE_ORACLE=1)?"
     priority: high
     status: open
     raised_by: claude
     raised_at: 2026-11-04
     assigned_to: null
     notes: |
+      Fixtures half CLOSED for M1a (SPEC-005): tier A only, hand-built byte by
+      byte from the TIFF 6.0 / Exif 2.32 layout (tests/support/oracle_tiff.rs),
+      no camera file committed, so no licence question. CI ownership half is
+      still open: pin ExifTool in CI and set DIAMOND_EXIF_REQUIRE_ORACLE=1 so a
+      missing tool fails instead of skipping.
       Repo setup, not specs. lint-red-proof and lint-fuzz-red-proof also still
       need to be brought over from irradiance once the crate exists.
+
+  - id: exiftool-two-hop-cycle-does-not-return
+    question: "ExifTool 13.55 does not return on fuzz/seeds/tiff_ifd/two-hop-cycle while exif-core reads it: how should the oracle treat inputs the tool cannot survive?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-05
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-005). Command: exiftool -T -n -s3 -IFD0:ImageWidth
+      -IFD0:ImageHeight -IFD0:Orientation fuzz/seeds/tiff_ifd/two-hop-cycle
+      (ExifTool 13.55, Homebrew, macOS). Measured stdout: empty. The process
+      grew to about 8.9 GB resident within 5 s, was killed by SIGKILL (exit 137)
+      after 53.4 s, and wrote "Deep recursion on subroutine
+      Image::ExifTool::ProcessDirectory" and "... Exif::ProcessExif" to stderr.
+      exif-core: Container::parse is Ok, records one CyclicIfd issue at offset
+      8, and reads IFD0:ImageWidth = 1. The seed is IFD0 (offset 8) -> SubIFDs
+      -> a Sub IFD (offset 38) -> SubIFDs -> offset 8 again.
+      Right side per the format: exif-core. TIFF 6.0 section 2 makes an IFD
+      chain a list ending at a zero offset; a pointer back to an earlier IFD is
+      malformed, and a reader has to survive it.
+      This also corrects the SPEC-005 context fact "exit status is 0 on every
+      one including garbage": not for this seed (137).
+      Handling now: the recorder and the live sweep do NOT run ExifTool on this
+      seed (a guard against a 9 GB runaway); the committed record carries an
+      "# outcome:" line, and the replay/live tests check that our side still
+      behaves as stated. Open: whether the oracle should run tool calls under a
+      memory/time limit instead, and whether to report the behaviour upstream.
+
+  - id: exiftool-gps-selector-signed-composite
+    question: "Which ExifTool selector is the signed GPS coordinate for the parity oracle?"
+    priority: low
+    status: answered
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-05
+    assigned_to: null
+    notes: |
+      Answered by measurement (SPEC-005), no DEC. SPEC-005 named GPS:GPSLatitude
+      as the example selector, with the sign following the ref tag. ExifTool 13.55
+      on tests fixture exif-gps-sw-be: -n -GPS:GPSLatitude prints 37.4252083333333
+      (unsigned; the ref is the separate GPS:GPSLatitudeRef = S) while
+      -n -Composite:GPSLatitude prints -37.4252083333333. The oracle therefore
+      uses Composite:GPSLatitude / Composite:GPSLongitude. Not a library
+      divergence: both sides agree once the signed selector is used.
