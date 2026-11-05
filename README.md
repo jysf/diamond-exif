@@ -4,11 +4,11 @@ Panic-free, pure-Rust, zero-copy EXIF/XMP/IPTC/ICC metadata reader, writer and s
 
 | Piece | Status | License |
 |---|---|---|
-| `exif-core` | planned (M1a) | MIT/Apache-2.0 |
+| `exif-core` | scaffolded (empty, gated; M1a) | MIT/Apache-2.0 |
 | `exif-audit` CLI (read-only scanner) | planned, first deliverable | free |
 | `exif-pro` (compliance tier) | scaffold only | paid |
 
-Status: pre-code. See `CLAUDE.md` and `AGENTS.md`. First decision: DEC-001 (tolerant-walk policy).
+Status: crate scaffold only (SPEC-001); no parsing code yet. See `CLAUDE.md` and `AGENTS.md`. First decision: DEC-001 (tolerant-walk policy).
 
 *This file replaces the template README when you run `just init` — rename or customize as needed.*
 
@@ -78,4 +78,4 @@ Build and test commands are in `AGENTS.md` §6 (wrapped by `app.just`). The crat
 
 ## License
 
-`exif-core`: MIT OR Apache-2.0 (root `LICENSE` is currently the template's Apache-2.0; add `LICENSE-MIT` with the crate). `exif-pro`: proprietary.
+`exif-core`: MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`). `exif-pro`: proprietary.
