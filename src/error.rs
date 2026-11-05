@@ -206,12 +206,10 @@ impl fmt::Display for Error {
                 )
             }
             Error::NotJpeg { mark } => {
-                let (a, b) = (mark.first().copied(), mark.last().copied());
+                let [a, b] = *mark;
                 write!(
                     f,
-                    "not a JPEG: first bytes are {:#04x}{:02x}, expected 0xffd8",
-                    a.unwrap_or(0),
-                    b.unwrap_or(0)
+                    "not a JPEG: first bytes are {a:#04x}{b:02x}, expected 0xffd8"
                 )
             }
             Error::StrayBytes { at, len } => {

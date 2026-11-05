@@ -64,7 +64,7 @@ const SEEDS: [&str; 29] = [
 ];
 
 /// JPEG seed names are fixed by `examples/fuzz_seeds.rs`.
-const JPEG_SEEDS: [&str; 19] = [
+const JPEG_SEEDS: [&str; 21] = [
     "minimal",
     "soi-only",
     "fill-bytes",
@@ -84,6 +84,8 @@ const JPEG_SEEDS: [&str; 19] = [
     "app-after-scan",
     "many-segments",
     "many-ff00",
+    "icc-iptc-jumbf",
+    "signatures-under-wrong-marker",
 ];
 
 #[test]

@@ -1043,6 +1043,133 @@ mod tests {
         }
     }
 
+    // ── follow-up round: pins found by the SPEC-009 verify ──────────────────
+
+    #[test]
+    fn stray_runs_do_not_merge_across_an_ff00_pair() {
+        // 01 | FF 00 | 02: a run, the FF 00 pair, a run, as three issues.
+        let d = cat(&[&soi(), &[1, 0xFF, 0x00, 2], &com(), &sos(), &eoi()]);
+        let j = Jpeg::parse(&d).unwrap();
+        assert_eq!(
+            errors(&j),
+            [
+                Error::StrayBytes { at: 2, len: 1 },
+                Error::StrayBytes { at: 3, len: 2 },
+                Error::StrayBytes { at: 5, len: 1 },
+            ]
+        );
+        assert_eq!(j.segments().len(), 2);
+    }
+
+    #[test]
+    fn an_soi_inside_entropy_data_ends_the_scan_as_a_stray_marker() {
+        // Rule 2.8: only FF 00, FF D0..D7 and FF FF are data inside a scan. FF D8
+        // is a real marker there, so the scan ends and rule 2.6 reports it as
+        // stray; the bytes after it are a separate stray run. (The verify note
+        // suggested "FF D8 is data"; the rules and the code say otherwise, and
+        // this pins the rules.)
+        let d = cat(&[&soi(), &sos(), &[1], &[0xFF, 0xD8], &[2], &eoi()]);
+        let j = Jpeg::parse(&d).unwrap();
+        assert_eq!(
+            errors(&j),
+            [
+                Error::StrayBytes { at: 13, len: 2 },
+                Error::StrayBytes { at: 15, len: 1 }
+            ]
+        );
+        assert_eq!(j.eoi_offset(), Some(16));
+        // The scan region still runs from the SOS to the end of EOI.
+        assert_eq!(j.scan_region().unwrap(), &d[2..]);
+    }
+
+    #[test]
+    fn no_segment_is_recorded_after_an_issue_cap_halt() {
+        // 1025 stray pairs: the 1025th issue is TooManyIssues and halts. The
+        // COM after them must not become a segment.
+        let mut d = soi();
+        for _ in 0..=MAX_JPEG_ISSUES {
+            d.extend_from_slice(&[0xFF, 0x00]);
+        }
+        d.extend_from_slice(&com());
+        d.extend_from_slice(&sos());
+        let j = Jpeg::parse(&d).unwrap();
+        assert_eq!(j.issues().len(), MAX_JPEG_ISSUES + 1);
+        assert!(j.segments().is_empty());
+        // And a segment before the flood stays, with none added after it.
+        let mut d2 = cat(&[&soi(), &com()]);
+        for _ in 0..=MAX_JPEG_ISSUES {
+            d2.extend_from_slice(&[0xFF, 0x00]);
+        }
+        d2.extend_from_slice(&com());
+        let j2 = Jpeg::parse(&d2).unwrap();
+        assert_eq!(j2.segments().len(), 1);
+    }
+
+    #[test]
+    fn a_fill_run_reaching_the_end_is_truncated_at_the_last_ff() {
+        // Rule 2.3: `p` is the marker's own FF, i.e. the last FF of the fill,
+        // so the truncation is reported there (offset 3), not at the first FF.
+        let d = [0xFF, 0xD8, 0xFF, 0xFF];
+        let j = Jpeg::parse(&d).unwrap();
+        assert_eq!(
+            errors(&j),
+            [
+                Error::Truncated { at: 3, len: 2 },
+                Error::MissingSos,
+                Error::MissingEoi
+            ]
+        );
+        let d = [0xFF, 0xD8, 0xFF, 0xFF, 0xFF, 0xFF];
+        assert_eq!(
+            errors(&Jpeg::parse(&d).unwrap())[0],
+            Error::Truncated { at: 5, len: 2 }
+        );
+    }
+
+    #[test]
+    fn a_truncated_segment_is_decided_before_the_segment_cap() {
+        // The code checks length-past-EOF first and the cap only when the
+        // segment would actually be recorded. So a 4097th segment that is also
+        // truncated reports Truncated (and the walk ends normally, with the
+        // end-of-walk issues), not TooManySegments.
+        let mut d = soi();
+        for _ in 0..MAX_JPEG_SEGMENTS {
+            d.extend_from_slice(&seg(0xFE, b""));
+        }
+        let cut_at = d.len();
+        d.extend_from_slice(&[0xFF, 0xE1, 0x01, 0x00, 0]);
+        let j = Jpeg::parse(&d).unwrap();
+        assert_eq!(j.segments().len(), MAX_JPEG_SEGMENTS);
+        assert_eq!(
+            errors(&j),
+            [
+                Error::Truncated {
+                    at: cut_at,
+                    len: 258
+                },
+                Error::MissingSos,
+                Error::MissingEoi
+            ]
+        );
+    }
+
+    #[test]
+    fn sof_dht_and_other_markers_classify_exactly() {
+        let want = [
+            (0xC0, SegmentKind::Sof(0xC0)),
+            (0xC2, SegmentKind::Sof(0xC2)),
+            (0xCF, SegmentKind::Sof(0xCF)),
+            (0xC4, SegmentKind::Dht),
+            (0xC8, SegmentKind::Other(0xC8)),
+            (0xCC, SegmentKind::Other(0xCC)),
+        ];
+        for (m, kind) in want {
+            let d = cat(&[&soi(), &seg(m, &[0; 2]), &sos(), &eoi()]);
+            let j = Jpeg::parse(&d).unwrap();
+            assert_eq!(j.segments()[0].kind(), kind, "marker {m:#04x}");
+        }
+    }
+
     // ── API and errors ───────────────────────────────────────────────────────
 
     #[test]

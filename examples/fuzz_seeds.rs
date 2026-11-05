@@ -1,6 +1,8 @@
-//! Deterministic writer for the `tiff_ifd` fuzz seeds (SPEC-006).
+//! Deterministic writer for the fuzz seeds (SPEC-006 `tiff_ifd`, SPEC-009
+//! `jpeg_segments`).
 //!
-//! `cargo run --example fuzz_seeds` rewrites `fuzz/seeds/tiff_ifd/`. Output is a
+//! `cargo run --example fuzz_seeds` rewrites `fuzz/seeds/tiff_ifd/` and
+//! `fuzz/seeds/jpeg_segments/`. Output is a
 //! pure function of this file (no clock, no randomness, no environment), so two
 //! runs produce byte-identical seeds. The seeds are hand-built, a few hundred
 //! bytes each, and are this repository's own work: the shapes follow TIFF 6.0
@@ -723,6 +725,34 @@ fn jpeg_seeds() -> Vec<(&'static str, Vec<u8>)> {
         ),
         ("many-segments", many_segments),
         ("many-ff00", many_ff00),
+        (
+            "icc-iptc-jumbf",
+            jcat(&[
+                &JSOI,
+                &jseg(0xE2, b"ICC_PROFILE\0\x01\x01profile"),
+                &jseg(0xED, b"Photoshop 3.0\08BIM"),
+                &jseg(0xEB, b"JP\0\0jumb"),
+                &jsos(),
+                &JEOI,
+            ]),
+        ),
+        (
+            "signatures-under-wrong-marker",
+            jcat(&[
+                &JSOI,
+                &jseg(0xE2, b"Exif\0\0II"),
+                &jseg(0xE1, b"ICC_PROFILE\0\x01\x01"),
+                &jseg(0xEC, b"Photoshop 3.0\08BIM"),
+                &jseg(0xEA, b"JP\0\0jumb"),
+                &jseg(0xEB, b"XX\0\0nojp"),
+                &jseg(0xE1, b"JFIF\0xx"),
+                &jseg(0xE2, b"http://ns.adobe.com/xap/1.0/\0<x/>"),
+                &jseg(0xE0, b"Exif\0\0II"),
+                &jseg(0xED, b"Photoshop 2.5\0"),
+                &jsos(),
+                &JEOI,
+            ]),
+        ),
     ]
 }
 

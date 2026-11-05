@@ -173,3 +173,21 @@ p1 trailer starts at `eoi + 1` (red: `trailer`); p2 `MissingEoi` only reported w
 
 3. **If you did this task again, what would you do differently?**
    — Write the cap-boundary cases (1022/1023/1024 ordinary issues) as unit tests before the harness, and write the fuzz invariant from the rules rather than from the prose summary; the first 60 s smoke would then have been clean.
+
+### Follow-up round (verify gaps from HANDOFF-018; tests, seeds and docs only, no change to `src/jpeg` behaviour)
+
+| Mutant | Pinned by | Result |
+|---|---|---|
+| M8 stray run merges across `FF 00` | `stray_runs_do_not_merge_across_an_ff00_pair` | red |
+| M21 `FF D8` in a scan treated as data | `an_soi_inside_entropy_data_ends_the_scan_as_a_stray_marker` | red |
+| M24 walk ignores `halted` (segments after an issue-cap halt) | `no_segment_is_recorded_after_an_issue_cap_halt` | red |
+| M18 fill run to EOF truncated at first `FF` | `a_fill_run_reaching_the_end_is_truncated_at_the_last_ff` | red |
+| M28 segment cap checked before truncation | `a_truncated_segment_is_decided_before_the_segment_cap` | red |
+| F3 `0xCC` as `Sof`; `0xC4` not `Dht`; `0xCF` not `Sof` | `sof_dht_and_other_markers_classify_exactly` | red (all three) |
+| M14 Jumbf marker guard relaxed | seed `signatures-under-wrong-marker` via `every_jpeg_seed_walks_without_panicking` | red (`kind`) |
+| M15 Jumbf signature guard removed | same seed (APP11 `XX`) | red |
+| M16 Iptc marker guard relaxed | same seed (APP12 `Photoshop 3.0`) | red |
+| M16b Iptc signature guard removed | same seed (APP13 `Photoshop 2.5`) | red |
+| ICC marker guard relaxed | same seed (APP1 `ICC_PROFILE`) | red |
+
+Notes: M21 contradicts the coordinator's brief ("FF D8 inside entropy data is data"). Rule 2.8 and the code treat `FF D8` as a real marker that ends the scan (then stray, rule 2.6); the test pins the rules and the code, not the brief. M28 pins the actual order: truncation first, cap only for a segment that would be recorded. Two new seeds (`icc-iptc-jumbf`, `signatures-under-wrong-marker`; 21 JPEG seeds); the other 19 JPEG and 29 TIFF seeds are byte-identical. F4 (seed-writer doc) and F5 (`NotJpeg` Display via `let [a, b] = *mark`) done.
