@@ -72,10 +72,18 @@ cost:
       duration_minutes: 17
       recorded_at: 2026-11-05
       notes: "tokens transcribed by the orchestrator from the sub-agent metered result"
+    - cycle: verify
+      agent: claude-opus-5-5
+      interface: other
+      tokens_total: 208586
+      estimated_usd: 1.38
+      duration_minutes: 10
+      recorded_at: 2026-11-05
+      notes: "verdict PUNCH LIST at 7ce26d2; tokens transcribed by the orchestrator from the sub-agent metered result"
   totals:
-    tokens_total: 215404
-    estimated_usd: 1.42
-    session_count: 1
+    tokens_total: 423990
+    estimated_usd: 2.80
+    session_count: 2
 ---
 
 # SPEC-005: Oracle discipline — ExifTool read parity
