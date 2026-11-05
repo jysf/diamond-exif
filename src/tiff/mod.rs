@@ -2065,6 +2065,27 @@ mod tests {
     }
 
     #[test]
+    fn a_subifds_count_one_over_the_cap_is_rejected_before_decoding() {
+        // MAX_IFDS + 1 offsets with the payload absent: the cap is exact, so
+        // this must be `TagTooLarge` and not a `Truncated` from decoding. An
+        // off-by-one cap (`n > MAX_IFDS + 1`) would let it through to decode.
+        let n = u32::try_from(MAX_IFDS).unwrap() + 1;
+        let data = Build::new(false, 8)
+            .ifd(8, &[(tags::SUB_IFDS, TYPE_LONG, n, 0xFFFF_FF00)], 0)
+            .done();
+        let c = Container::parse(&data).unwrap();
+        assert_eq!(c.issues().len(), 1);
+        assert_eq!(
+            c.issues()[0].error(),
+            &Error::TagTooLarge {
+                tag: tags::SUB_IFDS,
+                count: n,
+                limit: MAX_IFDS
+            }
+        );
+    }
+
+    #[test]
     fn a_subifds_count_at_the_cap_is_accepted() {
         // 512 offsets, all pointing at IFD0. IFD0 is attempt 1; offsets
         // 1..=511 are attempts 2..=512 (cyclic, one issue each); offset 512 is

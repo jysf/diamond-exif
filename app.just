@@ -103,3 +103,13 @@ fuzz-smoke:
 # ExifTool, and review `git diff`. Needs exiftool on PATH. Never run in CI.
 oracle-record:
     cargo run --example oracle_record
+
+# The red-proofs (SPEC-008): faults injected into a throw-away COPY of src/ and
+# corruptions of fixture bytes must turn the comparison with ExifTool's committed
+# answers red. Each library-fault test stages, builds and runs small crates
+# (control first, then the mutant), so it takes longer than `just test`. Needs no
+# ExifTool: only the live variant of the GPS-corruption test uses it and it skips
+# loudly without it. The probe builds with the cargo that runs the tests (the
+# `CARGO` variable), in a temp directory, offline.
+mutation-oracle:
+    cargo test --test mutation_oracle

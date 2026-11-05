@@ -132,6 +132,13 @@ questions:
       "# outcome:" line, and the replay/live tests check that our side still
       behaves as stated. Open: whether the oracle should run tool calls under a
       memory/time limit instead, and whether to report the behaviour upstream.
+      SPEC-008 update: every ExifTool spawn now has a wall-clock limit (default
+      5 s, DIAMOND_EXIF_TOOL_TIMEOUT_SECS overrides; run_tool_with_limit kills
+      and reaps, ToolError::Timeout). That bounds time and memory only
+      approximately (about 9 GB were measured at 5 s), so it is the second line
+      of defence; the harness still never runs the tool on this seed. A memory
+      limit is not done (std cannot set one portably). Still open: reporting the
+      behaviour upstream.
 
   - id: exiftool-gps-selector-signed-composite
     question: "Which ExifTool selector is the signed GPS coordinate for the parity oracle?"
