@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # harness exposes no token count; orchestrator transcribes the metered figure
-  estimated_usd: null
-  duration_minutes: 75
+  tokens_total: 215404             # orchestrator-recorded from the metered sub-agent result (subagent_tokens)
+  estimated_usd: 1.42
+  duration_minutes: 17
   branch: worktree-agent-ae70592c6152a9b0f
   pr: null
   completed_at: 2026-11-05
-  notes: "No meter available to the implementer (tokens_total null on purpose). Committed on the worktree branch only; no push, no PR."
-  synced_at: null                  # stamped by `just handback-sync` - do not edit
+  notes: "tokens transcribed by the orchestrator from the sub-agent metered result"
+  synced_at: 2026-11-05
 ---
 
 # HANDOFF-013: ExifTool read-parity oracle
@@ -142,10 +142,10 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Cost self-report
 
-- **Tokens (total):** null. No token count is exposed to this harness; the orchestrator transcribes the metered figure.
-- **Estimated USD:** null
-- **Duration (minutes):** about 75 (estimate)
-- **Source of the number:** none available
+- **Tokens (total):** 215,404 (recorded by the orchestrator from the sub-agent metered result).
+- **Estimated USD:** 1.42
+- **Duration (minutes):** ~17 (metered wall-clock)
+- **Source of the number:** harness report (subagent_tokens)
 
 ### Drift and new artifacts
 
