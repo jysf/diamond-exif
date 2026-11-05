@@ -21,7 +21,10 @@ supersedes: null
 superseded_by: null
 status: accepted
 deciders: [jysf, claude]
-affected_scope: ["src/tiff/**", "src/error.rs", "tests/**"]
+affected_scope:
+  - "src/tiff/**"
+  - "src/error.rs"
+  - "tests/**"
 
 tags:
   - parser

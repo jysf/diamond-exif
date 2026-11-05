@@ -14,7 +14,8 @@ use crate::error::Error;
 pub enum Link {
     /// The "next IFD" word at the end of an IFD (the IFD0 chain: IFD1, ...).
     Next,
-    /// A pointer tag; today only `SubIFDs` (330). SPEC-004 adds Exif/GPS/Interop.
+    /// A pointer tag: `SubIFDs` (330), or the Exif (0x8769), GPS (0x8825) or
+    /// Interop (0xA005) pointer (DEC-005).
     Tag(u16),
 }
 

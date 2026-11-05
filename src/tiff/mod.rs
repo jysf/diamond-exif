@@ -6,8 +6,14 @@
 //!
 //! Tolerant policy (DEC-001): only a bad header or an unreadable IFD0 makes
 //! [`Container::parse`] return `Err`. Any other structurally bad IFD is omitted
-//! and reported as a [`ParseIssue`] on the container, so one corrupt sub-IFD
-//! cannot discard a readable IFD0. [`Container::parse_strict`] turns any issue
+//! and reported as a [`ParseIssue`] on the container, so one corrupt GPS or
+//! sub-IFD cannot discard a readable IFD0.
+//!
+//! Pointer tags (DEC-005): the walk follows `SubIFDs` (330), the Exif IFD
+//! (0x8769), the GPS IFD (0x8825) and, from inside the Exif IFD only, the
+//! Interop IFD (0xA005). Every [`Ifd`] reports how it was reached as an
+//! [`IfdKind`]. The next-word of Exif, GPS and Interop IFDs is recorded but
+//! never followed. [`Container::parse_strict`] turns any issue
 //! back into `Err` for callers that want the old all-or-nothing behaviour.
 //!
 //! # Provenance
@@ -34,14 +40,16 @@
 //!
 //! - **Cycle guard.** Every IFD offset reached is recorded; reaching one twice
 //!   is an [`Error::CyclicIfd`] issue, not a second visit.
-//! - **Depth guard.** `SubIFD` recursion stops at [`MAX_IFD_DEPTH`] with
+//! - **Depth guard.** Pointer-tag recursion stops at [`MAX_IFD_DEPTH`] with
 //!   [`Error::IfdDepthExceeded`]. Native stack depth is bounded by that
 //!   constant, which is why the recursion below is safe to write as recursion.
 //! - **Count guard.** [`MAX_IFDS`] caps the total number of IFDs walked, so an
 //!   acyclic-but-enormous chain cannot burn unbounded time, and
 //!   [`MAX_TAG_VALUES`] caps how many values one entry can be asked to
 //!   materialise, so a tag declaring 4 billion `LONG`s cannot allocate a Vec
-//!   the size of the machine.
+//!   the size of the machine. A `SubIFDs` entry declaring more than
+//!   [`MAX_IFDS`] offsets is rejected before any offset is decoded, and
+//!   [`MAX_ISSUES`] bounds the issue list.
 
 pub mod issue;
 pub mod tags;
@@ -57,7 +65,8 @@ use crate::reader::{offset_to_usize, read_u16, read_u32, ByteOrder};
 // Limits
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Maximum `SubIFD` nesting depth. IFD0 is depth 0.
+/// Maximum pointer-tag nesting depth (`SubIFDs`, Exif, GPS, Interop). IFD0 is
+/// depth 0.
 ///
 /// Real TIFFs nest one level (`IFD0` → `SubIFD`); TIFF/EP and Exif chains add
 /// a second. Exif → Interop → MakerNote is deeper than that, but still three
@@ -71,6 +80,13 @@ pub const MAX_IFD_DEPTH: u32 = 8;
 /// terminating takes on a file with a very long acyclic chain. The cycle
 /// guard's `visited` list is searched linearly, which is fine at this size.
 pub const MAX_IFDS: usize = 512;
+
+/// Guaranteed upper bound on `Container::issues().len()` (DEC-005).
+///
+/// At most one failed attempt per budgeted visit, plus one `TooManyIfds`
+/// (together `MAX_IFDS + 1`), plus at most four pointer-tag issues
+/// (`SubIFDs`, Exif, GPS, Interop) per recorded IFD (`4 * MAX_IFDS`).
+pub const MAX_ISSUES: usize = 5 * MAX_IFDS + 1;
 
 /// Maximum number of values one entry may be asked to materialise.
 ///
@@ -189,6 +205,26 @@ impl Entry {
     }
 }
 
+/// How an IFD was reached (DEC-005).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum IfdKind {
+    /// The first IFD, named by the header.
+    Ifd0,
+    /// The IFD after IFD0 in the top-level chain (conventionally the thumbnail).
+    Ifd1,
+    /// A later IFD in the top-level chain.
+    Chain,
+    /// Reached through a `SubIFDs` tag, or chained after one that was.
+    Sub,
+    /// The Exif IFD (tag 0x8769).
+    Exif,
+    /// The GPS IFD (tag 0x8825).
+    Gps,
+    /// The Interoperability IFD (tag 0xA005), reached from an Exif IFD.
+    Interop,
+}
+
 /// One Image File Directory: its entries, where it was found, and how it was
 /// reached.
 #[derive(Debug, Clone)]
@@ -196,6 +232,7 @@ pub struct Ifd {
     offset: u32,
     depth: u32,
     parent: Option<usize>,
+    kind: IfdKind,
     next: u32,
     entries: Vec<Entry>,
 }
@@ -206,14 +243,22 @@ impl Ifd {
         self.offset
     }
 
-    /// `SubIFD` nesting depth; IFD0 and its chain are depth 0.
+    /// Pointer-tag nesting depth (`SubIFDs`, Exif, GPS, Interop); IFD0 and its
+    /// chain are depth 0.
     pub fn depth(&self) -> u32 {
         self.depth
     }
 
-    /// Index of the IFD whose `SubIFDs` tag pointed here, if any.
+    /// Index of the IFD whose pointer tag (`SubIFDs`, Exif, GPS, Interop)
+    /// pointed here, if any. A chained IFD has the parent of the IFD it
+    /// followed.
     pub fn parent(&self) -> Option<usize> {
         self.parent
+    }
+
+    /// How this IFD was reached (DEC-005).
+    pub fn kind(&self) -> IfdKind {
+        self.kind
     }
 
     /// Offset of the next IFD in this chain, or 0 for the last.
@@ -255,6 +300,73 @@ pub struct Container<'a> {
     issues: Vec<ParseIssue>,
 }
 
+/// One row of the DEC-005 pointer table: which tag, from which holder kinds,
+/// leading to which child kind. The single walking routine consults this; there
+/// is no per-tag walker.
+struct PointerSpec {
+    tag: u16,
+    /// Whether an IFD of this kind may hold (and so follow) this pointer.
+    allowed_from: fn(IfdKind) -> bool,
+    child: IfdKind,
+    /// `SubIFDs` is an offset array; the others carry exactly one offset.
+    is_array: bool,
+}
+
+fn from_any(_: IfdKind) -> bool {
+    true
+}
+
+fn from_top_level_or_sub(kind: IfdKind) -> bool {
+    matches!(
+        kind,
+        IfdKind::Ifd0 | IfdKind::Ifd1 | IfdKind::Chain | IfdKind::Sub
+    )
+}
+
+fn from_exif_only(kind: IfdKind) -> bool {
+    kind == IfdKind::Exif
+}
+
+/// DEC-005, in walk order (rule 2): `SubIFDs`, Exif, GPS, then Interop (which
+/// only an Exif IFD may hold).
+const POINTERS: [PointerSpec; 4] = [
+    PointerSpec {
+        tag: tags::SUB_IFDS,
+        allowed_from: from_any,
+        child: IfdKind::Sub,
+        is_array: true,
+    },
+    PointerSpec {
+        tag: tags::EXIF_IFD,
+        allowed_from: from_top_level_or_sub,
+        child: IfdKind::Exif,
+        is_array: false,
+    },
+    PointerSpec {
+        tag: tags::GPS_INFO,
+        allowed_from: from_top_level_or_sub,
+        child: IfdKind::Gps,
+        is_array: false,
+    },
+    PointerSpec {
+        tag: tags::INTEROP_IFD,
+        allowed_from: from_exif_only,
+        child: IfdKind::Interop,
+        is_array: false,
+    },
+];
+
+/// The kind of the IFD that follows one of `kind` along a chain, or `None` for
+/// the leaf kinds whose next-word is never followed (DEC-005).
+fn chain_successor(kind: IfdKind) -> Option<IfdKind> {
+    match kind {
+        IfdKind::Ifd0 => Some(IfdKind::Ifd1),
+        IfdKind::Ifd1 | IfdKind::Chain => Some(IfdKind::Chain),
+        IfdKind::Sub => Some(IfdKind::Sub),
+        IfdKind::Exif | IfdKind::Gps | IfdKind::Interop => None,
+    }
+}
+
 /// Mutable state of one tolerant walk (private to `parse`).
 struct Walk {
     /// Every IFD offset read (or being read), IFD0 included: the cycle guard.
@@ -272,8 +384,8 @@ impl<'a> Container<'a> {
     /// Only a bad header or an unreadable IFD0 (entry table or trailing
     /// next-word) is `Err`. Every other structural failure omits the bad IFD
     /// and is recorded as a [`ParseIssue`], see [`Container::issues`]. Depth
-    /// first: an IFD is recorded, then its `SubIFDs` are walked, then the chain
-    /// continues.
+    /// first: an IFD is recorded, then its `SubIFDs`, Exif, GPS and Interop
+    /// pointers are walked (DEC-005), then the chain continues.
     pub fn parse(data: &'a [u8]) -> Result<Container<'a>, Error> {
         let mark: [u8; 2] = data
             .get(0..2)
@@ -310,6 +422,7 @@ impl<'a> Container<'a> {
             offset: ifd0_offset,
             depth: 0,
             parent: None,
+            kind: IfdKind::Ifd0,
             next,
             entries,
         });
@@ -361,6 +474,11 @@ impl<'a> Container<'a> {
         self.issues.is_empty()
     }
 
+    /// The first IFD of this kind in walk order, if any.
+    pub fn ifd_of_kind(&self, kind: IfdKind) -> Option<&Ifd> {
+        self.ifds.iter().find(|ifd| ifd.kind == kind)
+    }
+
     /// IFD0: present whenever [`Container::parse`] succeeded with a non-zero
     /// IFD0 offset.
     pub fn ifd0(&self) -> Option<&Ifd> {
@@ -369,86 +487,134 @@ impl<'a> Container<'a> {
 
     // ── the walk ────────────────────────────────────────────────────────────
 
-    /// From the IFD just recorded at `index`: walk its `SubIFDs`, then continue
-    /// along its chain. The chain is a loop (chains are long and their length
-    /// is attacker-chosen); recursion happens only into `SubIFDs` and is
-    /// bounded by [`MAX_IFD_DEPTH`], so native stack depth is bounded too.
+    /// From the IFD just recorded at `index`: walk its pointer tags (DEC-005
+    /// table), then continue along its chain. The chain is a loop (chains are
+    /// long and their length is attacker-chosen); recursion happens only into
+    /// pointer tags and is bounded by [`MAX_IFD_DEPTH`], so native stack depth
+    /// is bounded too. Leaf kinds (Exif, GPS, Interop) never continue.
     fn walk_from(&mut self, walk: &mut Walk, index: usize) {
         let mut cur = index;
         loop {
             if walk.halted {
                 return;
             }
-            let Some((depth, parent, next)) = self
+            let Some((depth, parent, next, kind)) = self
                 .ifds
                 .get(cur)
-                .map(|ifd| (ifd.depth, ifd.parent, ifd.next))
+                .map(|ifd| (ifd.depth, ifd.parent, ifd.next, ifd.kind))
             else {
                 return;
             };
 
-            self.walk_sub_ifds(walk, cur, depth);
+            for spec in &POINTERS {
+                // Once the budget halts the walk nothing more is recorded, not
+                // even a pointer-value issue (rule 7).
+                if walk.halted {
+                    return;
+                }
+                self.walk_pointer(walk, cur, spec);
+            }
+            let Some(next_kind) = chain_successor(kind) else {
+                return;
+            };
             if walk.halted || next == 0 {
                 return;
             }
-            match self.follow(walk, next, depth, parent, Link::Next, cur) {
+            match self.follow(walk, next, (depth, parent, next_kind), Link::Next, cur) {
                 Some(new_index) => cur = new_index,
                 None => return,
             }
         }
     }
 
-    /// Walk the `SubIFDs` of the IFD at `holder`. A malformed pointer tag costs
-    /// the sub-branch, never the holding IFD (DEC-001).
-    fn walk_sub_ifds(&mut self, walk: &mut Walk, holder: usize, depth: u32) {
-        // Materialise the offsets before recursing: the Vec ends the borrow of
-        // `self.ifds`, which the recursive walk mutates.
-        let subs = match self
-            .ifds
-            .get(holder)
-            .and_then(|ifd| ifd.entry(tags::SUB_IFDS))
-        {
-            None => return,
-            Some(entry) => match self.uints(entry) {
-                Ok(subs) => subs,
-                Err(error) => {
-                    self.issues.push(ParseIssue::new(
-                        error,
-                        Link::Tag(tags::SUB_IFDS),
-                        holder,
-                        None,
-                    ));
-                    return;
-                }
-            },
+    /// Walk the pointer `spec` of the IFD at `holder`, if it carries one and
+    /// is allowed to. A malformed pointer tag costs the branch, never the
+    /// holding IFD (DEC-001); a pointer tag in a place DEC-005 does not allow
+    /// is an ordinary entry and is ignored without an issue.
+    fn walk_pointer(&mut self, walk: &mut Walk, holder: usize, spec: &PointerSpec) {
+        if walk.halted {
+            return;
+        }
+        // `Entry` is `Copy`: copying ends the borrow of `self.ifds`, which the
+        // recursive walk below mutates. Only the first entry with the tag is
+        // used (`Ifd::entry`).
+        let Some((entry, depth)) = self.ifds.get(holder).and_then(|ifd| {
+            if !(spec.allowed_from)(ifd.kind) {
+                return None;
+            }
+            ifd.entry(spec.tag).map(|entry| (*entry, ifd.depth))
+        }) else {
+            return;
         };
-        for sub in subs {
+
+        let link = Link::Tag(spec.tag);
+        let offsets = match self.pointer_offsets(&entry, spec) {
+            Ok(offsets) => offsets,
+            Err(error) => {
+                self.issues.push(ParseIssue::new(error, link, holder, None));
+                return;
+            }
+        };
+        let child_depth = depth.saturating_add(1);
+        for offset in offsets {
             if walk.halted {
                 return;
             }
-            if sub == 0 {
+            // A zero offset is "no IFD here" and costs no attempt.
+            if offset == 0 {
                 continue;
             }
-            let link = Link::Tag(tags::SUB_IFDS);
-            let child_depth = depth.saturating_add(1);
-            if let Some(index) = self.follow(walk, sub, child_depth, Some(holder), link, holder) {
+            let child = (child_depth, Some(holder), spec.child);
+            if let Some(index) = self.follow(walk, offset, child, link, holder) {
                 self.walk_from(walk, index);
             }
         }
     }
 
-    /// Try to read and record the non-zero IFD at `offset`. Returns its index,
-    /// or `None` after recording an issue: the IFD is omitted entirely and
-    /// the branch (or chain) stops.
+    /// The offsets a pointer entry carries, validated per DEC-005 *before* the
+    /// payload is touched: for `SubIFDs` the count cap, for the single-offset
+    /// pointers the type and then the count.
+    fn pointer_offsets(&self, entry: &Entry, spec: &PointerSpec) -> Result<Vec<u32>, Error> {
+        if spec.is_array {
+            // The cap is checked on the declared count alone, so a hostile
+            // count costs nothing: no offset is decoded.
+            let over_cap = usize::try_from(entry.count).map_or(true, |n| n > MAX_IFDS);
+            if over_cap {
+                return Err(Error::TagTooLarge {
+                    tag: entry.tag,
+                    count: entry.count,
+                    limit: MAX_IFDS,
+                });
+            }
+            return self.uints(entry);
+        }
+        if !matches!(entry.field_type, types::TYPE_LONG | types::TYPE_IFD) {
+            return Err(Error::UnexpectedFieldType {
+                tag: entry.tag,
+                field_type: entry.field_type,
+            });
+        }
+        if entry.count != 1 {
+            return Err(Error::BadPointerCount {
+                tag: entry.tag,
+                count: entry.count,
+            });
+        }
+        self.uints(entry)
+    }
+
+    /// Try to read and record the non-zero IFD at `offset`. `child` is its
+    /// `(depth, parent, kind)`. Returns its index, or `None` after recording
+    /// an issue: the IFD is omitted entirely and the branch (or chain) stops.
     fn follow(
         &mut self,
         walk: &mut Walk,
         offset: u32,
-        depth: u32,
-        parent: Option<usize>,
+        child: (u32, Option<usize>, IfdKind),
         link: Link,
         from_ifd: usize,
     ) -> Option<usize> {
+        let (depth, parent, kind) = child;
         walk.attempts = walk.attempts.saturating_add(1);
 
         // The budget is global, so exhausting it ends the whole walk.
@@ -493,6 +659,7 @@ impl<'a> Container<'a> {
                     offset,
                     depth,
                     parent,
+                    kind,
                     next,
                     entries,
                 });
@@ -630,7 +797,7 @@ mod tests {
     use super::*;
 
     /// `ExposureBiasValue`: an Exif `SRATIONAL` tag. Local to the tests because
-    /// Exif-IFD tags arrive with their consumer in SPEC-004.
+    /// Exif-IFD value tags arrive with their decoders (SPEC-007).
     const EXPOSURE_BIAS_VALUE: u16 = 0x9204;
 
     /// A minimal byte-level TIFF builder, deliberately independent of any
@@ -1227,9 +1394,9 @@ mod tests {
 
     #[test]
     fn a_hostile_subifds_array_cannot_flood_the_issue_list() {
-        // 100,000 sub-offsets, every one pointing back at IFD0. IFD0 is attempt
-        // 1; sub-offsets 1..=511 are attempts 2..=512 (cyclic, one issue each);
-        // sub-offset 512 is attempt 513, over budget, and halts the walk.
+        // 100,000 sub-offsets, every one pointing back at IFD0. Since DEC-005
+        // the count is capped at MAX_IFDS before any offset is decoded, so the
+        // whole tag costs exactly one issue instead of a 512-issue flood.
         let n: u32 = 100_000;
         let mut data = Build::new(false, 8)
             .ifd(8, &[(tags::SUB_IFDS, TYPE_LONG, n, 600)], 0)
@@ -1241,14 +1408,24 @@ mod tests {
         }
         let c = Container::parse(&data).unwrap();
         assert_eq!(c.ifds().len(), 1);
-        assert_eq!(c.issues().len(), 512);
-        assert!(c.issues().len() <= 2 * MAX_IFDS + 1);
-        let (last, cyclic) = c.issues().split_last().unwrap();
-        assert_eq!(cyclic.len(), 511);
-        for issue in cyclic {
-            assert_eq!(issue.error(), &Error::CyclicIfd { offset: 8 });
-        }
-        assert_eq!(last.error(), &Error::TooManyIfds { limit: MAX_IFDS });
+        assert_eq!(c.issues().len(), 1);
+        let issue = &c.issues()[0];
+        assert_eq!(
+            issue.error(),
+            &Error::TagTooLarge {
+                tag: tags::SUB_IFDS,
+                count: n,
+                limit: MAX_IFDS
+            }
+        );
+        assert_eq!(issue.offset(), None);
+    }
+
+    #[test]
+    fn parse_issue_display_for_new_pointer_tags() {
+        assert_eq!(Link::Tag(tags::GPS_INFO).to_string(), "tag 0x8825");
+        assert_eq!(Link::Tag(tags::EXIF_IFD).to_string(), "tag 0x8769");
+        assert_eq!(Link::Tag(tags::INTEROP_IFD).to_string(), "tag 0xa005");
     }
 
     #[test]
@@ -1472,6 +1649,10 @@ mod tests {
             },
             Error::MissingTag { tag: 256 },
             Error::OffsetOutOfRange { offset: 9 },
+            Error::BadPointerCount {
+                tag: 0x8769,
+                count: 2,
+            },
         ];
         for e in &errors {
             assert!(!e.to_string().is_empty(), "{e:?} has an empty Display");
@@ -1494,9 +1675,478 @@ mod tests {
                 Error::TagTooLarge { .. } => 8,
                 Error::MissingTag { .. } => 9,
                 Error::OffsetOutOfRange { .. } => 10,
+                Error::BadPointerCount { .. } => 11,
             }
         }
         let indices: Vec<usize> = errors.iter().map(index).collect();
-        assert_eq!(indices, (0..11).collect::<Vec<usize>>());
+        assert_eq!(indices, (0..12).collect::<Vec<usize>>());
+    }
+
+    // ── pointer tags (SPEC-004, DEC-005) ─────────────────────────────────────
+
+    /// A single-offset pointer entry: `LONG`, count 1.
+    fn ptr(tag: u16, to: u32) -> (u16, u16, u32, u32) {
+        (tag, TYPE_LONG, 1, to)
+    }
+
+    fn kinds(c: &Container<'_>) -> Vec<IfdKind> {
+        c.ifds().iter().map(Ifd::kind).collect()
+    }
+
+    fn offsets(c: &Container<'_>) -> Vec<u32> {
+        c.ifds().iter().map(Ifd::offset).collect()
+    }
+
+    #[test]
+    fn exif_gps_and_interop_are_reached_and_labelled() {
+        for big in [false, true] {
+            let b = Build::new(big, 8);
+            let mut ifd0 = baseline(&b);
+            ifd0.push(ptr(tags::EXIF_IFD, 100));
+            ifd0.push(ptr(tags::GPS_INFO, 300));
+            let data = b
+                .ifd(8, &ifd0, 0)
+                .ifd(100, &[ptr(tags::INTEROP_IFD, 200)], 0)
+                .ifd(200, &[], 0)
+                .ifd(300, &[], 0)
+                .done();
+            let c = Container::parse(&data).unwrap();
+            assert!(c.is_clean(), "{:?}", c.issues());
+            // Depth first: E's Interop is walked inside E, before IFD0's GPS.
+            assert_eq!(offsets(&c), vec![8, 100, 200, 300]);
+            assert_eq!(
+                kinds(&c),
+                vec![IfdKind::Ifd0, IfdKind::Exif, IfdKind::Interop, IfdKind::Gps]
+            );
+            let parents: Vec<Option<usize>> = c.ifds().iter().map(Ifd::parent).collect();
+            assert_eq!(parents, vec![None, Some(0), Some(1), Some(0)]);
+            let depths: Vec<u32> = c.ifds().iter().map(Ifd::depth).collect();
+            assert_eq!(depths, vec![0, 1, 2, 1]);
+            assert_eq!(c.ifd_of_kind(IfdKind::Gps).unwrap().offset(), 300);
+            assert_eq!(c.ifd_of_kind(IfdKind::Exif).unwrap().offset(), 100);
+            assert_eq!(c.ifd_of_kind(IfdKind::Interop).unwrap().offset(), 200);
+            assert!(c.ifd_of_kind(IfdKind::Ifd1).is_none());
+            let ifd0 = c.ifd0().unwrap();
+            assert_eq!(ifd0.kind(), IfdKind::Ifd0);
+            assert_eq!(c.required_scalar(ifd0, tags::IMAGE_WIDTH).unwrap(), 4);
+        }
+    }
+
+    #[test]
+    fn an_ifd0_chain_is_labelled_ifd1_then_chain() {
+        let data = Build::new(false, 8)
+            .ifd(8, &[], 100)
+            .ifd(100, &[], 200)
+            .ifd(200, &[], 0)
+            .done();
+        let c = Container::parse(&data).unwrap();
+        assert!(c.is_clean());
+        assert_eq!(
+            kinds(&c),
+            vec![IfdKind::Ifd0, IfdKind::Ifd1, IfdKind::Chain]
+        );
+        assert_eq!(c.ifd_of_kind(IfdKind::Ifd1).unwrap().offset(), 100);
+
+        // A chain inside a SubIFDs branch stays `Sub`; the top-level chain
+        // still counts Ifd1 / Chain around it.
+        let data = Build::new(false, 8)
+            .ifd(8, &[ptr(tags::SUB_IFDS, 300)], 100)
+            .ifd(100, &[], 200)
+            .ifd(200, &[], 0)
+            .ifd(300, &[], 400)
+            .ifd(400, &[], 0)
+            .done();
+        let c = Container::parse(&data).unwrap();
+        assert!(c.is_clean());
+        assert_eq!(offsets(&c), vec![8, 300, 400, 100, 200]);
+        assert_eq!(
+            kinds(&c),
+            vec![
+                IfdKind::Ifd0,
+                IfdKind::Sub,
+                IfdKind::Sub,
+                IfdKind::Ifd1,
+                IfdKind::Chain
+            ]
+        );
+    }
+
+    #[test]
+    fn a_chain_pointer_inside_a_leaf_ifd_is_not_followed() {
+        // The Exif, GPS and Interop IFDs all carry a next-word to a valid IFD.
+        let data = Build::new(false, 8)
+            .ifd(8, &[ptr(tags::EXIF_IFD, 100), ptr(tags::GPS_INFO, 300)], 0)
+            .ifd(100, &[ptr(tags::INTEROP_IFD, 200)], 500)
+            .ifd(200, &[], 500)
+            .ifd(300, &[], 500)
+            .ifd(500, &[], 0)
+            .done();
+        let c = Container::parse(&data).unwrap();
+        assert!(c.is_clean(), "{:?}", c.issues());
+        assert_eq!(offsets(&c), vec![8, 100, 200, 300]);
+        for ifd in &c.ifds()[1..] {
+            assert_eq!(ifd.next(), 500);
+        }
+    }
+
+    #[test]
+    fn pointer_tags_in_unexpected_places_are_ignored_silently() {
+        // 0xA005 in IFD0; 0x8769 inside the Exif IFD; 0x8825 inside the GPS
+        // IFD. The targets at 200 and 300 are valid IFDs that must not appear.
+        let data = Build::new(false, 8)
+            .ifd(
+                8,
+                &[
+                    ptr(tags::EXIF_IFD, 100),
+                    ptr(tags::GPS_INFO, 150),
+                    ptr(tags::INTEROP_IFD, 200),
+                ],
+                0,
+            )
+            .ifd(100, &[ptr(tags::EXIF_IFD, 300)], 0)
+            .ifd(
+                150,
+                &[ptr(tags::GPS_INFO, 300), ptr(tags::INTEROP_IFD, 200)],
+                0,
+            )
+            .ifd(200, &[], 0)
+            .ifd(300, &[], 0)
+            .done();
+        let c = Container::parse(&data).unwrap();
+        assert!(c.is_clean(), "{:?}", c.issues());
+        assert_eq!(offsets(&c), vec![8, 100, 150]);
+
+        // 0xA005 inside a Sub IFD is ignored too.
+        let data = Build::new(false, 8)
+            .ifd(8, &[ptr(tags::SUB_IFDS, 100)], 0)
+            .ifd(100, &[ptr(tags::INTEROP_IFD, 200)], 0)
+            .ifd(200, &[], 0)
+            .done();
+        let c = Container::parse(&data).unwrap();
+        assert!(c.is_clean(), "{:?}", c.issues());
+        assert_eq!(offsets(&c), vec![8, 100]);
+    }
+
+    #[test]
+    fn duplicate_pointer_tags_use_the_first_entry() {
+        let data = Build::new(false, 8)
+            .ifd(8, &[ptr(tags::EXIF_IFD, 100), ptr(tags::EXIF_IFD, 200)], 0)
+            .ifd(100, &[], 0)
+            .ifd(200, &[], 0)
+            .done();
+        let c = Container::parse(&data).unwrap();
+        assert!(c.is_clean());
+        assert_eq!(offsets(&c), vec![8, 100]);
+    }
+
+    // ── pointer tags: tolerance ─────────────────────────────────────────────
+
+    /// IFD0 (baseline + Exif at 100 + GPS at `gps`), an empty Exif IFD at 100.
+    fn with_gps(gps: u32) -> Vec<u8> {
+        let b = Build::new(false, 8);
+        let mut ifd0 = baseline(&b);
+        ifd0.push(ptr(tags::EXIF_IFD, 100));
+        ifd0.push(ptr(tags::GPS_INFO, gps));
+        b.ifd(8, &ifd0, 0).ifd(100, &[], 0).done()
+    }
+
+    #[test]
+    fn a_corrupt_gps_ifd_leaves_ifd0_and_exif_readable() {
+        let mut data = with_gps(200);
+        data.resize(260, 0);
+        // A GPS IFD whose entry count runs past EOF.
+        data[200..202].copy_from_slice(&1000u16.to_le_bytes());
+        let c = Container::parse(&data).unwrap();
+        assert_eq!(kinds(&c), vec![IfdKind::Ifd0, IfdKind::Exif]);
+        let ifd0 = c.ifd0().unwrap();
+        assert_eq!(c.required_scalar(ifd0, tags::IMAGE_WIDTH).unwrap(), 4);
+        assert!(c.ifd_of_kind(IfdKind::Gps).is_none());
+        assert_eq!(c.issues().len(), 1);
+        let issue = &c.issues()[0];
+        assert!(matches!(issue.error(), Error::Truncated { .. }));
+        assert_eq!(issue.link(), Link::Tag(tags::GPS_INFO));
+        assert_eq!(issue.from_ifd(), 0);
+        assert_eq!(issue.offset(), Some(200));
+        assert!(matches!(
+            Container::parse_strict(&data),
+            Err(Error::Truncated { .. })
+        ));
+    }
+
+    #[test]
+    fn a_gps_pointer_past_eof_with_a_readable_exif_ifd() {
+        let data = with_gps(0xFFFF_FF00);
+        let c = Container::parse(&data).unwrap();
+        assert_eq!(kinds(&c), vec![IfdKind::Ifd0, IfdKind::Exif]);
+        assert_eq!(c.issues().len(), 1);
+        let issue = &c.issues()[0];
+        assert!(matches!(issue.error(), Error::Truncated { .. }));
+        assert_eq!(issue.link(), Link::Tag(tags::GPS_INFO));
+        assert_eq!(issue.from_ifd(), 0);
+        assert_eq!(issue.offset(), Some(0xFFFF_FF00));
+        assert!(c.ifd_of_kind(IfdKind::Gps).is_none());
+        assert!(matches!(
+            Container::parse_strict(&data),
+            Err(Error::Truncated { .. })
+        ));
+    }
+
+    #[test]
+    fn a_pointer_with_the_wrong_type_costs_the_branch_not_the_ifd() {
+        for ty in [TYPE_SHORT, TYPE_RATIONAL] {
+            let data = Build::new(false, 8)
+                .ifd(
+                    8,
+                    &[ptr(tags::EXIF_IFD, 100), (tags::GPS_INFO, ty, 1, 0)],
+                    300,
+                )
+                .ifd(100, &[], 0)
+                .ifd(300, &[], 0)
+                .done();
+            let c = Container::parse(&data).unwrap();
+            // IFD0 and Exif kept, and the chain to IFD1 still followed.
+            assert_eq!(offsets(&c), vec![8, 100, 300]);
+            assert_eq!(c.issues().len(), 1);
+            let issue = &c.issues()[0];
+            assert_eq!(
+                issue.error(),
+                &Error::UnexpectedFieldType {
+                    tag: tags::GPS_INFO,
+                    field_type: ty
+                }
+            );
+            assert_eq!(issue.link(), Link::Tag(tags::GPS_INFO));
+            assert_eq!(issue.from_ifd(), 0);
+            assert_eq!(issue.offset(), None);
+        }
+    }
+
+    #[test]
+    fn a_pointer_with_the_wrong_count_is_typed() {
+        // Count 2 points at an external payload that is absent; count 0 is
+        // inline and must not read garbage. Both are checked before the
+        // payload is touched.
+        for count in [2u32, 0] {
+            let data = Build::new(false, 8)
+                .ifd(8, &[(tags::EXIF_IFD, TYPE_LONG, count, 0xFFFF_FF00)], 300)
+                .ifd(300, &[], 0)
+                .done();
+            let c = Container::parse(&data).unwrap();
+            assert_eq!(offsets(&c), vec![8, 300]);
+            assert_eq!(c.issues().len(), 1);
+            let issue = &c.issues()[0];
+            assert_eq!(
+                issue.error(),
+                &Error::BadPointerCount {
+                    tag: tags::EXIF_IFD,
+                    count
+                }
+            );
+            assert_eq!(issue.link(), Link::Tag(tags::EXIF_IFD));
+            assert_eq!(issue.from_ifd(), 0);
+            assert_eq!(issue.offset(), None);
+        }
+    }
+
+    #[test]
+    fn a_zero_pointer_value_is_skipped_silently() {
+        let data = Build::new(false, 8)
+            .ifd(8, &[ptr(tags::GPS_INFO, 0)], 0)
+            .done();
+        let c = Container::parse(&data).unwrap();
+        assert!(c.is_clean());
+        assert_eq!(c.ifds().len(), 1);
+        assert!(c.ifd_of_kind(IfdKind::Gps).is_none());
+    }
+
+    #[test]
+    fn exif_pointing_back_at_ifd0_is_cyclic() {
+        let data = Build::new(false, 8)
+            .ifd(8, &[ptr(tags::EXIF_IFD, 8)], 0)
+            .done();
+        let c = Container::parse(&data).unwrap();
+        assert_eq!(c.ifds().len(), 1);
+        assert_eq!(c.issues().len(), 1);
+        let issue = &c.issues()[0];
+        assert_eq!(issue.error(), &Error::CyclicIfd { offset: 8 });
+        assert_eq!(issue.link(), Link::Tag(tags::EXIF_IFD));
+        assert_eq!(issue.from_ifd(), 0);
+        assert_eq!(issue.offset(), Some(8));
+        assert!(matches!(
+            Container::parse_strict(&data),
+            Err(Error::CyclicIfd { offset: 8 })
+        ));
+    }
+
+    #[test]
+    fn exif_and_gps_pointing_at_the_same_ifd_report_the_second() {
+        let data = Build::new(false, 8)
+            .ifd(8, &[ptr(tags::EXIF_IFD, 100), ptr(tags::GPS_INFO, 100)], 0)
+            .ifd(100, &[], 0)
+            .done();
+        let c = Container::parse(&data).unwrap();
+        assert_eq!(kinds(&c), vec![IfdKind::Ifd0, IfdKind::Exif]);
+        assert_eq!(c.issues().len(), 1);
+        let issue = &c.issues()[0];
+        assert_eq!(issue.error(), &Error::CyclicIfd { offset: 100 });
+        assert_eq!(issue.link(), Link::Tag(tags::GPS_INFO));
+        assert_eq!(issue.offset(), Some(100));
+    }
+
+    #[test]
+    fn a_bad_interop_pointer_keeps_the_exif_ifd() {
+        let data = Build::new(false, 8)
+            .ifd(8, &[ptr(tags::EXIF_IFD, 100)], 0)
+            .ifd(100, &[ptr(tags::INTEROP_IFD, 0xFFFF_FF00)], 0)
+            .done();
+        let c = Container::parse(&data).unwrap();
+        assert_eq!(kinds(&c), vec![IfdKind::Ifd0, IfdKind::Exif]);
+        assert_eq!(c.issues().len(), 1);
+        let issue = &c.issues()[0];
+        assert!(matches!(issue.error(), Error::Truncated { .. }));
+        assert_eq!(issue.link(), Link::Tag(tags::INTEROP_IFD));
+        assert_eq!(issue.from_ifd(), 1);
+        assert_eq!(issue.offset(), Some(0xFFFF_FF00));
+    }
+
+    #[test]
+    fn issues_arrive_in_walk_order_across_pointer_kinds() {
+        let bad = 0xFFFF_FF00;
+        let data = Build::new(false, 8)
+            .ifd(
+                8,
+                &[
+                    ptr(tags::SUB_IFDS, bad),
+                    ptr(tags::EXIF_IFD, bad),
+                    ptr(tags::GPS_INFO, bad),
+                ],
+                0,
+            )
+            .done();
+        let c = Container::parse(&data).unwrap();
+        let links: Vec<Link> = c.issues().iter().map(ParseIssue::link).collect();
+        assert_eq!(
+            links,
+            vec![
+                Link::Tag(tags::SUB_IFDS),
+                Link::Tag(tags::EXIF_IFD),
+                Link::Tag(tags::GPS_INFO)
+            ]
+        );
+    }
+
+    // ── pointer tags: bounds and work ───────────────────────────────────────
+
+    #[test]
+    fn a_subifds_count_above_the_cap_is_rejected_before_decoding() {
+        // The payload is absent (offset past EOF), so decoding it would yield
+        // `Truncated`; the expected issue proves the cap ran first.
+        let n: u32 = 100_000;
+        let data = Build::new(false, 8)
+            .ifd(8, &[(tags::SUB_IFDS, TYPE_LONG, n, 0xFFFF_FF00)], 0)
+            .done();
+        let c = Container::parse(&data).unwrap();
+        assert_eq!(c.ifds().len(), 1);
+        assert_eq!(c.issues().len(), 1);
+        let issue = &c.issues()[0];
+        assert_eq!(
+            issue.error(),
+            &Error::TagTooLarge {
+                tag: tags::SUB_IFDS,
+                count: n,
+                limit: MAX_IFDS
+            }
+        );
+        assert_eq!(issue.link(), Link::Tag(tags::SUB_IFDS));
+        assert_eq!(issue.offset(), None);
+    }
+
+    #[test]
+    fn a_subifds_count_at_the_cap_is_accepted() {
+        // 512 offsets, all pointing at IFD0. IFD0 is attempt 1; offsets
+        // 1..=511 are attempts 2..=512 (cyclic, one issue each); offset 512 is
+        // attempt 513, over budget.
+        let n = MAX_IFDS as u32;
+        let mut data = Build::new(false, 8)
+            .ifd(8, &[(tags::SUB_IFDS, TYPE_LONG, n, 600)], 0)
+            .done();
+        data.resize(600 + n as usize * 4, 0);
+        for i in 0..n as usize {
+            let at = 600 + i * 4;
+            data[at..at + 4].copy_from_slice(&8u32.to_le_bytes());
+        }
+        let c = Container::parse(&data).unwrap();
+        assert_eq!(c.issues().len(), 512);
+        let (last, cyclic) = c.issues().split_last().unwrap();
+        assert_eq!(cyclic.len(), 511);
+        for issue in cyclic {
+            assert_eq!(issue.error(), &Error::CyclicIfd { offset: 8 });
+        }
+        assert_eq!(last.error(), &Error::TooManyIfds { limit: MAX_IFDS });
+    }
+
+    #[test]
+    fn nothing_is_recorded_after_the_budget_halts_the_walk() {
+        // IFD0: SubIFDs -> a 600-IFD chain, then a malformed Exif and GPS.
+        // The chain exhausts the budget; the pointers after it must not add
+        // issues once the walk is halted.
+        let n: u32 = 600;
+        let mut b = Build::new(false, 8).ifd(
+            8,
+            &[
+                ptr(tags::SUB_IFDS, 100),
+                (tags::EXIF_IFD, TYPE_SHORT, 1, 0),
+                (tags::GPS_INFO, TYPE_LONG, 2, 0),
+            ],
+            0,
+        );
+        for i in 0..n {
+            let at = 100 + i * 20;
+            let next = if i + 1 < n { at + 20 } else { 0 };
+            b = b.ifd(at, &[], next);
+        }
+        let data = b.done();
+        let c = Container::parse(&data).unwrap();
+        let last = c.issues().last().unwrap();
+        assert_eq!(last.error(), &Error::TooManyIfds { limit: MAX_IFDS });
+        let halts = c
+            .issues()
+            .iter()
+            .filter(|i| matches!(i.error(), Error::TooManyIfds { .. }))
+            .count();
+        assert_eq!(halts, 1);
+        assert_eq!(c.issues().len(), 1);
+    }
+
+    #[test]
+    fn the_issue_list_never_exceeds_max_issues() {
+        // Every IFD of a MAX_IFDS-long chain carries all four pointer tags,
+        // each malformed (wrong type). Exif / GPS / SubIFDs each cost one
+        // issue per IFD; Interop is ignored outside an Exif IFD.
+        let n = MAX_IFDS as u32;
+        let mut b = Build::new(false, 8);
+        for i in 0..n {
+            let at = 8 + i * 60;
+            // The last IFD points one past the budget so the chain ends in
+            // TooManyIfds.
+            let next = at + 60;
+            b = b.ifd(
+                at,
+                &[
+                    (tags::SUB_IFDS, TYPE_SRATIONAL, 1, 0),
+                    (tags::EXIF_IFD, TYPE_SHORT, 1, 0),
+                    (tags::GPS_INFO, TYPE_SHORT, 1, 0),
+                    (tags::INTEROP_IFD, TYPE_SHORT, 1, 0),
+                ],
+                next,
+            );
+        }
+        let data = b.done();
+        let c = Container::parse(&data).unwrap();
+        assert_eq!(c.ifds().len(), MAX_IFDS);
+        assert_eq!(c.issues().len(), 3 * MAX_IFDS + 1);
+        assert!(c.issues().len() <= MAX_ISSUES);
+        let last = c.issues().last().unwrap();
+        assert_eq!(last.error(), &Error::TooManyIfds { limit: MAX_IFDS });
     }
 }

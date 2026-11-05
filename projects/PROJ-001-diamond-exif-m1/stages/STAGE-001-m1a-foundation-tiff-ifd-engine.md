@@ -84,10 +84,11 @@ First stage; everything else (containers, audit CLI, writer) depends on the IFD 
 - [x] SPEC-002 (shipped on 2026-11-05) — [L] Port the strict TIFF skeleton and the 17 hostile-input tests, green, with ledger rows
 - [x] SPEC-006 (shipped on 2026-11-05) — [M] `tiff_ifd` fuzz target on the strict parser (constraint `fuzz-target-per-surface`: lands before SPEC-003)
 - [x] SPEC-003 (shipped on 2026-11-05) — [M] Apply the tolerant-walk policy (`ParseIssue` channel), flipping the affected tests
-- [ ] SPEC-004 (frame) — [L] Multi-IFD pointer walk (Exif/GPS/Interop/SubIFDs) and ASCII/signed/float decoders
+- [x] SPEC-004 (shipped on 2026-11-05) — [M] Multi-IFD pointer walk (Exif/GPS/Interop/SubIFDs), `IfdKind`, bounded per-tag work (DEC-005)
+- [ ] SPEC-007 (frame) — [M] ASCII, signed and float tag-value decoders (split out of SPEC-004 at its design)
 - [ ] SPEC-005 (frame) — [L] Oracle discipline: exiftool `tools.rs` subset, `parse_fields`, replay-perturb red-proof, `mutate.rs`, `probe.rs`
 
-**Count:** 4 shipped / 2 active / 0 pending
+**Count:** 5 shipped / 2 active / 0 pending
 
 ## Design Notes
 

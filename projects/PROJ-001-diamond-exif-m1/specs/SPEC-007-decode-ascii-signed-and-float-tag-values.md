@@ -4,12 +4,12 @@
 # implementer lives in handoffs/HANDOFF-*.md, not in the spec itself.
 
 task:
-  id: SPEC-004
+  id: SPEC-007
   type: story                      # epic | story | task | bug | chore
-  cycle: frame                     # frame | design | build | verify | ship
+  cycle: design                    # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
-  complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
+  complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
   complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
@@ -38,7 +38,7 @@ references:
 # Blocking dependencies: specs that must SHIP before this one can start.
 # Distinct from references.related_specs (informational). Feeds the ready-set
 # (`just ready`) and safe fan-out. Optional; [] = no blockers.
-depends_on: [SPEC-003]
+depends_on: [SPEC-004]             # sequential: shares the fuzz target and seeds with SPEC-004
 
 # Fan-out lease — who/what holds this spec now (`just claim` / `just unclaim`).
 # Advisory; null = free. The hard lock for parallel agents is the worktree/branch.
@@ -70,72 +70,25 @@ cost:
     session_count: 0
 ---
 
-# SPEC-004: Multi-IFD pointer walk and wider types
+# SPEC-007: Decode ASCII, signed and float tag values
 
 > **OUTLINE — `cycle: frame`.** This spec exists so its ID is stable and
-> siblings can declare `depends_on: [SPEC-004]`. Capture **scope** (Context /
+> siblings can declare `depends_on: [SPEC-007]`. Capture **scope** (Context /
 > Goal / Non-Goals) and **dependencies** only — the *approach* is designed
 > just-in-time when this moves to `design`. Do not pre-design it here.
 
 ## Context
 
-About 60% of M1a is net-new: the walker follows only SubIFDs today and decodes only numeric types, but EXIF Make/Model/Artist/DateTimeOriginal are ASCII (brief §0 risk 1).
-
-Carry-in from SPEC-003 design: the stage-level proof "a corrupt GPS IFD leaves IFD0 readable" is only shown there with a corrupt `SubIFD` (the GPS pointer does not exist yet). Add the real GPS (and Exif/Interop) version here, plus `Link::Tag` coverage for the new pointer tags and an update of the `tiff_ifd` fuzz target in the same change.
-
-Carry-in from SPEC-003 verify: bound the work done per pointer tag. A zero sub-offset costs no attempt and up to `MAX_TAG_VALUES` offsets per IFD are decoded before the halt check, so a 4 MB hostile file can burn real time (0.34 s release) without spending the IFD budget; cap the offsets read from a pointer tag or charge them to a budget.
+Split out of the original SPEC-004 at its design: decoders touch `types.rs`, the pointer walk touches the walker, so they verify independently. EXIF `Make`, `Model`, `Artist`, `Copyright` and `DateTimeOriginal` are ASCII, and today nothing decodes ASCII, `SBYTE`, `SSHORT`, `SLONG`, `FLOAT` or `DOUBLE` (brief §0 risk 1; design §16.3). Runs after SPEC-004 because both extend the `tiff_ifd` fuzz target and seeds.
 
 ## Goal
 
-A pointer-tag dispatcher that follows ExifIFD (0x8769), GPS (0x8825), Interop (0xA005) and SubIFDs (330) with the tolerant policy, plus ASCII, signed and float decoders and split `URational`/`SRational` types.
-
-## Inputs
-
-What the implementer will read or consume.
-
-- **Files to read:** `path/to/file.ext` — why
-- **External APIs:** <name, docs link, auth requirements>
-- **Related code paths:** `src/some/module/`
-
-## Outputs
-
-What the implementer will produce.
-
-- **Files created:** `path/to/new.ext` — purpose
-- **Files modified:** `path/to/existing.ext` — what changes
-- **New endpoints / functions / components:** <names and signatures>
-- **New flags / options:** each flag's accepted values **and its default** — an
-  unstated default makes the implementer guess.
-- **Database changes:** <migrations, if any>
-
-## Acceptance Criteria
-
-Testable outcomes. Each must map to at least one test. Cover happy
-path, error cases, edge cases.
-
-- [ ] Criterion 1 (testable)
-- [ ] Criterion 2 (testable)
-- [ ] Criterion 3 (testable)
-
-## Failing Tests
-
-Written during the **design** cycle, BEFORE handoff. The implementer's
-job in **build** is to make these pass.
-
-- **`path/to/test.file`**
-  - `"test description 1"` — asserts: ...
-  - `"test description 2"` — asserts: ...
+Bounds-checked, panic-free readers for ASCII (count 0, unterminated, embedded NUL handled as typed outcomes, text borrowed from the input), signed integers and floats (`FLOAT`/`DOUBLE` held without arithmetic on untrusted values), with named `TYPE_*` constants for the remaining field types.
 
 ## Non-Goals
 
-- MakerNote walking
-- Oracle comparison (SPEC-005)
-- Writer encoders
-
-## Notes for the Implementer
-
-Gotchas, style preferences, reuse opportunities. Keep short — the full
-context graph lives in the handoff file.
+- Interpreting what a tag means (tag tables, `UserComment` charsets, GPS coordinate maths); that is SPEC-005's `parse_fields` and later stages
+- Walk changes (SPEC-004); oracle comparison (SPEC-005); writer encoders
 
 ---
 

@@ -21,7 +21,10 @@ supersedes: null
 superseded_by: null
 status: accepted
 deciders: [jysf, claude]
-affected_scope: ["docs/provenance-ledger.md", "src/**", "tests/support/**"]
+affected_scope:
+  - "docs/provenance-ledger.md"
+  - "src/**"
+  - "tests/support/**"
 
 tags:
   - provenance

@@ -102,6 +102,14 @@ pub enum Error {
         /// The offset that could not be represented as a `usize`.
         offset: u32,
     },
+
+    /// A pointer tag (Exif, GPS or Interop IFD) must carry exactly one offset.
+    BadPointerCount {
+        /// The pointer tag.
+        tag: u16,
+        /// The count the file declared.
+        count: u32,
+    },
 }
 
 impl fmt::Display for Error {
@@ -146,6 +154,12 @@ impl fmt::Display for Error {
             Error::MissingTag { tag } => write!(f, "required tag {tag} is absent"),
             Error::OffsetOutOfRange { offset } => {
                 write!(f, "offset {offset} is not addressable on this platform")
+            }
+            Error::BadPointerCount { tag, count } => {
+                write!(
+                    f,
+                    "pointer tag {tag:#06x} carries {count} value(s), expected exactly 1"
+                )
             }
         }
     }

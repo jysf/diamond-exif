@@ -10,6 +10,7 @@ the patch lane files fixes here (`[Unreleased] → Fixed`), and a release spec
 
 ### Added
 
+- Multi-IFD pointer walk (SPEC-004, DEC-005): `tiff::IfdKind` (`Ifd0`, `Ifd1`, `Chain`, `Sub`, `Exif`, `Gps`, `Interop`), `Ifd::kind`, `Container::ifd_of_kind`, `tiff::MAX_ISSUES`, the `EXIF_IFD` / `GPS_INFO` / `INTEROP_IFD` tag constants, and `Error::BadPointerCount`. The `tiff_ifd` fuzz target checks kind and parent invariants (both directions where they are an iff) and has five new seeds (25 in all).
 - Tolerant-walk API (SPEC-003, DEC-001): `tiff::{ParseIssue, Link}`, `Container::{issues, is_clean, parse_strict}`; `Error` now derives `Clone, PartialEq, Eq`. The `tiff_ifd` fuzz target checks the strict/tolerant differential, containment and bounds, and has three new seeds (20 in all).
 - `tiff_ifd` fuzz target (SPEC-006, DEC-004): separate `fuzz/` crate (`exif-core-fuzz`, `libfuzzer-sys` only there), deterministic seed writer `examples/fuzz_seeds.rs` with 17 committed seeds, `tests/fuzz_layout.rs`, and `just deny-fuzz` / `lint-fuzz` / `fuzz-smoke`. The library is unchanged and still has no dependencies.
 - Strict TIFF/IFD skeleton (SPEC-002), ported from irradiance `src/ifd.rs` (copy-then-edit, DNG removed): `exif_core::{Error, Result}`, `reader::ByteOrder`, `tiff::{Container, Ifd, Entry}` with `parse`, `payload` (returns `&'a [u8]` tied to the input), `uints`, `urationals`/`srationals` (verbatim, never divided), the three walk guards, and 23 tests. Any bad IFD is still `Err`; the tolerant walk is SPEC-003. No dependencies.
@@ -17,6 +18,7 @@ the patch lane files fixes here (`[Unreleased] → Fixed`), and a release spec
 
 ### Changed
 
+- The walk now follows the Exif (0x8769), GPS (0x8825) and, from inside the Exif IFD, Interop (0xA005) pointers as well as `SubIFDs` (SPEC-004, DEC-005); a corrupt GPS IFD is one reported issue and leaves IFD0 and the Exif IFD readable. The next-word of Exif/GPS/Interop IFDs is recorded but not followed. A `SubIFDs` entry declaring more than 512 offsets is now rejected (`TagTooLarge`) before any offset is decoded, so the issue count is bounded by `MAX_ISSUES`.
 - `Container::parse` is now tolerant (SPEC-003, DEC-001): only a bad header or an unreadable IFD0 is `Err`; any other bad IFD (IFD1 and later, `SubIFDs`) is omitted and reported as a `ParseIssue`, so one corrupt sub-IFD no longer discards a readable IFD0. `Container::parse_strict` keeps the old all-or-nothing behaviour. Exact-boundary tests added for the depth and IFD-count limits.
 
 **Gate harness reconciled with irradiance's hardened mute-gate scripts** (instance-local; template VERSION unchanged at 0.6.39).
