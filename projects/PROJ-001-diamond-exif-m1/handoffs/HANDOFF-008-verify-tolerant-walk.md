@@ -53,81 +53,38 @@ handback:
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
-# HANDOFF-008: <Task Title — same as the spec's title>
+# HANDOFF-008: Verify the tolerant-walk policy
 
 ## Delegation Summary
 
-One sentence: `<from_agent>` (acting as `<from_role>`) hands `SPEC-003`
-to `<to_agent>` (acting as `<to_role>`) for the **`<cycle>`** cycle.
+`claude-opus-5-5` (architect) hands `SPEC-003` to `claude-opus-5-5` (verifier, a fresh cold agent) for the **verify** cycle.
 
 ## Context the Receiving Agent Needs
 
-The receiving agent MUST read these before starting work. Keep the
-list tight, but don't omit anything necessary.
-
-### Primary
-
-- **Project brief:** `./projects/PROJ-001-<slug>/brief.md`
-- **Stage:** `./projects/PROJ-001-<slug>/stages/STAGE-001-<slug>.md`
-- **Spec:** `./projects/PROJ-001-<slug>/specs/SPEC-003-<slug>.md`
-- **Reviewer brief (OPTIONAL, verify handoffs):** `./guidance/agents/<lens>.md` —
-  pick a lens if this review should look at one thing hard. Omit for a
-  general review; see `./guidance/agents/README.md`.
-- **Toolchain brief:** `./guidance/toolchain-brief.md` — this repo's test
-  framework, lint quirks, runtime globals and gotchas. Read it; it exists so a
-  cold agent doesn't rediscover them (DEC-004 rule 5).
-
-### Decisions that apply
-
-- `DEC-NNN` — <one-line summary of why this matters here>
-- `DEC-MMM` — <one-line summary>
-
-### Constraints that apply
-
-Check `./guidance/constraints.yaml` for full text. These constraints
-apply to the paths touched by this task:
-
-- `constraint-id-1` — <one-line summary>
-- `constraint-id-2` — <one-line summary>
-
-### Prior related work
-
-- `HANDOFF-YYY` — <one-line summary, if relevant>
-- `PR #NNN` — <link, if relevant>
+- **Spec:** `projects/PROJ-001-diamond-exif-m1/specs/SPEC-003-tolerant-walk.md` (walk rules and named tests are normative)
+- **Build handoff and its Handback:** `HANDOFF-007-build-tolerant-walk.md` (claims to verify, not to trust)
+- `AGENTS.md`, `guidance/toolchain-brief.md` (host traps: `~/.cargo/bin/cargo +1.90.0` for library gates; fuzz needs `PATH="$HOME/.cargo/bin:$PATH"` and `+nightly`)
+- `decisions/DEC-001-tolerant-walk-policy.md` (with the SPEC-003 clarifications), DEC-002, DEC-004
+- Code under review: `git diff 6f4e022..HEAD` on the current branch (build commit `de5217c`)
 
 ## Expected Deliverables
 
-*(For a `verify` handoff, replace this block with the verify contract below.)*
+The verify contract: review cold, and output exactly ONE of APPROVED / PUNCH LIST / REJECTED, at a commit SHA.
 
-- Code changes implementing SPEC-003's Acceptance Criteria.
-- All failing tests in SPEC-003 now passing.
-- Any new tests required to cover edge cases.
-- A PR against `main` from branch `feat/spec-XXX-<slug>`.
-- PR description referencing: this handoff ID, the spec ID, the stage
-  ID, the project ID, all referenced `DEC-*`, and any new `DEC-*`
-  created during implementation.
-
-### If `cycle: verify` — the verify contract
-
-You are **not** the agent that implemented this. Review it cold.
-
-- Acceptance criteria met? Tests actually pass? Build reflection answered
-  honestly (*"nothing was unclear"* is suspicious)?
-- Decision drift — run `just decisions-audit --changed`.
-- Constraint violations; non-trivial choices missing a `DEC-*`.
-- For any criterion claiming **runtime behavior** (a component registers, a hook
-  fires, a binary resolves on PATH, a config takes effect), confirm the
-  *behavioral* surface was exercised — not just the shape validated. That is the
-  defect class that escapes (AGENTS.md §12).
-- Output exactly ONE of: ✅ APPROVED / ⚠ PUNCH LIST / ❌ REJECTED.
+Verify independently, do not rely on the builder's report:
+- Re-run every gate in the spec's acceptance criteria yourself.
+- Re-do at least the four mutation checks (depth `>=`, depth `+1`, attempts `>=`, attempts `+1`) and confirm each named test goes red, then revert (leave the tree clean).
+- Plant `is_clean()` returning constant `true` and confirm the seed test or fuzzer catches it; also try a plant that violates containment or the issue bound if you can make one cheap.
+- Read the walk against the Walk rules line by line: attempt counting (IFD0 is attempt 1), per-branch depth stop, global halt, `Link`/`from_ifd`/`offset` per issue, atomic omission, malformed pointer tag keeps the holding IFD, IFD0 fatal paths. Look for any panic-capable construct in non-test code and any unbounded loop or allocation.
+- Check that flipped tests really assert BOTH the tolerant outcome and the strict `Err`, that no test is vacuous, and that the fuzz target's differential invariant is both-directional.
+- Run `just fuzz-smoke` (60 s) and record executions and coverage.
+- Run `just decisions-audit --changed`; check deviations the builder listed (`ParseIssue::into_error`, `Walk` struct, helper renames) for acceptability.
+- Do not fix code. Report findings. Do not push or open a PR; do not advance cycles.
 
 ## Out of Scope
 
-Explicit list of what this handoff does NOT include. If the receiving agent
-thinks any of these need to happen, they should create a new spec in
-the stage's backlog, not expand this handoff.
-
-- ...
+- Implementing fixes (the orchestrator routes a punch list back to a builder)
+- SPEC-004 work, CI wiring, the 24 h fuzz run
 
 ## Return Criteria — how to hand back
 
