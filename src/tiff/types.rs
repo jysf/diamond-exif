@@ -85,10 +85,12 @@ impl<'a> Ascii<'a> {
                     rest,
                 }
             }
+            // `rest` is the empty tail of the payload (not a static `&[]`), so
+            // every slice this type hands out lies inside the input.
             None => Ascii {
                 text: payload,
                 terminated: false,
-                rest: &[],
+                rest: payload.get(payload.len()..).unwrap_or(&[]),
             },
         }
     }

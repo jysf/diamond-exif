@@ -13,6 +13,11 @@
 //! `Interop` hangs off `Exif`; parents precede children; child depth is
 //! parent + 1) and that `ifd_of_kind` agrees with a linear scan.
 //!
+//! Since SPEC-007 every entry also goes through `ascii`, `sints` and `floats`:
+//! each reader's type gate is checked as an iff against a table, `Ok` lengths
+//! equal the declared count, and an ASCII value must partition its payload
+//! (text, NUL, rest), borrow from the input, and agree with `from_utf8`.
+//!
 //! The walk must stay in sync with the public reader API: a spec that adds a
 //! reader must add it here in the same change.
 //!
@@ -32,7 +37,8 @@
 
 use libfuzzer_sys::fuzz_target;
 
-use exif_core::tiff::{Container, IfdKind, MAX_IFDS, MAX_ISSUES};
+use exif_core::tiff::{Container, Entry, IfdKind, MAX_IFDS, MAX_ISSUES, MAX_TAG_VALUES};
+use exif_core::Error;
 
 /// Tags worth probing with `scalar`/`values` on IFD0: width, length, bits per
 /// sample, orientation, SubIFDs, and one that is never present.
@@ -49,6 +55,132 @@ const ALL_KINDS: [IfdKind; 7] = [
     IfdKind::Gps,
     IfdKind::Interop,
 ];
+
+/// Whether `inner` lies wholly inside `outer` (empty slices included).
+fn lies_inside(outer: &[u8], inner: &[u8]) -> bool {
+    let (o, i) = (outer.as_ptr_range(), inner.as_ptr_range());
+    i.start >= o.start && i.end <= o.end
+}
+
+/// `r` is the type-gate error for `entry` (and nothing else is).
+fn is_type_gate<T>(r: &Result<T, Error>, entry: &Entry) -> bool {
+    matches!(
+        r,
+        Err(Error::UnexpectedFieldType { tag, field_type })
+            if *tag == entry.tag() && *field_type == entry.field_type()
+    )
+}
+
+/// Every reader on one entry, with the SPEC-004/SPEC-007 invariants. Each rule
+/// that is an iff is asserted in both directions, so a constant-true or
+/// constant-false reader fails one of them.
+fn check_entry(data: &[u8], container: &Container, entry: &Entry) {
+    let ty = entry.field_type();
+    let _ = entry.byte_len();
+    let payload = container.payload(entry);
+
+    let uints = container.uints(entry);
+    let urationals = container.urationals(entry);
+    let srationals = container.srationals(entry);
+    let ascii = container.ascii(entry);
+    let sints = container.sints(entry);
+    let floats = container.floats(entry);
+
+    // Type gate: UnexpectedFieldType iff the type is outside the reader's set.
+    // The sets are written out here, independent of the library's own gates.
+    assert_eq!(
+        is_type_gate(&uints, entry),
+        !matches!(ty, 1 | 3 | 4 | 7 | 13),
+        "uints type gate, type {ty}"
+    );
+    assert_eq!(
+        is_type_gate(&urationals, entry),
+        ty != 5,
+        "urationals type gate, type {ty}"
+    );
+    assert_eq!(
+        is_type_gate(&srationals, entry),
+        ty != 10,
+        "srationals type gate, type {ty}"
+    );
+    assert_eq!(
+        is_type_gate(&ascii, entry),
+        ty != 2,
+        "ascii type gate, type {ty}"
+    );
+    assert_eq!(
+        is_type_gate(&sints, entry),
+        !matches!(ty, 6 | 8 | 9),
+        "sints type gate, type {ty}"
+    );
+    assert_eq!(
+        is_type_gate(&floats, entry),
+        !matches!(ty, 11 | 12),
+        "floats type gate, type {ty}"
+    );
+
+    // Length: an Ok result has exactly `count` values.
+    let count = usize::try_from(entry.count()).unwrap_or(usize::MAX);
+    if let Ok(v) = &uints {
+        assert_eq!(v.len(), count, "uints length");
+    }
+    if let Ok(v) = &sints {
+        assert_eq!(v.len(), count, "sints length");
+    }
+    if let Ok(v) = &floats {
+        assert_eq!(v.len(), count, "floats length");
+    }
+
+    // ASCII is Ok iff the type is ASCII, the count is within the cap and the
+    // payload resolves.
+    assert_eq!(
+        ascii.is_ok(),
+        ty == 2 && count <= MAX_TAG_VALUES && payload.is_ok(),
+        "ascii Ok iff type, cap and payload"
+    );
+
+    if let (Ok(a), Ok(p)) = (&ascii, &payload) {
+        let text = a.as_bytes();
+        let rest = a.rest();
+        // Partition: text, the NUL if any, then rest cover the payload.
+        assert_eq!(
+            text.len() + usize::from(a.is_terminated()) + rest.len(),
+            p.len(),
+            "ascii partition"
+        );
+        assert!(!text.contains(&0), "NUL inside ascii text");
+        // Terminated iff the payload contains a NUL, and it sits right after
+        // the text.
+        assert_eq!(a.is_terminated(), p.contains(&0), "terminated iff NUL");
+        if a.is_terminated() {
+            assert_eq!(p.get(text.len()), Some(&0), "NUL not at end of text");
+        } else {
+            assert!(rest.is_empty(), "unterminated but rest is not empty");
+        }
+        // Zero-copy: both parts lie inside the input, and are the payload's
+        // own bytes (text first, rest after the NUL).
+        assert!(lies_inside(data, text), "ascii text escapes the input");
+        assert!(lies_inside(data, rest), "ascii rest escapes the input");
+        assert_eq!(text.as_ptr(), p.as_ptr(), "text is not the payload start");
+        assert_eq!(
+            rest.as_ptr(),
+            p.as_ptr()
+                .wrapping_add(text.len() + usize::from(a.is_terminated())),
+            "rest is not right after the text"
+        );
+        assert_eq!(p.get(..text.len()), Some(text));
+        // to_str is Ok iff the text is UTF-8; the lossy form never panics.
+        assert_eq!(
+            a.to_str().is_ok(),
+            core::str::from_utf8(text).is_ok(),
+            "to_str iff UTF-8"
+        );
+        let lossy = a.to_string_lossy();
+        if let Ok(s) = a.to_str() {
+            assert_eq!(lossy, s, "lossy differs on valid UTF-8");
+        }
+    }
+}
 
 fuzz_target!(|data: &[u8]| {
     let strict = Container::parse_strict(data);
@@ -170,11 +302,7 @@ fuzz_target!(|data: &[u8]| {
     for ifd in container.ifds() {
         let _ = (ifd.offset(), ifd.depth(), ifd.parent(), ifd.next());
         for entry in ifd.entries() {
-            let _ = entry.byte_len();
-            let _ = container.payload(entry);
-            let _ = container.uints(entry);
-            let _ = container.urationals(entry);
-            let _ = container.srationals(entry);
+            check_entry(data, &container, entry);
         }
     }
 
