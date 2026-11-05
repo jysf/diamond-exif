@@ -1479,14 +1479,14 @@ fi
 # (the old top would still "appear" and pass the weaker check above). And every
 # versioned header must be unique — no accidental duplicate release sections.
 newest_hdr_ver=$(grep -oE '^## .*\(v[0-9]+\.[0-9]+\.[0-9]+\)' "$TEMPLATE_ROOT/CHANGELOG.md" \
-    | head -n1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | sed 's/^v//')
+    | head -n1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | sed 's/^v//' || true)
 if [ "$newest_hdr_ver" = "$ver" ]; then
     pass "newest CHANGELOG header is the current VERSION (v${ver} on top)"
 else
     fail "newest CHANGELOG header is v${newest_hdr_ver:-∅}, not VERSION ${ver}"
 fi
 dup_ver=$(grep -oE '^## .*\(v[0-9]+\.[0-9]+\.[0-9]+\)' "$TEMPLATE_ROOT/CHANGELOG.md" \
-    | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | sort | uniq -d | head -n1)
+    | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | sort | uniq -d | head -n1 || true)
 if [ -z "$dup_ver" ]; then
     pass "no duplicate versioned CHANGELOG headers"
 else
@@ -1698,10 +1698,10 @@ assert_contains "FIRST_SESSION_PROMPTS.md" "tokens_total: <REAL combined count" 
 # never a same-prefixed cycle-prompt file with no front-matter (zany #7).
 just new-stage "P1 Stage" >/dev/null 2>&1
 P1_STAGE=$(ls projects/PROJ-001-example-mvp/stages/STAGE-*-p1-stage.md 2>/dev/null | head -n1)
-P1_STAGE_ID=$(basename "$P1_STAGE" 2>/dev/null | grep -oE 'STAGE-[0-9]+')
+P1_STAGE_ID=$(basename "$P1_STAGE" 2>/dev/null | grep -oE 'STAGE-[0-9]+' || true)
 just new-spec "P1 Spec" "$P1_STAGE_ID" >/dev/null 2>&1
 P1_SPEC=$(ls projects/PROJ-001-example-mvp/specs/SPEC-*-p1-spec.md 2>/dev/null | head -n1)
-P1_SPEC_ID=$(basename "$P1_SPEC" 2>/dev/null | grep -oE 'SPEC-[0-9]+')
+P1_SPEC_ID=$(basename "$P1_SPEC" 2>/dev/null | grep -oE 'SPEC-[0-9]+' || true)
 # Plant a look-alike prompt file with NO front-matter (the exact trap).
 mkdir -p "$(dirname "$P1_SPEC")/prompts"
 printf '# %s build prompt\nno front-matter here\n' "$P1_SPEC_ID" \
@@ -1730,12 +1730,12 @@ esac
 if grep -qE "^- \[x\] ${P1_SPEC_ID} \(shipped on ${today}\)" "$P1_STAGE"; then
     pass "archive-spec flips the backlog entry to [x] shipped (with date)"
 else
-    fail "archive-spec did not update the backlog entry: $(grep "$P1_SPEC_ID" "$P1_STAGE")"
+    fail "archive-spec did not update the backlog entry: $(grep "$P1_SPEC_ID" "$P1_STAGE" || true)"
 fi
 if grep -qE '^\*\*Count:\*\* [1-9][0-9]* shipped / [0-9]+ active / [0-9]+ pending' "$P1_STAGE"; then
     pass "archive-spec recomputes the **Count:** line"
 else
-    fail "archive-spec did not recompute Count: $(grep '\*\*Count' "$P1_STAGE")"
+    fail "archive-spec did not recompute Count: $(grep '\*\*Count' "$P1_STAGE" || true)"
 fi
 
 # Deterministic project resolution: an ambiguous PROJ-NNN glob is a HARD ERROR,
@@ -1770,7 +1770,7 @@ assert_file "projects/_templates/patch.md"
 # new-patch scaffolds a first-class patch: task.type: patch, own PATCH-* seq, no stage.
 just new-patch "Out Dir Auto Create" >/dev/null 2>&1
 PATCH_FILE=$(ls projects/PROJ-001-example-mvp/patches/PATCH-*-out-dir-auto-create.md 2>/dev/null | head -n1)
-PATCH_ID=$(basename "$PATCH_FILE" 2>/dev/null | grep -oE 'PATCH-[0-9]+')
+PATCH_ID=$(basename "$PATCH_FILE" 2>/dev/null | grep -oE 'PATCH-[0-9]+' || true)
 if [ -n "$PATCH_FILE" ] && [ "$PATCH_ID" = "PATCH-001" ]; then
     pass "new-patch scaffolds PATCH-001 (its own repo-wide sequence)"
 else
@@ -1891,7 +1891,7 @@ assert_file "projects/_templates/spike.md"
 # precede any project), with its own SPIKE-* sequence.
 just new-spike "Can Bubbletea Do Split Panes" "2h" >/dev/null 2>&1
 SPIKE_FILE=$(ls spikes/SPIKE-*-can-bubbletea-do-split-panes.md 2>/dev/null | head -n1)
-SPIKE_ID=$(basename "$SPIKE_FILE" 2>/dev/null | grep -oE 'SPIKE-[0-9]+')
+SPIKE_ID=$(basename "$SPIKE_FILE" 2>/dev/null | grep -oE 'SPIKE-[0-9]+' || true)
 if [ -n "$SPIKE_FILE" ] && [ "$SPIKE_ID" = "SPIKE-001" ]; then
     pass "new-spike scaffolds SPIKE-001 at the repo root (own sequence)"
 else
@@ -1904,7 +1904,7 @@ assert_contains "$SPIKE_FILE" "cycle: spike"  "spike starts at cycle: spike"
 # for the v5.8 substitution-escaping bug class: a prose placeholder containing
 # the sed delimiter silently fails to substitute and ships a broken artifact.
 if grep -q '__[A-Z_]*__' "$SPIKE_FILE"; then
-    fail "new-spike left an unsubstituted placeholder: $(grep -o '__[A-Z_]*__' "$SPIKE_FILE" | sort -u | tr '\n' ' ')"
+    fail "new-spike left an unsubstituted placeholder: $(grep -o '__[A-Z_]*__' "$SPIKE_FILE" | sort -u | tr '\n' ' ' || true)"
 else
     pass "new-spike substitutes every __TOKEN__ placeholder"
 fi
@@ -1987,7 +1987,7 @@ assert_cmd_fails "double archive-spike fails" just archive-spike "$SPIKE_ID"
 # An unrecognized outcome is rejected rather than silently archived.
 just new-spike "Bogus Outcome Spike" >/dev/null 2>&1
 BOGUS=$(ls spikes/SPIKE-*-bogus-outcome-spike.md 2>/dev/null | head -n1)
-BOGUS_ID=$(basename "$BOGUS" | grep -oE 'SPIKE-[0-9]+')
+BOGUS_ID=$(basename "$BOGUS" | grep -oE 'SPIKE-[0-9]+' || true)
 sed_test 's/^  outcome: null.*/  outcome: mostly-fine/' "$BOGUS"
 assert_cmd_fails "archive-spike rejects an unrecognized outcome" just archive-spike "$BOGUS_ID"
 assert_cmd_fails "validate rejects an unrecognized spike.outcome" just validate
@@ -2020,7 +2020,7 @@ if [ "$HAVE_PY3" = 1 ]; then
 fi
 # The lens flags an un-landed spike (at `land` with a null outcome) — the one
 # state the lane exists to make visible.
-just advance-cycle "$(basename "$OPEN_SPIKE" | grep -oE 'SPIKE-[0-9]+')" land >/dev/null 2>&1
+just advance-cycle "$(basename "$OPEN_SPIKE" | grep -oE 'SPIKE-[0-9]+' || true)" land >/dev/null 2>&1
 if just dash spikes 2>&1 | grep -q "un-landed"; then
     pass "dash spikes flags a landed spike with no outcome"
 else
@@ -2106,7 +2106,7 @@ ROLLUP="projects/PROJ-001-example-mvp/specs/done/SPEC-777-cost-rollup.md"
 if grep -qE "^    tokens_total: 8000\$" "$ROLLUP" && grep -qE "^    session_count: 2\$" "$ROLLUP"; then
     pass "archive-spec recomputes cost.totals from sessions (8000 tok / 2 sessions)"
 else
-    fail "cost.totals not recomputed: $(grep -A3 'totals:' "$ROLLUP" 2>/dev/null)"
+    fail "cost.totals not recomputed: $(grep -A3 'totals:' "$ROLLUP" 2>/dev/null || true)"
 fi
 rm -f "$ROLLUP"
 
@@ -2197,7 +2197,7 @@ assert_file "docs/porting.md"
 
 # A shipped patch with no cost normally FAILS cost-audit (metering enforced)...
 just new-patch "Metering Test" >/dev/null 2>&1
-MPID=$(ls projects/PROJ-001-example-mvp/patches/PATCH-*-metering-test.md 2>/dev/null | head -n1 | xargs -I{} basename {} | grep -oE 'PATCH-[0-9]+')
+MPID=$(ls projects/PROJ-001-example-mvp/patches/PATCH-*-metering-test.md 2>/dev/null | head -n1 | xargs -I{} basename {} | grep -oE 'PATCH-[0-9]+' || true)
 just advance-cycle "$MPID" ship >/dev/null 2>&1
 assert_cmd_fails "cost-audit enforces cost by default (metering_source subagent_tokens)" just cost-audit
 # ...but with metering_source: none the gate is DISABLED (no token source).
@@ -2218,7 +2218,7 @@ rm -rf projects/PROJ-001-example-mvp/patches
 # fallback), and fixing the 'architect==implementer looks like contamination'
 # misread.
 just new-stage "P2 Stage" >/dev/null 2>&1
-P2S=$(ls projects/PROJ-001-example-mvp/stages/STAGE-*-p2-stage.md 2>/dev/null | head -n1 | xargs -I{} basename {} | grep -oE 'STAGE-[0-9]+')
+P2S=$(ls projects/PROJ-001-example-mvp/stages/STAGE-*-p2-stage.md 2>/dev/null | head -n1 | xargs -I{} basename {} | grep -oE 'STAGE-[0-9]+' || true)
 just new-spec "P2 Spec" "$P2S" >/dev/null 2>&1
 P2SPEC=$(ls projects/PROJ-001-example-mvp/specs/SPEC-*-p2-spec.md 2>/dev/null | head -n1)
 arch=$(awk '/^  architect:/{print $2; exit}' "$P2SPEC")
@@ -2476,7 +2476,7 @@ if [ "$HAVE_PY3" = 1 ]; then
         && pass "dash defects ignores the unanswered template vocabulary" || fail "dash defects counted template prose as an answer"
 fi
 # Now answer Q4 on a real spec and confirm it lands in the right bucket.
-DSPEC=$(ls projects/PROJ-001-example-mvp/specs/SPEC-*.md | grep -v timeline | head -n1)
+DSPEC=$(ls projects/PROJ-001-example-mvp/specs/SPEC-*.md | grep -v timeline | head -n1 || true)
 cat >> "$DSPEC" <<'DEFEOF'
 
 ## Reflection (Ship)
@@ -2770,10 +2770,10 @@ fi
 
 just new-stage "Delegated Infra" >/dev/null 2>&1
 PA_STAGE=$(ls projects/PROJ-001-example-mvp/stages/STAGE-*-delegated-infra.md | head -n1)
-PA_STAGE_ID=$(basename "$PA_STAGE" | grep -oE 'STAGE-[0-9]+')
+PA_STAGE_ID=$(basename "$PA_STAGE" | grep -oE 'STAGE-[0-9]+' || true)
 just new-spec "Delegated Widget" "$PA_STAGE_ID" >/dev/null 2>&1
-PA_SPEC=$(ls projects/PROJ-001-example-mvp/specs/SPEC-*-delegated-widget.md | grep -v timeline | head -n1)
-PA_SPEC_ID=$(basename "$PA_SPEC" | grep -oE 'SPEC-[0-9]+')
+PA_SPEC=$(ls projects/PROJ-001-example-mvp/specs/SPEC-*-delegated-widget.md | grep -v timeline | head -n1 || true)
+PA_SPEC_ID=$(basename "$PA_SPEC" | grep -oE 'SPEC-[0-9]+' || true)
 
 # ONE handoff per delegated CYCLE — a build/verify split gets one each.
 just new-handoff "$PA_SPEC_ID" build >/dev/null 2>&1
@@ -2787,7 +2787,7 @@ assert_contains "$HB" "cycle: build"        "build handoff records cycle: build"
 assert_contains "$HB" "to_role: implementer" "build handoff sets to_role: implementer"
 assert_contains "$HB" "handback:"            "handoff carries the handback block"
 if grep -q '__[A-Z_]*__' "$HB"; then
-    fail "new-handoff left an unsubstituted placeholder: $(grep -o '__[A-Z_]*__' "$HB" | sort -u | tr '\n' ' ')"
+    fail "new-handoff left an unsubstituted placeholder: $(grep -o '__[A-Z_]*__' "$HB" | sort -u | tr '\n' ' ' || true)"
 else
     pass "new-handoff substitutes every __TOKEN__ placeholder"
 fi

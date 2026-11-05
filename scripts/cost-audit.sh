@@ -89,6 +89,43 @@ while IFS= read -r f; do
     [ -n "$imp" ] && warnings+=("${name}: ${imp}")
 done < <(find_all_patches "$project_dir")
 
+# Stages (PATCH-002). AGENTS.md's stage template says "THE ORCHESTRATOR FILLS
+# THIS — not the human" about `orchestration_cost`, and until this gate existed
+# nothing checked it: STAGE-001 shipped 2026-08-22 with `sessions: []` and no
+# gate, report or status line noticed for fifteen days. That is the same shape
+# as `brag-step-skipped-at-ship` — a documented step with no surface simply does
+# not happen. Orchestration is not a rounding error: STAGE-002 measured ~84.2M
+# tokens of it against 187.0M of delegated spec cost, roughly 31% of the stage.
+# FU-4 (PATCH-003 verify). DEC-022's Validation says "if the grandfather list
+# grows past STAGE-001, the gate is wrong, not the stages" — but nothing printed,
+# counted or asserted the list, and it is an ENVIRONMENT variable: exporting
+# STAGE_ORCH_COST_GRANDFATHERED="STAGE-001 STAGE-002" turned the gate green with
+# zero repo artifact and no output. An unfalsifiable falsifier is not a falsifier.
+# So the list announces itself whenever it is not the committed default.
+if [ "${STAGE_ORCH_COST_GRANDFATHERED}" != "${STAGE_ORCH_COST_GRANDFATHERED_DEFAULT}" ]; then
+    [ "$JSON_OUT" = 1 ] || warn "cost-audit: STAGE_ORCH_COST_GRANDFATHERED is overridden — exempting: ${STAGE_ORCH_COST_GRANDFATHERED:-<empty>} (committed default: ${STAGE_ORCH_COST_GRANDFATHERED_DEFAULT:-<none>}). DEC-022's Validation says a growing list means the GATE is wrong, not the stages."
+fi
+
+while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    name=$(basename "$f" .md)
+    # FU-4 (PATCH-003): `status: "shipped"` is legal YAML and silently skipped
+    # the whole check before this — a stage could opt out of the gate by adding
+    # two characters, which is the failure mode this gate exists to prevent.
+    stage_status=$(get_stage_status "$f" | tr -d '"'"'"'"')
+    [ "$stage_status" = "shipped" ] || continue
+    if is_grandfathered_stage_orch "$name"; then continue; fi
+    if ! stage_has_orchestration_cost "$f"; then
+        reason="orchestration"
+        off_names+=("$name"); off_missing+=("$reason")
+        # One source for both surfaces: the human line and the JSON `missing_cost`
+        # must not be able to drift. Found by a mutation that emptied the array and
+        # left the printed message intact, because the reason was written twice.
+        [ "$JSON_OUT" = 1 ] || printf "  %-58s missing cost on: %s\n" "$name" "$reason"
+        offenders=$((offenders + 1))
+    fi
+done < <(find_all_stages "$project_dir")
+
 # Machine-readable findings (DEC-001 §2) — which artifact is missing which
 # metered cycle, so an agent can fix it rather than screen-scrape.
 if [ "$JSON_OUT" = 1 ]; then
@@ -126,6 +163,6 @@ fi
 
 if [ "$offenders" -gt 0 ]; then
     echo ""
-    die "cost-audit: ${offenders} shipped spec(s)/patch(es) missing metered-cycle cost. Record tokens_total per AGENTS.md §4 / docs/cost-tracking.md."
+    die "cost-audit: ${offenders} shipped artifact(s) missing cost. Specs/patches need metered-cycle tokens_total; a shipped STAGE needs orchestration_cost.sessions filled at its close (AGENTS.md §4, the stage template's own instruction, docs/cost-tracking.md)."
 fi
-success "cost-audit: all shipped specs and patches have their metered-cycle cost recorded."
+success "cost-audit: all shipped specs and patches have their metered-cycle cost recorded, and every shipped stage records its orchestration cost."
