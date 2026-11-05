@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-05
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-009
@@ -42,14 +42,14 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
+  status: completed                # completed | blocked | rejected
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # tokens_total × your rate, or your harness's number
   duration_minutes: null
-  branch: null
+  branch: worktree-agent-a2f528d5661edeeb8
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # one line if unusual (rework, no meter, etc.)
+  completed_at: 2026-11-05         # YYYY-MM-DD
+  notes: "tokens_total not visible to the implementer harness; orchestrator transcribes the metered figure. One rework: first 60 s smoke found a too-strict harness invariant (see Handback)."
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -116,38 +116,60 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `worktree-agent-a2f528d5661edeeb8` (committed locally; not pushed, no PR)
+- **Completed at:** 2026-11-05
+- **All acceptance criteria met?** yes, with the deviations below. Orchestrator re-runs of the gates are still due.
+- **For `verify`:** n/a
+
+**Boundary mutations (each named test goes red, then reverted; 1.90.0, `cargo test --lib jpeg`):**
+
+| Mutation | Tests red |
+|---|---|
+| (a) segment cap `>=` to `>` | `one_over_the_segment_cap_halts_with_too_many_segments`, `nothing_is_recorded_after_a_halt` |
+| (b) issue cap `>=` to `>` | `a_flood_of_ff00_pairs_is_capped_at_max_issues_plus_one`, `the_issue_cap_boundary_is_exact`, `nothing_is_recorded_after_a_halt` |
+| (c) fill-byte arm removed | `fill_bytes_before_a_marker_are_clean` |
+| (d) `L < 2` to `L < 3` | `a_length_of_two_is_a_valid_empty_segment`, `app_segments_are_classified_by_marker_and_signature`, `exactly_max_segments_is_clean`, `one_over_the_segment_cap_halts_with_too_many_segments`, `nothing_is_recorded_after_a_halt` |
+| (e) truncated segment recorded partially | `a_length_past_eof_omits_the_segment_and_ends_the_walk` |
+
+**Fuzz plants shown red (harness via `cargo test --test fuzz_layout`, which runs the same invariants over the 19 seeds plus extras):**
+p1 trailer starts at `eoi + 1` (red: `trailer`); p2 `MissingEoi` only reported when an SOS exists, an overlapping-guard variant (red: `MissingEoi iff no EOI`); p3 Exif kind loses its marker guard (red: `kind`, via the extra APP2-with-Exif-signature input); p4 Exif kind loses its signature guard (red: `kind`); p5 `after_scan` constant false (red: `after_scan iff after first SOS`); p6 scan region ends at `eoi` not `eoi + 2` (red: `region end`). **Against the real libFuzzer target:** p3 with the committed seeds in the corpus went red (`assertion left == right failed: kind`, exit 77) within the 60 s budget.
+
+**Real fuzz finding (first 60 s smoke, 1,416 executions in):** my own harness invariant "after a cap issue neither `MissingSos` nor `MissingEoi` appears" is false at one boundary. With 1023 ordinary issues, `MissingSos` is the 1024th (recorded) and `MissingEoi` would be the 1025th so it becomes `TooManyIssues`: the list ends `[..., MissingSos, TooManyIssues]`. That is the rules as written (the cap fires inside rule 3, not before it), so the library is right and the spec's fuzz invariant text ("a `TooManyIssues` ... then neither ... appears") is slightly over-strong. I relaxed the harness (segment-cap halt: no Missing*; issue-cap halt: Missing* only as a contiguous run directly before the halting issue and each still true) and added the 1023 case to `the_issue_cap_boundary_is_exact`. No library change. The spec's unit test for the 100,000 `FF 00` flood is unaffected.
+
+**60 s smoke (`just fuzz-smoke jpeg_segments`, after the fix):** clean, `Done 211248 runs in 61 second(s)`, final `cov: 517 ft: 2285 corp: 293/957Kb`, about 3,463 exec/s, exit 0. Initial coverage from the 19 seeds: `cov: 400 ft: 781 corp: 18`.
+
+**Progress / non-advancing cursor:** none found. The 30-input `walk_always_makes_progress` table, the 60 s smoke and the all-`FF` 2 MiB test all terminate; the loop is structurally advancing (stray run >= 1 byte, fill +1, every marker branch >= 2, scan search forward only).
+
+**Gates run here:** `cargo fmt --check` (both graphs), `just lint`, `just lint-fuzz`, `just lint-no-allow`, `cargo rustc --lib -- -F unsafe_code`, `just deny`, `just deny-fuzz`, `cargo test` on Homebrew stable and `+1.90.0` (105 lib tests, 7 fuzz_layout tests, rest unchanged), `just validate`, `just decisions-audit` (0 errors), `just cost-audit`, `just oracle-record` (empty diff under `tests/oracle-fixtures/`, `two-hop-cycle` skipped). CI YAML parses (PyYAML) and the `fuzz-smoke` matrix is `target: [tiff_ifd, jpeg_segments]`. The 29 TIFF seeds are byte-identical (shasum before/after the seed writer, 0 differences).
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null (the implementer harness exposes no token count; orchestrator transcribes the metered figure)
+- **Estimated USD:** null
+- **Duration (minutes):** about 60 (estimate)
+- **Source of the number:** none available
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
+- **New decisions emitted:** none
 - **Deviations from spec:**
-  - [list]
-- **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - `src/tiff/mod.rs` was touched, test module only: the spec requires extending the exhaustive `every_error_variant_this_module_returns_displays_something` guard, which lives in the TIFF test module, and adding seven variants breaks its wildcard-free match at compile time. No non-test TIFF code changed. The same guard is also duplicated in `src/jpeg/mod.rs` (the named test there).
+  - Test names: all spec names kept. Added `the_issue_cap_boundary_is_exact`, `nothing_is_recorded_after_a_halt` (the handoff asks for "test it"), `jpeg_seeds_are_committed`, `every_jpeg_seed_walks_without_panicking`, `jpeg_harness_holds_on_fatal_and_degenerate_inputs`.
+  - `length_zero_and_one_are_bad_lengths_and_the_walk_continues` also asserts a second issue `StrayBytes { at: 4, len: 2 }`: after `BadSegmentLength` skips the two marker bytes, the two length bytes (`00 00` / `00 01`) are a non-`FF` run and fall to rule 2.1. That is exactly what the rules produce; the spec text lists only the first issue. Same for the seeds.
+  - `fill_bytes_before_a_marker_are_clean` uses `FF D8 FF FF E0` shape built by the `seg` helper (its own `FF` is the one before `E0`, offset 4), matching the spec example offset.
+  - Rule 2.2/2.3 ordering: a run of fill that reaches end of input (`FF D8 FF FF`) reports `Truncated { at: <offset of the last FF>, len: 2 }`. The spec's rule 2.2 checks `p + 1 >= len` before the fill loop; I apply the same check after each fill advance. For `FF D8 FF` the result is `at: 2` as specified.
+  - `trailer()` with no EOI returns `data[len..]` (an empty slice borrowed from the input) rather than a static `&[]`, so the zero-copy "inside the input" check holds for the empty case too (the harness caught the static slice).
+  - Lone `FF` as the last byte of scan data is not an issue (rule 2.8: no marker follows, so `p = len`); only `MissingEoi` is reported.
+  - Fuzz-invariant relaxation described above (the cap-inside-rule-3 boundary).
+- **Follow-up work identified:** reword the spec's fuzz-invariant bullet about `TooManyIssues` and the end-of-walk pair (DEC-006's "suppresses" sentence too: it suppresses only when the halt precedes the end-of-walk step). Consider whether `JpegIssue` for `StrayBytes` after `BadSegmentLength` should be coalesced; SPEC-011's ExifTool parity may care.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — The cap-versus-end-of-walk interaction (does the issue cap suppress rule 3 or fire inside it) and the doubled FF-fill/truncation ordering; the spec's fuzz-invariant text assumed the former. Also the isolated-worktree shell refuses compound commands, so scripted mutation/plant runs had to be file-based.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — That the TIFF test module's exhaustive error guard must change when `Error` grows (a "do not touch the TIFF module" constraint collides with the spec's own instruction). Worth an explicit carve-out.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Write the cap-boundary cases (1022/1023/1024 ordinary issues) as unit tests before the harness, and write the fuzz invariant from the rules rather than from the prose summary; the first 60 s smoke would then have been clean.

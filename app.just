@@ -83,16 +83,28 @@ lint-fuzz:
     PATH="$HOME/.cargo/bin:$PATH" ~/.cargo/bin/cargo +stable clippy \
         --manifest-path fuzz/Cargo.toml --all-targets -- -D warnings
 
-# 60 s smoke run of the tiff_ifd target from the committed seeds.
+# 60 s smoke run of a fuzz target from its committed seeds: `just fuzz-smoke
+# [TARGET]` (`tiff_ifd` or `jpeg_segments`); with no TARGET every target runs in
+# turn, 60 s each.
 #
-# `cargo fuzz` shells out to a bare `cargo`, which resolves to Homebrew's stable
-# and rejects `-Zsanitizer=address`; so PATH gets `~/.cargo/bin` first AND the
-# outer command is `+nightly`. libFuzzer refuses a corpus dir that does not
-# exist, hence the mkdir. Exits non-zero on any crash.
-fuzz-smoke:
-    mkdir -p fuzz/corpus/tiff_ifd
-    PATH="$HOME/.cargo/bin:$PATH" ~/.cargo/bin/cargo +nightly fuzz run tiff_ifd \
-        fuzz/corpus/tiff_ifd fuzz/seeds/tiff_ifd -- -max_total_time=60
+# PATH TRAP: `cargo fuzz` shells out to a bare `cargo`, which resolves to
+# Homebrew's stable and rejects `-Zsanitizer=address`; so PATH gets
+# `~/.cargo/bin` first AND the outer command is `+nightly`. libFuzzer refuses a
+# corpus dir that does not exist, hence the mkdir. Exits non-zero on any crash.
+fuzz-smoke TARGET="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export PATH="$HOME/.cargo/bin:$PATH"
+    targets="{{TARGET}}"
+    if [ -z "$targets" ]; then targets="tiff_ifd jpeg_segments"; fi
+    for t in $targets; do
+        if [ ! -f "fuzz/fuzz_targets/$t.rs" ]; then
+            echo "fuzz-smoke: unknown target '$t'" >&2
+            exit 2
+        fi
+        mkdir -p "fuzz/corpus/$t"
+        ~/.cargo/bin/cargo +nightly fuzz run "$t" "fuzz/corpus/$t" "fuzz/seeds/$t" -- -max_total_time=60
+    done
 
 # ── Oracle (SPEC-005) ────────────────────────────────────────────────────────
 

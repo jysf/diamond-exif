@@ -166,18 +166,23 @@ jobs:
           manifest-path: fuzz/Cargo.toml
           command: check licenses
 
-  # constraint `fuzz-target-per-surface`: the tiff_ifd target runs in CI. A fresh
-  # Ubuntu runner has no Homebrew cargo to collide with, so the local PATH trap in
-  # guidance/toolchain-brief.md does not apply here. Mirrors `just fuzz-smoke`.
+  # constraint `fuzz-target-per-surface`: every fuzz target runs in CI, one matrix
+  # leg each (60 s). A fresh Ubuntu runner has no Homebrew cargo to collide with,
+  # so the local PATH trap in guidance/toolchain-brief.md does not apply here.
+  # Mirrors `just fuzz-smoke [TARGET]`. A new target is a new matrix entry.
   fuzz-smoke:
-    name: rust / fuzz smoke — tiff_ifd (60s)
+    name: rust / fuzz smoke — ${{ matrix.target }} (60s)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [tiff_ifd, jpeg_segments]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - run: cargo install cargo-fuzz --locked
-      - run: mkdir -p fuzz/corpus/tiff_ifd
-      - run: cargo +nightly fuzz run tiff_ifd fuzz/corpus/tiff_ifd fuzz/seeds/tiff_ifd -- -max_total_time=60
+      - run: mkdir -p fuzz/corpus/${{ matrix.target }}
+      - run: cargo +nightly fuzz run ${{ matrix.target }} fuzz/corpus/${{ matrix.target }} fuzz/seeds/${{ matrix.target }} -- -max_total_time=60
 
   msrv:
     name: rust / MSRV (1.90.0)

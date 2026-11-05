@@ -13,6 +13,7 @@
 )]
 
 pub mod error;
+pub mod jpeg;
 pub mod reader;
 pub mod tiff;
 
