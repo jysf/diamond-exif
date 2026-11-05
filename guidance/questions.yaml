@@ -1,0 +1,67 @@
+# guidance/questions.yaml
+# Open questions under active investigation. Agents can see what we're
+# still figuring out and avoid re-deriving answers in isolation.
+#
+# Every question MUST have:
+#   - id: stable kebab-case identifier
+#   - question: the question in one sentence
+#   - priority: critical | high | medium | low
+#   - status: open | investigating | answered
+#   - raised_by: human | claude | <agent-id>
+#   - raised_at: YYYY-MM-DD
+#   - assigned_to: null | <agent-id> | <human>
+#
+# When a question is answered, either:
+#   (a) update status to "answered" and link to the DEC-XXX that records the answer, or
+#   (b) delete the question if it was resolved without a formal decision.
+
+questions:
+  - id: exiftool-write-exit-codes
+    question: "What exit codes does ExifTool return in write mode, and how should I3 write-parity treat them?"
+    priority: high
+    status: open
+    raised_by: human
+    raised_at: 2026-11-04
+    assigned_to: null
+    notes: |
+      Measure before building I3 write parity.
+
+  - id: template-drift
+    question: "Has spec-driven-template drifted since this repo was scaffolded?"
+    priority: low
+    status: open
+    raised_by: human
+    raised_at: 2026-11-04
+    assigned_to: null
+    notes: |
+      Check with: gh release list -R jysf/spec-driven-template (compare to VERSION).
+
+  - id: ifd-rs-test-classification
+    question: "Which irradiance ifd.rs tests are actually portable?"
+    priority: high
+    status: open
+    raised_by: human
+    raised_at: 2026-11-04
+    assigned_to: null
+    notes: |
+      Classification in the porting brief was by name/range, not by execution. Verify by running them.
+
+  - id: ci-job-script-wiring
+    question: "How are irradiance's CI jobs wired to its scripts/?"
+    priority: medium
+    status: open
+    raised_by: human
+    raised_at: 2026-11-04
+    assigned_to: null
+    notes: |
+      Untraced in the porting brief; trace before cloning gate scripts.
+
+  - id: xmp-scanner-vs-roxmltree
+    question: "Hand-written XMP scanner or roxmltree?"
+    priority: medium
+    status: open
+    raised_by: human
+    raised_at: 2026-11-04
+    assigned_to: null
+    notes: |
+      Decision point; record as a DEC (also subject to no-new-top-level-deps-without-decision).
