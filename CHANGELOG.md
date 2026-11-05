@@ -10,6 +10,7 @@ the patch lane files fixes here (`[Unreleased] → Fixed`), and a release spec
 
 ### Added
 
+- Strict TIFF/IFD skeleton (SPEC-002), ported from irradiance `src/ifd.rs` (copy-then-edit, DNG removed): `exif_core::{Error, Result}`, `reader::ByteOrder`, `tiff::{Container, Ifd, Entry}` with `parse`, `payload` (returns `&'a [u8]` tied to the input), `uints`, `urationals`/`srationals` (verbatim, never divided), the three walk guards, and 23 tests. Any bad IFD is still `Err`; the tolerant walk is SPEC-003. No dependencies.
 - `exif-core` crate scaffold (SPEC-001): empty gated lib with `#![forbid(unsafe_code)]` and the five-lint deny set, `deny.toml`, dual MIT/Apache-2.0 licence files, provenance-ledger header, `tests/crate_policy.rs`. No dependencies, no public API.
 
 ### Changed
