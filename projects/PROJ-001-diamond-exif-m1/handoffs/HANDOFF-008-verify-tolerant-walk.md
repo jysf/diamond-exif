@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: verifier             # implementer | verifier
   created_at: 2026-11-05
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-003
@@ -42,14 +42,14 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
+  status: completed                # completed | blocked | rejected
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: null
-  branch: null
+  duration_minutes: 25
+  branch: worktree-agent-a6cd3ffb2817859ef
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # one line if unusual (rework, no meter, etc.)
+  completed_at: 2026-11-05         # YYYY-MM-DD
+  notes: "verdict APPROVED at 6981332 (code de5217c); verifier sub-agent has no token meter, orchestrator to transcribe the harness's metered sub-agent count (as for HANDOFF-007); .repo-context.yaml left untouched"
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -114,38 +114,70 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** worktree branch `worktree-agent-a6cd3ffb2817859ef` (fast-forwarded to `6981332`); handback committed there. Not pushed, no PR, no cycle advanced.
+- **Completed at:** 2026-11-05
+- **All acceptance criteria met?** yes (each re-run independently; evidence below).
+- **For `verify`:** ✅ **APPROVED** at commit `6981332` (code under review: build commit `de5217c`, `git diff 6f4e022..HEAD`).
+
+**Gates (re-run by the verifier, all green):** `cargo +1.90.0 fmt --all -- --check`; `just lint` (clippy 0.1.90, `-D warnings`, five-lint set; needs `RUSTUP_TOOLCHAIN=1.90.0` when `~/.cargo/bin` is first in PATH, see toolchain brief); `just lint-fuzz`; `rustfmt --check` on `fuzz/fuzz_targets/tiff_ifd.rs`; `cargo test` on 1.90.0 and on rustup stable (36 lib + 4 + 4, 0 failed); `cargo +1.90.0 rustc --lib -- -F unsafe_code`; `just deny`, `just deny-fuzz` (licenses ok; only the pre-existing "unmatched license allowance" warning); `just validate`; `just decisions-audit` (4 clean); `just decisions-audit --changed 6f4e022` (no active DEC scope matches); `just cost-audit`. `[dependencies]` still empty; no file under `scripts/` or irradiance touched. `cargo run --example fuzz_seeds` regenerates the 20 seeds with zero diff (deterministic; the 17 pre-existing seeds are byte-identical to `6f4e022`).
+
+**Mutation checks (verifier re-run, each reverted, tree clean):**
+
+| Mutation | Tests that went red |
+|---|---|
+| (a) `depth > MAX_IFD_DEPTH` -> `>=` | `nesting_past_the_depth_limit_terminates`, `nesting_at_exactly_the_depth_limit_is_clean` |
+| (b) `depth > MAX_IFD_DEPTH` -> `> MAX_IFD_DEPTH + 1` | `nesting_past_the_depth_limit_terminates` |
+| (c) `attempts > MAX_IFDS` -> `>=` | `a_long_chain_stops_at_the_ifd_limit`, `a_chain_of_exactly_max_ifds_is_clean`, `a_hostile_subifds_array_cannot_flood_the_issue_list` |
+| (d) `attempts > MAX_IFDS` -> `> MAX_IFDS + 1` | `a_long_chain_stops_at_the_ifd_limit`, `a_hostile_subifds_array_cannot_flood_the_issue_list` |
+
+Matches the builder's table exactly.
+
+**Plants (each reverted, tree clean):**
+
+| Plant | Caught by |
+|---|---|
+| P1 `is_clean()` returns `true` | lib `a_self_referential_subifd_terminates`; seed test `every_seed_parses_or_errors_without_panicking` ("strict Err but is_clean"); libFuzzer crash on the differential assert (`tiff_ifd.rs:59`, deadly signal) within the first run |
+| P2 containment: a failed IFD recorded as a phantom empty IFD | seed test ("IFD escapes the input"); lib `a_bad_subifd_is_omitted_atomically`, `a_corrupt_ifd1_keeps_ifd0`, `a_corrupt_subifd_leaves_ifd0_readable`, `one_bad_subifd_does_not_hide_its_siblings` |
+| P3 issue bound: `halted` never set (budget per-branch) | `a_hostile_subifds_array_cannot_flood_the_issue_list` |
+| P4 IFD0 not counted as attempt 1 | `a_long_chain_stops_at_the_ifd_limit`, flood test |
+| P5 malformed `SubIFDs` tag also ends the holder's chain | `a_malformed_subifds_tag_costs_the_branch_not_the_ifd` |
+| P6 wrong `from_ifd` on a `Link::Next` follow | `a_long_chain_stops_at_the_ifd_limit` |
+
+**`just fuzz-smoke` (60 s, clean tree):** clean, no crash. 1,064,119 executions in 61 s (~17.4k exec/s); `INITED cov: 534 ft: 996` from 20 seeds; final `cov: 643 ft: 2947 corp: 456/221Kb`.
+
+**Code read against the Walk rules:** IFD0 read directly via `read_ifd` with `?` (fatal, atomic, including the next-word) and seeded as attempt 1 / `visited = [ifd0]`; `follow` order is attempts (`saturating_add`) -> global halt -> per-branch depth -> cycle (push) -> `read_ifd` (omit whole on `Err`, chain ends); chain iterative in `walk_from`, recursion only through `walk_sub_ifds` and bounded by the depth check (max 9 frames); `halted` checked before each sub-offset and each chain step; malformed `SubIFDs` -> `Tag(330)`, `offset None`, holder kept, chain continues; `from_ifd` always an index already pushed. Issue bound holds by construction (≤ 512 follow issues for attempts 2..=513, ≤ 512 pointer-tag issues). No `unwrap`/`expect`/indexing/unchecked arithmetic in non-test code (clippy five-lint set green). `parse_strict` agrees with the spec (first issue by value via `into_error`). Fuzz differential is both-directional (strict `Ok` ⇒ clean; strict `Err` ⇒ `!is_clean` and equal to first issue; fatal ⇒ equal `Err`). Every flipped test asserts both the tolerant outcome and the strict `Err`; no vacuous test found.
+
+**Builder deviations — all acceptable:** `ParseIssue::into_error` is `pub(crate)` (spec's own note asks for by-value take); private `Walk` struct and `walk_from`/`walk_sub_ifds`/`follow` replace `walk_chain`/`sub_ifd_offsets_of_last` (module docs updated); `nested`/`chained` test helpers; strengthened `!is_clean` assert. `a_clean_container_reports_no_issues` was not added as a separate test: the spec said to extend the existing SubIFD-order test, which was done (`subifd_offsets_are_walked_in_order_and_recorded_with_their_parent` asserts `is_clean()` and `issues().is_empty()`).
+
+**Findings (none blocking):**
+
+1. **LOW — zero sub-offsets and the `SubIFDs` decode are outside the attempt budget.** Rule 4 skips a `0` sub-offset silently without consuming an attempt, and `uints` materialises up to `MAX_TAG_VALUES` (1 Mi) offsets per holding IFD before the `halted` check. Measured with a temporary probe (deleted): 512 chained IFDs whose `SubIFDs` (count 2^20) all share one 4 MiB block of zeros, a 4.2 MB input, parse clean in 0.34 s release / 5.9 s debug, with 512 transient 4 MiB allocations. Bounded (O(`MAX_IFDS` × `MAX_TAG_VALUES`)), and spec-sanctioned, but rule 6's "every pointer follow consumes the attempt budget" does not cover this cost. The 4 KiB fuzz length cap cannot find it. Suggest SPEC-004 (which adds more pointer tags) caps the offsets read from a pointer tag, or charges zero entries / decode against a work budget.
+2. **INFO — `CyclicIfd` also names non-cycles.** `visited` is pushed before `read_ifd`, so a second pointer to an already-read offset (a diamond, not a cycle) or to an offset that already failed reports `CyclicIfd` rather than the real cause. Consistent with Walk rule 3.3 and SPEC-002 semantics; worth wording carefully when the audit CLI renders issues.
+3. **INFO — `Error: Clone + PartialEq + Eq` is now public API.** A future variant carrying a float would break `Eq` (builder noted this too). `ParseIssue` being `#[non_exhaustive]` with private fields is redundant but harmless.
+4. **INFO — `just lint` host trap.** With `~/.cargo/bin` first in PATH (needed for clippy 0.1.90) `just lint` fails at `cargo fmt` on the nightly default unless `RUSTUP_TOOLCHAIN=1.90.0` is set. Already described in the toolchain brief; not a code defect.
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null — the verifier sub-agent has no token meter in its interface; the orchestrator should transcribe the harness's metered sub-agent count (same path as HANDOFF-007). `.repo-context.yaml` deliberately not edited (out of a verifier's remit).
+- **Estimated USD:** null (follows from the token count)
+- **Duration (minutes):** ~25
+- **Source of the number:** none available to the sub-agent; harness report via the orchestrator
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
-- **Deviations from spec:**
-  - [list]
+- **New decisions emitted:** none.
+- **Deviations from spec:** none beyond the builder's listed ones, all accepted above.
 - **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - SPEC-004: bound the per-pointer-tag offset decode / zero-entry scan (finding 1), and repeat the corrupt-pointer test with the real GPS pointer (existing carry-in).
+  - Audit CLI: render `CyclicIfd` as "pointer revisits offset" rather than asserting a cycle (finding 2).
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — Little. The one friction was that `cargo test` stops at the first failing binary, so a plant caught by the lib tests hides whether the seed test also catches it; I had to re-run `--test fuzz_layout` alone. The handoff could say "run the seed test on its own for the plant".
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — A work bound, not just a count bound: DEC-001's clarification bounds attempts and issues but not decode work per pointer tag, which is where the remaining amplification lives.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Script the mutations and plants up front (the worktree guard refuses compound git commands, so a script file is the practical form) and add the amplification probe earlier, since it was the only finding that needed measurement.
