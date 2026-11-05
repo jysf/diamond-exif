@@ -36,3 +36,26 @@ lint:
 # Type check
 typecheck:
     @echo "TODO: define 'typecheck' in app.just (e.g. npm run typecheck)" && exit 1
+
+# ── Gate hardening (reconciled from irradiance; SPEC-016/023, PATCH-002) ─────
+# These are template-generic: they gate the spec-driven artifacts, not the app.
+
+# Front-matter PARSE gate red-proof: a grep-satisfiable but parse-broken
+# artifact must be REJECTED by name with the parser's own message, and the
+# honest tree must stay green. Runs in a temp copy (never writes the tree).
+validate-red-proof:
+    ./scripts/validate-red-proof.sh
+
+# Stage orchestration-cost gate red-proof: a shipped stage left as the unfilled
+# template must be rejected by name; prose/CRLF/fence variants must not satisfy it.
+cost-audit-red-proof:
+    ./scripts/cost-audit-red-proof.sh
+
+# Gate over the gates: flags the "mute death" shapes (swallowed oracle exit,
+# unguarded grep in a command substitution, a verdict with no asserted count).
+gate-audit *FLAGS:
+    ./scripts/gate-audit.sh {{FLAGS}}
+
+# Proves gate-audit itself goes red on each injected shape (and not on comments).
+gate-audit-red-proof:
+    ./scripts/gate-audit-red-proof.sh

@@ -213,8 +213,12 @@ if [ "${1:-}" = "--changed" ]; then
         is_active "$file" || continue
         id=$(get_insight_id "$file")
         # The markdown H1 title; anchored to `# DEC-` so it can't pick
-        # up a `#`-prefixed YAML comment inside the front-matter.
-        title=$(grep -m1 '^# DEC-' "$file" | sed -E 's/^# //')
+        # up a `#`-prefixed YAML comment inside the front-matter. `|| true`
+        # guards the grep: a DEC missing its `# DEC-` H1 is a zero-match, which
+        # under set -e/pipefail would otherwise abort the whole lint with no
+        # `die` — a gate dying mutely (SPEC-023, §16 rule 3). A missing title
+        # then falls through as empty, which the warn line below renders plainly.
+        title=$(grep -m1 '^# DEC-' "$file" | sed -E 's/^# //' || true)
         globs=()
         while IFS= read -r g; do
             [ -n "$g" ] && globs+=("$g")

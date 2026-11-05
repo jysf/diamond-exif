@@ -44,7 +44,7 @@ sed_inplace() {
     if [ "$(uname)" = "Darwin" ]; then sed -i '' "$@"; else sed -i "$@"; fi
 }
 
-synced=0; skipped=0; pending=0
+synced=0; skipped=0; pending=0; superseded=0
 sync_ids=(); sync_cycles=(); sync_tokens=(); pending_ids=(); pending_why=()
 
 if [ -d "$HANDOFF_DIR" ]; then
@@ -54,7 +54,18 @@ if [ -d "$HANDOFF_DIR" ]; then
         hspec=$(awk '/^---$/{f=!f; next} f && /^[[:space:]]+spec_id:/{print $2; exit}' "$hf")
         [ "$hspec" = "$SPEC_ID" ] || continue
 
-        hid=$(basename "$hf" .md | grep -oE 'HANDOFF-[0-9]+')
+        # A superseded handoff was never dispatched (SPEC-016's L→S rescope
+        # retired HANDOFF-038 this way): no cycle ran, so there is no cost to
+        # transcribe and it is not "pending". Counting it pending trips the
+        # gate's `exit 1` on a non-failure — a gate dying for a non-failure is
+        # the mute-death shape this spec closes (SPEC-023). Skip it before the
+        # handback fields are read, tallied SEPARATELY from "already synced":
+        # claiming a never-dispatched handoff was synced is its own small lie.
+        if [ "$(get_handoff_field "$hf" status)" = "superseded" ]; then
+            superseded=$((superseded + 1)); continue
+        fi
+
+        hid=$(basename "$hf" .md | grep -oE 'HANDOFF-[0-9]+' || true)
         hcycle=$(get_handoff_field "$hf" cycle)
         [ -n "$hcycle" ] || hcycle="build"
         hstatus=$(get_handback_field "$hf" status)
@@ -143,7 +154,7 @@ if [ "$JSON_OUT" = 1 ]; then
     json_emit handback-sync "$(json_obj \
         "task.id" "$(json_qs "$SPEC_ID")" \
         dry_run "$([ "$DRY_RUN" = 1 ] && echo true || echo false)" \
-        synced "$synced" already_synced "$skipped" pending "$pending" \
+        synced "$synced" already_synced "$skipped" superseded "$superseded" pending "$pending" \
         transcribed "$sarr" awaiting "$parr")"
     [ "$pending" -gt 0 ] && exit 1
     exit 0
@@ -160,6 +171,7 @@ if [ "$synced" -gt 0 ]; then
     done
 fi
 [ "$skipped" -gt 0 ] && printf "  ${DIM}%d handback(s) already synced — skipped${RESET}\n" "$skipped"
+[ "$superseded" -gt 0 ] && printf "  ${DIM}%d handoff(s) superseded (never dispatched) — skipped${RESET}\n" "$superseded"
 
 if [ "$pending" -gt 0 ]; then
     echo ""
@@ -175,8 +187,8 @@ if [ "$pending" -gt 0 ]; then
     exit 1
 fi
 
-if [ "$synced" -eq 0 ] && [ "$skipped" -eq 0 ]; then
+if [ "$synced" -eq 0 ] && [ "$skipped" -eq 0 ] && [ "$superseded" -eq 0 ]; then
     echo "  ${DIM}(no handoffs found for ${SPEC_ID})${RESET}"
 else
-    success "${prefix}handback-sync: ${synced} transcribed, ${skipped} already synced."
+    success "${prefix}handback-sync: ${synced} transcribed, ${skipped} already synced, ${superseded} superseded."
 fi

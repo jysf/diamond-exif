@@ -131,10 +131,14 @@ get_active_project() {
         echo "${ACTIVE_PROJECT}"
         return
     fi
-    # Non-example PROJ-* dirs, lowest number first.
+    # Non-example PROJ-* dirs, lowest number first. `|| true` guards the grep:
+    # a tree with only example projects (or none) is a zero-match, which under
+    # set -e/pipefail would otherwise abort every command that resolves the
+    # active project (SPEC-023, §16 rule 3 — a gate dies through its own message,
+    # not a pipeline's exit status).
     local dirs
     dirs=$(find "${REPO_ROOT}/projects" -maxdepth 1 -type d -name "PROJ-*" 2>/dev/null \
-           | grep -v "example" | sort)
+           | grep -v "example" | sort || true)
     # Prefer a project explicitly marked `status: active`. Without this, a
     # SHIPPED earlier wave silently captures every default-scoped command once a
     # second project exists — `just status`/`cost-audit`/`backlog` would target
@@ -199,7 +203,11 @@ next_id() {
     local prefix="$1"
     local search_dir="${2:-$REPO_ROOT}"
     local max
-    max=$(find "$search_dir" -type f -name "${prefix}-*.md" 2>/dev/null \
+    # Exclude tests/ — oracle fixtures like tests/oracle-fixtures/SPEC-900-*.md
+    # are not real specs. Before this, next_id took SPEC-900 as the repo-wide max
+    # and minted SPEC-901 for the next real spec (the next_id-scans-test-fixtures
+    # signal; SPEC-023 was minted as 901 and hand-renamed to 023).
+    max=$(find "$search_dir" -type f -name "${prefix}-*.md" -not -path '*/tests/*' 2>/dev/null \
           | sed -E "s|.*/${prefix}-([0-9]+).*|\\1|" \
           | sort -n \
           | tail -n1 || true)
@@ -307,7 +315,16 @@ get_handback_field() {
         ins && /^[^[:space:]]/ { ins = 0 }
         ins && $0 ~ ("^[[:space:]]+" k ":") {
             sub("^[[:space:]]+" k ":[[:space:]]*", "")
-            sub("[[:space:]]*#.*$", "")
+            # Strip a trailing YAML comment ONLY from an unquoted scalar. The
+            # handback template puts `# completed | blocked | rejected` after
+            # most fields, so the strip is needed — but `notes:` is a QUOTED
+            # free-text string that may legitimately contain a `#` (e.g. a
+            # `#![deny(...)]` in a Rust handback). Stripping there truncates the
+            # value mid-quote, and handback-sync then writes an unterminated
+            # scalar into the spec, making its whole front matter unparseable
+            # YAML. Measured on SPEC-001 build round 3, where two of five cost
+            # sessions landed broken.
+            if ($0 !~ /^"/ && $0 !~ /^\x27/) sub("[[:space:]]*#.*$", "")
             print; exit
         }
     ' "$file"
@@ -328,6 +345,79 @@ get_spike_field() {
             print; exit
         }
     ' "$file"
+}
+
+# ── Front-matter PARSE gate (SPEC-016) ──────────────────────────────────────
+# Parse the YAML front matter of each FILE given as an argument with a REAL YAML
+# parser, and report every file whose front matter does not parse.
+#
+# The schema checks in validate.sh read front matter with the line-oriented
+# awk/grep helpers above: they confirm required KEYS are present, but they never
+# PARSE. So front matter that no YAML parser can read was reported "valid
+# required front-matter" — one such artifact shipped, was archived, and survived
+# three later specs before anyone noticed (SPEC-016 Context). This closes that
+# class: a parse error fails the gate, names the file, and prints the parser's
+# OWN message so the reader sees the exact line/column the YAML broke at.
+#
+# Parser: ruby's Psych via `YAML.parse`. ruby ships with macOS and the GitHub
+# runner images (SPEC-016 AC1). `YAML.parse` checks SYNTAX only — it builds the
+# node tree and never materializes objects — which is deliberate, not incidental:
+#   * a `created_at: 2026-10-27` date scalar is NOT a false positive. Psych 4
+#     (Ruby 3.1+) made `YAML.load`/`safe_load` reject an un-permitted Date; parse
+#     never instantiates it, so the gate behaves identically on Ruby 2.6 → 3.x.
+#   * it never touches `safe_load`'s `permitted_classes:` keyword, which does not
+#     exist on Ruby 2.6's `safe_load` and raises ArgumentError UNIFORMLY on every
+#     file — a wrong parser API that masquerades as 120 findings while the check
+#     never actually ran. That is the exact failure class SPEC-016 closes, and is
+#     why AC2's third clause demands the parser's MESSAGE, not just an exit code.
+#
+# A file whose first line is not `---`, or whose front matter has no closing
+# `---`, is skipped: it has no front matter to parse. Output is one line per
+# event, tab-separated:
+#     FAIL<TAB><file><TAB><parser message>   — for each unparseable file
+#     PARSED<TAB><n>                          — count of files actually parsed
+#     SCANNED<TAB><n>                         — count of files the parser examined
+# Exit 0 if every file parsed, 1 if any failed. Callers collect the lines.
+#
+# ⚠ The rescue is a BARE `rescue` (StandardError), not `rescue Psych::SyntaxError`
+# only, and it wraps the whole per-file body — `File.read`, the `rstrip` scans,
+# AND `YAML.parse`. A non-syntax fault (an unreadable file, an invalid UTF-8 byte
+# in `rstrip`) therefore emits a named FAIL and exits non-zero, instead of an
+# uncaught exception that a `done < <(…)` caller swallows (SPEC-023, §16 rule 3).
+# `SCANNED` is the completion sentinel: a caller asserts it equals the number of
+# paths it handed in, so a crash that stops the parser mid-run cannot be read as
+# a green "0 parsed" (the mute-death this closes).
+front_matter_parse_report() {
+    ruby -ryaml -e '
+had_error = false
+parsed = 0
+scanned = 0
+ARGV.each do |path|
+  scanned += 1
+  begin
+    lines = File.read(path).lines
+    next unless lines[0] && lines[0].rstrip == "---"
+    body = []
+    closed = false
+    lines[1..-1].each do |l|
+      if l.rstrip == "---"
+        closed = true
+        break
+      end
+      body << l
+    end
+    next unless closed            # no closing fence → no front matter to parse
+    parsed += 1
+    YAML.parse(body.join)
+  rescue => e
+    had_error = true
+    puts "FAIL\t#{path}\t#{e.message}"
+  end
+end
+puts "PARSED\t#{parsed}"
+puts "SCANNED\t#{scanned}"
+exit(had_error ? 1 : 0)
+' "$@"
 }
 
 # Find the timeline file paired with a spec. Returns empty if none.
@@ -387,7 +477,20 @@ get_active_stage_file() {
 get_stage_status() {
     local file="$1"
     [ -f "$file" ] || return
-    awk '/^---$/{f=!f; next} f && /^[[:space:]]+status:/{print $2; exit}' "$file" 2>/dev/null || echo ""
+    # PATCH-003 round 2 (SB-2). A CRLF stage file returned EMPTY here, so
+    # cost-audit skipped the stage entirely and then printed "every shipped
+    # stage records its orchestration cost" about a file it never opened — the
+    # same "opt out by adding characters" class as the quoted-status FU-4 this
+    # patch claimed to close. Strip CR before matching, and tolerate a quoted
+    # or trailing-space value. Five callers inherit this (backlog, roadmap,
+    # specs-by-stage, cost-audit), all of which were equally blind.
+    awk '{ sub(/\r$/, "") }
+         /^---[[:space:]]*$/ { f = !f; next }
+         f && /^[[:space:]]+status:/ {
+             v = $2
+             gsub(/^["\047]|["\047]$/, "", v)
+             print v; exit
+         }' "$file" 2>/dev/null || echo ""
 }
 
 # Read a stage file's target_complete: field. Empty if null/missing.
@@ -1006,18 +1109,119 @@ write_cost_totals() {
 # template instance has no pre-process history, so this list is EMPTY.
 # Add ids (space-separated) here, or override via the env var, only if you
 # adopt the cost gate after already shipping specs without it.
+# SPEC-004's build cycle recorded tokens_total: null with a written reason -- it
+# ran as a top-level CLI session with no /cost and no usage-object access. Its
+# verify (FU-18) established the number WAS obtainable that way, so the null was
+# avoidable rather than forced; but the session is closed and the figure is not
+# recoverable by anyone else. The orchestrator searched the local transcripts and
+# found only its OWN (191M tokens for this whole orchestration), which would have
+# been flatly wrong to attribute.
+#
+# Grandfathered rather than invented. Remove SPEC-004 from this list the moment
+# the real figure is supplied by whoever ran that session.
 COST_AUDIT_GRANDFATHERED="${COST_AUDIT_GRANDFATHERED:-}"
 
-# True if a spec is grandfathered out of the cost audit. Accepts either a
-# bare id ("SPEC-014") or a full file stem ("SPEC-014-some-slug") and matches
-# on the SPEC-NNN id prefix.
+# True if a spec or patch is grandfathered out of the cost audit. Accepts
+# either a bare id ("SPEC-014", "PATCH-003") or a full file stem
+# ("SPEC-014-some-slug", "PATCH-003-some-slug") and matches on the
+# PREFIX-NNN id.
 is_grandfathered_cost() {
-    local rest="${1#SPEC-}"
-    local id="SPEC-${rest%%-*}"
+    local first="${1%%-*}"          # SPEC or PATCH
+    local after="${1#*-}"           # rest after first hyphen
+    local id="${first}-${after%%-*}"  # SPEC-NNN or PATCH-NNN
     case " ${COST_AUDIT_GRANDFATHERED} " in
         *" $id "*) return 0 ;;
         *) return 1 ;;
     esac
+}
+
+# ── Stage orchestration cost (PATCH-002) ────────────────────────────────────
+# Stages shipped before this gate existed. Same shape and same reasoning as
+# COST_AUDIT_GRANDFATHERED above: a gate adopted after the fact cannot demand a
+# number nobody measured at the time.
+#   STAGE-001 shipped 2026-08-22 with `sessions: []`. Its orchestration ran
+#   across a week of sessions with no per-stage boundary recorded, so any figure
+#   reconstructed now would be invented rather than measured — which is exactly
+#   what DEC-013 §4 calls out ("`null` is honest; a guess is not") — that is a
+#   SECTION TITLE in docs/decisions/DEC-013, not AGENTS.md §4, which has never
+#   carried the sentence in its whole history. Corrected at PATCH-003 verify
+#   (FU-3); DEC-022 amends DEC-013 §5, a different section, and preserves §4.
+# ⚠ `:-` means an EMPTY override falls back to the default: setting this to ""
+#   does NOT clear the list, it keeps STAGE-001 exempt. To clear it, pass a
+#   non-empty blank such as " ". This mirrors COST_AUDIT_GRANDFATHERED above,
+#   so it is the repo convention rather than an accident — but an operator
+#   "turning it off" with "" gets a silent no-op (PATCH-003 verify, FU-10).
+STAGE_ORCH_COST_GRANDFATHERED_DEFAULT=""
+STAGE_ORCH_COST_GRANDFATHERED="${STAGE_ORCH_COST_GRANDFATHERED:-$STAGE_ORCH_COST_GRANDFATHERED_DEFAULT}"
+
+is_grandfathered_stage_orch() {
+    local rest="${1#STAGE-}"
+    local id="STAGE-${rest%%-*}"
+    case " ${STAGE_ORCH_COST_GRANDFATHERED} " in
+        *" $id "*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# Every stage file in a project directory.
+find_all_stages() {
+    local project_dir="$1"
+    [ -d "${project_dir}/stages" ] || return 0
+    find "${project_dir}/stages" -maxdepth 1 -name 'STAGE-*.md' -type f 2>/dev/null | sort
+}
+
+# True (0) if a stage records at least one REAL orchestration_cost session.
+#
+# ⚠ THE TRAP THIS FUNCTION EXISTS TO AVOID, measured 2026-09-06: the template
+# block carries a commented EXAMPLE entry —
+#     sessions: []                      # - tokens_total: N
+# — so a naive `grep tokens_total` reports every stage as filled, including the
+# four that are empty. That is `attribute-text-inside-doc-comments` (AGENTS.md
+# §16 rule 2) exactly: the match landed on documentation ABOUT the field. The
+# awk below therefore anchors on a real YAML list item (`- tokens_total: <digit>`)
+# and refuses any line whose first non-space character is `#`.
+stage_has_orchestration_cost() {
+    local file="$1"
+    awk '
+        # PATCH-003 round 2 (SB-1). The previous version anchored the fence on
+        # /^---$/ exactly, so ONE TRAILING SPACE on the closing fence — or no
+        # closing fence at all — left `delim` at 1, and the body was scanned as
+        # front matter with `in_oc` still set. "Unreachable" was claimed in four
+        # places off one modelled shape; it was one space away. Measured:
+        #   `--- ` closing fence + prose `- tokens_total: 84200000`  -> rc=0
+        #   no closing fence      + the same prose                   -> rc=0
+        # Normalise CR and trailing whitespace before matching the fence, and
+        # FAIL CLOSED when the front matter never closes: an unterminated
+        # document is malformed, and a malformed stage must not satisfy a gate.
+        { sub(/\r$/, "") }
+        # No early exit on the closing fence, and none on a hit: `found` must be
+        # able to be true while `closed` is still false, or the fail-closed test
+        # in END can be satisfied by the very hit it is meant to disqualify.
+        # (Exactly what round 2 first attempt did wrong: N2 still bypassed.)
+        /^---[[:space:]]*$/ { if (++delim == 2) closed = 1; next }
+        delim != 1 { next }
+        /^orchestration_cost:/ { in_oc = 1; next }
+        in_oc && /^[a-z_]+:/ { in_oc = 0 }
+        !in_oc { next }
+        {
+            line = $0
+            sub(/^[ \t]+/, "", line)
+            # Unreachable, kept as defence in depth: after stripping whitespace a
+            # line cannot both begin with `#` and match the anchor below. The
+            # anchor is the defence against the template comment (FU-1).
+            if (substr(line, 1, 1) == "#") next
+            if (line ~ /^- tokens_total:[ \t]*[0-9]+/) {
+                # A recorded ZERO is not a recorded cost; the spec-side gate
+                # already treats 0 as absent (FU-6).
+                v = line
+                sub(/^- tokens_total:[ \t]*/, "", v)
+                sub(/[^0-9].*$/, "", v)
+                if (v + 0 > 0) found = 1
+
+            }
+        }
+        END { exit((found && closed) ? 0 : 1) }
+    ' "$file"
 }
 
 # Print the tokens_total recorded for one cycle's cost session.
