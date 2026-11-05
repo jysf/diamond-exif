@@ -6,14 +6,14 @@
 task:
   id: SPEC-004
   type: story                      # epic | story | task | bug | chore
-  cycle: verify  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
-  complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
+  complexity_actual: M             # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: punch-list  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
@@ -92,6 +92,7 @@ cost:
     tokens_total: 377053
     estimated_usd: 2.49
     session_count: 3
+shipped_at: 2026-11-05
 ---
 
 # SPEC-004: Multi-IFD pointer walk
@@ -231,34 +232,16 @@ In `src/tiff/mod.rs` `mod tests` with the existing `Build` byte-builder (extend 
 
 ## Reflection
 
-*Appended during **ship**. Three questions, short answers.*
-
 1. **What would I do differently next time?**
-   — <answer>
+   — State the "halted ends the walk" rule as an explicit test in the spec instead of only as a rule: the builder satisfied the letter of rule 7 for the offset loop but kept recording pointer-value issues after the halt, and only the verifier's adversarial probe found it. Naming a "nothing is recorded after TooManyIfds" test at design would have caught it in build. Also name the exact worst-case shape for any "bound" claim; the verifier found the real ceiling (3 x MAX_IFDS + 1 = 1,537) is well under `MAX_ISSUES` (2,561).
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — DEC-005 gained a note that `Exif -> Sub -> Exif -> Interop` nesting is reachable and accepted. `scripts/decisions-audit.sh` reads only block-style `affected_scope` lists, so `--changed` silently matched nothing; worked around by converting every DEC to block lists and recorded as signal `decisions-audit-reads-block-lists-only` (upstream fix needed in the template and irradiance).
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — SPEC-007 (decoders) is next and already outlined. Possible later tightening, not a spec: `MAX_ISSUES` is loose; `ALL_KINDS` is duplicated in `tests/fuzz_layout.rs` and cannot fail to compile when an `IfdKind` is added (a `#[non_exhaustive]` enum), so a new kind must be added by hand in the fuzz target and layout test.
 
-4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
-   the defect-escape distribution is greppable across specs:
-   `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
-   `none` (clean first try).
-   — <one word>
-   *(Runtime/operational defects — the escape-prone class — only exist once the
-   artifact meets its real host. `escaped` here is a signal to strengthen the
-   §12 behavioral pre-flight for that surface.)*
+4. **Where was the worst defect caught?** — verify
+   *(issues recorded after the budget halted the walk; fixed in a follow-up build round and mutation-checked again by the orchestrator. Verify verdict is recorded as punch-list; the fix round was reviewed by the orchestrator rather than a second full verify.)*
 
-5. **What can a user do now that they couldn't before?** — one sentence,
-   before → after; quote the confirming number if one exists, name the outcome
-   if not. Write `none` if this spec has no user-visible outcome — that is a
-   real, greppable result, not a blank. This is the line a downstream work-log's
-   `impact` field is transcribed from, and both halves are already written above
-   (## Context is the before, ## Goal is the after): confirm the prediction,
-   don't reconstruct it from memory.
-   — <answer | none>
+5. **What can a user do now that they couldn't before?** — Read a file's Exif, GPS and Interop IFDs separately, each labelled by how it was reached, and still get IFD0 and the Exif IFD when the GPS block is corrupt, with the damage reported as a typed finding; and a hostile pointer array can no longer burn work without spending the IFD budget.
