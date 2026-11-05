@@ -80,10 +80,18 @@ cost:
       duration_minutes: 9
       recorded_at: 2026-11-05
       notes: "verdict PUNCH LIST at a68757d (code 06f1702); tokens transcribed by the orchestrator from the sub-agent metered result"
+    - cycle: build
+      agent: claude-sonnet-5-5
+      interface: other
+      tokens_total: 10855
+      estimated_usd: 0.07
+      duration_minutes: 3
+      recorded_at: 2026-11-05
+      notes: "punch-list fix round (resumed builder). The harness reported a cumulative 195,929 for the resumed agent; this is the 10,855 above the 185,074 already recorded for the first round."
   totals:
-    tokens_total: 366198
-    estimated_usd: 2.42
-    session_count: 2
+    tokens_total: 377053
+    estimated_usd: 2.49
+    session_count: 3
 ---
 
 # SPEC-004: Multi-IFD pointer walk
