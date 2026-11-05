@@ -302,12 +302,15 @@ fn oracle_names_the_one_field_that_was_perturbed() {
             }
         }
     }
-    // Every Norm that has a live selector was red-proved against real records;
-    // Sint and Float have none (no baseline tag), so they are perturbed on
-    // synthetic readings in `oracle.rs`'s unit tests.
+    // Every Norm that has a live selector was red-proved against real records.
+    // Sint and Float have one since SPEC-008 (the `signed-float-*` fixtures);
+    // before that they were perturbed on synthetic readings only
+    // (`oracle_names_a_perturbed_sint_and_float` below still does).
     for needed in [
         Norm::Ascii,
         Norm::Uint,
+        Norm::Sint,
+        Norm::Float,
         Norm::Rational,
         Norm::SRational,
         Norm::GpsCoord { ref_tag: 1 },
@@ -388,7 +391,86 @@ fn comparator_catches_a_missing_and_an_extra_field_on_a_real_record() {
     assert!(got[0].ours.is_some() && got[0].theirs.is_none());
 }
 
+/// The signed-integer and float selectors and the values the `signed-float-*`
+/// fixtures put in them. ExifTool 13.55 printed exactly these for the
+/// committed records (SPEC-008 measurement).
+const SIGNED_FLOAT_EXPECTED: &[(&str, &str)] = &[
+    ("ExifIFD:ExposureTime", "0.125"),
+    ("ExifIFD:ExposureProgram", "-2"),
+    ("ExifIFD:FocalLength", "4.5"),
+    ("ExifIFD:ExifImageWidth", "-5"),
+];
+
+fn signed_float_values(readings: &[Option<String>]) -> Vec<(&'static str, Option<String>)> {
+    SIGNED_FLOAT_EXPECTED
+        .iter()
+        .map(|(name, _)| {
+            let i = SELECTORS
+                .iter()
+                .position(|s| s.exiftool == *name)
+                .unwrap_or_else(|| panic!("{name} is not in the selector table"));
+            (*name, readings.get(i).cloned().flatten())
+        })
+        .collect()
+}
+
+/// Offline half of the signed/float case: the committed ExifTool record has a
+/// value for each of the four selectors AND our reading agrees with it, so the
+/// SSHORT-read-as-unsigned survivor of SPEC-005 has a selector that can see it.
+#[test]
+fn replay_signed_and_float_selectors_carry_values() {
+    let names = names_of(SELECTORS);
+    for fixture in ["signed-float-le", "signed-float-be"] {
+        let theirs = tools::parse_fields(&names, &read_record(fixture).stdout).expect("record");
+        let want: Vec<(&str, Option<String>)> = SIGNED_FLOAT_EXPECTED
+            .iter()
+            .map(|(n, v)| (*n, Some((*v).to_string())))
+            .collect();
+        assert_eq!(signed_float_values(&theirs), want, "{fixture}: record");
+
+        let bytes = oracle_tiff::fixtures()
+            .into_iter()
+            .find(|(n, _)| *n == fixture)
+            .map(|(_, b)| b)
+            .expect("fixture");
+        let c = Container::parse(&bytes).expect("parses");
+        let ours = oracle::read_ours(&c, SELECTORS);
+        assert_eq!(signed_float_values(&ours), want, "{fixture}: ours");
+        assert!(oracle::diff(&ours, &theirs, SELECTORS).is_empty());
+    }
+}
+
 // ── Live (skip loudly without ExifTool) ────────────────────────────────────
+
+/// The live half: run the installed ExifTool on both signed/float fixtures and
+/// require the four selectors to be present and equal to ours.
+#[test]
+fn live_signed_and_float_selectors_match_exiftool() {
+    let test = "live_signed_and_float_selectors_match_exiftool";
+    if !live_gate(test) {
+        return;
+    }
+    note_version(test, &recorded_version());
+    let names = names_of(SELECTORS);
+    for fixture in ["signed-float-le", "signed-float-be"] {
+        let bytes = oracle_tiff::fixtures()
+            .into_iter()
+            .find(|(n, _)| *n == fixture)
+            .map(|(_, b)| b)
+            .expect("fixture");
+        let path = tools::temp_file_for(fixture, &bytes).expect("temp file");
+        let theirs = tools::run_exiftool(&path, &names);
+        let _ = std::fs::remove_file(&path);
+        let theirs = theirs.unwrap_or_else(|e| panic!("{fixture}: {e}"));
+        let want: Vec<(&str, Option<String>)> = SIGNED_FLOAT_EXPECTED
+            .iter()
+            .map(|(n, v)| (*n, Some((*v).to_string())))
+            .collect();
+        assert_eq!(signed_float_values(&theirs), want, "{fixture}: live");
+        let mismatches = fixture_mismatches(fixture, &bytes, &theirs);
+        assert!(mismatches.is_empty(), "{fixture}: {mismatches:?}");
+    }
+}
 
 #[test]
 fn live_parity_on_hand_built_fixtures() {
@@ -533,6 +615,7 @@ fn live_skip_is_loud_and_required_mode_fails() {
         "live_parity_on_hand_built_fixtures",
         "live_parity_on_the_committed_seeds",
         "live_demo_a_mutated_payload_is_caught",
+        "live_signed_and_float_selectors_match_exiftool",
     ];
     for test in live_tests {
         // Hidden ExifTool: a loud SKIP line, and the test passes.

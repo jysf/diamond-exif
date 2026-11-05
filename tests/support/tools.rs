@@ -21,7 +21,8 @@
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
+use std::time::{Duration, Instant};
 
 /// Why a tool reading could not be produced.
 #[derive(Debug)]
@@ -33,6 +34,10 @@ pub enum ToolError {
     Exec { tool: &'static str, message: String },
     /// The tool's stdout did not have the expected shape.
     Parse { tool: &'static str, message: String },
+    /// The tool was still running when the wall-clock limit expired and was
+    /// killed (SPEC-008). A failure, never a skip: a tool that does not return
+    /// is a finding.
+    Timeout { tool: &'static str, secs: u64 },
 }
 
 impl std::fmt::Display for ToolError {
@@ -43,18 +48,67 @@ impl std::fmt::Display for ToolError {
             ToolError::Parse { tool, message } => {
                 write!(f, "{tool}: could not parse its output: {message}")
             }
+            ToolError::Timeout { tool, secs } => write!(
+                f,
+                "{tool}: still running after {secs} s and killed (limit from {TIMEOUT_VAR}, \
+                 default {DEFAULT_TIMEOUT_SECS} s); this is a failure, not a skip"
+            ),
         }
     }
 }
 
-/// The single choke point for spawning a tool: `bin args... path`. A spawn
-/// failure of kind `NotFound` becomes [`ToolError::NotOnPath`], anything else
-/// [`ToolError::Exec`]. ExifTool is spawned nowhere else.
+/// Environment variable that overrides the per-spawn wall-clock limit.
+pub const TIMEOUT_VAR: &str = "DIAMOND_EXIF_TOOL_TIMEOUT_SECS";
+
+/// The default wall-clock limit for one tool run.
+pub const DEFAULT_TIMEOUT_SECS: u64 = 5;
+
+/// The limit in seconds for a raw `DIAMOND_EXIF_TOOL_TIMEOUT_SECS` value: a
+/// positive integer overrides the default; anything else (unset, empty, zero,
+/// not a number) is the default. Pure, so the override is testable without
+/// touching the process environment.
+pub fn parse_timeout_secs(raw: Option<&str>) -> u64 {
+    match raw.map(str::trim).map(str::parse::<u64>) {
+        Some(Ok(n)) if n > 0 => n,
+        _ => DEFAULT_TIMEOUT_SECS,
+    }
+}
+
+/// The limit currently in force (reads [`TIMEOUT_VAR`]).
+pub fn timeout_secs() -> u64 {
+    parse_timeout_secs(std::env::var(TIMEOUT_VAR).ok().as_deref())
+}
+
+/// The single choke point for spawning a tool: `bin args... path`, with the
+/// wall-clock limit from [`timeout_secs`] (default 5 s, override
+/// `DIAMOND_EXIF_TOOL_TIMEOUT_SECS`). A spawn failure of kind `NotFound`
+/// becomes [`ToolError::NotOnPath`], anything else [`ToolError::Exec`]; a run
+/// that outlives the limit is killed and becomes [`ToolError::Timeout`].
+/// ExifTool is spawned nowhere else.
+///
+/// The limit bounds TIME, and so bounds memory growth only approximately.
+/// Measured (ExifTool 13.55, macOS, `exiftool -T -n -s3 ... two-hop-cycle`,
+/// SPEC-005 verify): the process was at about 9 GB resident after 5 s. It is
+/// defence in depth; the harness still never runs ExifTool on that seed.
 pub fn run_tool(bin: &'static str, args: &[String], path: &Path) -> Result<Output, ToolError> {
-    Command::new(bin)
+    run_tool_with_limit(bin, args, path, Duration::from_secs(timeout_secs()))
+}
+
+/// [`run_tool`] with an explicit limit; [`run_tool`] is this with the
+/// environment's. Still the one place a tool process is spawned.
+pub fn run_tool_with_limit(
+    bin: &'static str,
+    args: &[String],
+    path: &Path,
+    limit: Duration,
+) -> Result<Output, ToolError> {
+    let mut child = Command::new(bin)
         .args(args)
         .arg(path)
-        .output()
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 ToolError::NotOnPath(bin)
@@ -64,7 +118,55 @@ pub fn run_tool(bin: &'static str, args: &[String], path: &Path) -> Result<Outpu
                     message: e.to_string(),
                 }
             }
-        })
+        })?;
+
+    // Drain both pipes on their own threads while this one polls, so a tool
+    // that writes more than a pipe buffer cannot deadlock against the poll.
+    let out = drain(child.stdout.take());
+    let err = drain(child.stderr.take());
+
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {}
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(ToolError::Exec {
+                    tool: bin,
+                    message: e.to_string(),
+                });
+            }
+        }
+        if started.elapsed() >= limit {
+            // Kill, then reap: no zombie, no process left behind. The reader
+            // threads are not joined here, so a grandchild that kept a pipe
+            // open cannot make the timeout itself hang.
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(ToolError::Timeout {
+                tool: bin,
+                secs: limit.as_secs().max(1),
+            });
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    Ok(Output {
+        status,
+        stdout: out.join().unwrap_or_default(),
+        stderr: err.join().unwrap_or_default(),
+    })
+}
+
+fn drain<R: std::io::Read + Send + 'static>(pipe: Option<R>) -> std::thread::JoinHandle<Vec<u8>> {
+    std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(mut pipe) = pipe {
+            let _ = pipe.read_to_end(&mut buf);
+        }
+        buf
+    })
 }
 
 /// `exiftool -ver`, trimmed, or the reason it could not be had.
@@ -75,7 +177,12 @@ pub fn exiftool_version() -> Result<String, ToolError> {
 
 /// Whether ExifTool can be run at all.
 pub fn exiftool_available() -> bool {
-    exiftool_version().is_ok()
+    match exiftool_version() {
+        Ok(_) => true,
+        // Present but not returning is a failure with a clear message, not a skip.
+        Err(e @ ToolError::Timeout { .. }) => panic!("exiftool -ver: {e}"),
+        Err(_) => false,
+    }
 }
 
 /// The argument list for `-T -n -s3 -<selector>...` (the file path is added by
@@ -242,5 +349,145 @@ mod tests {
         )
         .expect_err("no such program");
         assert!(matches!(err, ToolError::NotOnPath(_)), "got {err:?}");
+    }
+
+    /// A slow tool that records its own pid in the file named by the path
+    /// argument (`sh` sees it as `$0`), then `exec`s `sleep` so the pid is the
+    /// sleeper's: killing the child leaves nothing behind.
+    #[cfg(unix)]
+    fn slow_tool_args() -> Vec<String> {
+        vec!["-c".into(), "echo $$ > \"$0\"; exec sleep 30".into()]
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_tool_times_out_and_kills_the_child() {
+        let pidfile = std::env::temp_dir().join(format!(
+            "diamond-exif-timeout-test-{}.pid",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&pidfile);
+
+        let started = Instant::now();
+        let err = run_tool_with_limit("sh", &slow_tool_args(), &pidfile, Duration::from_secs(1))
+            .expect_err("a 30 s sleep must not finish inside a 1 s limit");
+        let elapsed = started.elapsed();
+
+        assert!(
+            matches!(
+                err,
+                ToolError::Timeout {
+                    tool: "sh",
+                    secs: 1
+                }
+            ),
+            "got {err:?}"
+        );
+        assert!(
+            err.to_string().contains("killed") && err.to_string().contains(TIMEOUT_VAR),
+            "{err}"
+        );
+        assert!(
+            elapsed >= Duration::from_secs(1) && elapsed < Duration::from_secs(10),
+            "returned after {elapsed:?}, expected about 1 s"
+        );
+
+        // No process left behind: the recorded pid no longer exists. `kill -0`
+        // sends no signal and fails when the pid is gone; it goes through
+        // `run_tool_with_limit` like every other spawn here.
+        let pid = std::fs::read_to_string(&pidfile)
+            .expect("the child wrote its pid before it was killed")
+            .trim()
+            .to_string();
+        let _ = std::fs::remove_file(&pidfile);
+        assert!(
+            pid.chars().all(|c| c.is_ascii_digit()) && !pid.is_empty(),
+            "{pid:?}"
+        );
+        let probe = run_tool_with_limit(
+            "kill",
+            &["-0".to_string()],
+            Path::new(&pid),
+            Duration::from_secs(5),
+        )
+        .expect("kill -0 runs");
+        assert!(
+            !probe.status.success(),
+            "pid {pid} is still alive after the timeout"
+        );
+    }
+
+    #[test]
+    fn timeout_variable_overrides_the_default() {
+        assert_eq!(parse_timeout_secs(None), DEFAULT_TIMEOUT_SECS);
+        assert_eq!(DEFAULT_TIMEOUT_SECS, 5);
+        assert_eq!(parse_timeout_secs(Some("1")), 1);
+        assert_eq!(parse_timeout_secs(Some(" 30\n")), 30);
+        // Unusable values fall back to the default rather than disabling the limit.
+        for bad in ["", "0", "-3", "abc", "1.5", "99999999999999999999999"] {
+            assert_eq!(
+                parse_timeout_secs(Some(bad)),
+                DEFAULT_TIMEOUT_SECS,
+                "{bad:?}"
+            );
+        }
+    }
+
+    /// The same override, end to end: a child copy of this test binary with the
+    /// variable set to 1 sends a 30 s sleep through `run_tool` and must get
+    /// `Timeout { secs: 1 }`. The inner test is `#[ignore]` so a normal run
+    /// does not execute it (and so no test mutates this process's environment).
+    #[cfg(unix)]
+    #[test]
+    fn timeout_variable_is_honoured_by_run_tool() {
+        let exe = std::env::current_exe().expect("current_exe");
+        let started = Instant::now();
+        let out = std::process::Command::new(exe)
+            .args([
+                "--ignored",
+                "--exact",
+                "tools::tests::env_limit_child",
+                "--nocapture",
+            ])
+            .env(TIMEOUT_VAR, "1")
+            .output()
+            .expect("spawn the test binary");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success(), "child failed:\n{stdout}");
+        assert!(stdout.contains("TIMEOUT-OK secs=1"), "{stdout}");
+        assert!(started.elapsed() < Duration::from_secs(20));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    #[ignore = "run by timeout_variable_is_honoured_by_run_tool with the variable set"]
+    fn env_limit_child() {
+        let args = vec!["-c".to_string(), "exec sleep 30".to_string()];
+        match run_tool("sh", &args, Path::new("unused")) {
+            Err(ToolError::Timeout { secs, .. }) => println!("TIMEOUT-OK secs={secs}"),
+            other => panic!("expected a timeout, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn run_tool_returns_a_fast_tools_output_unchanged() {
+        let out = run_tool_with_limit(
+            "sh",
+            &[
+                "-c".to_string(),
+                "printf 'a\\tb\\n'; printf err >&2".to_string(),
+            ],
+            Path::new("ignored"),
+            Duration::from_secs(10),
+        );
+        #[cfg(unix)]
+        {
+            let out = out.expect("sh runs");
+            assert_eq!(out.stdout, b"a\tb\n");
+            assert_eq!(out.stderr, b"err");
+            assert!(out.status.success());
+        }
+        #[cfg(not(unix))]
+        let _ = out;
     }
 }

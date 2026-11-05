@@ -19,6 +19,10 @@ pub const SHORT: u16 = 3;
 pub const LONG: u16 = 4;
 pub const RATIONAL: u16 = 5;
 pub const SRATIONAL: u16 = 10;
+pub const SSHORT: u16 = 8;
+pub const SLONG: u16 = 9;
+pub const FLOAT: u16 = 11;
+pub const DOUBLE: u16 = 12;
 
 // Tag numbers (TIFF 6.0 section 8, Exif 2.32 sections 4.6.3 to 4.6.6).
 pub const T_IMAGE_WIDTH: u16 = 256;
@@ -37,6 +41,14 @@ pub const T_F_NUMBER: u16 = 0x829D;
 pub const T_ISO: u16 = 0x8827;
 pub const T_DATE_TIME_ORIGINAL: u16 = 0x9003;
 pub const T_EXPOSURE_BIAS: u16 = 0x9204;
+// Tags read through the signed and float decoders (SPEC-008). The type in the
+// file is the point: ExifTool 13.55 was measured to print the value in the
+// DECLARED type for these (see the SPEC-008 handback), which most tags do not
+// expose.
+pub const T_EXPOSURE_TIME: u16 = 0x829A;
+pub const T_EXPOSURE_PROGRAM: u16 = 0x8822;
+pub const T_FOCAL_LENGTH: u16 = 0x920A;
+pub const T_EXIF_IMAGE_WIDTH: u16 = 0xA002;
 pub const T_GPS_LAT_REF: u16 = 1;
 pub const T_GPS_LAT: u16 = 2;
 pub const T_GPS_LON_REF: u16 = 3;
@@ -115,6 +127,31 @@ pub fn short(big: bool, tag: u16, v: u16) -> Ent {
 /// `LONG` entry.
 pub fn long(big: bool, tag: u16, v: u32) -> Ent {
     ent(tag, pack(LONG, 1, put(big, v, 4)))
+}
+
+/// `SSHORT` entry (one signed 16-bit value).
+pub fn sshort(big: bool, tag: u16, v: i16) -> Ent {
+    ent(tag, pack(SSHORT, 1, put(big, u32::from(v as u16), 2)))
+}
+
+/// `SLONG` entry (one signed 32-bit value).
+pub fn slong(big: bool, tag: u16, v: i32) -> Ent {
+    ent(tag, pack(SLONG, 1, put(big, v as u32, 4)))
+}
+
+/// `FLOAT` entry (one IEEE 754 binary32).
+pub fn float(big: bool, tag: u16, v: f32) -> Ent {
+    ent(tag, pack(FLOAT, 1, put(big, v.to_bits(), 4)))
+}
+
+/// `DOUBLE` entry (one IEEE 754 binary64, stored out of line).
+pub fn double(big: bool, tag: u16, v: f64) -> Ent {
+    let b = if big {
+        v.to_be_bytes().to_vec()
+    } else {
+        v.to_le_bytes().to_vec()
+    };
+    ent(tag, pack(DOUBLE, 1, b))
 }
 
 /// `RATIONAL` entry, one value per `(numerator, denominator)`.
@@ -266,6 +303,35 @@ fn exif_gps(big: bool, lat_ref: &[u8], lon_ref: &[u8]) -> Vec<u8> {
     assemble(big, &[ifd0, gps])
 }
 
+/// IFD0 and Exif IFD from `exif-basic` plus the GPS IFD of `exif-gps`: one file
+/// with all three, so a corruption of the GPS pointer can be shown to leave
+/// both of the others alone.
+fn exif_gps_full(big: bool) -> Vec<u8> {
+    let mut ifd0 = basic_ifd0(big);
+    ifd0.push(ptr(T_GPS_IFD, 2));
+    let gps = ifd(vec![
+        ascii(T_GPS_LAT_REF, b"N\0"),
+        rational(big, T_GPS_LAT, &[(37, 1), (25, 1), (3075, 100)]),
+        ascii(T_GPS_LON_REF, b"E\0"),
+        rational(big, T_GPS_LON, &[(122, 1), (5, 1), (4890, 100)]),
+    ]);
+    assemble(big, &[ifd(ifd0), ifd(basic_exif(big)), gps])
+}
+
+/// One signed 16-bit, one signed 32-bit, one `FLOAT` and one `DOUBLE`, in the
+/// Exif IFD (tags ascending). Values are exactly representable, so the text
+/// ExifTool prints and the text `exif-core` renders cannot differ by rounding.
+fn signed_float(big: bool) -> Vec<u8> {
+    let ifd0 = ifd(vec![ascii(T_MAKE, b"SignedFloat\0"), ptr(T_EXIF_IFD, 1)]);
+    let exif = ifd(vec![
+        float(big, T_EXPOSURE_TIME, 0.125),
+        sshort(big, T_EXPOSURE_PROGRAM, -2),
+        double(big, T_FOCAL_LENGTH, 4.5),
+        slong(big, T_EXIF_IMAGE_WIDTH, -5),
+    ]);
+    assemble(big, &[ifd0, exif])
+}
+
 /// Make unterminated, Model with an embedded NUL, Artist empty (one NUL).
 fn ascii_edges() -> Vec<u8> {
     let ifd0 = ifd(vec![
@@ -324,5 +390,8 @@ pub fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
         ("ascii-edges", ascii_edges()),
         ("gps-corrupt-exif-ok", gps_corrupt_exif_ok()),
         ("ifd1-corrupt", ifd1_corrupt()),
+        ("exif-gps-full-le", exif_gps_full(false)),
+        ("signed-float-le", signed_float(false)),
+        ("signed-float-be", signed_float(true)),
     ]
 }

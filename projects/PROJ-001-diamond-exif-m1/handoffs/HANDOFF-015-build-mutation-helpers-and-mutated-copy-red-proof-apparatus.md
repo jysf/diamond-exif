@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-05
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-008
@@ -42,14 +42,14 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
+  status: completed                # completed | blocked | rejected
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # tokens_total × your rate, or your harness's number
   duration_minutes: null
-  branch: null
+  branch: worktree-agent-aaf3f420e72df2b1c
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # one line if unusual (rework, no meter, etc.)
+  completed_at: 2026-11-05         # YYYY-MM-DD
+  notes: "No token count is exposed to this subagent harness; the orchestrator transcribes the metered figure. No PR opened by instruction."
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -118,10 +118,55 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** branch `worktree-agent-aaf3f420e72df2b1c` (committed, not pushed); no PR, by instruction.
+- **Completed at:** 2026-11-05
+- **All acceptance criteria met?** Yes, with the deviations listed below. The orchestrator-run gates were run by me too and are green: `cargo fmt --check`, `just lint`, `just lint-fuzz`, `cargo test` on the default toolchain (Homebrew cargo 1.99.1) and on `~/.cargo/bin/cargo +1.90.0`, `cargo rustc --lib -- -F unsafe_code`, `just deny`, `just deny-fuzz`, `just validate`, `just decisions-audit`, `just cost-audit`. `just oracle-record` ran (it never touches `two-hop-cycle`); the 29 seed records came back byte-identical (`git status` shows only the 9 old fixture records modified and 3 new ones; no seed record changed), because the selector table grew only for fixtures.
+- **For `verify`:** n/a (build).
+
+**What was built.** `tests/support/mutate.rs`, `tests/support/probe.rs`, `tests/mutation_oracle.rs`; `run_tool_with_limit` / `ToolError::Timeout` / `DIAMOND_EXIF_TOOL_TIMEOUT_SECS` in `tests/support/tools.rs`; four new selectors (`ExifIFD:ExposureTime` Float, `ExposureProgram` Sint, `FocalLength` Float, `ExifImageWidth` Sint) and three new fixtures (`exif-gps-full-le`, `signed-float-le`, `signed-float-be`) with committed records; `just mutation-oracle`; ledger rows, AGENTS.md §6, toolchain brief, CHANGELOG, README, questions.yaml.
+
+**Plants, the exact needles (all exact-once in the staged tree, test modules included) and what they gave** (each: control first and green, then the mutant, asserted as an exact set of selectors):
+
+| # | Test | File and needle | Mutant result |
+|---|---|---|---|
+| 1 | `mutant_big_endian_short_read_is_caught` | `src/tiff/types.rs`: `out.push(u32::from(self.byte_order.u16(*chunk)));` becomes `u16::from_le_bytes(*chunk)` | `exif-basic-be`: exactly `IFD0:Orientation` (6 read as 1536) and `ExifIFD:ISO` (400 read as 36865); `exif-basic-le`: zero mismatches |
+| 2 | `mutant_ascii_drops_the_last_byte_is_caught` | `types.rs`: `Ok(Ascii::split(bytes))` gets the payload minus its last byte | `ascii-edges`: exactly `IFD0:Make`, ours `NoTerminato`, theirs `NoTerminator` |
+| 3 | `mutant_rational_swaps_numerator_and_denominator_is_caught` | `types.rs`: `num: order.u32(num),` and `den: order.u32(den),` swapped (two needles, each once) | `exif-basic-le`: exactly `ExifIFD:FNumber`, `IFD0:XResolution` (72 read as 1/72); `exif-gps-ne-le`: exactly the two `Composite:GPS*` |
+| 4 | `mutant_gps_pointer_is_not_followed_is_caught` | `src/tiff/mod.rs`, two-line needle `tag: tags::GPS_INFO,\n        allowed_from: from_top_level_or_sub,` (the one-line form also occurs in that file's own tests) becomes `tag: 0xFFFF,` | `exif-gps-ne-le`: exactly the two `Composite:GPS*`, ours `None`, theirs a value |
+| 5 | `mutant_signed_rational_sign_is_lost_is_caught` | `types.rs`: `num: order.i32(num),` becomes `...wrapping_abs()` | `exif-basic-le`: exactly `ExifIFD:ExposureCompensation` (sign lost) |
+| 6 | `mutant_signed_short_is_read_unsigned_is_caught` | `types.rs`: `out.push(i32::from(self.byte_order.i16(*chunk)));` gets `as u16` | `signed-float-le` and `-be`: exactly `ExifIFD:ExposureProgram`, ours `65534`, theirs `-2` |
+
+**Byte-mutation measurements.** (7) `exif-gps-full-le`, GPS pointer value set to 0x00FF0000: the diff names exactly the two GPS selectors; `Container::parse` is `Ok` with one issue, `Link::Tag(0x8825)`, offset `0x00FF0000`; IFD0 and Exif selectors untouched; live ExifTool 13.55 on the same mutated bytes returns `-` for both GPS selectors, agrees with ours on every selector and returns the original IFD0/Exif text. (8) `II` to `MM` on `exif-basic-le`: measured, `Container::parse` returns `Err(UnsupportedTiffVersion { version: 0x2A00 })` (the stored `2A 00` read big-endian); it fails at the header, so no garbage values are read and every selector ExifTool reported goes `None`. (9) `exif-basic-le` cut inside the Exif IFD, two cuts: (a) mid entry table: one issue `Link::Tag(0x8769)`, exactly the four Exif selectors vanish, IFD0 intact; (b) exactly where the Exif IFD's payload region starts (table and next-word whole): no issue, and exactly FNumber, DateTimeOriginal and ExposureCompensation vanish while the inline SHORT ISO survives. The spec's wording for (9) ("just before the payload region; Exif selectors vanish, issue reported") describes (a); (b) is the literal reading and behaves differently, so both are asserted.
+
+**Signed/float outcome: the real live selector, no fallback.** ExifTool 13.55 honours the declared type for these tags (tiny hand-built little-endian single-entry files, `exiftool -n -G1 -a -u -U <file>`, one file per row, `<file>` being that row's file; the second column is the relevant output line; the committed records use the oracle's own `-T -n -s3` form):
+
+| Declared type, tag, IFD, stored value | ExifTool output |
+|---|---|
+| SSHORT(8), 0x0112 Orientation, IFD0, -3 | `[IFD0] Orientation : -3` |
+| SHORT(3), 0x0112 Orientation, IFD0, 3 (control) | `Orientation : 3` |
+| SLONG(9), 0x0100 ImageWidth, IFD0, -5 | `Image Width : -5` |
+| SSHORT(8), 0x8822 ExposureProgram, Exif, -2 | `Exposure Program : -2` (selected) |
+| SSHORT(8), 0x8827 ISO, Exif, -200 | `ISO : -200` |
+| SLONG(9), 0x9204 ExposureCompensation, Exif, -2 | `Exposure Compensation :` (empty) |
+| SSHORT(8), 0x9201 ShutterSpeedValue, Exif, -2 | `Shutter Speed Value : 0` |
+| FLOAT(11), 0x829D FNumber, Exif, 2.5 | `F Number : 2.5` |
+| DOUBLE(12), 0x829D FNumber, Exif, 2.5 | `F Number : 2.5` |
+| FLOAT(11), 0x829A ExposureTime, Exif, 0.125 | `Exposure Time : 0.125` (selected) |
+| FLOAT(11), 0x011A XResolution, IFD0, 72.5 | `X Resolution : 72.5` |
+| SLONG(9), 0xA002 ExifImageWidth, Exif, -5 | `Exif Image Width : -5` (selected) |
+| SSHORT(8), 0xA002 ExifImageWidth, Exif, -5 | `Exif Image Width : -5` |
+| SLONG(9), 0x9202 ApertureValue, Exif, -7 | `Aperture Value : 0.0883883476483184` (converted, not usable) |
+| DOUBLE(12), 0x920A FocalLength, Exif, 4.5 | `Focal Length : 4.5` (selected) |
+| FLOAT(11), 0x920A FocalLength, Exif, 4.5 | `Focal Length : 4.5` |
+| SLONG(9), 0x8822 ExposureProgram, Exif, -2 | `Exposure Program : -2` |
+
+(Eighteen files in all, in two batches; the table omits one control, SSHORT(8) 0x8822 stored 2, which printed `Exposure Program : 2`; the tag column is the hexadecimal of the decimal tag the generator was given. "Exif" means the entry sat in an Exif IFD reached from IFD0's 0x8769 pointer. ExifTool printed more lines per file (File, System and ExifTool groups); only the line for the tag under test is shown. The ISO row used 0x8827.) The four rows marked "selected" are the table additions; the generator and driver scripts were scratch files outside the repo. The committed records for `signed-float-le` and `-be` both read `0.125 -2 4.5 -5` for the four new selectors. Mutant 6 is red through `ExifIFD:ExposureProgram`; `replay_signed_and_float_selectors_carry_values` pins the committed record and our reading to those values offline, and `live_signed_and_float_selectors_match_exiftool` does the same live. The `oracle_names_the_one_field_that_was_perturbed` test now requires real records for `Sint` and `Float` too.
+
+**Wall-clock.** `just mutation-oracle` (37 tests, 36 run): about 3.0 s of test time and 3.1 s end to end when warm (`time just mutation-oracle`), on Apple silicon. The 13 probe builds (6 mutants, 6 controls, 1 all-fixtures control) are debug builds of a dependency-free crate, about 1 s each, run in parallel by the test harness. Far under the 3 minute line, so no shared target dir is proposed. Probe temp dirs under the OS temp directory are removed (checked: none left after runs); a stale `CARGO_TARGET_DIR` in the environment produced zero probe binaries in the stale directory; the repo's `target/` mtime is asserted unchanged by staging.
+
+**Red-proofs with ExifTool hidden.** On the 1.90.0 toolchain's own cargo with `PATH=<toolchain bin>:/usr/bin:/bin` and `DIAMOND_EXIF_REQUIRE_ORACLE` unset, all 36 tests pass; the only skip is `SKIP corrupting_the_gps_pointer_is_reported_and_isolated (live variant) — exiftool not on PATH`. A child-process test (`the_gps_live_variant_skips_loudly_and_required_mode_fails`) also checks the skip line and that `DIAMOND_EXIF_REQUIRE_ORACLE=1` fails with the variable named.
+
+**Timeout.** `run_tool_times_out_and_kills_the_child` (unix): `sh -c 'echo $$ > "$0"; exec sleep 30'` through `run_tool_with_limit` with a 1 s limit returns `ToolError::Timeout { tool: "sh", secs: 1 }` in about 1 s; the recorded pid is then checked with `kill -0` (itself through `run_tool_with_limit`) and is gone. `timeout_variable_overrides_the_default` tests the pure parser; `timeout_variable_is_honoured_by_run_tool` re-runs this test binary with the variable set to 1 and checks `Timeout { secs: 1 }` end to end (no test mutates this process's environment). `exiftool_available` panics on a `Timeout` rather than skipping. Grep: the only `Command::new(bin)` that spawns a tool is in `tools.rs`; the other `Command::new` hits are the self-respawn tests (`mutation_oracle.rs`, `metadata_oracle.rs`, `tools.rs` test) and the probe's cargo and probe-binary spawns in `probe.rs`.
 
 ### Cost self-report
 
@@ -129,27 +174,35 @@ Mirror what you put in the `handback:` front-matter, and say where the number
 came from. **This is the number that lands in the spec** — the orchestrator
 transcribes it via `just handback-sync`, it does not estimate it.
 
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null. This subagent harness exposes no token count; the orchestrator transcribes the metered figure.
+- **Estimated USD:** null
+- **Duration (minutes):** roughly 60 (an estimate, not metered)
+- **Source of the number:** none available
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
+- **New decisions emitted:** none.
 - **Deviations from spec:**
-  - [list]
+  - Mutant 1 is placed at the SHORT use site in `Container::uints`, not in `ByteOrder::u16`'s big-endian arm. By reading the code, that arm is also what `read_u16` uses for the header version word and every entry count, so mutating it breaks every big-endian file at the header and no SHORT selector could be named (reasoned from the code, not run). The fault the test is about (a SHORT decoded in the wrong byte order) is the same.
+  - A fourth new fixture beyond the two the signed/float case needed: `exif-gps-full-le` (IFD0, Exif IFD and GPS IFD in one file). No existing fixture had both an Exif and a GPS IFD, and byte mutation 7's isolation claim ("IFD0 and Exif selectors still match") needs one. Three new fixtures in all: `exif-gps-full-le`, `signed-float-le`, `signed-float-be`.
+  - Mutation 9 asserts two cuts, see above; the spec's one-sentence description matched only (a).
+  - `run_tool` gained a sibling `run_tool_with_limit` (the one spawn function); `run_tool` is the environment-limit wrapper. The spec's "sleep through `run_tool` with a 1 s limit" is done through `run_tool_with_limit`, and the environment path is covered by a child-process test, so no test changes this process's environment.
+  - Test names in the spec all exist, plus extras: `no_injection_marker_outside_the_tests`, `the_gps_live_variant_skips_loudly_and_required_mode_fails`, `escaping_round_trips`, `timeout_variable_is_honoured_by_run_tool` (+ ignored child `env_limit_child`), `run_tool_returns_a_fast_tools_output_unchanged`, `replay_signed_and_float_selectors_carry_values`. The live variant of test 7 is part of the same test (offline half first), not a separate test.
+  - Selector table: the four new selectors sit before the two GPS ones on purpose (`gps_coordinate_sign_follows_the_ref_tag` indexes the last two). All 9 older records changed (the command line lists more selectors) and were re-recorded with `just oracle-record`; the only content change in the old records is four extra `-` columns before the GPS pair.
+  - The probe run itself (cargo build, probe binary) has no wall-clock limit; only ExifTool spawns do.
+  - Edited `tests/metadata_oracle.rs` beyond the spec's list: the `norms_seen` requirement now includes `Sint` and `Float`, and `live_signed_and_float_selectors_match_exiftool` is added to the loud-skip loop.
 - **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - CI wiring of `just mutation-oracle` (out of scope here; it is fast enough, about 3 s, to be part of the normal test job).
+  - JPEG-level red-proofs and write-parity red-proofs when the container and writer stages exist (already in the spec's non-goals).
+  - Upstream report of the ExifTool `two-hop-cycle` runaway is still open in `guidance/questions.yaml`.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — Mutant 1's wording ("`ByteOrder::u16` big-endian arm") would have broken every big-endian file at the header rather than only SHORT values; and test 9's "just before the payload region; Exif selectors vanish, issue reported" is true for a mid-table cut, not for a cut at the payload region (the inline ISO survives, no issue). Both were quick to resolve once the layout was in front of me, but they are the places a literal reading fails.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — Adding selectors changes the command line recorded in every fixture record, so every record must be re-recorded (and a selector added in the middle of the table breaks any test that indexes from the end). The handoff could say so. Also, the environment of this host lacks `timeout(1)`, so "measure with a time limit" needs a harness-level limit; the measurements here were safe only because the files are single-entry and cycle-free.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Measure the candidate tags with a small recorded script from the start (I did, but the per-file transcript is only in this handback) and write the needles as a table first; the exactly-once check against `src/` including test modules (the one-line GPS needle also occurs in `mod.rs`'s own tests) is the part worth doing before writing any test.

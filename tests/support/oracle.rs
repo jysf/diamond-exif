@@ -83,6 +83,16 @@ pub const SELECTORS: &[Selector] = &[
         0x9204,
         Norm::SRational,
     ),
+    // SPEC-008: the first selectors that read a signed integer and a float.
+    // Measured with ExifTool 13.55 on hand-built files (`exiftool -n -G1 -a -u
+    // -U`): a type-8 SSHORT -2 in tag 0x8822 prints `-2`, a type-9 SLONG -5 in
+    // 0xA002 prints `-5`, a type-11 FLOAT 0.125 in 0x829A prints `0.125`, a
+    // type-12 DOUBLE 4.5 in 0x920A prints `4.5` (the full command/output list
+    // is in the SPEC-008 handback).
+    sel("ExifIFD:ExposureTime", IfdKind::Exif, 0x829A, Norm::Float),
+    sel("ExifIFD:ExposureProgram", IfdKind::Exif, 0x8822, Norm::Sint),
+    sel("ExifIFD:FocalLength", IfdKind::Exif, 0x920A, Norm::Float),
+    sel("ExifIFD:ExifImageWidth", IfdKind::Exif, 0xA002, Norm::Sint),
     sel(
         "Composite:GPSLatitude",
         IfdKind::Gps,
