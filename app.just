@@ -113,3 +113,23 @@ oracle-record:
 # `CARGO` variable), in a temp directory, offline.
 mutation-oracle:
     cargo test --test mutation_oracle
+
+# ── Lint-policy gates (cloned from irradiance, SPEC-001/SPEC-011/SPEC-006 there) ──
+
+# The panic-free lint policy actually bites: control clean, then one violation
+# per policy lint injected into a COPIED src/lib.rs must be rejected (DEC-009 there).
+lint-red-proof:
+    ./scripts/lint-red-proof.sh
+
+# Same for the fuzz graph's `-D warnings` gate: a default-clippy violation injected
+# into a COPIED fuzz target must fail with the flag and pass without it.
+lint-fuzz-red-proof:
+    ./scripts/lint-fuzz-red-proof.sh
+
+# The no-#[allow]-escape check for the library: `-F` (forbid) makes any #[allow] of
+# a policy lint a compiler error (E0453). Scope is --lib on purpose: test modules
+# legitimately allow the five lints. Mirrors the CI job of the same name.
+lint-no-allow:
+    cargo clippy --lib --quiet -- \
+        -F clippy::unwrap_used -F clippy::expect_used -F clippy::indexing_slicing \
+        -F clippy::panic -F clippy::arithmetic_side_effects
