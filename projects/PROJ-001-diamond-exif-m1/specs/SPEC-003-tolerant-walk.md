@@ -38,7 +38,7 @@ references:
 # Blocking dependencies: specs that must SHIP before this one can start.
 # Distinct from references.related_specs (informational). Feeds the ready-set
 # (`just ready`) and safe fan-out. Optional; [] = no blockers.
-depends_on: [SPEC-002]
+depends_on: [SPEC-002, SPEC-006]
 
 # Fan-out lease — who/what holds this spec now (`just claim` / `just unclaim`).
 # Advisory; null = free. The hard lock for parallel agents is the worktree/branch.
@@ -80,6 +80,8 @@ cost:
 ## Context
 
 DEC-001 policy as its own change: non-IFD0 IFD failures become per-IFD issues instead of whole-parse failure, flipping about 25% of the ported tests (brief §0 risk 1, design §16.1).
+
+Carry-in from SPEC-002 verify (HANDOFF-004): two guard tests are weak (depth limit +1 and the IFD-count `>=` vs `>` boundary survive mutation). Add one boundary test for each while the walk is being reworked.
 
 ## Goal
 

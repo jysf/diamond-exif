@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # (no /cost in this session) REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
+  tokens_total: 65662               # REAL combined count — what cost-audit reads
+  estimated_usd: 0.43              # tokens_total × 6.60 USD/Mtok (.repo-context.yaml)
   duration_minutes: null
   branch: claude/spec-001-verify-0f40ea
   pr: null
   completed_at: null               # YYYY-MM-DD
-  notes: "tokens null: /cost not available to this session"                      # one line if unusual (rework, no meter, etc.)
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "Recovered by the orchestrator from the session transcript usage records (de-duplicated by message id), not from /cost. tokens_total = input + output + cache_creation; cache_read tokens excluded (1,170,884). Input 24, output 9,177, cache_creation 56,461."
+  synced_at: 2026-11-05
 ---
 
 # HANDOFF-002: <Task Title — same as the spec's title>

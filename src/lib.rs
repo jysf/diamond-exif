@@ -1,6 +1,7 @@
 //! `exif-core`: a panic-free, pure-Rust, zero-copy EXIF/XMP/IPTC/ICC metadata
-//! reader, writer and stripper. Pre-release: the crate is a gated, empty
-//! scaffold and exports nothing yet.
+//! reader, writer and stripper. Pre-release: so far the crate holds the strict
+//! TIFF/IFD skeleton ([`tiff::Container`]) and its error type; every bad IFD is
+//! still an `Err` (the tolerant walk of DEC-001 arrives in a later spec).
 
 #![forbid(unsafe_code)]
 #![deny(
@@ -10,3 +11,9 @@
     clippy::panic,
     clippy::arithmetic_side_effects
 )]
+
+pub mod error;
+pub mod reader;
+pub mod tiff;
+
+pub use error::{Error, Result};

@@ -70,7 +70,7 @@ cost:
     session_count: 0
 ---
 
-# SPEC-005: Oracle discipline and fuzz target
+# SPEC-005: Oracle discipline
 
 > **OUTLINE — `cycle: frame`.** This spec exists so its ID is stable and
 > siblings can declare `depends_on: [SPEC-005]`. Capture **scope** (Context /
@@ -79,11 +79,11 @@ cost:
 
 ## Context
 
-Quality bar: oracle-must-be-shown-red and a fuzz target per input surface from the first parser (design §8; plan Step 5).
+Quality bar: oracle-must-be-shown-red (design §8; plan Step 5). The fuzz target moved to SPEC-006 so it lands with the first parser.
 
 ## Goal
 
-ExifTool-only `tests/support/tools.rs` subset and `parse_fields` (extended beyond numeric values), a replay-and-perturb red-proof pattern, `mutate.rs`, one shared `probe.rs`, and a `tiff_ifd` fuzz target that has run 60 s.
+ExifTool-only `tests/support/tools.rs` subset and `parse_fields` (extended beyond numeric values), a replay-and-perturb red-proof pattern, `mutate.rs` and one shared `probe.rs`. (The `tiff_ifd` fuzz target moved to SPEC-006.)
 
 ## Inputs
 

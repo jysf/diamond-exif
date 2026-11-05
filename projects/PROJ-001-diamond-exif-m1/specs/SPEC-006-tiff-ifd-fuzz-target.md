@@ -4,12 +4,12 @@
 # implementer lives in handoffs/HANDOFF-*.md, not in the spec itself.
 
 task:
-  id: SPEC-002
+  id: SPEC-006
   type: story                      # epic | story | task | bug | chore
-  cycle: frame                     # frame | design | build | verify | ship
+  cycle: design                    # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
-  complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
+  complexity: S                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
   complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
@@ -38,7 +38,7 @@ references:
 # Blocking dependencies: specs that must SHIP before this one can start.
 # Distinct from references.related_specs (informational). Feeds the ready-set
 # (`just ready`) and safe fan-out. Optional; [] = no blockers.
-depends_on: [SPEC-001]
+depends_on: [SPEC-002]
 
 # Fan-out lease — who/what holds this spec now (`just claim` / `just unclaim`).
 # Advisory; null = free. The hard lock for parallel agents is the worktree/branch.
@@ -70,20 +70,15 @@ cost:
     session_count: 0
 ---
 
-# SPEC-002: Port the strict TIFF skeleton
-
-> **OUTLINE — `cycle: frame`.** This spec exists so its ID is stable and
-> siblings can declare `depends_on: [SPEC-002]`. Capture **scope** (Context /
-> Goal / Non-Goals) and **dependencies** only — the *approach* is designed
-> just-in-time when this moves to `design`. Do not pre-design it here.
+# SPEC-006: tiff_ifd fuzz target
 
 ## Context
 
-The first real code. Plan Step 2: port the DNG-stripped, byte-faithful IFD walk and its hostile-input tests before changing semantics, so the later tolerant-walk diff is legible. Blocked on DEC-001/002/003 being written.
+Constraint `fuzz-target-per-surface`: each input surface gets a fuzz target from its FIRST parser, not after the policy work. SPEC-002 lands the first parser, so its fuzz target lands next, before SPEC-003 changes the walk. The fuzz graph is a second Cargo graph outside the library (`fuzz/`), which needs `cargo-fuzz`, `libfuzzer-sys` (NCSA exception already in `deny.toml`), a `deny-fuzz` run, and a DEC for the graph layout (irradiance's equivalent is its DEC-011). Ports nearly verbatim from irradiance `fuzz/fuzz_targets/tiff_ifd.rs` (brief §2.4).
 
 ## Goal
 
-`error.rs` (13 TIFF-level variants), `reader.rs`, and `tiff/{mod,types,tags}.rs` ported from irradiance `src/ifd.rs` (copy-then-edit, DNG removed, `payload` returning `&'a [u8]`) with the 17 hostile-input tests and the `Build` byte-builder, green, each file with a provenance-ledger row.
+A `fuzz/` crate with a `tiff_ifd` target that feeds arbitrary bytes to `Container::parse` and exercises the public readers without panicking, plus a 60 s smoke run recorded green, with `cargo deny --manifest-path fuzz/Cargo.toml check licenses` passing.
 
 ## Inputs
 
@@ -124,9 +119,9 @@ job in **build** is to make these pass.
 
 ## Non-Goals
 
-- Tolerant-walk policy (SPEC-003)
-- ASCII/signed/float decoders and pointer walks (SPEC-004)
-- Any oracle or fuzz work
+- Corpus management, the 24 h clean run (M1f gate), CI wiring of the smoke job (repo setup)
+- `lint-fuzz-red-proof` gate script (repo setup, brought over from irradiance separately)
+- Fuzz targets for other surfaces (JPEG, PNG, WebP: with their parsers)
 
 ## Notes for the Implementer
 
