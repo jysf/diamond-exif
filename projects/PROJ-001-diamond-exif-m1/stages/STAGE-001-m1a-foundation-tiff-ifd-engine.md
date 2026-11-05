@@ -89,7 +89,7 @@ First stage; everything else (containers, audit CLI, writer) depends on the IFD 
 - [ ] SPEC-005 (design) — [L] Oracle discipline: ExifTool `tools.rs` subset, `parse_fields`, normalisation table, committed records, replay-perturb red-proof, live parity
 - [ ] SPEC-008 (frame) — [M] `mutate.rs` byte-mutation helpers and the shared mutated-copy `probe.rs` red-proof (split out of SPEC-005 at its design)
 
-**Count:** 5 shipped / 3 active / 0 pending
+**Count:** 6 shipped / 2 active / 0 pending
 
 ## Design Notes
 
