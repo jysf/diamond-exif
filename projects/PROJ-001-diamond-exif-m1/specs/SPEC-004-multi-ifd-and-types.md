@@ -81,6 +81,8 @@ cost:
 
 About 60% of M1a is net-new: the walker follows only SubIFDs today and decodes only numeric types, but EXIF Make/Model/Artist/DateTimeOriginal are ASCII (brief §0 risk 1).
 
+Carry-in from SPEC-003 design: the stage-level proof "a corrupt GPS IFD leaves IFD0 readable" is only shown there with a corrupt `SubIFD` (the GPS pointer does not exist yet). Add the real GPS (and Exif/Interop) version here, plus `Link::Tag` coverage for the new pointer tags and an update of the `tiff_ifd` fuzz target in the same change.
+
 ## Goal
 
 A pointer-tag dispatcher that follows ExifIFD (0x8769), GPS (0x8825), Interop (0xA005) and SubIFDs (330) with the tolerant policy, plus ASCII, signed and float decoders and split `URational`/`SRational` types.

@@ -63,6 +63,16 @@ This decision flips about 25% of the portable tests (brief §1.3 rows `2544-2700
 - **Entry-value interpretation** (wrong type or count when a caller reads a value) stays an `Err` from the accessor, scoped to that field, exactly as in irradiance's mechanism ("structure is fatal to its IFD, interpretation costs the field").
 - **Fuzz invariants:** `parse` never panics; every IFD present in an `Ok` container lies fully within the input; a clean container has an empty issue list.
 
+## Clarifications from the SPEC-003 design
+
+Refinements that follow from the decision, recorded so the code and this file agree:
+
+- **One global attempt budget.** `MAX_IFDS` bounds IFD *visits attempted* (every non-zero pointer followed, including cyclic and unreadable ones), not just IFDs recorded. Exceeding it records one `TooManyIfds` issue and **halts the whole walk**, not only the branch: the budget is global, so every other branch would fail identically, and halting is what bounds both time and the number of issues (at most `2 * MAX_IFDS + 1`). The depth guard stays per-branch.
+- **A malformed pointer tag costs its branch, not its IFD.** If the offsets of a `SubIFDs` entry cannot be read, an issue is recorded and the holding IFD is kept (IFD0 included); only its sub-branch is skipped.
+- **IFD0 is atomic too.** An IFD0 whose entry table or trailing next-word is past the end of input is fatal; there is no partial IFD0.
+- **Issue shape.** `ParseIssue` = typed `Error` + `Link` (`Next` or `Tag(u16)`) + index of the IFD holding the pointer + target offset (`None` when the pointer value was unreadable). `Error` gains `Clone, PartialEq, Eq`.
+- **Strict wrapper.** `Container::parse_strict` ships in SPEC-003 (it is a few lines) and doubles as the differential oracle for the fuzz target and for the tests that flip.
+
 ## Consequences
 
 - **Positive:** partial results survive corruption; the audit CLI gets corruption as findings; the policy is testable (a corrupt GPS IFD leaves IFD0 readable).
