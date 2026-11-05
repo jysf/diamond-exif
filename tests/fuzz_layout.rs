@@ -110,9 +110,14 @@ fn every_seed_parses_or_errors_without_panicking() {
     for entry in fs::read_dir(&dir).unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()))
     {
         let path = entry.expect("dir entry").path();
-        let data = fs::read(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+        let data =
+            fs::read(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
         exercise(&data);
         seen += 1;
     }
-    assert!(seen >= SEEDS.len(), "expected at least {} seeds, saw {seen}", SEEDS.len());
+    assert!(
+        seen >= SEEDS.len(),
+        "expected at least {} seeds, saw {seen}",
+        SEEDS.len()
+    );
 }

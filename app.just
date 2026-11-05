@@ -58,3 +58,38 @@ gate-audit *FLAGS:
 # Proves gate-audit itself goes red on each injected shape (and not on comments).
 gate-audit-red-proof:
     ./scripts/gate-audit-red-proof.sh
+
+# ── Fuzzing (SPEC-006, DEC-004) ──────────────────────────────────────────────
+
+# The same licence gate over the FUZZ graph (`exif-core-fuzz`).
+#
+# Not redundant with `just deny`: `fuzz/` is a separate cargo package and
+# cargo-deny evaluates one manifest's graph per run, so `just deny` never sees
+# libfuzzer-sys or its dependencies. `--manifest-path` is the whole fix. Keep
+# both recipes green before claiming the licence gate passes.
+deny-fuzz:
+    cargo deny --manifest-path fuzz/Cargo.toml check licenses
+
+# clippy over the FUZZ graph, which `just lint` never compiles.
+#
+# Same reason as `deny-fuzz`: one manifest per invocation. Scope is clippy's
+# DEFAULT lints under `-D warnings`, not the library's five panic-free lints
+# (DEC-004: the harness is dev-only glue). Pinned to `~/.cargo/bin/cargo +stable`
+# with the PATH prefix because Homebrew's clippy shadows rustup's; it prints
+# which clippy answered. No nightly needed: only `cargo fuzz` runs need that.
+lint-fuzz:
+    @printf 'lint-fuzz: using %s (pinned: ~/.cargo/bin/cargo +stable)\n' \
+        "$(PATH="$HOME/.cargo/bin:$PATH" ~/.cargo/bin/cargo +stable clippy --version 2>&1)"
+    PATH="$HOME/.cargo/bin:$PATH" ~/.cargo/bin/cargo +stable clippy \
+        --manifest-path fuzz/Cargo.toml --all-targets -- -D warnings
+
+# 60 s smoke run of the tiff_ifd target from the committed seeds.
+#
+# `cargo fuzz` shells out to a bare `cargo`, which resolves to Homebrew's stable
+# and rejects `-Zsanitizer=address`; so PATH gets `~/.cargo/bin` first AND the
+# outer command is `+nightly`. libFuzzer refuses a corpus dir that does not
+# exist, hence the mkdir. Exits non-zero on any crash.
+fuzz-smoke:
+    mkdir -p fuzz/corpus/tiff_ifd
+    PATH="$HOME/.cargo/bin:$PATH" ~/.cargo/bin/cargo +nightly fuzz run tiff_ifd \
+        fuzz/corpus/tiff_ifd fuzz/seeds/tiff_ifd -- -max_total_time=60

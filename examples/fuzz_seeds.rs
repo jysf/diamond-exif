@@ -1,0 +1,352 @@
+//! Deterministic writer for the `tiff_ifd` fuzz seeds (SPEC-006).
+//!
+//! `cargo run --example fuzz_seeds` rewrites `fuzz/seeds/tiff_ifd/`. Output is a
+//! pure function of this file (no clock, no randomness, no environment), so two
+//! runs produce byte-identical seeds. The seeds are hand-built, a few hundred
+//! bytes each, and are this repository's own work: the shapes follow TIFF 6.0
+//! section 2 (header, IFD, entry layout). std only; examples are not part of
+//! the library lint set.
+
+use std::fs;
+use std::path::PathBuf;
+
+const BYTE: u16 = 1;
+const ASCII: u16 = 2;
+const SHORT: u16 = 3;
+const LONG: u16 = 4;
+const RATIONAL: u16 = 5;
+const SRATIONAL: u16 = 10;
+const SUB_IFDS: u16 = 330;
+
+/// What goes in an entry's 4-byte value field.
+enum Val {
+    /// Bytes written verbatim into the field (value stored inline).
+    Inline([u8; 4]),
+    /// Payload appended after the IFD; the field holds its offset.
+    Ext(Vec<u8>),
+    /// A literal offset, deliberately not backed by any data.
+    Raw(u32),
+    /// Offsets of other IFDs (by index). Sets the entry count itself.
+    Refs(Vec<usize>),
+}
+
+struct Entry {
+    tag: u16,
+    typ: u16,
+    count: u32,
+    val: Val,
+}
+
+/// Where an IFD's chain pointer leads.
+enum Next {
+    End,
+    Ifd(usize),
+    Raw(u32),
+}
+
+struct Ifd {
+    entries: Vec<Entry>,
+    next: Next,
+}
+
+struct Writer {
+    big: bool,
+}
+
+impl Writer {
+    fn u16(&self, v: u16) -> [u8; 2] {
+        if self.big {
+            v.to_be_bytes()
+        } else {
+            v.to_le_bytes()
+        }
+    }
+
+    fn u32(&self, v: u32) -> [u8; 4] {
+        if self.big {
+            v.to_be_bytes()
+        } else {
+            v.to_le_bytes()
+        }
+    }
+
+    fn header(&self, ifd0: u32) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(if self.big { b"MM" } else { b"II" });
+        out.extend_from_slice(&self.u16(42));
+        out.extend_from_slice(&self.u32(ifd0));
+        out
+    }
+
+    /// Lay the IFDs out one after another right behind the header, each
+    /// followed by its external payloads. Sizes do not depend on offsets, so
+    /// one pass computes every IFD's position and a second writes the bytes.
+    fn build(&self, ifds: &[Ifd]) -> Vec<u8> {
+        let mut starts = Vec::new();
+        let mut pos: usize = 8;
+        for ifd in ifds {
+            starts.push(pos);
+            pos += 2 + 12 * ifd.entries.len() + 4;
+            for e in &ifd.entries {
+                match &e.val {
+                    Val::Ext(bytes) => pos += bytes.len(),
+                    Val::Refs(r) if r.len() > 1 => pos += 4 * r.len(),
+                    _ => {}
+                }
+            }
+        }
+        let off = |i: usize| u32::try_from(starts[i]).expect("seed fits u32");
+
+        let mut out = self.header(off(0));
+        for ifd in ifds {
+            let mut table = Vec::new();
+            let mut ext = Vec::new();
+            let ext_base = out.len() + 2 + 12 * ifd.entries.len() + 4;
+            table.extend_from_slice(&self.u16(u16::try_from(ifd.entries.len()).expect("few")));
+            for e in &ifd.entries {
+                let ext_at = |ext: &Vec<u8>| u32::try_from(ext_base + ext.len()).expect("u32");
+                table.extend_from_slice(&self.u16(e.tag));
+                table.extend_from_slice(&self.u16(e.typ));
+                match &e.val {
+                    Val::Inline(b) => {
+                        table.extend_from_slice(&self.u32(e.count));
+                        table.extend_from_slice(b);
+                    }
+                    Val::Ext(bytes) => {
+                        table.extend_from_slice(&self.u32(e.count));
+                        table.extend_from_slice(&self.u32(ext_at(&ext)));
+                        ext.extend_from_slice(bytes);
+                    }
+                    Val::Raw(v) => {
+                        table.extend_from_slice(&self.u32(e.count));
+                        table.extend_from_slice(&self.u32(*v));
+                    }
+                    Val::Refs(r) => {
+                        let n = u32::try_from(r.len()).expect("few");
+                        table.extend_from_slice(&self.u32(n));
+                        if let [only] = r.as_slice() {
+                            table.extend_from_slice(&self.u32(off(*only)));
+                        } else {
+                            table.extend_from_slice(&self.u32(ext_at(&ext)));
+                            for i in r {
+                                ext.extend_from_slice(&self.u32(off(*i)));
+                            }
+                        }
+                    }
+                }
+            }
+            let next = match ifd.next {
+                Next::End => 0,
+                Next::Ifd(i) => off(i),
+                Next::Raw(v) => v,
+            };
+            table.extend_from_slice(&self.u32(next));
+            out.extend_from_slice(&table);
+            out.extend_from_slice(&ext);
+        }
+        out
+    }
+
+    fn short_inline(&self, v: u16) -> Val {
+        let mut b = [0u8; 4];
+        b[..2].copy_from_slice(&self.u16(v));
+        Val::Inline(b)
+    }
+
+    fn long_inline(&self, v: u32) -> Val {
+        Val::Inline(self.u32(v))
+    }
+
+    fn rational(&self, num: u32, den: u32) -> Vec<u8> {
+        let mut b = self.u32(num).to_vec();
+        b.extend_from_slice(&self.u32(den));
+        b
+    }
+}
+
+fn entry(tag: u16, typ: u16, count: u32, val: Val) -> Entry {
+    Entry {
+        tag,
+        typ,
+        count,
+        val,
+    }
+}
+
+/// An IFD with a handful of well-formed entries: inline LONG/SHORT, external
+/// SHORT array, ASCII, RATIONAL and SRATIONAL payloads.
+fn valid(w: &Writer) -> Vec<u8> {
+    let mut bps = w.u16(8).to_vec();
+    bps.extend_from_slice(&w.u16(8));
+    bps.extend_from_slice(&w.u16(8));
+    let ifd = Ifd {
+        entries: vec![
+            entry(256, LONG, 1, w.long_inline(4)),
+            entry(257, SHORT, 1, w.short_inline(2)),
+            entry(258, SHORT, 3, Val::Ext(bps)),
+            entry(270, ASCII, 6, Val::Ext(b"hello\0".to_vec())),
+            entry(274, SHORT, 1, w.short_inline(6)),
+            entry(282, RATIONAL, 1, Val::Ext(w.rational(72, 1))),
+            entry(
+                37380,
+                SRATIONAL,
+                1,
+                Val::Ext(w.rational(u32::MAX - 2, 3)), // reads as -3/3 signed
+            ),
+        ],
+        next: Next::End,
+    };
+    w.build(&[ifd])
+}
+
+fn small_ifd(w: &Writer, next: Next, extra: Vec<Entry>) -> Ifd {
+    let mut entries = vec![entry(256, LONG, 1, w.long_inline(1))];
+    entries.extend(extra);
+    Ifd { entries, next }
+}
+
+fn subifd(w: &Writer) -> Vec<u8> {
+    let ifds = [
+        small_ifd(
+            w,
+            Next::End,
+            vec![entry(SUB_IFDS, LONG, 2, Val::Refs(vec![1, 2]))],
+        ),
+        small_ifd(w, Next::End, vec![]),
+        small_ifd(w, Next::End, vec![]),
+    ];
+    w.build(&ifds)
+}
+
+fn chain(w: &Writer) -> Vec<u8> {
+    let ifds = [
+        small_ifd(w, Next::Ifd(1), vec![]),
+        small_ifd(w, Next::Ifd(2), vec![]),
+        small_ifd(w, Next::End, vec![]),
+    ];
+    w.build(&ifds)
+}
+
+/// Header only to byte 5: the offset field is cut short.
+fn truncated_header(w: &Writer) -> Vec<u8> {
+    let mut b = w.header(8);
+    b.truncate(5);
+    b
+}
+
+fn ifd0_offset_zero(w: &Writer) -> Vec<u8> {
+    w.header(0)
+}
+
+/// A table that declares 0xFFFF entries and carries three bytes of them.
+fn entry_count_past_eof(w: &Writer) -> Vec<u8> {
+    let mut b = w.header(8);
+    b.extend_from_slice(&w.u16(0xFFFF));
+    b.extend_from_slice(&[0, 1, 2]);
+    b
+}
+
+/// Well-formed table whose external offsets all point past the end.
+fn payload_past_eof(w: &Writer) -> Vec<u8> {
+    let ifd = Ifd {
+        entries: vec![
+            entry(256, LONG, 1, w.long_inline(4)),
+            entry(700, BYTE, 16, Val::Raw(0xFFFF_FF00)),
+            entry(701, LONG, 64, Val::Raw(0x0000_0100)),
+        ],
+        next: Next::End,
+    };
+    w.build(&[ifd])
+}
+
+/// Counts whose `count * size` is enormous or overflows 32 bits. They sit on
+/// non-SubIFD tags so the header still parses and the payload readers get
+/// hit.
+fn count_overflow(w: &Writer) -> Vec<u8> {
+    let ifd = Ifd {
+        entries: vec![
+            entry(700, RATIONAL, u32::MAX, Val::Raw(16)),
+            entry(701, LONG, u32::MAX, Val::Raw(16)),
+            entry(702, SHORT, 0x8000_0000, Val::Raw(16)),
+            entry(703, SRATIONAL, 0x2000_0001, Val::Raw(u32::MAX)),
+            entry(704, BYTE, 0, Val::Raw(0)),
+            entry(705, 99, 1, Val::Raw(0)),
+        ],
+        next: Next::End,
+    };
+    w.build(&[ifd])
+}
+
+/// A valid IFD whose chain pointer leads far past the end.
+fn next_past_eof(w: &Writer) -> Vec<u8> {
+    w.build(&[small_ifd(w, Next::Raw(0xFFFF_0000), vec![])])
+}
+
+/// IFD0's chain pointer leads back to itself.
+fn self_cycle(w: &Writer) -> Vec<u8> {
+    w.build(&[small_ifd(w, Next::Ifd(0), vec![])])
+}
+
+/// IFD0 -> SubIFD 1 -> SubIFD 0.
+fn two_hop_cycle(w: &Writer) -> Vec<u8> {
+    let ifds = [
+        small_ifd(
+            w,
+            Next::End,
+            vec![entry(SUB_IFDS, LONG, 1, Val::Refs(vec![1]))],
+        ),
+        small_ifd(
+            w,
+            Next::End,
+            vec![entry(SUB_IFDS, LONG, 1, Val::Refs(vec![0]))],
+        ),
+    ];
+    w.build(&ifds)
+}
+
+/// Twelve IFDs, each the SubIFD of the last: past the depth limit.
+fn deep_nesting(w: &Writer) -> Vec<u8> {
+    let n = 12;
+    let ifds: Vec<Ifd> = (0..n)
+        .map(|i| {
+            let extra = if i + 1 < n {
+                vec![entry(SUB_IFDS, LONG, 1, Val::Refs(vec![i + 1]))]
+            } else {
+                vec![]
+            };
+            small_ifd(w, Next::End, extra)
+        })
+        .collect();
+    w.build(&ifds)
+}
+
+fn main() {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/tiff_ifd");
+    fs::create_dir_all(&dir).expect("create seeds dir");
+
+    let le = Writer { big: false };
+    let be = Writer { big: true };
+    let seeds: Vec<(&str, Vec<u8>)> = vec![
+        ("valid-le", valid(&le)),
+        ("valid-be", valid(&be)),
+        ("subifd", subifd(&le)),
+        ("subifd-be", subifd(&be)),
+        ("chain", chain(&le)),
+        ("chain-be", chain(&be)),
+        ("truncated-header", truncated_header(&le)),
+        ("ifd0-offset-zero", ifd0_offset_zero(&le)),
+        ("entry-count-past-eof", entry_count_past_eof(&le)),
+        ("payload-past-eof", payload_past_eof(&le)),
+        ("payload-past-eof-be", payload_past_eof(&be)),
+        ("count-overflow", count_overflow(&le)),
+        ("count-overflow-be", count_overflow(&be)),
+        ("next-past-eof", next_past_eof(&le)),
+        ("self-cycle", self_cycle(&le)),
+        ("two-hop-cycle", two_hop_cycle(&le)),
+        ("deep-nesting", deep_nesting(&le)),
+    ];
+    for (name, bytes) in &seeds {
+        fs::write(dir.join(name), bytes).expect("write seed");
+    }
+    println!("wrote {} seeds to {}", seeds.len(), dir.display());
+}
