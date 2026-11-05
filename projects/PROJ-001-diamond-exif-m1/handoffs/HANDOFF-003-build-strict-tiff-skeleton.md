@@ -43,9 +43,9 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: null
+  tokens_total: 193631               # REAL combined count — what cost-audit reads
+  estimated_usd: 1.28              # tokens_total x 6.60 USD/Mtok
+  duration_minutes: 8
   branch: worktree-agent-a790d2df452429634
   pr: null
   completed_at: 2026-11-05         # YYYY-MM-DD
