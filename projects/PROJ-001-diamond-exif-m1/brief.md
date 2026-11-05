@@ -55,7 +55,7 @@ The design and porting brief are complete and carry named failure modes. The fir
 - Strict TIFF skeleton ported with its 17 hostile-input tests, green, then the tolerant-walk policy applied as its own change.
 - Exif, GPS and Interop IFDs walked; ASCII, signed and float types decoded; I1/I2 read parity with ExifTool (`-T -n -s3`) red-proofed.
 - `exif-audit` delivers walk, inventory, PII findings, policy preview, `--json`/`--csv` and CI exit codes.
-- Gate harness (lint red-proof, gate-audit, cost-audit, validate and their red-proofs) green in CI; five-lint deny set and `forbid(unsafe_code)` re-checked with `-F`.
+- Quality gates (lint red-proof, gate-audit, cost-audit, validate and their red-proofs) green in CI, set up as repo process outside the spec backlog; five-lint deny set and `forbid(unsafe_code)` re-checked with `-F`.
 
 ## Scope
 

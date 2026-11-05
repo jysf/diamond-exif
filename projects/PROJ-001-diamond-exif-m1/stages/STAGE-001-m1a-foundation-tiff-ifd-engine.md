@@ -70,7 +70,7 @@ First stage; everything else (containers, audit CLI, writer) depends on the IFD 
 ## Scope
 
 ### In scope
-- Scaffold, gate harness reconciled per-script with irradiance, design docs, provenance ledger
+- Crate scaffold, design docs, provenance ledger
 - DEC-001/002/003 and the strict skeleton port (`error.rs`, `reader.rs`, `tiff/{mod,types,tags}.rs`)
 - Tolerant walk, multi-IFD pointer walk, wider types
 - ExifTool-only `tools.rs` subset, `mutate.rs`, shared `probe.rs`, `tiff_ifd` fuzz
@@ -80,7 +80,7 @@ First stage; everything else (containers, audit CLI, writer) depends on the IFD 
 
 ## Spec Backlog
 
-- [ ] SPEC-001 (frame) — [M] Scaffold: crate, five-lint deny, deny.toml, licenses, gate harness reconciled per-script with irradiance, design docs, provenance ledger header, `just` wiring
+- [ ] SPEC-001 (frame) — [S] Scaffold the `exif-core` crate: five-lint deny, deny.toml, licenses, provenance-ledger header
 - [ ] SPEC-002 (frame) — [L] Port the strict TIFF skeleton and the 17 hostile-input tests, green, with ledger rows
 - [ ] SPEC-003 (frame) — [M] Apply the tolerant-walk policy (`ParseIssue` channel), flipping the affected tests
 - [ ] SPEC-004 (frame) — [L] Multi-IFD pointer walk (Exif/GPS/Interop/SubIFDs) and ASCII/signed/float decoders
@@ -92,7 +92,7 @@ First stage; everything else (containers, audit CLI, writer) depends on the IFD 
 
 - DEC-001 (tolerant-walk), DEC-002 (`&[u8]` core, `Bytes` at the edge) and DEC-003 (provenance class 3) are decision files authored in the design session by the architect, not delegated build specs. They land before the port spec is built.
 - Open questions to close inside this stage: ifd.rs test classification was by name/range, not execution (verify by running); CI job-to-script wiring is untraced; ExifTool write-mode exit codes are needed before M1c, not here.
-- Gate reconciliation rule: diff each script against irradiance's before overwriting; irradiance is ahead on the hardened audit/red-proof set (SPEC-011/016/023, PATCH-002), the template (0.6.39) may be ahead elsewhere. Check `gh release list -R jysf/spec-driven-template` (needs sandbox bypass).
+- Gate harness is repo setup, NOT a spec or stage (process, not product). It is a precondition for SPEC-001's green bar and is tracked outside the backlog (template-port session). Reconciliation rule: diff each script against irradiance's before overwriting; irradiance is ahead on the hardened audit/red-proof set (SPEC-011/016/023, PATCH-002), the template (0.6.39) may be ahead elsewhere. Check `gh release list -R jysf/spec-driven-template` (needs sandbox bypass).
 
 ## Dependencies
 

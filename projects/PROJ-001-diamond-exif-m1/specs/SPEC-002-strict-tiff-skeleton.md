@@ -26,7 +26,7 @@ repo:
   id: diamond-exif
 
 handoff:
-  from_agent: claude-opus-4-7  # from .repo-context tier_map.design (DEC-005)
+  from_agent: claude-opus-5-5  # from .repo-context tier_map.design (DEC-005)
   to_agent: null                   # filled when HANDOFF is created (any agent — see docs/porting.md)
   created_at: null
 

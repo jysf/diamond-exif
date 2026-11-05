@@ -9,7 +9,7 @@ task:
   cycle: frame                     # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
-  complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
+  complexity: S                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
   complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
@@ -26,7 +26,7 @@ repo:
   id: diamond-exif
 
 handoff:
-  from_agent: claude-opus-4-7  # from .repo-context tier_map.design (DEC-005)
+  from_agent: claude-opus-5-5  # from .repo-context tier_map.design (DEC-005)
   to_agent: null                   # filled when HANDOFF is created (any agent — see docs/porting.md)
   created_at: null
 
@@ -70,7 +70,7 @@ cost:
     session_count: 0
 ---
 
-# SPEC-001: Scaffold the crate and gate harness
+# SPEC-001: Scaffold the exif-core crate
 
 > **OUTLINE — `cycle: frame`.** This spec exists so its ID is stable and
 > siblings can declare `depends_on: [SPEC-001]`. Capture **scope** (Context /
@@ -79,11 +79,11 @@ cost:
 
 ## Context
 
-STAGE-001 starts from an empty template scaffold. Nothing can be ported until there is a buildable single crate carrying irradiance's quality bar and hardened gates. Plan Step 0 (docs/DIAMOND-EXIF-EXTRACTION-PLAN.md §3); porting brief §3 and §16.9.
+STAGE-001 starts from an empty crate. Nothing can be ported until there is a buildable single `exif-core` crate carrying irradiance's quality bar. Plan Step 0 (docs/DIAMOND-EXIF-EXTRACTION-PLAN.md §3). The gate harness (scripts, red-proofs, CI wiring) is repo setup, not product work: it is handled outside the spec backlog and is a precondition here, not a deliverable.
 
 ## Goal
 
-A buildable, green `exif-core` single crate with `#![forbid(unsafe_code)]` plus the five-lint deny set (copied verbatim from irradiance `src/lib.rs:95-102`), `deny.toml`, dual licenses, the design docs and provenance-ledger header in `docs/`, and the gate harness reconciled per-script against irradiance's (irradiance ahead: validate, gate-audit, cost-audit, lint-* and their red-proofs, `_lib.sh`; keep the template where it is newer). `cargo fmt`, `clippy` and `cargo test` pass on an empty lib and the ported gates run.
+A buildable, green `exif-core` single crate: `Cargo.toml`, `#![forbid(unsafe_code)]` plus the five-lint deny set (copied verbatim from irradiance `src/lib.rs:95-102`), `deny.toml`, `LICENSE-MIT` and `LICENSE-APACHE`, an empty `src/` module skeleton, and the `docs/provenance-ledger.md` header (ExifTool is run, never read). `cargo fmt`, `clippy` and `cargo test` pass on the empty lib.
 
 ## Inputs
 
@@ -124,9 +124,9 @@ job in **build** is to make these pass.
 
 ## Non-Goals
 
+- Gate scripts, red-proofs and CI wiring (repo setup, not a spec)
 - Porting any IFD code or tests
-- DEC authoring (separate design work) and CI Rust jobs beyond what the gates need
-- Workspace layout, `exif-audit`, fuzz targets
+- DEC authoring (architect work) and `exif-audit`, fuzz targets, workspace layout
 
 ## Notes for the Implementer
 

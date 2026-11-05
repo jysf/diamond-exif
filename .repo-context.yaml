@@ -32,12 +32,16 @@ spec:
   # Agent + cost model config (DEC-005). Defaults reproduce the Claude-Code
   # workflow, so an existing instance changes nothing. A NON-Claude instance
   # edits these once to run the template on another agent — see docs/porting.md.
+  # diamond-exif runs on Claude today; other models may be added later by
+  # editing tier_map only (one entry per cycle). If a non-Claude model takes a
+  # METERED cycle (build/verify), revisit cost.metering_source below, because
+  # subagent_tokens only meters Claude Code sub-agents (docs/porting.md §3).
   agent:
-    default_model: claude-opus-4-7    # stamped into new specs/patches' agents.*
+    default_model: claude-opus-5-5    # stamped into new specs/patches' agents.*
     tier_map:                         # which model runs which cycle (pluggable)
-      design: claude-opus-4-7
-      build: claude-sonnet-4-6
-      verify: claude-opus-4-7
+      design: claude-opus-5-5
+      build: claude-sonnet-5-5
+      verify: claude-opus-5-5
   cost:
     # How a real tokens_total is obtained. `just cost-audit` honors this:
     #   subagent_tokens | api_usage | manual  -> gate enforced (real number required)
