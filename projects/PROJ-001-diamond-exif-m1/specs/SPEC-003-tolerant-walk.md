@@ -6,7 +6,7 @@
 task:
   id: SPEC-003
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: verify  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -63,11 +63,19 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: 280000
-  sessions: []
+  sessions:
+    - cycle: build
+      agent: claude-sonnet-5-5
+      interface: other
+      tokens_total: 160748
+      estimated_usd: 1.06
+      duration_minutes: 8
+      recorded_at: 2026-11-05
+      notes: "tokens transcribed by the orchestrator from the sub-agent metered result (the sub-agent cannot see its own count); not pushed, no PR, per handoff."
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 160748
+    estimated_usd: 1.06
+    session_count: 1
 ---
 
 # SPEC-003: Apply the tolerant-walk policy

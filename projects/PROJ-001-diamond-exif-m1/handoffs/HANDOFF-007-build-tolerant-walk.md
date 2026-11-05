@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # harness exposes no token count to this subagent (see notes)
-  estimated_usd: null
-  duration_minutes: 30
+  tokens_total: 160748             # orchestrator-recorded from the metered sub-agent result (subagent_tokens)
+  estimated_usd: 1.06
+  duration_minutes: 8
   branch: worktree-agent-a05cce564e0999784
   pr: null
   completed_at: 2026-11-05
-  notes: "No token meter is exposed to this subagent harness (no /cost, no usage object), so tokens_total is null rather than invented; set cost.metering_source accordingly or have the orchestrator read the session total. Not pushed, no PR, per handoff."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "tokens transcribed by the orchestrator from the sub-agent metered result (the sub-agent cannot see its own count); not pushed, no PR, per handoff."
+  synced_at: 2026-11-05
 ---
 
 # HANDOFF-007: Apply the tolerant-walk policy
@@ -135,10 +135,10 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Cost self-report
 
-- **Tokens (total):** null. This subagent harness exposes no token count (no `/cost`, no `usage` object), so I did not invent one.
-- **Estimated USD:** null
-- **Duration (minutes):** ~30
-- **Source of the number:** none available
+- **Tokens (total):** 160,748 (recorded by the orchestrator from the sub-agent metered result; the builder had no meter).
+- **Estimated USD:** 1.06
+- **Duration (minutes):** ~8 (metered wall-clock)
+- **Source of the number:** harness report (subagent_tokens)
 
 ### Drift and new artifacts
 
