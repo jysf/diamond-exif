@@ -6,7 +6,7 @@
 task:
   id: SPEC-009
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: verify  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -63,11 +63,19 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: 330000
-  sessions: []
+  sessions:
+    - cycle: build
+      agent: claude-sonnet-5-5
+      interface: other
+      tokens_total: 228956
+      estimated_usd: 1.51
+      duration_minutes: 14
+      recorded_at: 2026-11-05
+      notes: "tokens transcribed by the orchestrator from the sub-agent metered result"
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 228956
+    estimated_usd: 1.51
+    session_count: 1
 ---
 
 # SPEC-009: JPEG segment walker with tolerant issues and the jpeg_segments fuzz target
@@ -175,7 +183,7 @@ Let `data` be the input and `p` the cursor.
   - Segments are in strictly increasing `offset` order and non-overlapping; each `offset >= 2`, `payload` lies inside the input at exactly `offset + 4 ..`, and `payload.as_ptr()` is inside `data`'s range (zero-copy).
   - `kind == Exif` **iff** `marker == 0xE1` and the payload starts with `Exif\0\0`; same iff for `Xmp`, `ExtendedXmp`, `Icc`, `Iptc`, `Jumbf`, `Jfif` against their marker and signature.
   - `scan_region().is_some()` **iff** some segment has `kind == Sos`; its first byte is `0xFF` followed by `0xDA`; it ends at `eoi_offset + 2` when `eoi_offset` is `Some`, else at the end of the input; `trailer()` is empty when `eoi_offset` is `None` and equals `data[eoi + 2..]` otherwise.
-  - `segments().len() <= MAX_JPEG_SEGMENTS`; `issues().len() <= MAX_JPEG_ISSUES + 1`; a `TooManyIssues` or `TooManySegments` issue, if present, is the last issue and then neither `MissingSos` nor `MissingEoi` appears.
+  - `segments().len() <= MAX_JPEG_SEGMENTS`; `issues().len() <= MAX_JPEG_ISSUES + 1`; a `TooManyIssues` or `TooManySegments` issue, if present, is the last issue; after `TooManySegments` neither `MissingSos` nor `MissingEoi` appears (a `TooManyIssues` may still follow a recorded `MissingSos`; see DEC-006).
   - `after_scan()` is true **iff** the segment's offset is greater than the first SOS segment's offset.
   - Exercise `Display` of every issue and kind (must not panic).
 - Seeds (written by extending `examples/fuzz_seeds.rs` into `fuzz/seeds/jpeg_segments/`; deterministic; the 29 existing TIFF seeds stay byte-identical): `minimal`, `soi-only`, `fill-bytes`, `app1-len-0`, `app1-len-1`, `app1-len-2`, `app1-len-ffff`, `app1-past-eof`, `exif-and-xmp`, `extended-xmp-pair`, `stray-bytes`, `ff00-stray`, `no-sos`, `sos-no-eoi`, `progressive-two-scans`, `trailer-after-eoi`, `app-after-scan`, `many-segments`, `many-ff00`.

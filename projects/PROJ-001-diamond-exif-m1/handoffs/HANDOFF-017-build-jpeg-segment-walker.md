@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: null
+  tokens_total: 228956             # orchestrator-recorded from the metered sub-agent result (subagent_tokens)
+  estimated_usd: 1.51
+  duration_minutes: 14
   branch: worktree-agent-a2f528d5661edeeb8
   pr: null
   completed_at: 2026-11-05         # YYYY-MM-DD
-  notes: "tokens_total not visible to the implementer harness; orchestrator transcribes the metered figure. One rework: first 60 s smoke found a too-strict harness invariant (see Handback)."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "tokens transcribed by the orchestrator from the sub-agent metered result"
+  synced_at: 2026-11-05
 ---
 
 # HANDOFF-017: JPEG segment walker
@@ -144,10 +144,10 @@ p1 trailer starts at `eoi + 1` (red: `trailer`); p2 `MissingEoi` only reported w
 
 ### Cost self-report
 
-- **Tokens (total):** null (the implementer harness exposes no token count; orchestrator transcribes the metered figure)
-- **Estimated USD:** null
-- **Duration (minutes):** about 60 (estimate)
-- **Source of the number:** none available
+- **Tokens (total):** 228,956 (recorded by the orchestrator from the sub-agent metered result).
+- **Estimated USD:** 1.51
+- **Duration (minutes):** ~14 (metered wall-clock)
+- **Source of the number:** harness report (subagent_tokens)
 
 ### Drift and new artifacts
 
