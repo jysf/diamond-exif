@@ -1,11 +1,11 @@
 # app.just — project-owned recipes for diamond-exif (single Rust crate; workspace at M2).
-# The crate does not exist yet (scaffold step); these recipes fail loudly until it does.
 # Spec-artifact gates (reconciled from irradiance) are at the bottom; the Rust
 # gates (lint red-proof, fuzz smoke, oracle parity) arrive with the crate.
 
-# Show the pinned toolchain
+# Show the active toolchain (no rust-toolchain.toml: `rust-version` in Cargo.toml is the floor)
 install:
-    rustup show
+    rustc --version
+    cargo --version
 
 # Run the audit CLI
 dev *ARGS:
@@ -22,7 +22,15 @@ test:
 # Format check + clippy
 lint:
     cargo fmt --all -- --check
-    cargo clippy --all-targets
+    cargo clippy --all-targets -- -D warnings
+
+# License policy (permissive-only dependencies)
+deny:
+    cargo deny check licenses
+
+# Re-check that no unsafe code exists (the `forbid` attribute in lib.rs, enforced from the CLI too)
+forbid-unsafe:
+    cargo rustc --lib -- -F unsafe_code
 
 # Type check
 typecheck:

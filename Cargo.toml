@@ -1,0 +1,27 @@
+[package]
+name = "exif-core"
+version = "0.0.0"
+edition = "2021"
+# Inherited from irradiance, where it was measured; re-measured here by building
+# and testing on 1.90.0 (SPEC-001). The true floor may be lower but is unmeasured.
+rust-version = "1.90"
+license = "MIT OR Apache-2.0"
+description = "Panic-free, pure-Rust, zero-copy EXIF/XMP/IPTC/ICC metadata reader, writer and stripper (pre-release)."
+repository = "https://github.com/jysf/diamond-exif"
+# Strict allow-list: ship only what the crate needs to build and be understood,
+# so process directories (decisions/, projects/, ...) can never leak into a release.
+include = [
+    "src/**/*.rs",
+    "/Cargo.toml",
+    "/README.md",
+    "/LICENSE-MIT",
+    "/LICENSE-APACHE",
+]
+
+[lib]
+name = "exif_core"
+path = "src/lib.rs"
+
+# Zero dependencies by design (DEC-002). Adding one needs a DEC; see
+# guidance/constraints.yaml `no-new-top-level-deps-without-decision`.
+[dependencies]

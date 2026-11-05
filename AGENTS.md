@@ -131,7 +131,7 @@ Reports aggregate cost by cycle, by interface, by spec, and by stage.
 
 Replace with your actual stack. Be specific about versions.
 
-- **Language:** Rust (stable; pin exact toolchain in `rust-toolchain.toml` at scaffold)
+- **Language:** Rust (stable; no `rust-toolchain.toml`; `rust-version = "1.90"` in `Cargo.toml` is the floor)
 - **Runtime:** none — a library plus CLI. No I/O in the library; `Bytes` only at the API edge; WASM must stay trivial.
 - **Framework:** none. **Single crate first** (`src/`, `tests/`, `fuzz/` at the repo root, same shape as irradiance so its gates drop in). `exif-audit` is a binary target of this crate (dependency/feature shape to be set by its own DEC); `exif-pro` and `site/` arrive at M2, when the repo is promoted to a workspace via its own DEC.
 - **Database:** none
@@ -151,10 +151,10 @@ imported by the template-managed root `justfile` — keep app recipes there (not
 in `justfile`) so a template update never clobbers your commands. For
 template/workflow commands (`status`, `new-spec`, …) see `justfile`.
 
-Stubs until the crate exists (scaffold step); `app.just` already wraps them.
+The crate exists (SPEC-001); `app.just` wraps these. `just dev` (the `exif-audit` bin) and any other recipe whose target is not built yet remain stubs and fail until it lands.
 
 ```bash
-just install      # rustup show (toolchain from rust-toolchain.toml)
+just install      # print active rustc/cargo versions
 just dev          # cargo run --bin exif-audit -- --help
 just test         # cargo test
 cargo test <name>   # single test

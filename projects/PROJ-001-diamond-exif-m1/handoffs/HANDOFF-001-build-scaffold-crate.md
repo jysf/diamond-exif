@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-04
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-001
@@ -42,14 +42,14 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
+  status: completed                # completed | blocked | rejected
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: null
-  branch: null
+  duration_minutes: 15
+  branch: claude/spec-001-scaffold-crate-0aa57b
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # one line if unusual (rework, no meter, etc.)
+  completed_at: 2026-11-05              # YYYY-MM-DD
+  notes: "tokens_total is null: /cost is not runnable from this session; only the context-window size (118,304 tokens, not cumulative billed usage) was readable. Orchestrator should supply the real figure."                      # one line if unusual (rework, no meter, etc.)
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -159,9 +159,9 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
+- **Branch / PR:** `claude/spec-001-scaffold-crate-0aa57b`, commit 67321b2 (not pushed, no PR)
+- **Completed at:** 2026-11-05
+- **All acceptance criteria met?** yes. fmt, clippy -D warnings, test, `-F unsafe_code`, `cargo deny check licenses`, `just validate`, `just decisions-audit` all pass; tests and clippy also pass on genuine 1.90.0 (clippy 0.1.90). Lint red shown: with an `unwrap()` and `v[0]` added to src/lib.rs, clippy failed with `error: used \`unwrap()\` on an \`Option\` value` (clippy::unwrap_used) and `error: indexing may panic` (clippy::indexing_slicing), `could not compile exif-core (lib)`; removing them restored green. Red run used Homebrew clippy 0.1.99.
 - **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
 
 ### Cost self-report
@@ -170,27 +170,30 @@ Mirror what you put in the `handback:` front-matter, and say where the number
 came from. **This is the number that lands in the spec** — the orchestrator
 transcribes it via `just handback-sync`, it does not estimate it.
 
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null — `/cost` not available in this session
+- **Estimated USD:** null
+- **Duration (minutes):** ~15
+- **Source of the number:** none available (context window read 118,304 tokens at handback; that is not billed usage)
 
 ### Drift and new artifacts
 
 - **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
+  - none
+  - Verify punch-list rework (HANDOFF-002): crate_policy tests now strip `//` comments, match whole tokens, reject allow/warn/expect of the five lints and `[dependencies.*]` sub-tables. Mutations shown red: commented `clippy::panic`, `panic_in_result_fn` substitute, commented-out deny block + `#![allow(unwrap_used)]`, `#![allow(clippy::panic)]`, `[dependencies.foo]`. Host-note docs and AGENTS.md §6 wording fixed.
 - **Deviations from spec:**
-  - [list]
+  - `rustup component add --toolchain 1.90.0 clippy rustfmt` was run on the host: rustup had no clippy/rustfmt for 1.90.0, so the spec's "put ~/.cargo/bin first" check could not run otherwise.
+  - Also edited AGENTS.md (2 lines) and README per spec; deny.toml header rewritten, DEC-011 reference dropped.
 - **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - Cost metering: orchestrator must fill tokens_total.
+  - With ~/.cargo/bin first in PATH the nightly default has no fmt/clippy; use Homebrew's on default PATH and `+1.90.0` explicitly.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — Toolchain-brief claim that ~/.cargo/bin-first gives rustup clippy: 1.90.0 had no clippy component installed.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — None missing.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Check rustup components up front.
