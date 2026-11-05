@@ -79,7 +79,7 @@ a real spec at `cycle: frame` with a stable ID (so `depends_on:` can point at
 it) and rewrites the line in place. An optional `[S]`/`[M]`/`[L]` tag on the
 line is carried onto the spec as `task.complexity`.
 
-- [ ] SPEC-009 (frame) — [M] JPEG segment walker with tolerant issues and the jpeg_segments fuzz target
+- [ ] SPEC-009 (design) — [M] JPEG segment walker with tolerant issues and the jpeg_segments fuzz target
 - [ ] SPEC-010 (frame) — [M] Exif and located metadata regions from JPEG
 - [ ] SPEC-011 (frame) — [L] JPEG read parity against ExifTool
 
