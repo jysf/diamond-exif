@@ -4,12 +4,12 @@
 # implementer lives in handoffs/HANDOFF-*.md, not in the spec itself.
 
 task:
-  id: SPEC-005
+  id: SPEC-008
   type: story                      # epic | story | task | bug | chore
   cycle: frame                     # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
-  complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
+  complexity: S                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
   complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
@@ -38,7 +38,7 @@ references:
 # Blocking dependencies: specs that must SHIP before this one can start.
 # Distinct from references.related_specs (informational). Feeds the ready-set
 # (`just ready`) and safe fan-out. Optional; [] = no blockers.
-depends_on: [SPEC-004, SPEC-007]
+depends_on: [SPEC-005]                     # e.g. [SPEC-002]
 
 # Fan-out lease — who/what holds this spec now (`just claim` / `just unclaim`).
 # Advisory; null = free. The hard lock for parallel agents is the worktree/branch.
@@ -70,68 +70,28 @@ cost:
     session_count: 0
 ---
 
-# SPEC-005: Oracle discipline
+# SPEC-008: Mutation helpers and mutated-copy red-proof apparatus
 
-> **OUTLINE — `cycle: frame`.** This spec exists so its ID is stable and
-> siblings can declare `depends_on: [SPEC-005]`. Capture **scope** (Context /
-> Goal / Non-Goals) and **dependencies** only — the *approach* is designed
-> just-in-time when this moves to `design`. Do not pre-design it here.
+> **OUTLINE — `cycle: frame`.** This spec exists so its ID is stable. Capture
+> **scope** only; the approach is designed just-in-time when it moves to `design`.
 
 ## Context
 
-Quality bar: oracle-must-be-shown-red (design §8; plan Step 5). The fuzz target moved to SPEC-006 so it lands with the first parser.
+Split out of the original SPEC-005 at its design. SPEC-005 shows the *comparator* can fail (replay-and-perturb). This spec shows the *library* faults get caught by the oracle: inject a fault into a **copy** of the library source, build and run it, and watch the ExifTool comparison go red, after a control run proves the unmutated copy is green (irradiance DEC-009 / `scripts/lint-red-proof.sh`). Brief §2.3: irradiance copy-pasted this apparatus three times (`stage_probe_crate`, `build_and_run_probe`); lift it into `tests/support/` once. Design §8 red-proofs also need byte-mutation helpers that do not exist anywhere yet.
 
 ## Goal
 
-ExifTool-only `tests/support/tools.rs` subset and `parse_fields` (extended beyond numeric values), a replay-and-perturb red-proof pattern, `mutate.rs` and one shared `probe.rs`. (The `tiff_ifd` fuzz target moved to SPEC-006.)
+`tests/support/mutate.rs` (`set_u32_at`, `flip_bit`, `truncate_at`, `swap_byte_order_mark`, all total and panic-free) and one shared `tests/support/probe.rs` (temp dir, stage a probe crate over a mutated copy of `src/`, build, run, capture output), with at least three red-proofs: corrupt an IFD offset (typed outcome changes, oracle names the field), swap the byte-order mark (values go wrong, oracle red), and an injected library fault in a copy (e.g. a wrong-endian read) caught by live ExifTool parity, each with its control run first.
 
-## Inputs
+## Carry-ins from SPEC-005
 
-What the implementer will read or consume.
-
-- **Files to read:** `path/to/file.ext` — why
-- **External APIs:** <name, docs link, auth requirements>
-- **Related code paths:** `src/some/module/`
-
-## Outputs
-
-What the implementer will produce.
-
-- **Files created:** `path/to/new.ext` — purpose
-- **Files modified:** `path/to/existing.ext` — what changes
-- **New endpoints / functions / components:** <names and signatures>
-- **New flags / options:** each flag's accepted values **and its default** — an
-  unstated default makes the implementer guess.
-- **Database changes:** <migrations, if any>
-
-## Acceptance Criteria
-
-Testable outcomes. Each must map to at least one test. Cover happy
-path, error cases, edge cases.
-
-- [ ] Criterion 1 (testable)
-- [ ] Criterion 2 (testable)
-- [ ] Criterion 3 (testable)
-
-## Failing Tests
-
-Written during the **design** cycle, BEFORE handoff. The implementer's
-job in **build** is to make these pass.
-
-- **`path/to/test.file`**
-  - `"test description 1"` — asserts: ...
-  - `"test description 2"` — asserts: ...
+- Add a wall-clock and memory limit to the `run_tool` choke point (ExifTool 13.55 does not return on `two-hop-cycle`, about 9 GB before the OS kills it).
+- Give the oracle a selector or fixture that exercises signed integers and floats live (an SSHORT-read-as-unsigned plant survived every oracle test; only a library unit test caught it).
 
 ## Non-Goals
 
-- Write-mode parity (I3) and ExifTool write exit codes
-- JPEG/PNG/WebP fuzz targets
-- The 24 h clean fuzz run
-
-## Notes for the Implementer
-
-Gotchas, style preferences, reuse opportunities. Keep short — the full
-context graph lives in the handoff file.
+- The comparator, `parse_fields`, fixtures and recording (SPEC-005); JPEG-level red-proofs (truncate between APP1 and SOS, pixel flip) which wait for the container stages
+- CI wiring, `lint-red-proof` script work (repo setup)
 
 ---
 

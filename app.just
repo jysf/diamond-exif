@@ -93,3 +93,13 @@ fuzz-smoke:
     mkdir -p fuzz/corpus/tiff_ifd
     PATH="$HOME/.cargo/bin:$PATH" ~/.cargo/bin/cargo +nightly fuzz run tiff_ifd \
         fuzz/corpus/tiff_ifd fuzz/seeds/tiff_ifd -- -max_total_time=60
+
+# ── Oracle (SPEC-005) ────────────────────────────────────────────────────────
+
+# Re-record ExifTool's output for the hand-built fixtures and the tiff_ifd seeds
+# into tests/oracle-fixtures/exiftool/. The replay tests read these files with no
+# tool installed, so they must be exactly what the installed ExifTool prints:
+# re-run this after changing fixtures()/the selector table or upgrading
+# ExifTool, and review `git diff`. Needs exiftool on PATH. Never run in CI.
+oracle-record:
+    cargo run --example oracle_record

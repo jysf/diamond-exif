@@ -12,6 +12,8 @@ Single Cargo crate (`exif-core`; `exif-audit` bin later); workspace promotion at
 
 Built-in `cargo test` with plain `assert!`/`assert_eq!`. Single test: `cargo test <name>`. Parity tests shell out to ExifTool (`exiftool -T -n -s3`); if it is absent they must print a loud SKIPPED notice and CI must fail. Every parity test must be shown red before it is trusted.
 
+**Oracle (SPEC-005).** ExifTool 13.55 is at `/opt/homebrew/bin/exiftool` on the reference host. `cargo test --test metadata_oracle` runs live parity plus replay of the committed records in `tests/oracle-fixtures/exiftool/`. With ExifTool absent the live tests print `SKIP ...` and pass; `DIAMOND_EXIF_REQUIRE_ORACLE=1` turns that skip into a failure. `just oracle-record` re-records the files (needs ExifTool; review `git diff`). Never run ExifTool over the `two-hop-cycle` seed: unbounded memory growth (about 9 GB in 5 s), see `guidance/questions.yaml`. To check the skip modes, run the built test binary directly with a scrubbed `PATH` (`env PATH=/nonexistent target/debug/deps/metadata_oracle-<hash> --nocapture`), since cargo itself needs `PATH`.
+
 ## Lint / format quirks
 
 `cargo fmt --all -- --check`; clippy with the five-lint deny set (irradiance's set verbatim: unwrap_used, expect_used, indexing_slicing, panic, arithmetic_side_effects). `#![forbid(unsafe_code)]` in every crate; CI re-checks with `-F unsafe_code`. Library code must not unwrap/expect/index unchecked on untrusted input.

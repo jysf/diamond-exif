@@ -1,0 +1,4 @@
+# command: exiftool -T -n -s3 -IFD0:ImageWidth -IFD0:ImageHeight -IFD0:Orientation <file>
+# exiftool-version: 13.55
+# source: seed valid-be
+4	2	6

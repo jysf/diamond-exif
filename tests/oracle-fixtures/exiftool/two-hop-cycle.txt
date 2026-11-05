@@ -1,0 +1,4 @@
+# command: exiftool -T -n -s3 -IFD0:ImageWidth -IFD0:ImageHeight -IFD0:Orientation <file>
+# exiftool-version: 13.55
+# source: seed two-hop-cycle
+# outcome: not run: exiftool 13.55 does not return on this input (see exiftool-two-hop-cycle-does-not-return); measured: empty stdout; the process grew to about 8.9 GB resident within 5 s, was killed by SIGKILL (exit status 137) after 53.4 s, and wrote 'Deep recursion on subroutine ProcessDirectory' and 'Deep recursion on subroutine ProcessExif' to stderr. exif-core reads IFD0:ImageWidth = 1, records a CyclicIfd issue at offset 8, and returns.
