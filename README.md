@@ -8,7 +8,7 @@ Panic-free, pure-Rust, zero-copy EXIF/XMP/IPTC/ICC metadata reader, writer and s
 | `exif-audit` CLI (read-only scanner) | planned, first deliverable | free |
 | `exif-pro` (compliance tier) | scaffold only | paid |
 
-Status: strict TIFF/IFD reader with a tolerant walk (a corrupt sub-IFD becomes a reported issue, not a failure) that reaches the Exif, GPS and Interop IFDs and labels each IFD by how it was reached, plus a fuzz target; no CLI yet. See `CLAUDE.md` and `AGENTS.md`. First decision: DEC-001 (tolerant-walk policy).
+Status: strict TIFF/IFD reader with a tolerant walk (a corrupt sub-IFD becomes a reported issue, not a failure) that reaches the Exif, GPS and Interop IFDs and labels each IFD by how it was reached, plus ASCII, signed-integer and float value decoders (strings are borrowed from the input) and a fuzz target; no CLI yet. See `CLAUDE.md` and `AGENTS.md`. First decision: DEC-001 (tolerant-walk policy).
 
 *This file replaces the template README when you run `just init` — rename or customize as needed.*
 

@@ -15,7 +15,12 @@ const ASCII: u16 = 2;
 const SHORT: u16 = 3;
 const LONG: u16 = 4;
 const RATIONAL: u16 = 5;
+const SBYTE: u16 = 6;
+const SSHORT: u16 = 8;
+const SLONG: u16 = 9;
 const SRATIONAL: u16 = 10;
+const FLOAT: u16 = 11;
+const DOUBLE: u16 = 12;
 const SUB_IFDS: u16 = 330;
 const EXIF_IFD: u16 = 0x8769;
 const GPS_INFO: u16 = 0x8825;
@@ -450,6 +455,123 @@ fn leaf_next_word(w: &Writer) -> Vec<u8> {
     w.build(&ifds)
 }
 
+/// Up to four bytes stored inline, zero padded.
+fn inline_bytes(b: &[u8]) -> Val {
+    let mut v = [0u8; 4];
+    v[..b.len()].copy_from_slice(b);
+    Val::Inline(v)
+}
+
+/// ASCII entries in every hostile shape: count 0, unterminated, an embedded
+/// NUL with a second string behind it, inline terminated values, and Latin-1
+/// bytes that are not UTF-8.
+fn ascii_shapes(w: &Writer) -> Vec<u8> {
+    w.build(&[Ifd {
+        entries: vec![
+            entry(270, ASCII, 0, inline_bytes(b"")),
+            entry(271, ASCII, 5, Val::Ext(b"Canon".to_vec())),
+            entry(272, ASCII, 6, Val::Ext(b"ab\0cd\0".to_vec())),
+            entry(305, ASCII, 4, inline_bytes(b"abc\0")),
+            entry(306, ASCII, 3, inline_bytes(b"ab\0")),
+            entry(315, ASCII, 1, inline_bytes(b"\0")),
+            entry(
+                33432,
+                ASCII,
+                8,
+                Val::Ext(vec![0x43, 0xE9, 0xFF, 0xC3, 0x28, 0x00, 0x7F, 0x00]),
+            ),
+            // DateTimeOriginal, and a BYTE entry where ASCII would be
+            // expected (the ASCII reader must refuse it).
+            entry(
+                0x9003,
+                ASCII,
+                20,
+                Val::Ext(b"2024:01:02 03:04:05\0".to_vec()),
+            ),
+            entry(274, BYTE, 4, inline_bytes(b"abc\0")),
+        ],
+        next: Next::End,
+    }])
+}
+
+/// SBYTE/SSHORT/SLONG extremes and FLOAT/DOUBLE specials (NaN with a payload,
+/// infinity, subnormal, -0.0), each inline and external.
+fn signed_and_float(w: &Writer) -> Vec<u8> {
+    let sshort = |vals: &[i16]| -> Vec<u8> { vals.iter().flat_map(|v| w.u16(*v as u16)).collect() };
+    let slong = |vals: &[i32]| -> Vec<u8> { vals.iter().flat_map(|v| w.u32(*v as u32)).collect() };
+    let float_bits = |vals: &[u32]| -> Vec<u8> { vals.iter().flat_map(|v| w.u32(*v)).collect() };
+    let double_bits = |vals: &[u64]| -> Vec<u8> {
+        vals.iter()
+            .flat_map(|v| {
+                let (hi, lo) = ((*v >> 32) as u32, *v as u32);
+                if w.big {
+                    [w.u32(hi), w.u32(lo)]
+                } else {
+                    [w.u32(lo), w.u32(hi)]
+                }
+                .concat()
+            })
+            .collect()
+    };
+    w.build(&[Ifd {
+        entries: vec![
+            entry(1, SBYTE, 3, inline_bytes(&[0xFF, 0x7F, 0x80])),
+            entry(2, SBYTE, 6, Val::Ext(vec![0x80, 1, 0xFF, 5, 0xFE, 3])),
+            entry(3, SSHORT, 1, inline_bytes(&sshort(&[-32768]))),
+            entry(4, SSHORT, 3, Val::Ext(sshort(&[-2, 32767, -32768]))),
+            entry(5, SLONG, 1, inline_bytes(&slong(&[i32::MIN]))),
+            entry(6, SLONG, 3, Val::Ext(slong(&[i32::MIN, -1, i32::MAX]))),
+            entry(7, FLOAT, 1, inline_bytes(&float_bits(&[0x7FC0_1234]))),
+            entry(
+                8,
+                FLOAT,
+                5,
+                Val::Ext(float_bits(&[
+                    0x3FC0_0000,
+                    0x8000_0000,
+                    0x7F80_0000,
+                    0x7FC0_1234,
+                    0x0000_0001,
+                ])),
+            ),
+            entry(
+                9,
+                DOUBLE,
+                1,
+                Val::Ext(double_bits(&[0x7FF8_0000_DEAD_BEEF])),
+            ),
+            entry(
+                10,
+                DOUBLE,
+                5,
+                Val::Ext(double_bits(&[
+                    0x7E37_E43C_8800_759C,
+                    0x8000_0000_0000_0000,
+                    0xFFF0_0000_0000_0000,
+                    0x7FF8_0000_DEAD_BEEF,
+                    0x0000_0000_0000_0001,
+                ])),
+            ),
+        ],
+        next: Next::End,
+    }])
+}
+
+/// ASCII counts that run past the end of the file, exceed the value cap, or
+/// overflow `count * size`, next to one valid string.
+fn ascii_count_past_eof(w: &Writer) -> Vec<u8> {
+    w.build(&[Ifd {
+        entries: vec![
+            entry(271, ASCII, 64, Val::Raw(0xFFFF_FF00)),
+            entry(272, ASCII, 1_048_577, Val::Raw(0)),
+            entry(305, ASCII, u32::MAX, Val::Raw(0)),
+            entry(306, ASCII, 5, Val::Ext(b"ok\0\0\0".to_vec())),
+            entry(315, ASCII, 200, Val::Raw(8)),
+        ],
+        next: Next::End,
+    }])
+}
+
 fn main() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/tiff_ifd");
     fs::create_dir_all(&dir).expect("create seeds dir");
@@ -483,6 +605,9 @@ fn main() {
         ("pointer-bad-count", pointer_bad_count(&le)),
         ("subifds-count-over-cap", subifds_count_over_cap(&le)),
         ("leaf-next-word", leaf_next_word(&le)),
+        ("ascii-shapes", ascii_shapes(&le)),
+        ("signed-and-float", signed_and_float(&le)),
+        ("ascii-count-past-eof", ascii_count_past_eof(&le)),
     ];
     for (name, bytes) in &seeds {
         fs::write(dir.join(name), bytes).expect("write seed");

@@ -8,11 +8,13 @@
 use super::{Container, Entry, MAX_TAG_VALUES};
 use crate::error::Error;
 
-// TIFF 6.0 §2, "Types". Only the types a reader in this module accepts are
-// named; the rest are sized by `type_size` and refused by the readers.
+// TIFF 6.0 §2, "Types". Every type 1-12 is named (SPEC-007), plus TIFF/EP's
+// `IFD`; `type_size` sizes them and each reader accepts only its own set.
 
 /// TIFF 6.0 §2: 8-bit unsigned integer.
 pub const TYPE_BYTE: u16 = 1;
+/// TIFF 6.0 §2: 8-bit bytes holding 7-bit ASCII, NUL-terminated by the spec.
+pub const TYPE_ASCII: u16 = 2;
 /// TIFF 6.0 §2: 16-bit unsigned integer.
 pub const TYPE_SHORT: u16 = 3;
 /// TIFF 6.0 §2: 32-bit unsigned integer.
@@ -21,6 +23,16 @@ pub const TYPE_LONG: u16 = 4;
 pub const TYPE_RATIONAL: u16 = 5;
 /// TIFF 6.0 §2: an 8-bit byte that may contain anything.
 pub const TYPE_UNDEFINED: u16 = 7;
+/// TIFF 6.0 §2: 8-bit signed integer.
+pub const TYPE_SBYTE: u16 = 6;
+/// TIFF 6.0 §2: 16-bit signed integer.
+pub const TYPE_SSHORT: u16 = 8;
+/// TIFF 6.0 §2: 32-bit signed integer.
+pub const TYPE_SLONG: u16 = 9;
+/// TIFF 6.0 §2: IEEE 754 binary32.
+pub const TYPE_FLOAT: u16 = 11;
+/// TIFF 6.0 §2: IEEE 754 binary64.
+pub const TYPE_DOUBLE: u16 = 12;
 /// TIFF 6.0 §2: two `SLONG`s, numerator then denominator, a **signed**
 /// rational.
 pub const TYPE_SRATIONAL: u16 = 10;
@@ -45,6 +57,71 @@ pub struct SRational {
     pub num: i32,
     /// The denominator as read from the file.
     pub den: i32,
+}
+
+/// An `ASCII` field's payload, split at its first NUL. Borrows the input
+/// (DEC-002), so it outlives the [`Container`] it was read through.
+///
+/// TIFF says an ASCII value ends with a NUL; real files often omit it, hold
+/// several strings, or carry Latin-1. All of those are data here, not errors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Ascii<'a> {
+    text: &'a [u8],
+    terminated: bool,
+    rest: &'a [u8],
+}
+
+impl<'a> Ascii<'a> {
+    /// Split `payload` at its first NUL. Total: no indexing, no panic.
+    fn split(payload: &'a [u8]) -> Ascii<'a> {
+        match payload.iter().position(|b| *b == 0) {
+            Some(nul) => {
+                let (text, tail) = payload.split_at_checked(nul).unwrap_or((payload, &[]));
+                // `tail` starts with the NUL; everything after it is `rest`.
+                let rest = tail.get(1..).unwrap_or(&[]);
+                Ascii {
+                    text,
+                    terminated: true,
+                    rest,
+                }
+            }
+            // `rest` is the empty tail of the payload (not a static `&[]`), so
+            // every slice this type hands out lies inside the input.
+            None => Ascii {
+                text: payload,
+                terminated: false,
+                rest: payload.get(payload.len()..).unwrap_or(&[]),
+            },
+        }
+    }
+
+    /// Bytes before the first NUL (all of the payload if there is none).
+    pub fn as_bytes(&self) -> &'a [u8] {
+        self.text
+    }
+
+    /// Whether a NUL was found (TIFF says ASCII ends with one; real files
+    /// often do not).
+    pub fn is_terminated(&self) -> bool {
+        self.terminated
+    }
+
+    /// Bytes after the first NUL (further strings, padding or garbage); empty
+    /// if unterminated.
+    pub fn rest(&self) -> &'a [u8] {
+        self.rest
+    }
+
+    /// `Ok` only if [`Ascii::as_bytes`] is valid UTF-8 (camera strings are
+    /// often Latin-1).
+    pub fn to_str(&self) -> Result<&'a str, core::str::Utf8Error> {
+        core::str::from_utf8(self.text)
+    }
+
+    /// Invalid sequences replaced with U+FFFD; borrows when already valid.
+    pub fn to_string_lossy(&self) -> std::borrow::Cow<'a, str> {
+        String::from_utf8_lossy(self.text)
+    }
 }
 
 /// Size in bytes of one value of a TIFF field type (TIFF 6.0 §2, "Types";
@@ -189,5 +266,91 @@ impl<'a> Container<'a> {
             out.push(build(self.byte_order, [n0, n1, n2, n3], [d0, d1, d2, d3]));
         }
         Ok(out)
+    }
+
+    /// ASCII (type 2) only.
+    ///
+    /// The text is the payload up to its first NUL; see [`Ascii`]. Count 0 is
+    /// an empty, unterminated value. The count is a byte count and is capped
+    /// by [`MAX_TAG_VALUES`]. `BYTE` and `UNDEFINED` are refused with
+    /// [`Error::UnexpectedFieldType`]; read those with [`Container::payload`].
+    pub fn ascii(&self, entry: &Entry) -> Result<Ascii<'a>, Error> {
+        let (bytes, _) = self.gated_payload(entry, |t| t == TYPE_ASCII)?;
+        Ok(Ascii::split(bytes))
+    }
+
+    /// `SBYTE` (6), `SSHORT` (8) and `SLONG` (9), sign-extended to `i32`.
+    /// Unsigned types are refused: signedness is the type's.
+    pub fn sints(&self, entry: &Entry) -> Result<Vec<i32>, Error> {
+        let (bytes, count) = self.gated_payload(entry, |t| {
+            matches!(t, TYPE_SBYTE | TYPE_SSHORT | TYPE_SLONG)
+        })?;
+        let mut out = Vec::with_capacity(count);
+        match entry.field_type {
+            TYPE_SBYTE => {
+                for b in bytes {
+                    out.push(i32::from(i8::from_ne_bytes([*b])));
+                }
+            }
+            TYPE_SSHORT => {
+                for chunk in bytes.as_chunks::<2>().0 {
+                    out.push(i32::from(self.byte_order.i16(*chunk)));
+                }
+            }
+            _ => {
+                for chunk in bytes.as_chunks::<4>().0 {
+                    out.push(self.byte_order.i32(*chunk));
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// `FLOAT` (11) and `DOUBLE` (12), widened to `f64`.
+    ///
+    /// No arithmetic is done: NaN (payload included), infinities, subnormals
+    /// and `-0.0` come back as the file wrote them, so callers must check
+    /// `is_finite`.
+    pub fn floats(&self, entry: &Entry) -> Result<Vec<f64>, Error> {
+        let (bytes, count) =
+            self.gated_payload(entry, |t| matches!(t, TYPE_FLOAT | TYPE_DOUBLE))?;
+        let mut out = Vec::with_capacity(count);
+        if entry.field_type == TYPE_FLOAT {
+            for chunk in bytes.as_chunks::<4>().0 {
+                out.push(f64::from(self.byte_order.f32(*chunk)));
+            }
+        } else {
+            for chunk in bytes.as_chunks::<8>().0 {
+                out.push(self.byte_order.f64(*chunk));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Shared prelude of `ascii`, `sints` and `floats`, in the one order every
+    /// reader uses: type gate (a property of the entry, before the buffer is
+    /// touched), count cap, then the bounds-checked payload. Returns the
+    /// payload and the validated count.
+    fn gated_payload(
+        &self,
+        entry: &Entry,
+        accepts: impl Fn(u16) -> bool,
+    ) -> Result<(&'a [u8], usize), Error> {
+        if !accepts(entry.field_type) {
+            return Err(Error::UnexpectedFieldType {
+                tag: entry.tag,
+                field_type: entry.field_type,
+            });
+        }
+        let count =
+            usize::try_from(entry.count).map_err(|_| Error::ValueOverflow { tag: entry.tag })?;
+        if count > MAX_TAG_VALUES {
+            return Err(Error::TagTooLarge {
+                tag: entry.tag,
+                count: entry.count,
+                limit: MAX_TAG_VALUES,
+            });
+        }
+        Ok((self.payload(entry)?, count))
     }
 }

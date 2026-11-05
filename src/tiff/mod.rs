@@ -56,7 +56,10 @@ pub mod tags;
 pub mod types;
 
 pub use issue::{Link, ParseIssue};
-pub use types::{SRational, URational};
+pub use types::{
+    Ascii, SRational, URational, TYPE_ASCII, TYPE_DOUBLE, TYPE_FLOAT, TYPE_SBYTE, TYPE_SLONG,
+    TYPE_SSHORT,
+};
 
 use crate::error::Error;
 use crate::reader::{offset_to_usize, read_u16, read_u32, ByteOrder};
@@ -2148,5 +2151,486 @@ mod tests {
         assert!(c.issues().len() <= MAX_ISSUES);
         let last = c.issues().last().unwrap();
         assert_eq!(last.error(), &Error::TooManyIfds { limit: MAX_IFDS });
+    }
+
+    // ── ASCII, signed and float decoders (SPEC-007) ─────────────────────────
+
+    use super::types::{
+        TYPE_ASCII, TYPE_BYTE, TYPE_DOUBLE, TYPE_FLOAT, TYPE_SBYTE, TYPE_SLONG, TYPE_SSHORT,
+        TYPE_UNDEFINED,
+    };
+
+    /// A one-entry file: IFD0 at 8 holding `tag` with the given type and
+    /// declared count. A payload of up to 4 bytes goes inline (zero padded,
+    /// the bytes exactly as given, which is how every order stores them);
+    /// longer payloads go external at offset 100.
+    fn one_entry(big: bool, tag: u16, ty: u16, count: u32, payload: &[u8]) -> Vec<u8> {
+        let b = Build::new(big, 8);
+        if payload.len() <= 4 {
+            let mut word = [0u8; 4];
+            word[..payload.len()].copy_from_slice(payload);
+            // `ifd` writes the word with the file's byte order, so feed it the
+            // integer whose bytes in that order are the payload bytes.
+            let v = if big {
+                u32::from_be_bytes(word)
+            } else {
+                u32::from_le_bytes(word)
+            };
+            b.ifd(8, &[(tag, ty, count, v)], 0).done()
+        } else {
+            b.ifd(8, &[(tag, ty, count, 100)], 0)
+                .data_at(100, payload)
+                .done()
+        }
+    }
+
+    /// Like `one_entry` but the value word is a raw offset (for payloads that
+    /// are deliberately out of bounds).
+    fn raw_entry(big: bool, tag: u16, ty: u16, count: u32, word: u32) -> Vec<u8> {
+        Build::new(big, 8)
+            .ifd(8, &[(tag, ty, count, word)], 0)
+            .done()
+    }
+
+    fn entry_of<'d>(c: &'d Container<'_>, tag: u16) -> &'d Entry {
+        c.ifd0().unwrap().entry(tag).unwrap()
+    }
+
+    fn le_or_be<const N: usize>(big: bool, le: [u8; N], be: [u8; N]) -> [u8; N] {
+        if big {
+            be
+        } else {
+            le
+        }
+    }
+
+    #[test]
+    fn ascii_reads_a_terminated_external_string() {
+        for big in [false, true] {
+            let data = one_entry(big, tags::MAKE, TYPE_ASCII, 6, b"Canon\0");
+            let c = Container::parse(&data).unwrap();
+            let a = c.ascii(entry_of(&c, tags::MAKE)).unwrap();
+            assert_eq!(a.as_bytes(), b"Canon");
+            assert!(a.is_terminated());
+            assert!(a.rest().is_empty());
+            assert_eq!(a.to_str(), Ok("Canon"));
+        }
+    }
+
+    #[test]
+    fn ascii_reads_inline_values() {
+        for big in [false, true] {
+            // (count, payload, expected text, terminated)
+            for (count, payload, text, terminated) in [
+                (1u32, &b"\0"[..], &b""[..], true),
+                (3, b"ab\0", b"ab", true),
+                (4, b"abc\0", b"abc", true),
+                (4, b"abcd", b"abcd", false),
+            ] {
+                let data = one_entry(big, tags::MODEL, TYPE_ASCII, count, payload);
+                let c = Container::parse(&data).unwrap();
+                let a = c.ascii(entry_of(&c, tags::MODEL)).unwrap();
+                assert_eq!(a.as_bytes(), text);
+                assert_eq!(a.is_terminated(), terminated);
+                assert!(a.rest().is_empty());
+                // The value comes from the entry's value field in the input.
+                assert!(data.as_ptr_range().contains(&a.as_bytes().as_ptr()));
+            }
+        }
+    }
+
+    #[test]
+    fn ascii_count_zero_is_empty_and_unterminated() {
+        for big in [false, true] {
+            let data = one_entry(big, tags::MAKE, TYPE_ASCII, 0, b"");
+            let c = Container::parse(&data).unwrap();
+            let a = c.ascii(entry_of(&c, tags::MAKE)).unwrap();
+            assert!(a.as_bytes().is_empty());
+            assert!(!a.is_terminated());
+            assert!(a.rest().is_empty());
+            assert_eq!(a.to_str(), Ok(""));
+        }
+    }
+
+    #[test]
+    fn ascii_without_a_terminator_is_data_not_an_error() {
+        let data = one_entry(false, tags::MAKE, TYPE_ASCII, 5, b"Canon");
+        let c = Container::parse(&data).unwrap();
+        let a = c.ascii(entry_of(&c, tags::MAKE)).unwrap();
+        assert_eq!(a.as_bytes(), b"Canon");
+        assert!(!a.is_terminated());
+        assert!(a.rest().is_empty());
+    }
+
+    #[test]
+    fn ascii_splits_at_the_first_nul() {
+        let data = one_entry(false, tags::MAKE, TYPE_ASCII, 6, b"ab\0cd\0");
+        let c = Container::parse(&data).unwrap();
+        let a = c.ascii(entry_of(&c, tags::MAKE)).unwrap();
+        assert_eq!(a.as_bytes(), b"ab");
+        assert!(a.is_terminated());
+        assert_eq!(a.rest(), b"cd\0");
+        // The partition invariant the fuzz target also asserts.
+        assert_eq!(
+            a.as_bytes().len() + usize::from(a.is_terminated()) + a.rest().len(),
+            6
+        );
+        // A leading NUL: empty text, everything else is `rest`.
+        let data = one_entry(false, tags::MAKE, TYPE_ASCII, 5, b"\0abcd");
+        let c = Container::parse(&data).unwrap();
+        let a = c.ascii(entry_of(&c, tags::MAKE)).unwrap();
+        assert!(a.as_bytes().is_empty());
+        assert!(a.is_terminated());
+        assert_eq!(a.rest(), b"abcd");
+    }
+
+    #[test]
+    fn ascii_non_utf8_is_exposed_not_rejected() {
+        let data = one_entry(false, tags::ARTIST, TYPE_ASCII, 3, &[0x43, 0xE9, 0x00]);
+        let c = Container::parse(&data).unwrap();
+        let a = c.ascii(entry_of(&c, tags::ARTIST)).unwrap();
+        assert_eq!(a.as_bytes(), &[0x43, 0xE9]);
+        assert!(a.to_str().is_err());
+        assert_eq!(a.to_string_lossy(), "C\u{FFFD}");
+
+        let data = one_entry(false, tags::ARTIST, TYPE_ASCII, 3, b"Ce\0");
+        let c = Container::parse(&data).unwrap();
+        let a = c.ascii(entry_of(&c, tags::ARTIST)).unwrap();
+        assert!(matches!(
+            a.to_string_lossy(),
+            std::borrow::Cow::Borrowed("Ce")
+        ));
+    }
+
+    #[test]
+    fn ascii_refuses_other_types_before_touching_the_buffer() {
+        for ty in [TYPE_BYTE, TYPE_UNDEFINED] {
+            // Offset past EOF: the type gate must win over `Truncated`.
+            let data = raw_entry(false, tags::MAKE, ty, 16, 0xFFFF_FF00);
+            let c = Container::parse(&data).unwrap();
+            assert_eq!(
+                c.ascii(entry_of(&c, tags::MAKE)),
+                Err(Error::UnexpectedFieldType {
+                    tag: tags::MAKE,
+                    field_type: ty
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn ascii_count_past_eof_is_truncated() {
+        let data = raw_entry(false, tags::MAKE, TYPE_ASCII, 64, 0xFFFF_FF00);
+        let c = Container::parse(&data).unwrap();
+        assert!(matches!(
+            c.ascii(entry_of(&c, tags::MAKE)),
+            Err(Error::Truncated { .. })
+        ));
+        // An in-range offset whose count runs off the end.
+        let data = raw_entry(true, tags::MAKE, TYPE_ASCII, 64, 20);
+        let c = Container::parse(&data).unwrap();
+        assert!(matches!(
+            c.ascii(entry_of(&c, tags::MAKE)),
+            Err(Error::Truncated { .. })
+        ));
+    }
+
+    #[test]
+    fn ascii_count_over_the_cap_is_too_large() {
+        let over = u32::try_from(MAX_TAG_VALUES).unwrap() + 1;
+        let data = raw_entry(false, tags::MAKE, TYPE_ASCII, over, 0xFFFF_FF00);
+        let c = Container::parse(&data).unwrap();
+        // The cap is checked before the payload (which would be Truncated).
+        assert_eq!(
+            c.ascii(entry_of(&c, tags::MAKE)),
+            Err(Error::TagTooLarge {
+                tag: tags::MAKE,
+                count: over,
+                limit: MAX_TAG_VALUES
+            })
+        );
+    }
+
+    #[test]
+    fn ascii_borrows_from_the_input_not_the_container() {
+        let data = one_entry(false, tags::MAKE, TYPE_ASCII, 6, b"ab\0cd\0");
+        let (text, rest): (&[u8], &[u8]) = {
+            let c = Container::parse(&data).unwrap();
+            let a = c.ascii(entry_of(&c, tags::MAKE)).unwrap();
+            (a.as_bytes(), a.rest())
+        };
+        // Only compiles if the slices are tied to `data`, not the container.
+        let range = data.as_ptr_range();
+        assert!(range.contains(&text.as_ptr()));
+        assert!(range.contains(&rest.as_ptr()));
+        assert_eq!(text, b"ab");
+        assert_eq!(text.as_ptr(), data[100..].as_ptr());
+        assert_eq!(rest.as_ptr(), data[103..].as_ptr());
+    }
+
+    // Signed integers.
+
+    fn i8_bytes(v: &[i8]) -> Vec<u8> {
+        v.iter().map(|x| x.to_ne_bytes()[0]).collect()
+    }
+    fn i16_bytes(big: bool, v: &[i16]) -> Vec<u8> {
+        v.iter()
+            .flat_map(|x| le_or_be(big, x.to_le_bytes(), x.to_be_bytes()))
+            .collect()
+    }
+    fn i32_bytes(big: bool, v: &[i32]) -> Vec<u8> {
+        v.iter()
+            .flat_map(|x| le_or_be(big, x.to_le_bytes(), x.to_be_bytes()))
+            .collect()
+    }
+
+    #[test]
+    fn sints_sign_extend_every_width_in_both_orders() {
+        for big in [false, true] {
+            // Inline (<= 4 bytes) and external (> 4 bytes) for every width.
+            let cases: [(u16, Vec<u8>, Vec<i32>); 8] = [
+                (TYPE_SBYTE, i8_bytes(&[-1, 127, -128]), vec![-1, 127, -128]),
+                (
+                    TYPE_SBYTE,
+                    i8_bytes(&[-128, 1, -1, 5, -2, 3]),
+                    vec![-128, 1, -1, 5, -2, 3],
+                ),
+                (
+                    TYPE_SSHORT,
+                    i16_bytes(big, &[-2, 32767, -32768]),
+                    vec![-2, 32767, -32768],
+                ),
+                (TYPE_SSHORT, i16_bytes(big, &[-32768]), vec![-32768]),
+                (TYPE_SSHORT, i16_bytes(big, &[-2, 32767]), vec![-2, 32767]),
+                (
+                    TYPE_SLONG,
+                    i32_bytes(big, &[i32::MIN, -1, i32::MAX]),
+                    vec![i32::MIN, -1, i32::MAX],
+                ),
+                (TYPE_SLONG, i32_bytes(big, &[-7]), vec![-7]),
+                (TYPE_SLONG, i32_bytes(big, &[i32::MAX]), vec![i32::MAX]),
+            ];
+            for (ty, bytes, expected) in cases {
+                let width = match ty {
+                    TYPE_SBYTE => 1,
+                    TYPE_SSHORT => 2,
+                    _ => 4,
+                };
+                let count = u32::try_from(bytes.len() / width).unwrap();
+                let data = one_entry(big, tags::MAKE, ty, count, &bytes);
+                let c = Container::parse(&data).unwrap();
+                assert_eq!(
+                    c.sints(entry_of(&c, tags::MAKE)).unwrap(),
+                    expected,
+                    "type {ty}, big {big}, {} bytes",
+                    bytes.len()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn sints_refuse_unsigned_and_unsigned_readers_refuse_signed() {
+        for ty in [
+            TYPE_BYTE,
+            TYPE_ASCII,
+            TYPE_SHORT,
+            TYPE_LONG,
+            TYPE_RATIONAL,
+            TYPE_UNDEFINED,
+            TYPE_FLOAT,
+            TYPE_DOUBLE,
+            TYPE_SRATIONAL,
+            13,
+            99,
+        ] {
+            // Out-of-bounds payload: the gate must precede the buffer.
+            let data = raw_entry(false, tags::MAKE, ty, 4, 0xFFFF_FF00);
+            let c = Container::parse(&data).unwrap();
+            assert_eq!(
+                c.sints(entry_of(&c, tags::MAKE)),
+                Err(Error::UnexpectedFieldType {
+                    tag: tags::MAKE,
+                    field_type: ty
+                }),
+                "sints on type {ty}"
+            );
+        }
+        for ty in [TYPE_SBYTE, TYPE_SSHORT, TYPE_SLONG, TYPE_FLOAT, TYPE_DOUBLE] {
+            let data = raw_entry(false, tags::MAKE, ty, 4, 0xFFFF_FF00);
+            let c = Container::parse(&data).unwrap();
+            assert_eq!(
+                c.uints(entry_of(&c, tags::MAKE)),
+                Err(Error::UnexpectedFieldType {
+                    tag: tags::MAKE,
+                    field_type: ty
+                }),
+                "uints on type {ty}"
+            );
+        }
+    }
+
+    #[test]
+    fn sints_count_cap_and_truncation() {
+        let over = u32::try_from(MAX_TAG_VALUES).unwrap() + 1;
+        for ty in [TYPE_SBYTE, TYPE_SSHORT, TYPE_SLONG] {
+            let data = raw_entry(false, tags::MAKE, ty, over, 0xFFFF_FF00);
+            let c = Container::parse(&data).unwrap();
+            assert!(matches!(
+                c.sints(entry_of(&c, tags::MAKE)),
+                Err(Error::TagTooLarge { .. })
+            ));
+            let data = raw_entry(false, tags::MAKE, ty, 64, 0xFFFF_FF00);
+            let c = Container::parse(&data).unwrap();
+            assert!(matches!(
+                c.sints(entry_of(&c, tags::MAKE)),
+                Err(Error::Truncated { .. })
+            ));
+            // A hostile count must not allocate (the cap precedes
+            // `with_capacity`); it is an error, not an OOM.
+            let data = raw_entry(true, tags::MAKE, ty, u32::MAX, 0xFFFF_FF00);
+            let c = Container::parse(&data).unwrap();
+            assert!(c.sints(entry_of(&c, tags::MAKE)).is_err());
+        }
+    }
+
+    // Floats.
+
+    /// FLOAT bit patterns: 1.5, -0.0, +inf, a NaN with a nonzero payload, the
+    /// smallest positive subnormal.
+    const F32_BITS: [u32; 5] = [
+        0x3FC0_0000,
+        0x8000_0000,
+        0x7F80_0000,
+        0x7FC0_1234,
+        0x0000_0001,
+    ];
+    /// DOUBLE bit patterns: 1e300, -0.0, -inf, a NaN with a payload, subnormal.
+    const F64_BITS: [u64; 5] = [
+        0x7E37_E43C_8800_759C,
+        0x8000_0000_0000_0000,
+        0xFFF0_0000_0000_0000,
+        0x7FF8_0000_DEAD_BEEF,
+        0x0000_0000_0000_0001,
+    ];
+
+    #[test]
+    fn floats_read_verbatim_in_both_orders() {
+        for big in [false, true] {
+            let f32_payload: Vec<u8> = F32_BITS
+                .iter()
+                .flat_map(|x| le_or_be(big, x.to_le_bytes(), x.to_be_bytes()))
+                .collect();
+            let data = one_entry(big, tags::MAKE, TYPE_FLOAT, 5, &f32_payload);
+            let c = Container::parse(&data).unwrap();
+            let got = c.floats(entry_of(&c, tags::MAKE)).unwrap();
+            assert_eq!(got.len(), 5);
+            for (g, bits) in got.iter().zip(F32_BITS) {
+                // Widening is exact for every non-NaN value; NaN stays NaN.
+                let widened = f64::from(f32::from_bits(bits));
+                if widened.is_nan() {
+                    assert!(g.is_nan(), "bits {bits:#x}");
+                } else {
+                    assert_eq!(g.to_bits(), widened.to_bits(), "bits {bits:#x}");
+                }
+            }
+            assert_eq!(got.first().copied(), Some(1.5));
+            assert!(got
+                .get(1)
+                .is_some_and(|v| v.is_sign_negative() && *v == 0.0));
+            assert_eq!(got.get(2).copied(), Some(f64::INFINITY));
+
+            // One FLOAT inline (count 1) as well.
+            let inline = le_or_be(big, 1.5f32.to_le_bytes(), 1.5f32.to_be_bytes());
+            let data = one_entry(big, tags::MAKE, TYPE_FLOAT, 1, &inline);
+            let c = Container::parse(&data).unwrap();
+            assert_eq!(c.floats(entry_of(&c, tags::MAKE)).unwrap(), vec![1.5]);
+
+            let f64_payload: Vec<u8> = F64_BITS
+                .iter()
+                .flat_map(|x| le_or_be(big, x.to_le_bytes(), x.to_be_bytes()))
+                .collect();
+            let data = one_entry(big, tags::MAKE, TYPE_DOUBLE, 5, &f64_payload);
+            let c = Container::parse(&data).unwrap();
+            let got = c.floats(entry_of(&c, tags::MAKE)).unwrap();
+            let bits: Vec<u64> = got.iter().map(|v| v.to_bits()).collect();
+            assert_eq!(bits, F64_BITS.to_vec(), "big {big}");
+            assert_eq!(got.first().copied(), Some(1e300));
+        }
+    }
+
+    #[test]
+    fn floats_refuse_other_types() {
+        for ty in [
+            TYPE_RATIONAL,
+            TYPE_SLONG,
+            TYPE_LONG,
+            TYPE_ASCII,
+            TYPE_SRATIONAL,
+            13,
+            99,
+        ] {
+            let data = raw_entry(false, tags::MAKE, ty, 4, 0xFFFF_FF00);
+            let c = Container::parse(&data).unwrap();
+            assert_eq!(
+                c.floats(entry_of(&c, tags::MAKE)),
+                Err(Error::UnexpectedFieldType {
+                    tag: tags::MAKE,
+                    field_type: ty
+                }),
+                "floats on type {ty}"
+            );
+        }
+    }
+
+    #[test]
+    fn floats_count_cap_and_truncation() {
+        let over = u32::try_from(MAX_TAG_VALUES).unwrap() + 1;
+        for ty in [TYPE_FLOAT, TYPE_DOUBLE] {
+            let data = raw_entry(false, tags::MAKE, ty, over, 0xFFFF_FF00);
+            let c = Container::parse(&data).unwrap();
+            assert!(matches!(
+                c.floats(entry_of(&c, tags::MAKE)),
+                Err(Error::TagTooLarge { .. })
+            ));
+            let data = raw_entry(false, tags::MAKE, ty, 64, 0xFFFF_FF00);
+            let c = Container::parse(&data).unwrap();
+            assert!(matches!(
+                c.floats(entry_of(&c, tags::MAKE)),
+                Err(Error::Truncated { .. })
+            ));
+            let data = raw_entry(true, tags::MAKE, ty, u32::MAX, 0xFFFF_FF00);
+            let c = Container::parse(&data).unwrap();
+            assert!(c.floats(entry_of(&c, tags::MAKE)).is_err());
+        }
+    }
+
+    // Constants.
+
+    #[test]
+    fn field_type_constants_match_the_tiff_spec_and_type_size() {
+        for (constant, value, size) in [
+            (TYPE_ASCII, 2, 1),
+            (TYPE_SBYTE, 6, 1),
+            (TYPE_SSHORT, 8, 2),
+            (TYPE_SLONG, 9, 4),
+            (TYPE_FLOAT, 11, 4),
+            (TYPE_DOUBLE, 12, 8),
+        ] {
+            assert_eq!(constant, value);
+            assert_eq!(types::type_size(constant), Some(size));
+        }
+    }
+
+    #[test]
+    fn tag_constants_match_the_spec() {
+        assert_eq!(tags::IMAGE_DESCRIPTION, 270);
+        assert_eq!(tags::MAKE, 271);
+        assert_eq!(tags::MODEL, 272);
+        assert_eq!(tags::SOFTWARE, 305);
+        assert_eq!(tags::DATE_TIME, 306);
+        assert_eq!(tags::ARTIST, 315);
+        assert_eq!(tags::COPYRIGHT, 33432);
+        assert_eq!(tags::DATE_TIME_ORIGINAL, 0x9003);
     }
 }
