@@ -5,7 +5,7 @@
 
 stage:
   id: STAGE-001                     # stable, zero-padded, continuous across the repo
-  status: active                    # proposed | active | shipped | cancelled | on_hold
+  status: shipped                   # proposed | active | shipped | cancelled | on_hold
   priority: high                    # critical | high | medium | low
   target_complete: null             # optional: YYYY-MM-DD
 
@@ -15,7 +15,7 @@ repo:
   id: diamond-exif
 
 created_at: 2026-11-04
-shipped_at: null
+shipped_at: 2026-11-05
 
 # What part of the project's value thesis this stage advances.
 # If you can't articulate value_contribution, the stage may be
@@ -43,10 +43,11 @@ value_contribution:
 # that is a division you cannot observe, so any per-spec number is invented.
 # Warn-only, never a gate. A null here is honest; a guess is not. (DEC-013 §5)
 orchestration_cost:
-  sessions: []                      # - tokens_total: N
-                                    #   estimated_usd: N
-                                    #   recorded_at: YYYY-MM-DD
-                                    #   notes: "framing + spec breakdown"
+  sessions:
+    - tokens_total: 1028071
+      estimated_usd: 6.79
+      recorded_at: 2026-11-05
+      notes: "the orchestrator conversation, from init through stage close (framing, designs, dispatches, independent gate re-runs, ships and PRs for SPEC-001 through SPEC-008); recovered from transcript usage (input + output + cache_creation, de-duplicated by message id, cache_read excluded) at 6.60 USD/Mtok. The transcript file 6e1a0b8d is an earlier slice of the same conversation (same first message and start time), so it is not counted separately. Read at stage close; the closing turns after the read are not included"
 ---
 
 # STAGE-001: M1a foundation — TIFF/IFD engine
@@ -108,8 +109,13 @@ First stage; everything else (containers, audit CLI, writer) depends on the IFD 
 
 ## Stage-Level Reflection
 
-*Filled in when status moves to shipped.*
+- **Did we deliver the outcome in "What This Stage Is"?**
+  Yes. The single `exif-core` crate parses bare TIFF/EXIF under a tolerant walk (IFD0 and header fatal, every other bad IFD an omitted-and-reported `ParseIssue`), follows SubIFDs, Exif, GPS and Interop with every IFD labelled by how it was reached, decodes ASCII, signed, float and rational values panic-free and zero-copy, and carries a `tiff_ifd` fuzz target (29 seeds, invariants checked in both directions, 60 s smoke clean on every spec). The ExifTool oracle is in: 47 values over 9 hand-built fixtures plus a seed sweep agree with ExifTool 13.55, the comparator is red-proofed by replay-and-perturb, and a repeatable mutated-copy apparatus shows six deliberately broken copies of the parser get caught. All five Success Criteria hold. Not in this stage by design: the 24 h clean fuzz run (milestone gate), CI wiring, JPEG/PNG/WebP, the writer.
 
-- **Did we deliver the outcome in "What This Stage Is"?** 
-- **How many specs did it actually take?** 
-- **What changed between starting and shipping?** 
+- **How many specs did it actually take?**
+  Eight against the six framed: SPEC-001, 002, 006 (fuzz, pulled forward), 003, 004, 005 and 007 and 008 (decoders, and mutated-copy red-proofs, each split out of a larger spec at design). Verify verdicts: approved first time 5 (SPEC-002, 003, 006, 007, 008), punch list 3 (SPEC-001 vacuous policy tests; SPEC-004 issues recorded after the budget halt; SPEC-005 a false "ExifTool exits 0 on every seed" claim). Metered build and verify cost about 2.71M tokens (about $17.85) across 8 specs, plus about 1.03M tokens (about $6.79) of orchestration; roughly 3.7M tokens (about $24.6) in total.
+
+- **What changed between starting and shipping?**
+  (1) The fuzz target moved from the oracle spec to its own early spec so it landed with the first parser; (2) SPEC-004 and SPEC-005 were each split at design, which kept every spec at M or L and independently verifiable; (3) cost metering switched from sessions (which cannot report tokens) to metered sub-agents for build and verify; (4) each verify improved the next spec's instructions (iff-invariants in both directions, report every renamed or missing test, test the testers); (5) the oracle found a real ExifTool behaviour (it does not return on a two-hop IFD cycle) and two spec errors of mine (signed GPS needs the Composite selector, and an exit-status claim measured through a pipe), both caught by build or verify before they spread.
+
+- **Carried forward (not blockers):** probe build/run has no wall-clock limit; marker-leak test misses `tests/support/oracle.rs`; no SBYTE oracle selector; `decisions-audit.sh` reads only block-style lists (worked around, upstream fix needed); the `rust-ci-and-fixtures` question (CI jobs, ExifTool pin, `DIAMOND_EXIF_REQUIRE_ORACLE=1`, `lint-red-proof` scripts) and the JPEG-placement question decide what the next stage assumes.
