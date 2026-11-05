@@ -89,18 +89,23 @@ questions:
   - id: rust-ci-and-fixtures
     question: "Who owns Rust CI jobs (ExifTool pinned version, cargo-deny, -sys gate, wasm32 check, DIAMOND_EXIF_REQUIRE_ORACLE=1)?"
     priority: high
-    status: open
+    status: answered
     raised_by: claude
     raised_at: 2026-11-04
-    assigned_to: null
+    assigned_to: claude
     notes: |
-      Fixtures half CLOSED for M1a (SPEC-005): tier A only, hand-built byte by
-      byte from the TIFF 6.0 / Exif 2.32 layout (tests/support/oracle_tiff.rs),
-      no camera file committed, so no licence question. CI ownership half is
-      still open: pin ExifTool in CI and set DIAMOND_EXIF_REQUIRE_ORACLE=1 so a
-      missing tool fails instead of skipping.
-      Repo setup, not specs. lint-red-proof and lint-fuzz-red-proof also still
-      need to be brought over from irradiance once the crate exists.
+      ANSWERED 2026-11-05 (user chose "do it now as repo setup"). Fixtures: tier A
+      only, hand-built byte by byte (tests/support/oracle_tiff.rs), no camera file
+      committed, so no licence question. CI: .github/workflows/ci.yml now runs
+      fmt (library and fuzz graphs), clippy (both graphs), test with a PINNED
+      ExifTool 13.55 (sha256-verified tarball) and DIAMOND_EXIF_REQUIRE_ORACLE=1,
+      oracle-record reproducibility, cargo-deny (both graphs), fuzz smoke (tiff_ifd,
+      60 s), MSRV 1.90.0, the lint-policy red-proofs (library and fuzz) and the
+      no-#[allow] check, forbid(unsafe_code), and the spec-driven gates with their
+      red-proofs. Not wired, deliberately: a wasm32 build check and a -sys-crate
+      gate (the crate has no dependencies and no C code; revisit when a dependency
+      or the Workers target arrives). The first real CI run is on the PR that
+      added this workflow; any job that fails there is a finding to fix, not to skip.
 
   - id: exiftool-two-hop-cycle-does-not-return
     question: "ExifTool 13.55 does not return on fuzz/seeds/tiff_ifd/two-hop-cycle while exif-core reads it: how should the oracle treat inputs the tool cannot survive?"

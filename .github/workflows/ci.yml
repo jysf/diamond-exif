@@ -1,12 +1,27 @@
 name: CI
 
-# Language-agnostic spec-driven gates. The cost-capture audit runs on every
-# push/PR (AGENTS.md §4 / docs/cost-tracking.md). Your app's build/test/lint
-# jobs are project-specific — add them here per your stack. A license-policy
-# job is optional and per-language; see docs/license-policy.md to wire one in.
+# Language-agnostic spec-driven gates plus this repo's Rust jobs. The panic-free
+# lint policy, the license policy, the fuzz smoke and the ExifTool oracle are
+# enforced mechanically here, not by review (AGENTS.md; guidance/constraints.yaml).
+#
+# Job set mirrors irradiance's CI (read-only source), minus its RAW-specific jobs,
+# plus the ExifTool oracle job. Every gate that can go mute has a red-proof job
+# beside it (constraint `oracle-must-be-shown-red`).
+#
+# ⚠ A skipped oracle must never read as a pass. The `test` job installs a PINNED
+# ExifTool and sets DIAMOND_EXIF_REQUIRE_ORACLE=1, which turns "exiftool not on
+# PATH" into a test FAILURE (tests/support/tools.rs). The pin is the version the
+# committed records in tests/oracle-fixtures/exiftool/ were taken with.
 on:
   push:
   pull_request:
+
+env:
+  # The ExifTool version the committed oracle records were recorded with, and the
+  # tarball checksum Homebrew's formula pins for it (measured: `brew cat exiftool`,
+  # 13.55). Bump both together, then re-run `just oracle-record` and commit the diff.
+  EXIFTOOL_VERSION: "13.55"
+  EXIFTOOL_SHA256: "5f4c81d34ad406538c2871ad72dbfceb5d9b412b2f16cbbeb4d712d270846667"
 
 jobs:
   cost-data:
@@ -19,9 +34,212 @@ jobs:
       - name: cost-audit (shipped specs have build/verify cost; AGENTS §4)
         run: ./scripts/cost-audit.sh
 
-      # Opt-in by existence: passes quietly until you run `just decisions-index`
-      # once and commit the result. After that it fails if the index falls
-      # behind the decisions — the difference between a derived artifact and a
-      # decorative one.
+      # A gate that has never failed cannot be told from one that never ran, so each
+      # gate's red-proof runs in CI beside it.
+      - name: cost-audit goes red on an unfilled stage orchestration_cost
+        run: ./scripts/cost-audit-red-proof.sh
+
+      # Opt-in by existence: passes quietly until `just decisions-index` has been run
+      # once and committed; after that it fails if the index falls behind.
       - name: decisions-index is not stale
         run: ./scripts/decisions-index.sh --check
+
+      # validate PARSES every artifact's front matter with a real YAML parser (ruby's
+      # Psych, present on the runner image). It fails loudly if ruby is absent rather
+      # than reporting green on an unrun check.
+      - name: validate parses every artifact's front matter
+        run: ./scripts/validate.sh
+
+      - name: validate parse gate goes red on unparseable front matter
+        run: ./scripts/validate-red-proof.sh
+
+      # The gate over the gates: scans verdict-bearing scripts for the mute-death shape.
+      - name: gate-audit — no mute-death shape in any gate script
+        run: ./scripts/gate-audit.sh
+
+      - name: gate-audit goes red on an injected mute-death shape
+        run: ./scripts/gate-audit-red-proof.sh
+
+  fmt:
+    name: rust / fmt --check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --check
+      # The fuzz crate is a second cargo graph; format it too.
+      - run: cargo fmt --manifest-path fuzz/Cargo.toml --check
+
+  clippy:
+    name: rust / clippy -D warnings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+
+  # `fuzz/` is a SECOND cargo graph (DEC-004) and clippy, like cargo-deny, lints ONE
+  # manifest's graph per invocation: the job above does not compile a single fuzz
+  # target. Scope is clippy's DEFAULT lints under -D warnings (DEC-004). Two
+  # invocations, both required. Mirrors `just lint-fuzz`.
+  clippy-fuzz:
+    name: rust / clippy — fuzz graph (-D warnings)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - run: cargo clippy --manifest-path fuzz/Cargo.toml --all-targets -- -D warnings
+
+  test:
+    name: rust / test (with pinned ExifTool, oracle REQUIRED)
+    runs-on: ubuntu-latest
+    env:
+      # A missing ExifTool is a test FAILURE here, not a loud skip.
+      DIAMOND_EXIF_REQUIRE_ORACLE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install ExifTool ${{ env.EXIFTOOL_VERSION }} (pinned, sha256-verified)
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o exiftool.tar.gz \
+            "https://cpan.metacpan.org/authors/id/E/EX/EXIFTOOL/Image-ExifTool-${EXIFTOOL_VERSION}.tar.gz"
+          echo "${EXIFTOOL_SHA256}  exiftool.tar.gz" | sha256sum -c -
+          tar xzf exiftool.tar.gz
+          # Put the unpacked dir on PATH rather than symlinking the script: the script
+          # finds its lib/ relative to its own location.
+          echo "${PWD}/Image-ExifTool-${EXIFTOOL_VERSION}" >> "$GITHUB_PATH"
+      - name: ExifTool is the pinned version
+        run: |
+          set -euo pipefail
+          got="$(exiftool -ver)"
+          echo "exiftool -ver: ${got}"
+          test "${got}" = "${EXIFTOOL_VERSION}"
+      - run: cargo test --all-features
+
+  # The ExifTool records must be exactly what `just oracle-record` produces (a record
+  # that drifted from the tool is a stale oracle). The recorder never runs ExifTool on
+  # two-hop-cycle (it does not return there; see guidance/questions.yaml).
+  oracle-records:
+    name: rust / oracle records are reproducible
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install ExifTool ${{ env.EXIFTOOL_VERSION }} (pinned, sha256-verified)
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o exiftool.tar.gz \
+            "https://cpan.metacpan.org/authors/id/E/EX/EXIFTOOL/Image-ExifTool-${EXIFTOOL_VERSION}.tar.gz"
+          echo "${EXIFTOOL_SHA256}  exiftool.tar.gz" | sha256sum -c -
+          tar xzf exiftool.tar.gz
+          echo "${PWD}/Image-ExifTool-${EXIFTOOL_VERSION}" >> "$GITHUB_PATH"
+      - run: cargo run --quiet --example oracle_record
+      - name: committed records are unchanged by a re-record
+        run: git diff --exit-code -- tests/oracle-fixtures/exiftool
+
+  licenses:
+    name: rust / license policy (cargo-deny)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check licenses
+
+  # cargo-deny evaluates ONE manifest's graph per invocation; the job above does not
+  # see libfuzzer-sys's dependencies. Same policy file (deny.toml) governs both.
+  # Mirrors `just deny-fuzz`.
+  licenses-fuzz:
+    name: rust / license policy — fuzz graph (cargo-deny)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: fuzz/Cargo.toml
+          command: check licenses
+
+  # constraint `fuzz-target-per-surface`: the tiff_ifd target runs in CI. A fresh
+  # Ubuntu runner has no Homebrew cargo to collide with, so the local PATH trap in
+  # guidance/toolchain-brief.md does not apply here. Mirrors `just fuzz-smoke`.
+  fuzz-smoke:
+    name: rust / fuzz smoke — tiff_ifd (60s)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo install cargo-fuzz --locked
+      - run: mkdir -p fuzz/corpus/tiff_ifd
+      - run: cargo +nightly fuzz run tiff_ifd fuzz/corpus/tiff_ifd fuzz/seeds/tiff_ifd -- -max_total_time=60
+
+  msrv:
+    name: rust / MSRV (1.90.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # rust-version = "1.90" is only meaningful if CI compiles against EXACTLY that
+      # toolchain. Do not swap this for `stable` and do not bump the pin without
+      # re-measuring on an actually-older toolchain first.
+      - uses: dtolnay/rust-toolchain@1.90.0
+      - run: cargo check --all-targets --all-features
+      # ExifTool is absent here on purpose; the oracle runs in `test`. Live tests skip
+      # loudly (DIAMOND_EXIF_REQUIRE_ORACLE is not set in this job).
+      - run: cargo test --all-features
+
+  lint-policy-red-proof:
+    name: rust / lint policy red-proof (must fail red)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      # Constraint `oracle-must-be-shown-red` applied to a gate: the script copies the
+      # crate, proves the UNMUTATED copy is clippy-clean (the negative control), then
+      # injects one violation per policy lint into the COPIED src/lib.rs and requires
+      # rejection by the crate's own #![deny(...)], with and without -D warnings.
+      - run: ./scripts/lint-red-proof.sh
+
+  lint-fuzz-red-proof:
+    name: rust / fuzz lint red-proof (must fail red)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      # Proves the fuzz clippy gate rejects a default-clippy violation WITH -D warnings
+      # and passes it WITHOUT, so the flag is the gate's teeth.
+      - run: ./scripts/lint-fuzz-red-proof.sh
+
+  lint-policy-no-allow:
+    name: "rust / panic-free policy — no #[allow] escape (--lib)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      # The crate-root #![deny] red-proof cannot see an #[allow] BENEATH that root.
+      # `-F` (forbid) makes re-allowing a policy lint a compiler error (E0453). Scope is
+      # --lib deliberately: test modules legitimately allow the five lints. Mirrors
+      # `just lint-no-allow`.
+      - run: |
+          cargo clippy --lib --quiet -- \
+            -F clippy::unwrap_used -F clippy::expect_used -F clippy::indexing_slicing \
+            -F clippy::panic -F clippy::arithmetic_side_effects
+
+  forbid-unsafe:
+    name: rust / forbid(unsafe_code) re-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo rustc --lib -- -F unsafe_code
