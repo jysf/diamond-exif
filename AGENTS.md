@@ -161,7 +161,13 @@ cargo test <name>   # single test
 just lint         # cargo fmt --check && cargo clippy --all-targets
 just typecheck    # cargo check --all-targets
 just build        # cargo build --release
+just deny         # cargo deny check licenses (LIBRARY graph only)
+just deny-fuzz    # same gate over the fuzz/ graph (DEC-004)
+just lint-fuzz    # clippy -D warnings over the fuzz/ graph (DEC-004)
+just fuzz-smoke   # 60 s tiff_ifd run: needs nightly + ~/.cargo/bin first on PATH
 ```
+
+**Two invocations, both required (DEC-004).** `fuzz/` is a separate cargo graph, and `cargo deny` / `cargo clippy` evaluate one manifest per run: `just deny` and `just lint` never see `fuzz/`, so they need `just deny-fuzz` and `just lint-fuzz` beside them. `cargo fuzz` shells out to a bare `cargo`, which on this host is Homebrew's stable and rejects the sanitizer flags: run it as `PATH="$HOME/.cargo/bin:$PATH" ~/.cargo/bin/cargo +nightly fuzz ...` (`just fuzz-smoke` does).
 
 ---
 
