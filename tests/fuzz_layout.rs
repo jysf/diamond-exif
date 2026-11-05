@@ -7,7 +7,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use exif_core::tiff::Container;
+use exif_core::tiff::{Container, MAX_IFDS};
 
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -18,7 +18,7 @@ fn read(rel: &str) -> String {
 }
 
 /// Seed names are fixed by `examples/fuzz_seeds.rs`.
-const SEEDS: [&str; 12] = [
+const SEEDS: [&str; 15] = [
     "valid-le",
     "valid-be",
     "subifd",
@@ -31,6 +31,9 @@ const SEEDS: [&str; 12] = [
     "self-cycle",
     "two-hop-cycle",
     "deep-nesting",
+    "corrupt-subifd",
+    "malformed-subifds-tag",
+    "depth-limit-exact",
 ];
 
 #[test]
@@ -81,11 +84,46 @@ fn seeds_are_committed_and_cover_the_hostile_shapes() {
 }
 
 /// The harness contract from `fuzz/fuzz_targets/tiff_ifd.rs`, run once on a
-/// plain input. Any `Err` is fine; a panic is the failure.
+/// plain input. Any `Err` is fine; a panic or a broken invariant is the failure.
 fn exercise(data: &[u8]) {
-    let Ok(container) = Container::parse(data) else {
-        return;
+    let strict = Container::parse_strict(data);
+    let container = match Container::parse(data) {
+        Ok(container) => container,
+        Err(error) => {
+            // Fatal input: both entry points must say the same thing.
+            assert_eq!(strict.err(), Some(error));
+            return;
+        }
     };
+
+    // Differential: strict is Ok iff the walk was clean, else the first issue.
+    match strict {
+        Ok(_) => assert!(container.is_clean(), "strict Ok but issues present"),
+        Err(error) => {
+            assert!(!container.is_clean(), "strict Err but is_clean");
+            let first = container
+                .issues()
+                .first()
+                .expect("strict Err needs an issue");
+            assert_eq!(&error, first.error());
+        }
+    }
+
+    // Containment: every recorded IFD lies fully inside the input.
+    for ifd in container.ifds() {
+        let end = u64::from(ifd.offset()) + 2 + 12 * ifd.entries().len() as u64 + 4;
+        assert!(end <= data.len() as u64, "IFD escapes the input");
+    }
+
+    // Bounds.
+    assert!(container.ifds().len() <= MAX_IFDS);
+    assert!(container.issues().len() <= 2 * MAX_IFDS + 1);
+    for issue in container.issues() {
+        assert!(issue.from_ifd() < container.ifds().len());
+        let _ = (issue.error(), issue.link(), issue.offset());
+        assert!(!issue.to_string().is_empty());
+    }
+
     for ifd in container.ifds() {
         for entry in ifd.entries() {
             let _ = entry.byte_len();

@@ -17,7 +17,7 @@ pub type Result<T> = core::result::Result<T, Error>;
 /// (constraint `panic-free-library`). `#[non_exhaustive]` because later specs
 /// (tolerant walk, pointer-tag walk, decoders) add variants, and a match
 /// outside the crate must not assume today's set is complete.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Error {
     /// The input ended before the expected data could be read.

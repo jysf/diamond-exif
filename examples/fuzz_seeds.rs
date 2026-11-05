@@ -320,6 +320,47 @@ fn deep_nesting(w: &Writer) -> Vec<u8> {
     w.build(&ifds)
 }
 
+/// IFD0 is valid; its `SubIFDs` pointer leads far past the end. The tolerant
+/// walk keeps IFD0 and reports one issue.
+fn corrupt_subifd(w: &Writer) -> Vec<u8> {
+    w.build(&[small_ifd(
+        w,
+        Next::End,
+        vec![entry(SUB_IFDS, LONG, 1, Val::Raw(0xFFFF_FF00))],
+    )])
+}
+
+/// `SubIFDs` carries a non-LONG type (SRATIONAL), so the pointer itself is
+/// unreadable; IFD0's chain still leads to a valid IFD1.
+fn malformed_subifds_tag(w: &Writer) -> Vec<u8> {
+    let ifds = [
+        small_ifd(
+            w,
+            Next::Ifd(1),
+            vec![entry(SUB_IFDS, SRATIONAL, 1, Val::Raw(0))],
+        ),
+        small_ifd(w, Next::End, vec![]),
+    ];
+    w.build(&ifds)
+}
+
+/// Nine IFDs, each the SubIFD of the last: depths 0..=8, exactly at the depth
+/// limit, deepest terminal. Clean, unlike `deep-nesting`.
+fn depth_limit_exact(w: &Writer) -> Vec<u8> {
+    let n = 9;
+    let ifds: Vec<Ifd> = (0..n)
+        .map(|i| {
+            let extra = if i + 1 < n {
+                vec![entry(SUB_IFDS, LONG, 1, Val::Refs(vec![i + 1]))]
+            } else {
+                vec![]
+            };
+            small_ifd(w, Next::End, extra)
+        })
+        .collect();
+    w.build(&ifds)
+}
+
 fn main() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/tiff_ifd");
     fs::create_dir_all(&dir).expect("create seeds dir");
@@ -344,6 +385,9 @@ fn main() {
         ("self-cycle", self_cycle(&le)),
         ("two-hop-cycle", two_hop_cycle(&le)),
         ("deep-nesting", deep_nesting(&le)),
+        ("corrupt-subifd", corrupt_subifd(&le)),
+        ("malformed-subifds-tag", malformed_subifds_tag(&le)),
+        ("depth-limit-exact", depth_limit_exact(&le)),
     ];
     for (name, bytes) in &seeds {
         fs::write(dir.join(name), bytes).expect("write seed");

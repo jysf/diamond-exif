@@ -10,11 +10,14 @@ the patch lane files fixes here (`[Unreleased] → Fixed`), and a release spec
 
 ### Added
 
+- Tolerant-walk API (SPEC-003, DEC-001): `tiff::{ParseIssue, Link}`, `Container::{issues, is_clean, parse_strict}`; `Error` now derives `Clone, PartialEq, Eq`. The `tiff_ifd` fuzz target checks the strict/tolerant differential, containment and bounds, and has three new seeds (20 in all).
 - `tiff_ifd` fuzz target (SPEC-006, DEC-004): separate `fuzz/` crate (`exif-core-fuzz`, `libfuzzer-sys` only there), deterministic seed writer `examples/fuzz_seeds.rs` with 17 committed seeds, `tests/fuzz_layout.rs`, and `just deny-fuzz` / `lint-fuzz` / `fuzz-smoke`. The library is unchanged and still has no dependencies.
 - Strict TIFF/IFD skeleton (SPEC-002), ported from irradiance `src/ifd.rs` (copy-then-edit, DNG removed): `exif_core::{Error, Result}`, `reader::ByteOrder`, `tiff::{Container, Ifd, Entry}` with `parse`, `payload` (returns `&'a [u8]` tied to the input), `uints`, `urationals`/`srationals` (verbatim, never divided), the three walk guards, and 23 tests. Any bad IFD is still `Err`; the tolerant walk is SPEC-003. No dependencies.
 - `exif-core` crate scaffold (SPEC-001): empty gated lib with `#![forbid(unsafe_code)]` and the five-lint deny set, `deny.toml`, dual MIT/Apache-2.0 licence files, provenance-ledger header, `tests/crate_policy.rs`. No dependencies, no public API.
 
 ### Changed
+
+- `Container::parse` is now tolerant (SPEC-003, DEC-001): only a bad header or an unreadable IFD0 is `Err`; any other bad IFD (IFD1 and later, `SubIFDs`) is omitted and reported as a `ParseIssue`, so one corrupt sub-IFD no longer discards a readable IFD0. `Container::parse_strict` keeps the old all-or-nothing behaviour. Exact-boundary tests added for the depth and IFD-count limits.
 
 **Gate harness reconciled with irradiance's hardened mute-gate scripts** (instance-local; template VERSION unchanged at 0.6.39).
 
