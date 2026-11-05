@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: verifier             # implementer | verifier
   created_at: 2026-11-05
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-004
@@ -42,14 +42,14 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
+  status: completed                # completed | blocked | rejected
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: null
-  branch: null
+  duration_minutes: 35
+  branch: worktree-agent-aa55bda855552a680
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # one line if unusual (rework, no meter, etc.)
+  completed_at: 2026-11-05         # YYYY-MM-DD
+  notes: "verify verdict PUNCH LIST at a68757d (build 06f1702); tokens_total null because the verifier sub-agent has no in-session meter, the orchestrator transcribes the metered figure"
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -113,38 +113,119 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `worktree-agent-aa55bda855552a680` (fast-forwarded to `a68757d`; this handback is the only commit on top). No push, no PR.
+- **Completed at:** 2026-11-05
+- **All acceptance criteria met?** All but one: the code works and every gate is green. Walk rule 7 ("the budget halts the whole walk", DEC-001) is not fully met. See finding 1.
+- **For `verify`:** ⚠ **PUNCH LIST** at `a68757d` (build commit `06f1702`). The work is close: one medium item and three low items to fix before approval.
+
+**Gates (re-run independently on `a68757d`, all green):** `cargo +1.90.0 fmt --all -- --check`; `just lint` (Homebrew clippy 0.1.99) and the same clippy run under `RUSTUP_TOOLCHAIN=1.90.0` with `~/.cargo/bin` first; `just lint-fuzz`; `rustfmt +1.90.0 --check` on `fuzz/fuzz_targets/tiff_ifd.rs`; `cargo test` on 1.90.0 and stable (53 lib, 4 + 4 integration, 0 doc); `cargo +1.90.0 rustc --lib -- -F unsafe_code`; `just deny` and `just deny-fuzz` (licenses ok); `just validate`; `just decisions-audit` (5 clean); `just cost-audit` (green). `[dependencies]` is still empty. `scripts/`, `Cargo.toml` and `Cargo.lock` are unchanged by the build.
+
+**`just decisions-audit --changed bad5fcb`:** reports "No active decision's affected_scope matches these changes". That result is **wrong**. See finding 2: the gate cannot read the flow-style `affected_scope` lists, so it says this about every change.
+
+**Fuzz smoke (`just fuzz-smoke`, 60 s, clean tree, 25 seeds):** 930,844 executions in 61 s (about 15.3k exec/s). Final `cov: 748 ft: 3263 corp: 454/184Kb`. No crash, exit 0. The builder reported 833,475 executions and cov 748, which is consistent.
+
+**Seeds:** 25 in total. `git diff bad5fcb..HEAD -- fuzz/seeds` shows only the 5 additions, so the 20 original seeds are byte-identical. Running `cargo run --example fuzz_seeds` again gave identical SHA-1s for all 25 files and a clean tree, so the writer is deterministic.
+
+**Walk plants (perl edit of `src/tiff/mod.rs`, `cargo +1.90.0 test --lib`, then `git checkout`). All went red and all are reverted:**
+
+| Plant | Red tests |
+|---|---|
+| (a) `0xA005` allowed from any holder | `pointer_tags_in_unexpected_places_are_ignored_silently`, `the_issue_list_never_exceeds_max_issues` |
+| (b) Exif next-word followed (`Exif => Some(Exif)`) | `a_chain_pointer_inside_a_leaf_ifd_is_not_followed` |
+| (c) `SubIFDs` cap `>` to `>=` | `a_subifds_count_at_the_cap_is_accepted` |
+| (d) 0x8825 never followed (table tag set to 0xFFFF) | 9 tests, among them `a_corrupt_gps_ifd_leaves_ifd0_and_exif_readable`, `a_gps_pointer_past_eof_with_a_readable_exif_ifd`, `exif_gps_and_interop_are_reached_and_labelled`, `issues_arrive_in_walk_order_across_pointer_kinds` |
+| (e) `Ifd0` successor `Chain` | `an_ifd0_chain_is_labelled_ifd1_then_chain` |
+
+These match the builder's table exactly. I also ran these extra plants:
+
+| Plant | Result |
+|---|---|
+| (f) type check on single pointers removed | red: `a_pointer_with_the_wrong_type_costs_the_branch_not_the_ifd`, `the_issue_list_never_exceeds_max_issues` |
+| (g) count check removed | red: `a_pointer_with_the_wrong_count_is_typed` |
+| (h) last duplicate entry wins | red: `duplicate_pointer_tags_use_the_first_entry` |
+| (i) pointer children not one level deeper | red: 4 tests (depth 8/9, labelled, subifd order) |
+| (k) Exif/GPS also allowed from `Gps` | red: `pointer_tags_in_unexpected_places_are_ignored_silently` |
+| (l) zero pointer value followed | red: `a_zero_pointer_value_is_skipped_silently` |
+| (j) Interop also allowed from `Gps` | **survives the whole `cargo test` suite** (finding 3). The real fuzz target catches it (below). |
+
+**Fuzz-invariant plants. Both went red and both are reverted:**
+- Against the **real** `tiff_ifd` target (`cargo +nightly fuzz run`, 60 s budget, scratch corpus and artifacts outside the repo): with plant (j), libFuzzer hit `tiff_ifd.rs:124` (the "Interop parent is Exif" assertion) within the run and reported a deadly signal.
+- Against the harness through `tests/fuzz_layout.rs::exercise`: with the parent index planted forward (`holder + 5`), `every_seed_parses_or_errors_without_panicking` went red on "parent index is not earlier".
+- A third plant (a `Gps` next-word followed as `Chain`) passed `fuzz_layout`, because no seed has a GPS IFD with a non-zero next-word. That is a gap in seed coverage, not a weak invariant: "top-level iff no parent" would catch it once the shape occurs.
+
+**Adversarial probes (a temporary `tests/zz_verify_probe.rs`, deleted afterwards):**
+- An IFD pointing at itself through each tag (Interop and SubIFDs inside Exif, SubIFDs inside GPS, Exif/GPS/next inside Sub) gives `CyclicIfd` with the right `Link::Tag`/`Next`, `from_ifd` and offset. No loops.
+- Count `u32::MAX`: `SubIFDs` gives `TagTooLarge` (no decode). Exif `LONG` and GPS `IFD` give `BadPointerCount`. A pointer of type `IFD` (13) with count 1 is followed.
+- Interop inside GPS is ignored.
+- A Sub chain whose IFDs hold Exif pointers: each Exif IFD gets the right chain member as parent.
+- Exif → Sub → Exif → Interop nesting is reachable (depths 2..5). This is permitted by the DEC-005 table (see finding 5).
+- **Worst-case issue count: 1,537 = 3·MAX_IFDS + 1, against MAX_ISSUES = 2,561.** Shape: a 513-IFD top-level chain, each IFD with malformed `SubIFDs`, Exif and GPS (3 issues each × 512 recorded), plus `TooManyIfds`. Derivation: no kind may hold all four pointers (the max is 3, for top-level/Sub), so issues ≤ 3R + (MAX_IFDS − R) + 1 ≤ 1,537. The constant is sound but loose, and 1,537 is the actual ceiling. A mixed Exif-heavy shape reached 1,025.
+
+**Code read against DEC-005 and the rules:** I found nothing wrong here.
+- The one-row-per-tag table and the fixed walk order (SubIFDs, Exif, GPS, Interop) are correct.
+- Leaf next-words are stored but not followed.
+- Type is checked before count, and both before the payload, so count 0 never reads anything.
+- The `SubIFDs` cap is applied to the declared count before `uints`.
+- IFD0 counts as attempt 1. Depth is the holder's depth + 1. Duplicates go through `Ifd::entry` (first wins).
+- `from_ifd` is the holder. `offset` is `None` for value faults and `Some` for IFD faults.
+- No panic-capable constructs remain in non-test code: the five-lint clippy run is clean, and only `saturating_*`, `checked_*` and `get` are used.
+- Allocation is bounded: ≤ 512 offsets per `SubIFDs` and at most `MAX_TAG_VALUES` elsewhere.
+- Recursion depth is bounded by `MAX_IFD_DEPTH`, because `follow` checks depth before it returns an index to recurse into.
+
+**Flipped or updated SPEC-003 tests:** `a_hostile_subifds_array_cannot_flood_the_issue_list` now asserts the single `TagTooLarge`, which keeps its intent (no flood). Its old 511+1 derivation moved into `a_subifds_count_at_the_cap_is_accepted` (512 offsets → 511 `CyclicIfd` + `TooManyIfds`), so the SPEC-003 budget arithmetic is still tested. The depth 8/9 tests and the 512/513-IFD chain tests are unchanged. No test I read is vacuous: each was shown red by at least one plant, except where finding 3 notes a gap.
+
+**Fuzz invariants, both directions:** "`Ifd0` iff index 0" and "top-level iff no parent" are both-direction `assert_eq!`s of two booleans. The parent/child kind rules are checked both ways: the child kind implies the allowed parent kinds, and a leaf parent implies the allowed child kinds. `ifd_of_kind` is checked against a linear scan in both directions (Some/Some by pointer identity, None/None, anything else panics).
+
+**Builder's deviations:**
+- The tuple argument to `follow`: acceptable. It avoids an `allow`.
+- The extra exact-count assert (`3 * MAX_IFDS`): good, it makes the test non-vacuous (plants (a) and (f) were caught by it).
+- The duplicated `ALL_KINDS` in `tests/fuzz_layout.rs`: acceptable, since the fuzz crate is a separate graph. There is a drift risk, though. `IfdKind` is `#[non_exhaustive]`, so neither copy fails to compile when a kind is added (low, finding 6).
+
+**Findings:**
+
+1. **MEDIUM: the walk records issues after the budget halts it.** In `walk_from`, after the recursive SubIFDs branch sets `walk.halted`, the `for spec in &POINTERS` loop keeps calling `walk_pointer` for the holder's remaining tags. `walk_pointer` checks `halted` only inside its offset loop, after `pointer_offsets` has already validated or decoded the entry and pushed any value-fault issue. Every ancestor on the recursion stack does the same.
+
+   Reproduced with IFD0 {SubIFDs → a 600-IFD Sub chain, Exif as `SHORT`, GPS `LONG` count 2}. The issues come out as `[TooManyIfds, UnexpectedFieldType{0x8769}, BadPointerCount{0x8825}]`.
+
+   This contradicts walk rule 7 and DEC-001 ("`halted` ends the whole walk … halting is what bounds … the number of issues"). It also breaks the SPEC-003 property that `TooManyIfds` is the last issue. The harm is bounded: it stays inside 3 issues per recorded IFD, the extra work is bounded by recursion depth, and `parse_strict` is unaffected. Before SPEC-004 the case could not arise, because SubIFDs was the only pointer tag.
+
+   Fix: return early from `walk_pointer` (or from the spec loop) when `walk.halted` is set. Add a test that asserts `TooManyIfds` is last in this shape, and optionally a fuzz invariant ("no issue follows `TooManyIfds`").
+
+2. **MEDIUM (process, pre-existing, not in SPEC-004's code): `just decisions-audit --changed` is a mute gate.** `get_affected_scope` in `scripts/decisions-audit.sh` parses only block-style YAML lists (`- item`). Every DEC in this repo uses flow style (`affected_scope: ["src/tiff/**", "src/error.rs"]`), so it extracts zero globs. As a result it reports "No active decision's affected_scope matches" for changes to `src/tiff/mod.rs` that DEC-001, DEC-002, DEC-003 and DEC-005 all govern. The build handback's "decisions-audit green" therefore carries no information for `--changed`. I did not touch `scripts/` (out of bounds). It needs a template/irradiance fix, or the DECs need converting to block lists. Recommend a `process-debt` signal.
+
+3. **LOW: unit-test gap for Interop holders.** Plant (j), which lets a `Gps` IFD follow 0xA005, passes all 61 tests. `pointer_tags_in_unexpected_places_are_ignored_silently` places 0xA005 only in IFD0, and no unit test puts it in Gps, Interop or Sub. Only the fuzz invariant catches this. Add 0xA005 inside the GPS IFD (and ideally inside a Sub IFD) to that test.
+
+4. **LOW: a named test is missing.** The spec names `parse_issue_display_for_new_pointer_tags`. It is not present. Its assertion (`Link::Tag(0x8825)` displays `tag 0x8825`) was folded as one line into `parse_issue_display_names_error_and_location`. The assertion exists, but the deviation is not reported in HANDOFF-009. Either add the named test or record the deviation.
+
+5. **LOW / informational: MAX_ISSUES is loose and the bound test does not reach it.** The documented rationale ("at most four pointer-tag issues per recorded IFD") is true but not tight: no kind can hold four, and the real ceiling is 3·MAX_IFDS + 1 = 1,537 against 2,561. `the_issue_list_never_exceeds_max_issues` stops at 1,536 because its chain ends without a next-word. Suggest adding a next-word to the last IFD (giving 1,537 + `TooManyIfds` last, which also covers finding 1). Optionally, tighten the constant or its doc in a later spec; the public value can stay as a guarantee. Separately, Exif → Sub → Exif nesting is reachable via `SubIFDs`. The DEC-005 table permits it, though the DEC's rationale rejects "Exif → Exif → Exif nesting". It is worth one sentence in DEC-005.
+
+6. **LOW / nit:**
+   - `ALL_KINDS` is duplicated in two places, and neither copy is compile-time guarded against a new `IfdKind`. An in-crate exhaustive-match test returning the count would guard it.
+   - Stale docs: `Ifd::depth` ("`SubIFD` nesting depth; IFD0 and its chain are depth 0") and `MAX_IFD_DEPTH` ("Maximum `SubIFD` nesting depth") predate pointer-tag depth.
+   - No seed exercises a non-zero next-word on a leaf IFD.
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null. This verifier sub-agent has no in-session token meter, and the orchestrator transcribes the metered figure from the harness result.
+- **Estimated USD:** null (same reason)
+- **Duration (minutes):** ~35 (estimate)
+- **Source of the number:** none available in-session; harness report via orchestrator
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
-- **Deviations from spec:**
-  - [list]
+- **New decisions emitted:** none.
+- **Deviations from spec:** none by the verifier. Builder deviations are judged above, and finding 4 is an unreported one.
 - **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - Punch list for SPEC-004: finding 1 (halt early, plus a test), finding 3 (Interop-in-GPS test), finding 4 (named test or recorded deviation). Optionally the next-word in the bound test (finding 5).
+  - Process debt: fix `decisions-audit.sh` so it reads flow-style `affected_scope` (finding 2), in the template/irradiance, not here.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — Whether rule 7's "halts the whole walk" covers recording pointer-value faults after the halt. I read it, with DEC-001's clarification, as "no more issues after `TooManyIfds`". If the architect disagrees, finding 1 becomes a doc note instead.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — The verifier sandbox refuses compound Bash commands that use variables or mix git with other commands. Plant scripts in the scratchpad, run as one plain `bash <file>`, work. That note belongs in the toolchain brief for cold agents.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — I would start with "what can happen after a guard trips" probes (post-halt, post-depth) rather than plants. The plants all confirmed the builder's table. The real defect turned up through a probe.
