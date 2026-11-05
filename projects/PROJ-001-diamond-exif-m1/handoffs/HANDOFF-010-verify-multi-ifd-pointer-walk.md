@@ -53,81 +53,37 @@ handback:
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
-# HANDOFF-010: <Task Title — same as the spec's title>
+# HANDOFF-010: Verify the multi-IFD pointer walk
 
 ## Delegation Summary
 
-One sentence: `<from_agent>` (acting as `<from_role>`) hands `SPEC-004`
-to `<to_agent>` (acting as `<to_role>`) for the **`<cycle>`** cycle.
+`claude-opus-5-5` (architect) hands `SPEC-004` to `claude-opus-5-5` (verifier, a fresh cold agent) for the **verify** cycle.
 
 ## Context the Receiving Agent Needs
 
-The receiving agent MUST read these before starting work. Keep the
-list tight, but don't omit anything necessary.
-
-### Primary
-
-- **Project brief:** `./projects/PROJ-001-<slug>/brief.md`
-- **Stage:** `./projects/PROJ-001-<slug>/stages/STAGE-001-<slug>.md`
-- **Spec:** `./projects/PROJ-001-<slug>/specs/SPEC-004-<slug>.md`
-- **Reviewer brief (OPTIONAL, verify handoffs):** `./guidance/agents/<lens>.md` —
-  pick a lens if this review should look at one thing hard. Omit for a
-  general review; see `./guidance/agents/README.md`.
-- **Toolchain brief:** `./guidance/toolchain-brief.md` — this repo's test
-  framework, lint quirks, runtime globals and gotchas. Read it; it exists so a
-  cold agent doesn't rediscover them (DEC-004 rule 5).
-
-### Decisions that apply
-
-- `DEC-NNN` — <one-line summary of why this matters here>
-- `DEC-MMM` — <one-line summary>
-
-### Constraints that apply
-
-Check `./guidance/constraints.yaml` for full text. These constraints
-apply to the paths touched by this task:
-
-- `constraint-id-1` — <one-line summary>
-- `constraint-id-2` — <one-line summary>
-
-### Prior related work
-
-- `HANDOFF-YYY` — <one-line summary, if relevant>
-- `PR #NNN` — <link, if relevant>
+- **Spec:** `projects/PROJ-001-diamond-exif-m1/specs/SPEC-004-multi-ifd-pointer-walk.md` (walk rules and named tests are normative)
+- **`decisions/DEC-005-pointer-tag-walk-policy.md`** (normative table), DEC-001 (with clarifications), DEC-002, DEC-004
+- **Build handoff and its Handback:** `HANDOFF-009-build-multi-ifd-pointer-walk.md` (claims to verify, not to trust)
+- `AGENTS.md`, `guidance/toolchain-brief.md` (host traps: `~/.cargo/bin/cargo +1.90.0` for library gates; fuzz needs `PATH="$HOME/.cargo/bin:$PATH"` and `+nightly`)
+- Code under review: `git diff bad5fcb..HEAD` (build commit `06f1702`)
 
 ## Expected Deliverables
 
-*(For a `verify` handoff, replace this block with the verify contract below.)*
+The verify contract: review cold, output exactly ONE of APPROVED / PUNCH LIST / REJECTED at a commit SHA.
 
-- Code changes implementing SPEC-004's Acceptance Criteria.
-- All failing tests in SPEC-004 now passing.
-- Any new tests required to cover edge cases.
-- A PR against `main` from branch `feat/spec-XXX-<slug>`.
-- PR description referencing: this handoff ID, the spec ID, the stage
-  ID, the project ID, all referenced `DEC-*`, and any new `DEC-*`
-  created during implementation.
-
-### If `cycle: verify` — the verify contract
-
-You are **not** the agent that implemented this. Review it cold.
-
-- Acceptance criteria met? Tests actually pass? Build reflection answered
-  honestly (*"nothing was unclear"* is suspicious)?
-- Decision drift — run `just decisions-audit --changed`.
-- Constraint violations; non-trivial choices missing a `DEC-*`.
-- For any criterion claiming **runtime behavior** (a component registers, a hook
-  fires, a binary resolves on PATH, a config takes effect), confirm the
-  *behavioral* surface was exercised — not just the shape validated. That is the
-  defect class that escapes (AGENTS.md §12).
-- Output exactly ONE of: ✅ APPROVED / ⚠ PUNCH LIST / ❌ REJECTED.
+Verify independently:
+- Re-run every gate in the spec's acceptance criteria.
+- Read the walk against the rules and DEC-005 line by line: permitted-holder table, kinds (Ifd0/Ifd1/Chain/Sub), leaf IFDs' next-word not followed, value rule (type LONG/IFD, count exactly 1, count 0 never reads garbage), the SubIFDs cap checked **before** any payload read, depth-first order, attempt accounting (IFD0 = attempt 1), `from_ifd`/`offset` per issue, duplicate-tag handling, `MAX_ISSUES` bound. Look for any panic-capable construct in non-test code and any unbounded loop or allocation; try a few adversarial shapes yourself (pointer to itself via each tag, huge counts, Interop inside Gps, SubIFD whose chain holds Exif pointers).
+- Redo at least the five walk plants (a)-(e) and confirm the named tests go red, then revert; redo at least two fuzz-invariant plants, including one against the real fuzz target, then revert. Leave the tree clean.
+- The builder noted `the_issue_list_never_exceeds_max_issues` does not reach `MAX_ISSUES` (Interop is ignored outside Exif). Judge whether the bound is adequately tested; try to construct a worst-case file and report the largest issue count you can reach versus `MAX_ISSUES`.
+- Check the flipped/updated SPEC-003 tests still mean what they did; check no test is vacuous and that every iff-invariant in the fuzz target is both-directional. Confirm the 20 original seeds are byte-identical and the seed writer is deterministic.
+- Run `just fuzz-smoke` (60 s), record executions and coverage. Run `just decisions-audit --changed bad5fcb`.
+- Judge the builder's deviations (tuple argument to `follow`, extra exact-count assert, duplicated `ALL_KINDS` in `tests/fuzz_layout.rs`).
+- Do not fix code. Report findings with severity. Do not push or open a PR; do not advance cycles.
 
 ## Out of Scope
 
-Explicit list of what this handoff does NOT include. If the receiving agent
-thinks any of these need to happen, they should create a new spec in
-the stage's backlog, not expand this handoff.
-
-- ...
+- Implementing fixes, SPEC-007 or SPEC-005 work, CI wiring, the 24 h fuzz run
 
 ## Return Criteria — how to hand back
 
