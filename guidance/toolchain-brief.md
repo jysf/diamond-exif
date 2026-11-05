@@ -22,7 +22,7 @@ Built-in `cargo test` with plain `assert!`/`assert_eq!`. Single test: `cargo tes
 
 ## Installed test/dev utilities (don't re-add)
 
-None yet. ExifTool is an external system tool (never linked, never vendored). `cargo-fuzz` for fuzz targets under `fuzz/`.
+None yet. ExifTool is an external system tool (never linked, never vendored). `cargo-fuzz` (in `~/.cargo/bin`) runs the fuzz targets under `fuzz/`; `cargo-deny` is also in `~/.cargo/bin`.
 
 ## Known gotchas
 
@@ -32,3 +32,4 @@ None yet. ExifTool is an external system tool (never linked, never vendored). `c
 - **Host toolchain (measured 2026-11-04, re-verify per host):** bare `cargo`/`rustc` are Homebrew 1.99.1 and reject `+toolchain`. Use `~/.cargo/bin/cargo +1.90.0` for the 1.90 check. Homebrew's `cargo-clippy` shadows rustup's, so put `~/.cargo/bin` first in PATH (or call `~/.cargo/bin/cargo-clippy`) and confirm `clippy --version` reports 0.1.90. rustup's default is nightly; 1.90.0, 1.95.0 and stable are installed.
   - Host mutation (SPEC-001 build): 1.90.0 had no clippy/rustfmt component until `rustup component add --toolchain 1.90.0 clippy rustfmt` was run. A fresh host needs that once.
   - With `~/.cargo/bin` first in PATH the rustup default (nightly) has no clippy/rustfmt, so bare `cargo clippy` fails there; use `cargo +1.90.0 ...` (or `RUSTUP_TOOLCHAIN=1.90.0`). With the default PATH, bare `cargo` is Homebrew's and has its own fmt/clippy (0.1.99).
+- **Fuzz graph (SPEC-006, DEC-004):** `fuzz/` is a separate cargo graph, so every graph gate needs two invocations, both required: `just deny` + `just deny-fuzz`, `just lint` + `just lint-fuzz`. `just fuzz-smoke` runs the 60 s `tiff_ifd` target. `cargo fuzz` shells out to a bare `cargo` (Homebrew's stable, which rejects `-Zsanitizer=address`), so it must run as `PATH="$HOME/.cargo/bin:$PATH" ~/.cargo/bin/cargo +nightly fuzz ...`. The corpus directory must exist before `cargo fuzz run` (the recipe `mkdir -p`s it). Seeds are regenerated with `cargo run --example fuzz_seeds` (deterministic).

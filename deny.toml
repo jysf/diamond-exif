@@ -10,7 +10,7 @@
 # (DEC-002) the gate checks nothing today: it exists so the FIRST dependency is
 # checked automatically.
 #
-# One graph today (the root crate). `fuzz/` arrives in SPEC-005 and will be a
+# One graph today (the root crate). `fuzz/` arrives in SPEC-006 and will be a
 # second graph: cargo-deny evaluates one manifest at a time, so then run BOTH
 # `cargo deny check licenses` and
 # `cargo deny --manifest-path fuzz/Cargo.toml check licenses` (irradiance
@@ -56,7 +56,7 @@ exceptions = [
     #     and gets its own decision, which is the behaviour this repo wants; a
     #     widened `allow` would wave it through silently.
     #
-    # Reached only by the `fuzz/` graph (SPEC-005) — libfuzzer-sys is not in the
+    # Reached only by the `fuzz/` graph (SPEC-006) — libfuzzer-sys is not in the
     # library's graph at all.
     { name = "libfuzzer-sys", allow = ["NCSA"] },
 ]

@@ -1,0 +1,25 @@
+[package]
+name = "exif-core-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+# Matches the library's own licence. A package with no `license` field is
+# `unlicensed` to cargo-deny, which is an ERROR, so without this line
+# `just deny-fuzz` fails on this crate before reaching libfuzzer-sys (DEC-004).
+license = "MIT OR Apache-2.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.exif-core]
+path = ".."
+
+[[bin]]
+name = "tiff_ifd"
+path = "fuzz_targets/tiff_ifd.rs"
+test = false
+doc = false
+bench = false
