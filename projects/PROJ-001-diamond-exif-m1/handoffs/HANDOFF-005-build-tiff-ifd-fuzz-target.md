@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-05
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                  # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-006
@@ -42,13 +42,13 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
+  status: completed                # completed | blocked | rejected
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # tokens_total × your rate, or your harness's number
   duration_minutes: null
-  branch: null
+  branch: worktree-agent-ad7a1619cd9256231
   pr: null
-  completed_at: null               # YYYY-MM-DD
+  completed_at: 2026-11-05         # YYYY-MM-DD
   notes: null                      # one line if unusual (rework, no meter, etc.)
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
@@ -155,38 +155,41 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `worktree-agent-ad7a1619cd9256231` (no push, no PR)
+- **Completed at:** 2026-11-05
+- **All acceptance criteria met?** yes
+- Test first: `tests/fuzz_layout.rs` committed red (4 failed), then green after the fuzz crate and seeds landed.
+- `cargo +nightly fuzz build tiff_ifd` OK.
+- 60 s smoke (seeds + empty corpus): no crash. Run 1: 14,402,286 execs in 61 s. Run 2 (corpus reused): 16,045,676 execs, final line `DONE cov: 467 ft: 2139 corp: 281/48Kb exec/s: 263043`.
+- **Shown red** (scratch copy `/private/tmp/claude-501/redscratch`, repo untouched): planted `self.data[len]` in `Container::payload`, guarded by `field_type == 3 && count > 0x9000_0000`. libFuzzer found it in under 1 s from the seeds. Panic text: `index out of bounds: the len is 126 but the index is 8589278722` at `src/tiff/mod.rs:450:28`, `SUMMARY: libFuzzer: deadly signal`. Artifact: `fuzz/artifacts/tiff_ifd/crash-8cceea1aef4adc274b0e3f9792232a4543e757a3` (first run: `crash-3d57ddf3f20e62a76a94c36aaa0e73d94a73e490`).
+- Gates: `just deny`, `just deny-fuzz` (licenses ok), `just lint`, `just lint-fuzz` (stable clippy), fmt, `cargo test` (23 unit + 4 crate_policy + 4 fuzz_layout), `cargo +1.90.0 test` (same counts), `cargo rustc --lib -- -F unsafe_code`, `just validate`, `just decisions-audit` all pass.
+- Seeds directory hash identical across two runs of `examples/fuzz_seeds.rs` (`97a4a88b...`). Diff of `src/` and root `Cargo.toml` against 91b99f4 is empty; `cargo tree` shows no dependencies. Irradiance read only.
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** left for the orchestrator (metered count is in this task's result)
+- **Estimated USD:** null
+- **Duration (minutes):** ~25
+- **Source of the number:** harness report (orchestrator transcribes)
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
+- **New decisions emitted:** none
 - **Deviations from spec:**
-  - [list]
+  - Seeds: 17 files, not 12: added `-be` twins of `subifd`, `chain`, `payload-past-eof`, `count-overflow` (second byte order) plus `next-past-eof`. All 12 named shapes present.
+  - `fuzz-smoke` does `mkdir -p fuzz/corpus/tiff_ifd` first: libFuzzer exits 1 if the corpus dir is missing (hit on the first run).
+  - Seed-parse test in `fuzz_layout.rs` and the target also exercise `ifd.offset/depth/parent/next`/`scalar`/`values` on a fixed probe-tag list.
+  - `just lint` must be run with the default (Homebrew) PATH; with `~/.cargo/bin` first, the nightly default lacks rustfmt (existing trap).
 - **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - SPEC-003 must update the target when the walk becomes tolerant (note in spec). CI jobs and `lint-fuzz-red-proof` remain repo-setup items.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — Nothing blocking. The spec did not say the corpus directory must pre-exist; the worktree sandbox also refuses compound shell forms mentioning dotfiles or `$(...)`, which cost a few retries.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — No. The host PATH trap for `just lint` vs `cargo fuzz` pulls in opposite directions and could be stated side by side.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Create the corpus dir and time the shown-red run from the start; otherwise the same order.
