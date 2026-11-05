@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # verifier cannot see its own meter; orchestrator transcribes the metered figure
-  estimated_usd: null
-  duration_minutes: 30
+  tokens_total: 175106             # orchestrator-recorded from the metered sub-agent result (subagent_tokens)
+  estimated_usd: 1.16
+  duration_minutes: 8
   branch: worktree-agent-acdcbe3df5fa44625
   pr: null
   completed_at: 2026-11-05         # YYYY-MM-DD
-  notes: "verdict APPROVED at ffb96a5; tokens null because the sub-agent has no meter, orchestrator transcribes the metered figure"
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "verdict APPROVED at ffb96a5; tokens transcribed by the orchestrator from the sub-agent metered result"
+  synced_at: 2026-11-05
 ---
 
 # HANDOFF-012: Verify the ASCII, signed and float decoders
@@ -187,10 +187,10 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Cost self-report
 
-- **Tokens (total):** null. The sub-agent cannot see its own meter; the orchestrator transcribes the metered figure.
-- **Estimated USD:** null
-- **Duration (minutes):** ~30
-- **Source of the number:** none available to the agent (orchestrator reads the harness report)
+- **Tokens (total):** 175,106 (recorded by the orchestrator from the sub-agent metered result).
+- **Estimated USD:** 1.16
+- **Duration (minutes):** ~8 (metered wall-clock)
+- **Source of the number:** harness report (subagent_tokens)
 
 ### Drift and new artifacts
 

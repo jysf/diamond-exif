@@ -30,7 +30,7 @@ const ALL_KINDS: [IfdKind; 7] = [
 ];
 
 /// Seed names are fixed by `examples/fuzz_seeds.rs`.
-const SEEDS: [&str; 24] = [
+const SEEDS: [&str; 29] = [
     "valid-le",
     "valid-be",
     "subifd",
@@ -55,6 +55,11 @@ const SEEDS: [&str; 24] = [
     "ascii-shapes",
     "signed-and-float",
     "ascii-count-past-eof",
+    "chain-be",
+    "count-overflow-be",
+    "next-past-eof",
+    "payload-past-eof-be",
+    "subifd-be",
 ];
 
 #[test]

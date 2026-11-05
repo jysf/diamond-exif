@@ -6,14 +6,14 @@
 task:
   id: SPEC-007
   type: story                      # epic | story | task | bug | chore
-  cycle: verify  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
-  complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
+  complexity_actual: M             # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: approved  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
@@ -72,10 +72,19 @@ cost:
       duration_minutes: 10
       recorded_at: 2026-11-05
       notes: "tokens transcribed by the orchestrator from the sub-agent metered result"
+    - cycle: verify
+      agent: claude-opus-5-5
+      interface: other
+      tokens_total: 175106
+      estimated_usd: 1.16
+      duration_minutes: 8
+      recorded_at: 2026-11-05
+      notes: "verdict APPROVED at ffb96a5; tokens transcribed by the orchestrator from the sub-agent metered result"
   totals:
-    tokens_total: 172264
-    estimated_usd: 1.14
-    session_count: 1
+    tokens_total: 347370
+    estimated_usd: 2.30
+    session_count: 2
+shipped_at: 2026-11-05
 ---
 
 # SPEC-007: Decode ASCII, signed and float tag values
@@ -224,34 +233,16 @@ In `src/tiff/mod.rs` `mod tests` with the `Build` byte-builder (extend it with s
 
 ## Reflection
 
-*Appended during **ship**. Three questions, short answers.*
-
 1. **What would I do differently next time?**
-   — <answer>
+   — Do not ask a test for something the language does not promise: the spec required `to_bits()` equality for a FLOAT NaN widened to f64, but Rust does not guarantee a NaN payload survives f32 to f64 widening, so the builder (rightly) checked `is_nan()` only for FLOAT. DOUBLE NaN is pinned bit-exact. Next time check an invariant is achievable before writing it into a spec.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — No. The explicit instructions added after SPEC-004 (iff-invariants in both directions; report every renamed, folded or missing test) worked: the builder reported all deviations and the verifier found no medium defect. Verify findings carried forward, none blocking: `sints` and `floats` fall through to the last width in their decode `match` rather than an explicit error arm like `uints` (drift risk if a gate is ever widened); the fuzz target does not check cap-before-payload order or an "Ok iff type, cap and payload" rule for `sints`/`floats`.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — No new spec. Candidate small tightening for the next change that touches `types.rs`: make the decode arms total with an explicit error arm. The orchestrator also completed `tests/fuzz_layout.rs` `SEEDS` to name all 29 committed seeds (it had drifted to 21) and added a ledger note for the new `reader.rs` reads, both low-severity verify nits.
 
-4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
-   the defect-escape distribution is greppable across specs:
-   `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
-   `none` (clean first try).
-   — <one word>
-   *(Runtime/operational defects — the escape-prone class — only exist once the
-   artifact meets its real host. `escaped` here is a signal to strengthen the
-   §12 behavioral pre-flight for that surface.)*
+4. **Where was the worst defect caught?** — verify
+   *(low only: the unpinned FLOAT NaN payload, which turned out to be a spec error, not a code defect; the build itself was clean first try.)*
 
-5. **What can a user do now that they couldn't before?** — one sentence,
-   before → after; quote the confirming number if one exists, name the outcome
-   if not. Write `none` if this spec has no user-visible outcome — that is a
-   real, greppable result, not a blank. This is the line a downstream work-log's
-   `impact` field is transcribed from, and both halves are already written above
-   (## Context is the before, ## Goal is the after): confirm the prediction,
-   don't reconstruct it from memory.
-   — <answer | none>
+5. **What can a user do now that they couldn't before?** — Read a photo's Make, Model, Artist, Copyright and dates as borrowed text, even when the camera left the string unterminated, padded or in Latin-1, and read signed and floating-point tag values, with no input able to make the reader panic; before, only unsigned integers and rationals could be decoded.
