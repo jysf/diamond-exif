@@ -6,7 +6,7 @@
 task:
   id: SPEC-001
   type: story                      # epic | story | task | bug | chore
-  cycle: frame                     # frame | design | build | verify | ship
+  cycle: build  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: S                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -31,8 +31,8 @@ handoff:
   created_at: null
 
 references:
-  decisions: []                    # [DEC-NNN, DEC-MMM]
-  constraints: []                  # [constraint-id-1, constraint-id-2]
+  decisions: [DEC-001, DEC-002, DEC-003]                    # [DEC-NNN, DEC-MMM]
+  constraints: [forbid-unsafe-code, panic-free-library, no-io-in-library, license-policy]                  # [constraint-id-1, constraint-id-2]
   related_specs: []                # [SPEC-NNN]
 
 # Blocking dependencies: specs that must SHIP before this one can start.
@@ -47,7 +47,7 @@ claimed_by: null
 # One sentence on what this spec contributes to its stage's
 # value_contribution. For plumbing: "infrastructure enabling
 # STAGE-001's <capability>". Optional; null is acceptable.
-value_link: null
+value_link: "infrastructure enabling STAGE-001: a gated, licence-clean crate to port the IFD engine into"
 
 # Self-reported AI cost per cycle. Each cycle (design, build, verify,
 # ship) appends one entry to sessions[]. Totals are computed at ship.
@@ -72,11 +72,6 @@ cost:
 
 # SPEC-001: Scaffold the exif-core crate
 
-> **OUTLINE — `cycle: frame`.** This spec exists so its ID is stable and
-> siblings can declare `depends_on: [SPEC-001]`. Capture **scope** (Context /
-> Goal / Non-Goals) and **dependencies** only — the *approach* is designed
-> just-in-time when this moves to `design`. Do not pre-design it here.
-
 ## Context
 
 STAGE-001 starts from an empty crate. Nothing can be ported until there is a buildable single `exif-core` crate carrying irradiance's quality bar. Plan Step 0 (docs/DIAMOND-EXIF-EXTRACTION-PLAN.md §3). The gate harness (scripts, red-proofs, CI wiring) is repo setup, not product work: it is handled outside the spec backlog and is a precondition here, not a deliverable.
@@ -87,40 +82,46 @@ A buildable, green `exif-core` single crate: `Cargo.toml`, `#![forbid(unsafe_cod
 
 ## Inputs
 
-What the implementer will read or consume.
-
-- **Files to read:** `path/to/file.ext` — why
-- **External APIs:** <name, docs link, auth requirements>
-- **Related code paths:** `src/some/module/`
+- **Files to read (irradiance, READ ONLY — do not modify it):** `~/PSeven/experiments/crustimg_redo_plus/irradiance/` `src/lib.rs:95-102` (lint block, copy verbatim), `Cargo.toml` (shape, `include` allow-list), `deny.toml` (allow-list), `LICENSE-MIT`, `docs/provenance-ledger.md` (header and rule).
+- **Files to read (this repo):** `AGENTS.md` §5-6, `guidance/toolchain-brief.md`, `decisions/DEC-001..003`, `docs/DIAMOND-EXIF-EXTRACTION-PLAN.md` §2, §6.
 
 ## Outputs
 
-What the implementer will produce.
-
-- **Files created:** `path/to/new.ext` — purpose
-- **Files modified:** `path/to/existing.ext` — what changes
-- **New endpoints / functions / components:** <names and signatures>
-- **New flags / options:** each flag's accepted values **and its default** — an
-  unstated default makes the implementer guess.
-- **Database changes:** <migrations, if any>
+- **Files created:**
+  - `Cargo.toml` — package `exif-core`, lib `exif_core`, edition 2021, `rust-version = "1.90"` (inherited from irradiance, where it was measured; re-measured here by building on 1.90.0), `license = "MIT OR Apache-2.0"`, `include` allow-list (`src/**/*.rs`, `/Cargo.toml`, `/README.md`, `/LICENSE-MIT`, `/LICENSE-APACHE`), **empty `[dependencies]`** (DEC-002).
+  - `src/lib.rs` — crate docs (one paragraph: what it is, that it is pre-release), `#![forbid(unsafe_code)]` and the five-lint `#![deny(...)]` block copied verbatim from irradiance `src/lib.rs:95-102`. No modules yet.
+  - `Cargo.lock` — committed.
+  - `deny.toml` — irradiance's allow-list verbatim (MIT, Apache-2.0, Apache-2.0 WITH LLVM-exception, BSD-2/3-Clause, Zlib, 0BSD, Unicode-3.0) and the named `libfuzzer-sys` NCSA exception; header rewritten for this repo (one graph today; `fuzz/` arrives in SPEC-005).
+  - `LICENSE-MIT` (copy of irradiance's, copyright 2026 jysf); `LICENSE-APACHE` (the existing root `LICENSE` moved with `git mv`).
+  - `docs/provenance-ledger.md` — header and rule only, no file rows yet. The header must state: ExifTool (Perl, Artistic/GPL) may be RUN as an oracle but never READ to resolve a format question; running a tool imposes nothing, reading copyleft source is a violation; classes 1/2/3 defined as in irradiance's ledger; every ported file gets a row before or when it lands (DEC-003).
+  - `tests/crate_policy.rs` — the failing tests below.
+- **Files modified:**
+  - `app.just` — `lint` becomes `cargo clippy --all-targets -- -D warnings`; add `deny` (`cargo deny check licenses`) and `forbid-unsafe` (`cargo rustc --lib -- -F unsafe_code`); `install` stops calling `rustup show` (no `rust-toolchain.toml`, see Notes).
+  - `AGENTS.md` §5 and `guidance/toolchain-brief.md` — drop "pin in `rust-toolchain.toml`"; record `rust-version` and the measured host facts in Notes below.
+  - `README.md`, `CHANGELOG.md` — status line and an `[Unreleased] → Added` entry.
+- **No new flags, endpoints or public API.** The crate exports nothing.
 
 ## Acceptance Criteria
 
-Testable outcomes. Each must map to at least one test. Cover happy
-path, error cases, edge cases.
-
-- [ ] Criterion 1 (testable)
-- [ ] Criterion 2 (testable)
-- [ ] Criterion 3 (testable)
+- [ ] `cargo fmt --all -- --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test` pass on the empty lib.
+- [ ] `cargo rustc --lib -- -F unsafe_code` passes (the `-F` re-check).
+- [ ] `cargo deny check licenses` passes.
+- [ ] Builds and tests on 1.90.0 (see Notes for the exact command on this host).
+- [ ] The lint block is shown red once: temporarily adding an `unwrap()` (and an unchecked index) to `src/lib.rs` makes clippy fail, and removing it makes it pass. Record the observed failure text in the handback. (This is the behavioral pre-flight, AGENTS §12; the formal `lint-red-proof` gate arrives later as repo setup.)
+- [ ] `[dependencies]` is empty and `Cargo.lock` is committed.
+- [ ] `LICENSE-MIT` and `LICENSE-APACHE` exist at the root; no root `LICENSE` file remains.
+- [ ] `docs/provenance-ledger.md` header contains the "RUN never READ" statement.
+- [ ] `just validate` and `just decisions-audit` still pass.
 
 ## Failing Tests
 
-Written during the **design** cycle, BEFORE handoff. The implementer's
-job in **build** is to make these pass.
+Written during design; the build cycle makes them pass. Integration tests live outside the library crate, so the lint block does not apply to them.
 
-- **`path/to/test.file`**
-  - `"test description 1"` — asserts: ...
-  - `"test description 2"` — asserts: ...
+- **`tests/crate_policy.rs`** (std only, reads files relative to `CARGO_MANIFEST_DIR`)
+  - `"lib_forbids_unsafe_and_denies_the_five_lints"` — asserts `src/lib.rs` contains `#![forbid(unsafe_code)]` and each of `clippy::unwrap_used`, `clippy::expect_used`, `clippy::indexing_slicing`, `clippy::panic`, `clippy::arithmetic_side_effects` inside a `#![deny(`.
+  - `"manifest_is_dual_licensed_with_no_dependencies"` — asserts `Cargo.toml` has `license = "MIT OR Apache-2.0"` and that the `[dependencies]` table is empty.
+  - `"both_license_files_exist_and_root_license_is_gone"` — `LICENSE-MIT` and `LICENSE-APACHE` exist; `LICENSE` does not.
+  - `"ledger_states_exiftool_is_run_never_read"` — `docs/provenance-ledger.md` exists and contains both the words `RUN` and `READ` in the ExifTool rule.
 
 ## Non-Goals
 
@@ -130,8 +131,13 @@ job in **build** is to make these pass.
 
 ## Notes for the Implementer
 
-Gotchas, style preferences, reuse opportunities. Keep short — the full
-context graph lives in the handoff file.
+- **Design-time measurements (this host, 2026-11-04):** the default `cargo`/`rustc` on PATH are Homebrew 1.99.1 (`/opt/homebrew/bin`) and **reject `+toolchain`**. `~/.cargo/bin/cargo +1.90.0` works (cargo 1.90.0), but `cargo-clippy` on PATH is the Homebrew one, so `~/.cargo/bin/cargo +1.90.0 clippy --version` reports clippy 0.1.99 (the shadowing trap). To run clippy genuinely on 1.90.0 put `~/.cargo/bin` first in PATH (or call `~/.cargo/bin/cargo-clippy` explicitly) and confirm `clippy --version` reports 0.1.90. The rustup default toolchain is nightly; `1.90.0`, `1.95.0` and stable are installed. Re-verify per host; do not carry these numbers as facts elsewhere.
+- No `rust-toolchain.toml`: irradiance has none and the shadowing trap above makes a pin misleading. `rust-version` in `Cargo.toml` is the floor.
+- Crate name is `exif-core`. Do not publish; availability on crates.io is an open question (`guidance/questions.yaml`).
+- Do **not** add `thiserror` or `bytes`; both wait for their own DEC (DEC-002).
+- Keep irradiance unchanged; copy text, never link.
+- The gate scripts (`lint-red-proof`, `lint-fuzz-red-proof`) and CI Rust jobs are repo setup handled outside this spec.
+- One commit per logical step on the spec branch; PR description per AGENTS §13.
 
 ---
 

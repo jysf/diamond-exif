@@ -65,3 +65,34 @@ questions:
     assigned_to: null
     notes: |
       Decision point; record as a DEC (also subject to no-new-top-level-deps-without-decision).
+  - id: crates-io-name-availability
+    question: "Are the crates.io names exif-core and diamond-exif free?"
+    priority: medium
+    status: open
+    raised_by: claude
+    raised_at: 2026-11-04
+    assigned_to: null
+    notes: |
+      Check before any publish or README that names the crate publicly.
+
+  - id: jpeg-placement-m1a
+    question: "Should I1/I2 read parity and the JPEG parser move into STAGE-001, as design section 12 places them in M1a?"
+    priority: medium
+    status: open
+    raised_by: claude
+    raised_at: 2026-11-04
+    assigned_to: null
+    notes: |
+      The frame deliberately keeps STAGE-001 TIFF-only; JPEG is the next stage.
+      Awaiting the plan-review session's verdict.
+
+  - id: rust-ci-and-fixtures
+    question: "Who owns Rust CI jobs (ExifTool pinned version, cargo-deny, -sys gate, wasm32 check) and licence-clean tier-A fixtures?"
+    priority: high
+    status: open
+    raised_by: claude
+    raised_at: 2026-11-04
+    assigned_to: null
+    notes: |
+      Repo setup, not specs. lint-red-proof and lint-fuzz-red-proof also still
+      need to be brought over from irradiance once the crate exists.
