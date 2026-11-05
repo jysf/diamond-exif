@@ -151,7 +151,7 @@ imported by the template-managed root `justfile` — keep app recipes there (not
 in `justfile`) so a template update never clobbers your commands. For
 template/workflow commands (`status`, `new-spec`, …) see `justfile`.
 
-Stubs until the crate exists (scaffold step); `app.just` already wraps them.
+The crate exists (SPEC-001); `app.just` wraps these. `just dev` (the `exif-audit` bin) and any other recipe whose target is not built yet remain stubs and fail until it lands.
 
 ```bash
 just install      # print active rustc/cargo versions

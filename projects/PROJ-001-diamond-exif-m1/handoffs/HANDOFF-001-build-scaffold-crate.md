@@ -179,6 +179,7 @@ transcribes it via `just handback-sync`, it does not estimate it.
 
 - **New decisions emitted:**
   - none
+  - Verify punch-list rework (HANDOFF-002): crate_policy tests now strip `//` comments, match whole tokens, reject allow/warn/expect of the five lints and `[dependencies.*]` sub-tables. Mutations shown red: commented `clippy::panic`, `panic_in_result_fn` substitute, commented-out deny block + `#![allow(unwrap_used)]`, `#![allow(clippy::panic)]`, `[dependencies.foo]`. Host-note docs and AGENTS.md §6 wording fixed.
 - **Deviations from spec:**
   - `rustup component add --toolchain 1.90.0 clippy rustfmt` was run on the host: rustup had no clippy/rustfmt for 1.90.0, so the spec's "put ~/.cargo/bin first" check could not run otherwise.
   - Also edited AGENTS.md (2 lines) and README per spec; deny.toml header rewritten, DEC-011 reference dropped.

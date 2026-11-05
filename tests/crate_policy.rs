@@ -12,24 +12,66 @@ fn read(rel: &str) -> String {
     fs::read_to_string(root().join(rel)).unwrap_or_else(|e| panic!("cannot read {rel}: {e}"))
 }
 
+/// Drops `//` line comments (including `//!` and `///`) so commented-out
+/// attributes cannot satisfy a check. Good enough for attribute lines; it does
+/// not understand `//` inside string literals, which lib.rs does not contain.
+fn strip_line_comments(src: &str) -> String {
+    src.lines()
+        .map(|l| l.split("//").next().unwrap_or(""))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Splits on anything that cannot be part of a `path::ident` token, so
+/// `clippy::panic` never matches `clippy::panic_in_result_fn`.
+fn tokens(src: &str) -> Vec<String> {
+    src.split(|c: char| !(c.is_alphanumeric() || c == '_' || c == ':'))
+        .filter(|t| !t.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+const FIVE_LINTS: [&str; 5] = [
+    "clippy::unwrap_used",
+    "clippy::expect_used",
+    "clippy::indexing_slicing",
+    "clippy::panic",
+    "clippy::arithmetic_side_effects",
+];
+
 #[test]
 fn lib_forbids_unsafe_and_denies_the_five_lints() {
-    let lib = read("src/lib.rs");
+    let lib = strip_line_comments(&read("src/lib.rs"));
     assert!(
         lib.contains("#![forbid(unsafe_code)]"),
         "missing forbid(unsafe_code)"
     );
     let deny_at = lib.find("#![deny(").expect("missing #![deny( block");
-    let block = &lib[deny_at..];
-    let block = &block[..block.find(")]").expect("unterminated #![deny( block")];
-    for lint in [
-        "clippy::unwrap_used",
-        "clippy::expect_used",
-        "clippy::indexing_slicing",
-        "clippy::panic",
-        "clippy::arithmetic_side_effects",
-    ] {
-        assert!(block.contains(lint), "deny block lacks {lint}");
+    let rest = &lib[deny_at..];
+    let block = &rest[..rest.find(")]").expect("unterminated #![deny( block")];
+    let deny_tokens = tokens(block);
+    for lint in FIVE_LINTS {
+        assert!(
+            deny_tokens.iter().any(|t| t == lint),
+            "deny block lacks {lint}"
+        );
+    }
+    // Nothing may weaken the five lints: any allow/warn/expect attribute that
+    // names one of them (inner or outer) fails the policy.
+    for (i, _) in lib
+        .match_indices("allow(")
+        .chain(lib.match_indices("warn("))
+        .chain(lib.match_indices("expect("))
+    {
+        let tail = &lib[i..];
+        let attr = &tail[..tail.find(')').unwrap_or(tail.len())];
+        let attr_tokens = tokens(attr);
+        for lint in FIVE_LINTS {
+            assert!(
+                !attr_tokens.iter().any(|t| t == lint),
+                "{lint} must not be allowed/warned/expected: {attr})"
+            );
+        }
     }
 }
 
@@ -40,11 +82,17 @@ fn manifest_is_dual_licensed_with_no_dependencies() {
         manifest.contains("license = \"MIT OR Apache-2.0\""),
         "license must be MIT OR Apache-2.0"
     );
-    // Collect the lines of the [dependencies] table up to the next table header.
+    // Any table whose header starts with `[dependencies` (including
+    // `[dependencies.foo]`) is the runtime dependency table and must be empty.
+    // `[dev-dependencies]`/`[build-dependencies]` are intentionally not covered.
     let mut in_deps = false;
     for line in manifest.lines().map(str::trim) {
         if line.starts_with('[') {
-            in_deps = line == "[dependencies]";
+            assert!(
+                !line.starts_with("[dependencies."),
+                "dependency sub-table forbidden (DEC-002): {line}"
+            );
+            in_deps = line.starts_with("[dependencies");
             continue;
         }
         if in_deps && !line.is_empty() && !line.starts_with('#') {
