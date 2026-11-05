@@ -6,14 +6,14 @@
 task:
   id: SPEC-002
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
-  complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
+  complexity_actual: L          # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: approved  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
@@ -63,11 +63,28 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: null
-  sessions: []
+  sessions:
+    - cycle: build
+      agent: claude-sonnet-5-5
+      interface: other
+      tokens_total: 193631
+      estimated_usd: 1.28
+      duration_minutes: 8
+      recorded_at: 2026-11-05
+      notes: "tokens_total left for the orchestrator (metered from the task result); worktree base was stale and was fast-forwarded to claude/rust-exif-metadata-6351d5"
+    - cycle: verify
+      agent: claude-opus-5-5
+      interface: other
+      tokens_total: 152572
+      estimated_usd: 1.01
+      duration_minutes: 4
+      recorded_at: 2026-11-05
+      notes: "tokens_total left null for the orchestrator (metered count); verdict APPROVED with advisory test-gap notes"
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 346203
+    estimated_usd: 2.29
+    session_count: 2
+shipped_at: 2026-11-05
 ---
 
 # SPEC-002: Port the strict TIFF skeleton
@@ -141,34 +158,16 @@ Written in design; the build ports/writes them first, sees them fail to compile 
 
 ## Reflection
 
-*Appended during **ship**. Three questions, short answers.*
-
 1. **What would I do differently next time?**
-   — <answer>
+   — Specify the inline-value borrow in the spec: the brief called the `&'a [u8]` change "one token", but inline payloads needed a `value_at` offset on `Entry`. Reading the code, not the brief, at design time would have caught it.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — No DEC change. DEC-002 held (the borrow test is a real guard: tying `payload` to `&self` fails to compile). Open question `ifd-rs-test-classification` is answered. Two guard tests inherited from irradiance are weak (depth limit +1, IFD-count `>=` vs `>`); carried into SPEC-003.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — SPEC-006 (fuzz target) is already framed and must land before SPEC-003. The two boundary tests ride along with SPEC-003.
 
-4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
-   the defect-escape distribution is greppable across specs:
-   `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
-   `none` (clean first try).
-   — <one word>
-   *(Runtime/operational defects — the escape-prone class — only exist once the
-   artifact meets its real host. `escaped` here is a signal to strengthen the
-   §12 behavioral pre-flight for that surface.)*
+4. **Where was the worst defect caught?** — none
+   *(Verify found no defects; two surviving mutants were inherited from irradiance's tests and are advisory.)*
 
-5. **What can a user do now that they couldn't before?** — one sentence,
-   before → after; quote the confirming number if one exists, name the outcome
-   if not. Write `none` if this spec has no user-visible outcome — that is a
-   real, greppable result, not a blank. This is the line a downstream work-log's
-   `impact` field is transcribed from, and both halves are already written above
-   (## Context is the before, ## Goal is the after): confirm the prediction,
-   don't reconstruct it from memory.
-   — <answer | none>
+5. **What can a user do now that they couldn't before?** — none (infrastructure): the crate now parses TIFF/EXIF IFD structure with bounds-checked, cycle-guarded reads and typed errors, but exports no EXIF-level API yet.

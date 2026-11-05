@@ -81,6 +81,8 @@ cost:
 
 DEC-001 policy as its own change: non-IFD0 IFD failures become per-IFD issues instead of whole-parse failure, flipping about 25% of the ported tests (brief §0 risk 1, design §16.1).
 
+Carry-in from SPEC-002 verify (HANDOFF-004): two guard tests are weak (depth limit +1 and the IFD-count `>=` vs `>` boundary survive mutation). Add one boundary test for each while the walk is being reworked.
+
 ## Goal
 
 `Container::parse` returns a result carrying `Vec<ParseIssue>`; IFD0 and header failures stay fatal; the flipped tests are updated and a new test proves a corrupt GPS IFD leaves IFD0 readable.

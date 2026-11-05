@@ -50,7 +50,7 @@ handback:
   pr: null
   completed_at: 2026-11-05         # YYYY-MM-DD
   notes: "tokens_total left for the orchestrator (metered from the task result); worktree base was stale and was fast-forwarded to claude/rust-exif-metadata-6351d5"
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-05
 ---
 
 # HANDOFF-003: Port the strict TIFF skeleton

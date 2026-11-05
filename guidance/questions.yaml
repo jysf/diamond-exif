@@ -39,12 +39,12 @@ questions:
   - id: ifd-rs-test-classification
     question: "Which irradiance ifd.rs tests are actually portable?"
     priority: high
-    status: open
+    status: answered
     raised_by: human
     raised_at: 2026-11-04
     assigned_to: null
     notes: |
-      Classification in the porting brief was by name/range, not by execution. Verify by running them.
+      Answered by SPEC-002 (HANDOFF-003/004): every ported test behaved as the brief classified it.
 
   - id: ci-job-script-wiring
     question: "How are irradiance's CI jobs wired to its scripts/?"

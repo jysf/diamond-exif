@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                   # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: null
+  tokens_total: 152572               # REAL combined count — what cost-audit reads
+  estimated_usd: 1.01              # tokens_total x 6.60 USD/Mtok
+  duration_minutes: 4
   branch: worktree-agent-afa4c0fec6b75cab5
   pr: null
   completed_at: 2026-11-05             # YYYY-MM-DD
   notes: "tokens_total left null for the orchestrator (metered count); verdict APPROVED with advisory test-gap notes"
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-05
 ---
 
 # HANDOFF-004: Verify the strict TIFF skeleton (SPEC-002)
