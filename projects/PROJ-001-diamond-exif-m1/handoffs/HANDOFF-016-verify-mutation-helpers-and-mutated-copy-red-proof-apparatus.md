@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: verifier             # implementer | verifier
   created_at: 2026-11-05
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-008
@@ -42,14 +42,14 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
+  status: completed                # completed | blocked | rejected
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: null
-  branch: null
+  duration_minutes: 30
+  branch: worktree-agent-a7515e2c3036deba3
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # one line if unusual (rework, no meter, etc.)
+  completed_at: 2026-11-05         # YYYY-MM-DD
+  notes: "verify verdict APPROVED at 8acb291 (build 390d2b8); the sub-agent cannot see its own token meter, the orchestrator transcribes the metered figure"
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -116,38 +116,88 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** branch `worktree-agent-a7515e2c3036deba3` (fast-forwarded to `8acb291`, handback committed on top; not pushed); no PR, by instruction.
+- **Completed at:** 2026-11-05
+- **All acceptance criteria met?** Yes. The findings below are low or informational; none blocks.
+- **For `verify`:** ✅ **APPROVED at `8acb291`** (code under review `git diff 4221d5b..390d2b8`, build commit `390d2b8`; `8acb291` adds only handoff docs).
+
+**Gates, re-run by me (each tool's own status captured to a file, no pipes):** `cargo fmt --all -- --check` 0; `just lint` 0; `just lint-fuzz` 0 (clippy 0.1.98, `+stable`); `cargo test` (Homebrew 1.99.1) 0, 145 passed / 0 failed / 2 ignored; `~/.cargo/bin/cargo +1.90.0 test` 0, same counts; `cargo rustc --lib -- -F unsafe_code` 0; `just deny` 0; `just deny-fuzz` 0; `just validate` 0; `just decisions-audit` 0; `just cost-audit` 0. `just oracle-record` 0: 41 records written, `NOT RUN on two-hop-cycle: exiftool-two-hop-cycle-does-not-return`, `git status --porcelain` empty afterwards.
+
+**`just mutation-oracle` wall-clock:** 3.38 s real (`/usr/bin/time -p`, warm, Apple silicon), 36 passed / 1 ignored, test time 3.06 s. Matches the build claim (about 3 s).
+
+**ExifTool hidden:** whole suite on the 1.90.0 toolchain's own cargo with `PATH=<1.90.0 bin>:/usr/bin:/bin`, `DIAMOND_EXIF_REQUIRE_ORACLE` unset: status 0, 145 passed; exactly five `SKIP` lines, all live variants (`corrupting_the_gps_pointer_is_reported_and_isolated (live variant)`, `live_demo_a_mutated_payload_is_caught`, `live_parity_on_hand_built_fixtures`, `live_parity_on_the_committed_seeds`, `live_signed_and_float_selectors_match_exiftool`). With ExifTool present, the GPS live variant ran (`ExifTool agrees, GPS selectors are -`) and the signed/float live test ran against 13.55.
+
+**Testing the testers** (plants into the tree, each reverted with `git checkout`; tree clean at the end):
+
+| Plant | Expected | Result |
+|---|---|---|
+| (a) committed record `signed-float-le` ExposureProgram `-2` changed to `-3`, so the control cannot be green | mutant 6 and the all-fixtures control fail at the CONTROL | both FAILED: `sshort-unsigned: the unmutated control is not green on signed-float-le: ExifIFD:ExposureProgram: ours="-2" theirs="-3"` (and `all-fixtures: ...`) |
+| (b1) mutant 3 expected set reduced to `[FNumber]` | fail | FAILED: named `["ExifIFD:FNumber", "IFD0:XResolution"]` vs `["ExifIFD:FNumber"]` |
+| (b2) mutant 5 expected set changed to `[FNumber]` | fail | FAILED |
+| (c1) mutant 2 needle misspelt (`bytez`) | loud | FAILED: `expected exactly one occurrence ... found 0 -- the injection point moved` |
+| (c2) mutant 6 needle `out.push(` | loud | FAILED: `... found 9` |
+| vacuous mutant: mutant 4 replacement equals the needle (plus marker) | fail (mutant green) | FAILED: diff `[]` vs the two GPS selectors |
+| (d1) mutant 1 replaced by `from_be_bytes` (shows on LE, not BE) | fail | FAILED at the BE set (`[]`) |
+| (d2) mutant 1 replaced by `.swap_bytes()` (wrong on both orders) | the LE null-result assertion fails | FAILED: `little-endian fixture must stay green: IFD0:Orientation ours="1536" ...` |
+
+**My own mutants, planted into the real `src/` one at a time, whole suite run with `--no-fail-fast`, reverted:**
+
+| Mutant | Caught? | By |
+|---|---|---|
+| DOUBLE read at FLOAT width (`as_chunks::<4>` + `f32`) | yes | replay/live oracle (`replay_signed_and_float_selectors_carry_values`, `replay_is_clean_on_an_unmodified_reading`, `live_*`), all-fixtures control, lib `floats_read_verbatim_in_both_orders` |
+| FLOAT always little-endian | yes | oracle on `signed-float-be`, controls, lib test |
+| ASCII: NUL not a terminator (`position(\|b\| *b == 0xFF)`) | yes | oracle, every mutation_oracle control, lib ascii tests |
+| SLONG truncated to 16 bits | yes | oracle via `ExifIFD:ExifImageWidth`, lib `sints_sign_extend_*` |
+| GPS IFD labelled Interop (wrong IFD kind) | yes | oracle, mutation tests, lib labelling test |
+| Exif IFD labelled Sub (wrong IFD kind) | yes | oracle, mutation tests, many lib tests |
+| SBYTE read unsigned | yes, but only by lib `sints_sign_extend_every_width_in_both_orders` | no oracle selector reads an SBYTE |
+| SubIFDs cap off by one (`n > MAX_IFDS + 1`) | **SURVIVED** the whole suite (status 0) | not oracle-visible (ExifTool has no such cap); a pre-existing library-test gap, no test at count == `MAX_IFDS + 1` |
+
+**Deviations judged.**
+- Mutant 1 at the SHORT use site: justified, and now measured rather than reasoned. The literal spec mutant (`ByteOrder::Big => u16::from_le_bytes` in `reader.rs`), staged and run on `exif-basic-be`, makes the probe exit 3 with `PARSE-ERROR UnsupportedTiffVersion { version: 10752 }` (0x2A00), so no selector could be named. The planted fault is still "a SHORT decoded in the wrong byte order"; it does not cover tag/type/count reads, which the header failure already makes loud.
+- Extra fixtures and re-recorded records: the word diff of the nine old records shows only the command line growing by four selectors and four added `-` fields; the 29 seed records are unchanged (my `just oracle-record` reproduced all 41 byte for byte). `exif-gps-full-le` is needed for test 7's isolation claim; `signed-float-le/-be` carry the new selectors.
+- Mutation 9's two cuts: both asserted; (b) (no issue, inline ISO survives) is the stronger, measured statement. Accepted.
+- `run_tool_with_limit` as the single spawn function: grep shows the only tool spawn is `tests/support/tools.rs:105`; `exiftool_version` and `run_exiftool_raw` go through `run_tool`. The other `Command::new` hits are the self-respawn tests and the probe's cargo/probe spawns, as the build claimed.
+- Probe with no wall-clock limit: see F1.
+
+**Signed/float selectors re-measured independently** (my own Python generator: IFD0 {Make, ExifIFD pointer} plus a one-entry Exif IFD, both byte orders; `perl -e 'alarm 4; exec @ARGV' exiftool -T -n -s3 -ExifIFD:ExposureTime -ExifIFD:ExposureProgram -ExifIFD:FocalLength -ExifIFD:ExifImageWidth <file>`, ExifTool 13.55, status 0 for every file, LE and BE identical): FLOAT 0.125 in 0x829A prints `0.125` (RATIONAL 1/8 there also `0.125`); SSHORT -2 in 0x8822 prints `-2` while SHORT 65534 (same bits) prints `65534`; DOUBLE 4.5 in 0x920A prints `4.5` (RATIONAL 9/2 also `4.5`); SLONG -5 in 0xA002 prints `-5` while LONG 4294967291 (same bits) prints `4294967291`. Same bits, different declared type, different output: ExifTool 13.55 honours the declared type for these four tags, so the comparison is honest. A FLOAT-width read of the DOUBLE would give 0 (the low word of 4.5 is zero) and was caught.
+
+**Timeout.** `run_tool_times_out_and_kills_the_child` passes (1 s limit, `Timeout { tool: "sh", secs: 1 }`, then `kill -0 <pid>` through `run_tool_with_limit` fails: pid gone). After all runs, `pgrep -fl 'sleep 30'` and `pgrep -fl exiftool` both return status 1 (nothing left). Default 5 s (`DEFAULT_TIMEOUT_SECS`, asserted); the env override is exercised end to end by `timeout_variable_is_honoured_by_run_tool` (child copy with the variable at 1). `/* RED-PROOF INJECTION */` occurs in code only in `tests/support/probe.rs` (plus prose in the spec, the handoffs and the provenance ledger row).
+
+**TempDir / target.** No `diamond-exif*` entries in `$TMPDIR` after the full suite, after the plant runs in which six tests panicked inside `inject_replace` (TempDir dropped on unwind), or at the end. Stale `CARGO_TARGET_DIR=<scratch>/stale-target cargo test --test mutation_oracle`: 36 passed, zero probe binaries in the stale dir, repo `target/` mtime unchanged, no `probe` binary in the repo `target/`.
+
+**Untouched.** `git diff --stat 4221d5b..HEAD -- src scripts decisions fuzz/seeds Cargo.toml Cargo.lock` is empty; 29 seeds; `[dependencies]` and `[dev-dependencies]` empty; irradiance `git status --porcelain` empty. ExifTool was never run on `two-hop-cycle` (the recorder reports it NOT RUN).
+
+**Findings.**
+- **F1 (low).** The probe's cargo build and probe run (`tests/support/probe.rs` `build_probe`/`run_probe`) have no wall-clock limit. Measured: a staged mutant that sleeps 25 s per ASCII read held its test for 75.6 s (three ASCII reads), with only cargo's "running for over 60 seconds" note; a mutant that loops would hang `just mutation-oracle` indefinitely. The committed mutants are fixed and finish in about 1 s, and the in-process oracle tests have the same property for a looping library, so it does not block. Suggest running the probe binary through the same poll-and-kill helper.
+- **F2 (low, measurement-over-generalised).** The `tests/support/oracle_tiff.rs` comment on the new tag constants says the declared-type behaviour is something "most tags do not expose". The builder's own table contradicts it (Orientation SSHORT -3, ImageWidth SLONG -5, ISO SSHORT -200 and FNumber FLOAT/DOUBLE 2.5 were all honoured; only three of the 17 candidates were not). Reword to the measured count.
+- **F3 (info, follow-up).** The SubIFDs cap off-by-one survives the whole suite (a library unit-test gap at count == `MAX_IFDS + 1`, outside SPEC-008's oracle scope). SBYTE-read-unsigned is caught only by a library unit test; no oracle selector reads SBYTE.
+- **F4 (info).** `escaping_round_trips` tests a hand-written mirror of the probe's `escape`, not the generated `PROBE_MAIN` code, so the two could drift unseen. `no_injection_marker_outside_the_tests` scans only `src`, `examples`, `fuzz` and `scripts`, not `tests/support/oracle.rs`, which is copied into every probe crate.
+- **F5 (info).** A mutant that makes `Container::parse` fail becomes an apparatus `Err` (probe exit 3), so its test panics with "the MUTANT could not be built or run" instead of naming selectors. It is red either way; worth knowing when writing future mutants.
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null. The verifier sub-agent cannot see its own token meter; the orchestrator transcribes the metered figure.
+- **Estimated USD:** null (same reason)
+- **Duration (minutes):** ~30
+- **Source of the number:** none available to the sub-agent; harness report via the orchestrator
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
-- **Deviations from spec:**
-  - [list]
+- **New decisions emitted:** none.
+- **Deviations from spec:** none by the verifier. The build deviations listed in HANDOFF-015 are judged above and accepted.
 - **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - A wall-clock limit on the probe build/run (F1).
+  - A library unit test for the SubIFDs cap boundary (F3); an SBYTE oracle selector if ExifTool exposes one.
+  - Reword the `oracle_tiff.rs` comment (F2); test the generated escape directly (F4).
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — Nothing material. "Report which the suite catches" for my own mutants could mean the oracle alone or the whole suite; I planted into the real `src/`, ran the whole suite and named which layer caught each.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — The worktree sandbox refuses compound shell lines (pipelines mixed with `git`, variable-driven commands). Small scratch scripts for gates, plants and measurements are the reliable route, and the handoff could say so up front.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Start with the plant script (named, exact-once replacements and one revert command) and run every tester-test from it; it made each plant reproducible and the revert mechanical.
