@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # harness exposes no token count to the agent; orchestrator transcribes the metered figure
-  estimated_usd: null              # tokens_total x your rate, or your harness's number
-  duration_minutes: 50
+  tokens_total: 172264             # orchestrator-recorded from the metered sub-agent result (subagent_tokens)
+  estimated_usd: 1.14
+  duration_minutes: 10
   branch: worktree-agent-a0900d4a4400af55c
   pr: null
   completed_at: 2026-11-05         # YYYY-MM-DD
-  notes: "tokens_total null: no token meter available inside the sub-agent; no PR by instruction"
-  synced_at: null                  # stamped by `just handback-sync` - do not edit
+  notes: "tokens transcribed by the orchestrator from the sub-agent metered result"
+  synced_at: 2026-11-05
 ---
 
 # HANDOFF-011: Decode ASCII, signed and float tag values
@@ -143,10 +143,10 @@ F3 and F4 together show the type-gate iff is checked in both directions. I did n
 
 ### Cost self-report
 
-- **Tokens (total):** null. The sub-agent harness exposes no token count to me; the orchestrator transcribes the metered figure.
-- **Estimated USD:** null
-- **Duration (minutes):** about 50
-- **Source of the number:** none available
+- **Tokens (total):** 172,264 (recorded by the orchestrator from the sub-agent metered result).
+- **Estimated USD:** 1.14
+- **Duration (minutes):** ~10 (metered wall-clock)
+- **Source of the number:** harness report (subagent_tokens)
 
 ### Drift and new artifacts
 
