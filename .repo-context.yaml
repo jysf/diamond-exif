@@ -1,0 +1,89 @@
+# .repo-context.yaml
+# Describes the APP (the repo itself). Persists across all projects run
+# against this app. Forward-compatible with ContextCore's ProjectContext CRD.
+#
+# Projects (waves of work against this app) live in ./projects/<id>/ and
+# each has its own brief.md.
+
+apiVersion: contextcore.io/v2
+kind: RepoContext
+
+metadata:
+  repo:
+    id: diamond-exif
+    name: "diamond-exif"
+    purpose: "Panic-free, pure-Rust, zero-copy EXIF/XMP/IPTC/ICC metadata reader, writer and stripper, differentially verified against ExifTool."
+    url: "github.com/jysf/diamond-exif"  # TODO: confirm remote name once the GitHub repo exists
+
+  business:
+    criticality: medium               # critical | high | medium | low
+    owner: jysf
+    contacts:
+      - "jyashinsky@gmail.com"
+
+spec:
+  stack:
+    language: "rust"
+    runtime: "none (library + CLI; WASM-friendly)"
+    framework: "none (single cargo crate; workspace at M2)"
+    database: "none"
+    hosting: "crates.io + GitHub releases"
+
+  # Agent + cost model config (DEC-005). Defaults reproduce the Claude-Code
+  # workflow, so an existing instance changes nothing. A NON-Claude instance
+  # edits these once to run the template on another agent — see docs/porting.md.
+  # diamond-exif runs on Claude today; other models may be added later by
+  # editing tier_map only (one entry per cycle). If a non-Claude model takes a
+  # METERED cycle (build/verify), revisit cost.metering_source below, because
+  # subagent_tokens only meters Claude Code sub-agents (docs/porting.md §3).
+  agent:
+    default_model: claude-opus-5-5    # stamped into new specs/patches' agents.*
+    tier_map:                         # which model runs which cycle (pluggable)
+      design: claude-opus-5-5
+      build: claude-sonnet-5-5
+      verify: claude-opus-5-5
+  cost:
+    # How a real tokens_total is obtained. `just cost-audit` honors this:
+    #   subagent_tokens | api_usage | manual  -> gate enforced (real number required)
+    #   none                                   -> gate DISABLED (no token source here)
+    metering_source: subagent_tokens
+    rate_per_mtok: 6.60               # USD per 1M tokens for the estimate (DEC-002 basis)
+    currency: USD
+
+  # How THIS app versions its own releases (DEC-007). The release-spec (DEC-006)
+  # cuts tags in this scheme; `just next-version` suggests the next one.
+  #   calver    -> vYYYY.MM.PATCH (e.g. v2026.07.0) — date decides; ZERO judgment
+  #   semver    -> vMAJOR.MINOR.PATCH — for a library/public API whose number
+  #                must signal compatibility to consumers (you pick the bump)
+  #   monotonic -> vN (v1, v2, …) — simplest; just increment
+  # Default `calver` "just works"; switch only when a project genuinely needs it.
+  # NB: the top-level VERSION file is TEMPLATE PROVENANCE (which template version
+  # this repo was scaffolded from), NOT this app's version — the app version
+  # lives in git tags (and/or your ecosystem file). See docs/versioning.md.
+  version:
+    scheme: semver
+    # current: null                   # optional pin; else derived from git tags
+
+  # Accomplishment logging at ship (DEC-010). ON by default: at ship, the agent
+  # records the win WITH IMPACT (for retros/reviews/résumés) by calling the tool
+  # below directly — the `brag` CLI (`brag add -i "<impact>"`) or its MCP server
+  # (`brag mcp serve` → the brag_add tool). This is coaching, not a wrapper: the
+  # agent runs the tool itself. Set enabled: false to opt out, or swap `tool`.
+  # See guidance/recommended-tools.md for the fields + impact framing.
+  accomplishments:
+    enabled: true
+    tool: brag                        # brag | none | <other cli>
+
+  # Standard paths; do not change without also updating AGENTS.md.
+  paths:
+    agents_md: ./AGENTS.md
+    docs: ./docs
+    guidance: ./guidance
+    decisions: ./decisions
+    projects: ./projects
+    templates: ./projects/_templates
+
+  observability:
+    sampling: null                    # Used if you adopt ContextCore.
+    alert_routing: null
+    runbook_base: null

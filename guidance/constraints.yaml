@@ -1,0 +1,122 @@
+# guidance/constraints.yaml
+# Repo-level rules that all agents (and humans) working in this repo
+# must follow. Maps to ContextCore agentGuidance.constraints.
+#
+# Every constraint MUST have:
+#   - id: stable kebab-case identifier
+#   - rule: one sentence
+#   - severity: blocking | warning | advisory
+#   - paths: glob list (use ["**"] for repo-wide)
+#   - added_by: human | claude | <agent-id>
+#   - added_at: YYYY-MM-DD
+#   - rationale: why (link to DEC-XXX preferred)
+#
+# Severity is about ENFORCEMENT, not planning priority. If a plan rates a
+# constraint critical/high/medium/low, map it to a severity here:
+#   critical, high -> blocking   (a violation fails the gate; must not merge)
+#   medium         -> warning    (flagged; should fix, does not block)
+#   low            -> advisory   (opt-in / nice-to-have)
+
+constraints:  - id: no-secrets-in-code
+    rule: "Never commit API keys, tokens, passwords, or credentials. Use environment variables referenced via .env.example."
+    severity: blocking
+    paths: ["**"]
+    added_by: human
+    added_at: 2026-04-19
+    rationale: "Baseline security hygiene."
+
+  - id: test-before-implementation
+    rule: "Failing tests are written as part of the spec during design. Implementation makes those tests pass. Do not skip this order."
+    severity: blocking
+    paths: ["**"]
+    added_by: human
+    added_at: 2026-04-19
+    rationale: "TDD discipline; provides automatic verification of acceptance criteria."
+
+  - id: no-new-top-level-deps-without-decision
+    rule: "Do not add a new top-level RUNTIME dependency (package.json, pyproject.toml, etc.) without first emitting a DEC-XXX file justifying the choice. Exception (DEC-004 rule 4): a build cycle MAY add a clearly-trivial DEV-only dependency (types packages, test utilities — never a runtime dep) AND author its DEC in the same pass, with no stop-and-ask, so a non-interactive sub-agent isn't driven to a workaround."
+    severity: warning
+    paths: ["package.json", "pyproject.toml", "Cargo.toml", "go.mod"]
+    added_by: claude
+    added_at: 2026-04-19
+    rationale: "Dependencies are forever — force deliberation on runtime choices. But a hard stop-and-ask on a trivial dev/types dep drives a non-interactive build sub-agent to a workaround review must undo (DEC-004 rule 4, e.g. the @types/node stub). Sanctioning the dev-only + DEC-in-one-pass path keeps the constraint's teeth for real (runtime) deps while unblocking delegated build."
+
+  - id: one-spec-per-pr
+    rule: "Each PR must reference exactly one SPEC-XXX in its description. Bundled changes are rejected."
+    severity: blocking
+    paths: ["**"]
+    added_by: human
+    added_at: 2026-04-19
+    rationale: "Keeps review loop tractable and traceable."
+
+  - id: cost-captured-per-cycle
+    rule: "Every shipped spec must record a real `tokens_total` on its metered cycles (build, verify) in `cost.sessions` — the orchestrator fills it from the Agent result's subagent_tokens (or `/cost`) at ship. Only un-metered main-loop cycles (design, ship) may be null-with-note. Enforced by `just cost-audit` (CI job `cost-data`)."
+    severity: warning
+    paths: ["projects/**/specs/**"]
+    added_by: claude
+    added_at: 2026-06-17
+    rationale: "Cost tracking is structurally present but silently goes empty when documentation alone asks for it (all-null numerics). A check makes it stick — the same pattern as wiring a license policy into CI. See AGENTS.md §4 and docs/cost-tracking.md."
+
+  - id: license-policy
+    rule: "If this project pulls in third-party dependencies, define an allowed-license policy (typically permissive-only: MIT / Apache-2.0 / BSD / ISC / Zlib) and enforce it in CI with your ecosystem's tool — cargo-deny (Rust), pip-licenses / pip-audit (Python), license-checker (Node), go-licenses (Go). Any dependency outside the policy fails the build unless explicitly excepted."
+    severity: advisory
+    paths: ["**"]
+    added_by: claude
+    added_at: 2026-06-17
+    rationale: "A copyleft (GPL/AGPL) dependency can silently relicense a statically-linked binary, and license drift is invisible until an audit. Make the policy mechanical. The tool is per-language — see docs/license-policy.md (includes a Rust cargo-deny worked example)."
+
+  - id: forbid-unsafe-code
+    rule: "Every crate carries #![forbid(unsafe_code)]; CI re-checks with `-F unsafe_code` so an inner #![allow] cannot defeat it."
+    severity: blocking
+    paths: ["src/**", "fuzz/**"]
+    added_by: human
+    added_at: 2026-11-04
+    rationale: "Inherited quality bar from irradiance. Panic-free + memory-safe parsing of untrusted bytes is the product."
+
+  - id: panic-free-library
+    rule: "Library code (non-test) must not unwrap, expect, panic, index unchecked, or use unchecked arithmetic on untrusted input. The five-lint deny set is enforced in CI."
+    severity: blocking
+    paths: ["src/**"]
+    added_by: human
+    added_at: 2026-11-04
+    rationale: "Inherited quality bar from irradiance. Lint set copied verbatim from irradiance src/lib.rs: unwrap_used, expect_used, indexing_slicing, panic, arithmetic_side_effects."
+
+  - id: oracle-must-be-shown-red
+    rule: "Every ExifTool parity test must be demonstrated failing (mutated expectation or input) before it is trusted; skipped oracle runs are loud, never silent."
+    severity: blocking
+    paths: ["tests/**", "scripts/**"]
+    added_by: human
+    added_at: 2026-11-04
+    rationale: "A parity test that has never failed proves nothing. Inherited quality bar."
+
+  - id: fuzz-target-per-surface
+    rule: "Each input surface gets a fuzz target from its first parser; CI runs a 60 s smoke per target and a 24 h clean run gates each milestone."
+    severity: blocking
+    paths: ["fuzz/**", "src/**"]
+    added_by: human
+    added_at: 2026-11-04
+    rationale: "Diamond = fuzz-cleaned. Inherited quality bar."
+
+  - id: exiftool-never-linked
+    rule: "ExifTool is an external oracle only: invoke as a subprocess in tests/tools, never link, vendor, or ship it. Parity uses `-T -n -s3`."
+    severity: blocking
+    paths: ["**"]
+    added_by: human
+    added_at: 2026-11-04
+    rationale: "Licensing and independence of the oracle."
+
+  - id: no-io-in-library
+    rule: "exif-core performs no I/O and takes Bytes at the API edge only; no pixel decoding anywhere."
+    severity: blocking
+    paths: ["src/**"]
+    added_by: human
+    added_at: 2026-11-04
+    rationale: "Keeps WASM/Workers targets trivial. See out-of-scope list in AGENTS.md §5."
+
+  - id: no-runtime-license-checks
+    rule: "No runtime license checks or telemetry. The pro gate is build-time only."
+    severity: blocking
+    paths: ["**"]
+    added_by: human
+    added_at: 2026-11-04
+    rationale: "M1 scope decision from kickoff."
