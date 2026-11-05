@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: null
+  tokens_total: 261095             # orchestrator-recorded from the metered sub-agent result (subagent_tokens)
+  estimated_usd: 1.72
+  duration_minutes: 16
   branch: worktree-agent-aaf3f420e72df2b1c
   pr: null
   completed_at: 2026-11-05         # YYYY-MM-DD
-  notes: "No token count is exposed to this subagent harness; the orchestrator transcribes the metered figure. No PR opened by instruction."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "tokens transcribed by the orchestrator from the sub-agent metered result"
+  synced_at: 2026-11-05
 ---
 
 # HANDOFF-015: Mutation helpers and mutated-copy red-proofs
@@ -174,10 +174,10 @@ Mirror what you put in the `handback:` front-matter, and say where the number
 came from. **This is the number that lands in the spec** — the orchestrator
 transcribes it via `just handback-sync`, it does not estimate it.
 
-- **Tokens (total):** null. This subagent harness exposes no token count; the orchestrator transcribes the metered figure.
-- **Estimated USD:** null
-- **Duration (minutes):** roughly 60 (an estimate, not metered)
-- **Source of the number:** none available
+- **Tokens (total):** 261,095 (recorded by the orchestrator from the sub-agent metered result).
+- **Estimated USD:** 1.72
+- **Duration (minutes):** ~16 (metered wall-clock)
+- **Source of the number:** harness report (subagent_tokens)
 
 ### Drift and new artifacts
 
