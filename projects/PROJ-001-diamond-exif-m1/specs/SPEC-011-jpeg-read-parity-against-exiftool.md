@@ -72,10 +72,18 @@ cost:
       duration_minutes: 26
       recorded_at: 2026-11-05
       notes: "tokens transcribed by the orchestrator from the sub-agent metered result"
+    - cycle: verify
+      agent: claude-opus-5-5
+      interface: other
+      tokens_total: 281483
+      estimated_usd: 1.86
+      duration_minutes: 13
+      recorded_at: 2026-11-05
+      notes: "verdict PUNCH LIST at da4e052; tokens transcribed by the orchestrator from the sub-agent metered result"
   totals:
-    tokens_total: 415740
-    estimated_usd: 2.74
-    session_count: 1
+    tokens_total: 697223
+    estimated_usd: 4.60
+    session_count: 2
 ---
 
 # SPEC-011: JPEG read parity against ExifTool

@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: 55
+  tokens_total: 281483             # orchestrator-recorded from the metered sub-agent result (subagent_tokens)
+  estimated_usd: 1.86
+  duration_minutes: 13
   branch: worktree-agent-a678fade6bb9295e4
   pr: null
   completed_at: 2026-11-05         # YYYY-MM-DD
-  notes: "verify verdict PUNCH LIST at da4e052; the sub-agent has no token readout, the orchestrator transcribes the metered figure"
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "verdict PUNCH LIST at da4e052; tokens transcribed by the orchestrator from the sub-agent metered result"
+  synced_at: 2026-11-05
 ---
 
 # HANDOFF-022: Verify JPEG read parity against ExifTool
