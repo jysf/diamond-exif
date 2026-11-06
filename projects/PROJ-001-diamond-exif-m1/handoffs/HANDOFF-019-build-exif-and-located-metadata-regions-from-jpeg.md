@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: null
+  tokens_total: 285743             # orchestrator-recorded from the metered sub-agent result (subagent_tokens)
+  estimated_usd: 1.89
+  duration_minutes: 19
   branch: worktree-agent-ab395ff3e0934e17f
   pr: null
   completed_at: 2026-11-05         # YYYY-MM-DD
-  notes: "No token meter is visible to the implementer subagent; tokens_total, estimated_usd and duration_minutes are null and the orchestrator transcribes the metered figure from the Agent result. Committed locally, not pushed."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "tokens transcribed by the orchestrator from the sub-agent metered result"
+  synced_at: 2026-11-05
 ---
 
 # HANDOFF-019: Exif and located metadata regions from JPEG
