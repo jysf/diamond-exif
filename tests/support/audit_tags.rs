@@ -61,14 +61,12 @@ const TEXT: &[u8] = b"test\0";
 const UTF16: &[u8] = b"t\0e\0s\0t\0\0\0";
 
 /// The recorded question for a row whose ExifTool name differs from DEC-008's:
-/// `audit-table-exif3-tag-ids` where the same id is a different tag in
-/// ExifTool (a real id mismatch), `audit-table-exiftool-names` where it is the
-/// same tag under another name.
+/// `audit-table-exiftool-names` (the same tag under another name; the id
+/// mismatches of `audit-table-exif3-tag-ids` were fixed by the DEC-008
+/// amendment).
 fn r(id: u16, dec: &'static str, shape: Shape, tool: &'static str) -> Row {
     let question = if dec == tool {
         None
-    } else if matches!(id, 0xA437..=0xA439) {
-        Some("audit-table-exif3-tag-ids")
     } else {
         Some("audit-table-exiftool-names")
     };
@@ -166,13 +164,26 @@ pub fn rows() -> Vec<Row> {
         r(0x9C9F, "XPSubject", Bytes(UTF16), "XPSubject"),
         r(0x9C9D, "XPAuthor", Bytes(UTF16), "XPAuthor"),
         r(0xA436, "ImageTitle", Ascii(TEXT), "ImageTitle"),
-        r(0xA437, "ImageEditor", Ascii(TEXT), "Photographer"),
-        r(0xA438, "ImageEditingSoftware", Ascii(TEXT), "ImageEditor"),
+        r(0xA437, "Photographer", Ascii(TEXT), "Photographer"),
+        r(0xA438, "ImageEditor", Ascii(TEXT), "ImageEditor"),
+        r(0xA439, "CameraFirmware", Ascii(TEXT), "CameraFirmware"),
         r(
-            0xA439,
+            0xA43A,
+            "RAWDevelopingSoftware",
+            Ascii(TEXT),
+            "RAWDevelopingSoftware",
+        ),
+        r(
+            0xA43B,
+            "ImageEditingSoftware",
+            Ascii(TEXT),
+            "ImageEditingSoftware",
+        ),
+        r(
+            0xA43C,
             "MetadataEditingSoftware",
             Ascii(TEXT),
-            "CameraFirmware",
+            "MetadataEditingSoftware",
         ),
         r(
             0x02BC,

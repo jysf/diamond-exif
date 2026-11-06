@@ -57,15 +57,12 @@ fn live_gate(test: &str) -> bool {
 /// The rows whose ExifTool name differs from DEC-008's, as measured on
 /// ExifTool 13.55. Written out by hand: a new difference or a resolved one
 /// fails `recorded_differences_are_exactly_these_rows`.
-const DIFFERING: [(u16, &str, &str); 12] = [
+const DIFFERING: [(u16, &str, &str); 9] = [
     (0x0132, "DateTime", "ModifyDate"),
     (0x9004, "DateTimeDigitized", "CreateDate"),
     (0x927C, "MakerNote", "MakerNoteUnknownText"),
     (0xA430, "CameraOwnerName", "OwnerName"),
     (0xA431, "BodySerialNumber", "SerialNumber"),
-    (0xA437, "ImageEditor", "Photographer"),
-    (0xA438, "ImageEditingSoftware", "ImageEditor"),
-    (0xA439, "MetadataEditingSoftware", "CameraFirmware"),
     (0x02BC, "XMP", "ApplicationNotes"),
     (0x8649, "Photoshop", "PhotoshopSettings"),
     (0x8773, "InterColorProfile", "ICC_Profile"),
@@ -75,7 +72,7 @@ const DIFFERING: [(u16, &str, &str); 12] = [
 #[test]
 fn the_table_has_one_row_per_dec_008_id() {
     let rows = rows();
-    assert_eq!(rows.len(), 38, "37 ids in the tag table plus 0x0201");
+    assert_eq!(rows.len(), 41, "40 ids in the tag table plus 0x0201");
     let mut ids: Vec<u16> = rows.iter().map(|r| r.id).collect();
     ids.sort_unstable();
     ids.dedup();

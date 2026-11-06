@@ -394,11 +394,19 @@ questions:
   - id: audit-table-exif3-tag-ids
     question: "DEC-008 gives 0xA437, 0xA438 and 0xA439 the names ImageEditor, ImageEditingSoftware and MetadataEditingSoftware; ExifTool 13.55 names those ids Photographer, ImageEditor and CameraFirmware. Which ids are right, and which categories do the real tags get?"
     priority: high
-    status: open
+    status: answered
     raised_by: claude-sonnet-5-5
     raised_at: 2026-11-05
     assigned_to: null
     notes: |
+      ANSWERED 2026-11-05 by the DEC-008 amendment (commit ad9e3a8, "correct the Exif 3.0
+      ids after the SPEC-012 live check"): 0xA437 Photographer (Authorship), 0xA438
+      ImageEditor (Authorship), 0xA439 CameraFirmware, 0xA43A RAWDevelopingSoftware,
+      0xA43B ImageEditingSoftware, 0xA43C MetadataEditingSoftware (all Software). The
+      SPEC-012 fix round applied it to src/audit/category.rs, the test table, the harness
+      table and the name check; the record now has 41 ids and those six rows match
+      ExifTool name for name. Original finding follows.
+
       Measured in SPEC-012 (ExifTool 13.55, `exiftool -v3 -G1 -a -s -u <one-entry TIFF>`,
       record tests/oracle-fixtures/exiftool/audit-tag-names.txt). The three ids are in the
       DEC-008 table, so the audit currently classifies them by the DEC's names:
@@ -435,9 +443,9 @@ questions:
         0x8649  DEC Photoshop              ExifTool PhotoshopSettings
         0x8773  DEC InterColorProfile      ExifTool ICC_Profile
         0x0201  DEC JPEGInterchangeFormat  ExifTool ThumbnailOffset (in an IFD1)
-      Of the 38 measured ids, 26 match name for name; the other 3 are the id mismatches of
-      audit-table-exif3-tag-ids. tests/audit_oracle.rs
-      pins this list (DIFFERING), so adopting either set of names is a visible change.
+      Of the 41 measured ids, 32 match name for name; these 9 are the only differences
+      (after the audit-table-exif3-tag-ids amendment). tests/audit_oracle.rs pins this
+      list (DIFFERING), so adopting either set of names is a visible change.
 
   - id: audit-category-region-vs-tag-shape
     question: "SPEC-012's fuzz invariant says region categories appear only on Region items, but DEC-008 also puts TIFF tags 0x02BC, 0x83BB, 0x8649 and 0x8773 in Xmp, Iptc and Icc. Which wins?"

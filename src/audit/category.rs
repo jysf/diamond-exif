@@ -144,15 +144,16 @@ fn by_id(tag: u16) -> Option<Category> {
         0x010E | 0x9286 | 0x9C9B | 0x9C9C | 0x9C9E | 0x9C9F | 0xA436 => Some(Category::FreeText),
         // CameraModel: Make, Model, LensMake, LensModel.
         0x010F | 0x0110 | 0xA433 | 0xA434 => Some(Category::CameraModel),
-        // Software: Software, ImageEditingSoftware, MetadataEditingSoftware.
-        0x0131 | 0xA438 | 0xA439 => Some(Category::Software),
+        // Software: Software, CameraFirmware, RAWDevelopingSoftware,
+        // ImageEditingSoftware, MetadataEditingSoftware.
+        0x0131 | 0xA439..=0xA43C => Some(Category::Software),
         // Timestamps: DateTime, DateTimeOriginal, DateTimeDigitized, OffsetTime*,
         // SubSecTime*.
         0x0132 | 0x9003 | 0x9004 | 0x9010 | 0x9011 | 0x9012 | 0x9290 | 0x9291 | 0x9292 => {
             Some(Category::Timestamps)
         }
         // Authorship: Artist, Copyright, CameraOwnerName, XPAuthor, ImageEditor.
-        0x013B | 0x8298 | 0xA430 | 0x9C9D | 0xA437 => Some(Category::Authorship),
+        0x013B | 0x8298 | 0xA430 | 0x9C9D | 0xA437 | 0xA438 => Some(Category::Authorship),
         0x927C => Some(Category::MakerNote),
         // DeviceId: ImageUniqueID, BodySerialNumber, LensSerialNumber,
         // CameraSerialNumber (DNG).
@@ -221,9 +222,12 @@ mod tests {
             (0x9C9F, "XPSubject", FreeText),
             (0x9C9D, "XPAuthor", Authorship),
             (0xA436, "ImageTitle", FreeText),
-            (0xA437, "ImageEditor", Authorship),
-            (0xA438, "ImageEditingSoftware", Software),
-            (0xA439, "MetadataEditingSoftware", Software),
+            (0xA437, "Photographer", Authorship),
+            (0xA438, "ImageEditor", Authorship),
+            (0xA439, "CameraFirmware", Software),
+            (0xA43A, "RAWDevelopingSoftware", Software),
+            (0xA43B, "ImageEditingSoftware", Software),
+            (0xA43C, "MetadataEditingSoftware", Software),
             (0x02BC, "XMP", Xmp),
             (0x83BB, "IPTC-NAA", Iptc),
             (0x8649, "Photoshop", Iptc),
@@ -242,7 +246,7 @@ mod tests {
     #[test]
     fn categorize_matches_the_dec_008_table_row_for_row() {
         let table = dec_008_table();
-        assert_eq!(table.len(), 37, "37 ids in the DEC-008 tag table");
+        assert_eq!(table.len(), 40, "40 ids in the DEC-008 tag table");
         for (id, name, want) in &table {
             // The id decides: the same category in every IFD kind the table covers.
             for kind in NON_GPS_KINDS {
@@ -352,6 +356,25 @@ mod tests {
         assert_eq!(Severity::Low.name(), "low");
         assert_eq!(Severity::Medium.name(), "medium");
         assert_eq!(Severity::High.name(), "high");
+    }
+
+    #[test]
+    fn the_exif_3_ids_a436_to_a43c_are_as_amended_in_dec_008() {
+        let want = [
+            (0xA436, Some(Category::FreeText)),
+            (0xA437, Some(Category::Authorship)),
+            (0xA438, Some(Category::Authorship)),
+            (0xA439, Some(Category::Software)),
+            (0xA43A, Some(Category::Software)),
+            (0xA43B, Some(Category::Software)),
+            (0xA43C, Some(Category::Software)),
+            (0xA43D, None),
+        ];
+        for (id, cat) in want {
+            for kind in NON_GPS_KINDS {
+                assert_eq!(categorize(kind, id), cat, "0x{id:04X} in {kind:?}");
+            }
+        }
     }
 
     #[test]
