@@ -158,3 +158,27 @@ signals:
     last_touched: 2026-11-05
     raised_by: claude-sonnet-5-5
     notes: "Needs a measured ExifTool tag that honours a declared SBYTE type (the SPEC-008 measurement found three of seventeen candidates did not follow the declared type)."
+
+  - id: divergence-entries-must-pin-our-values
+    type: lesson
+    summary: "A recorded divergence that says 'ExifTool reads nothing here' lets any value of ours pass unless the entry also pins our reading; a wildcard divergence was a loosening although the spec said divergences never loosen."
+    evidence: "SPEC-011: `exif:*` accepted a wrong Make and 13 dropped fields on two fixtures; found by the SPEC-011 verifier (HANDOFF-022 M1), closed by pinning to the same TIFF read normally. N=1."
+    bar: "N=2 occurrences, then add 'a divergence entry names what our side must still equal' to the oracle-spec design checklist"
+    status: watch
+    disposition_at: project-close
+    first_flagged: 2026-11-05
+    last_touched: 2026-11-05
+    raised_by: claude
+    notes: "Related: oracle-must-be-shown-red (apply it to the divergence list too)."
+
+  - id: run-ci-only-gates-locally
+    type: lesson
+    summary: "A gate that runs only in CI (here the fuzz lint red-proof script) can break on a structural change (a new include!d directory) that every local gate misses; the build brief must name the CI-only scripts."
+    evidence: "SPEC-010 PR 14: lint-fuzz-red-proof failed in CI because the script copied only fuzz_targets and the target now include!d fuzz/shared; local gates did not run it. SPEC-011's brief named it and the build ran it. N=1."
+    bar: "N=2 occurrences, then add 'list the CI-only scripts in every build brief' to the handoff template"
+    status: watch
+    disposition_at: project-close
+    first_flagged: 2026-11-05
+    last_touched: 2026-11-05
+    raised_by: claude
+    notes: "Alternative: add these scripts to a single `just ci-local` recipe."

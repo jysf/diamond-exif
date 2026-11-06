@@ -5,7 +5,7 @@
 
 stage:
   id: STAGE-002                     # stable, zero-padded, continuous across the repo
-  status: active                    # proposed | active | shipped | cancelled | on_hold
+  status: shipped                   # proposed | active | shipped | cancelled | on_hold
   priority: high                    # critical | high | medium | low
   target_complete: null             # optional: YYYY-MM-DD
 
@@ -15,7 +15,7 @@ repo:
   id: diamond-exif
 
 created_at: 2026-11-05
-shipped_at: null
+shipped_at: 2026-11-05
 
 # What part of the project's value thesis this stage advances.
 # If you can't articulate value_contribution, the stage may be
@@ -42,7 +42,12 @@ value_contribution:
 # that is a division you cannot observe, so any per-spec number is invented.
 # Warn-only, never a gate. A null here is honest; a guess is not. (DEC-013 §5)
 orchestration_cost:
-  sessions: []                      # - tokens_total: N
+  sessions:
+    - tokens_total: 535266
+      estimated_usd: 3.53
+      recorded_at: 2026-11-05
+      notes: "the orchestrator conversation after the STAGE-001 close (commit bfbbb7a, 2026-11-05T14:38:44-08:00): CI setup as repo setup, STAGE-002 framing, designs of SPEC-009/010/011 and DEC-006/007, dispatches, independent gate re-runs, fix rounds, ships and PRs 13-15; recovered from transcript 1cd6e68e usage (input + output + cache_creation, de-duplicated by message id, cache_read excluded) at 6.60 USD/Mtok. Read at stage close; the closing turns after the read are not included"
+                                    # - tokens_total: N
                                     #   estimated_usd: N
                                     #   recorded_at: YYYY-MM-DD
                                     #   notes: "framing + spec breakdown"
@@ -109,18 +114,27 @@ line is carried onto the spec as `task.complexity`.
 *Filled in when status moves to shipped. Run Prompt 1c (Stage Ship) in
 FIRST_SESSION_PROMPTS.md to draft this.*
 
-- **Did we deliver the outcome in "What This Stage Is"?** <yes/no + notes>
-- **How many specs did it actually take?** <number vs. plan>
-- **How many outlines survived unchanged?** <n of m — only if this stage was
-  framed with `just frame-stage`. Counts outlines whose scope held from frame to
-  ship. A low number means framing ran ahead of what was knowable; a high one
-  means it's paying for itself.>
-- **What changed between starting and shipping?** <one sentence>
+- **Did we deliver the outcome in "What This Stage Is"?**
+  Yes, with one honest narrowing. `exif-core` reads a JPEG however damaged: a segment walker with per-segment typed issues (fatal only for "not a JPEG"), scan data and trailer as borrowed slices, Exif handed to the existing tolerant TIFF engine (container independence proven by a unit test and by the oracle over every wrapped TIFF fixture), and XMP, extended XMP, ICC, IPTC and JUMBF regions located with their small headers read. The oracle now covers JPEG: 79 JPEG records beside the 41 TIFF ones, live and replay parity, every difference written down, both design-section-8 JPEG red-proofs, and mutated-copy faults. Narrowing: C2PA is located only as a JUMBF region; C2PA detection inside it is an open question, and ICC/JUMBF have no ExifTool parity (ExifTool lists nothing for the stubs).
+
+- **How many specs did it actually take?**
+  Three against the three framed (SPEC-009 walker, SPEC-010 Exif and regions, SPEC-011 parity). Verify verdicts: approved 2 (SPEC-009, with a follow-up round closing test and seed gaps the verifier found; SPEC-010 with only low findings), punch list 1 resolved by a fix round (SPEC-011: a wildcard divergence that loosened the comparison, three surviving mutants). Metered build and verify cost about 1.71M tokens (about $11.26) across the 3 specs, plus about 0.54M tokens (about $3.53) of orchestration; roughly 2.24M tokens (about $14.79) in total. Per-spec estimates ran under for all three (330k/350k/500k estimated vs 465k/494k/749k actual).
+
+- **How many outlines survived unchanged?**
+  3 of 3 in scope; SPEC-010 and SPEC-011 each gained designed content the outline did not predict (DEC-006 clarifications and the walker's four-byte bad-length skip; DEC-007 and the harness model of ExifTool's multi-Exif rule).
+
+- **What changed between starting and shipping?**
+  The oracle found a real library gap before any user did (ExifTool reads an Exif block whose sixth signature byte is non-zero; we did not: DEC-007), and the ExifTool measurements replaced three design assumptions (several Exif segments are unioned later-wins, Exif after the scan is ignored, a last segment ending exactly at EOF is dropped), each now a recorded divergence with ours as the safer side.
+
 - **Lessons that should update AGENTS.md, templates, or constraints?**
-  - <one-line updates>
-- **Signals dispositioned at this close?** (Prompt 1d step 7) Every
-  `type: lesson` signal in `/guidance/signals.yaml` owned by this stage close
-  was walked — codified (at its bar), left `watch`, or dropped. No silent carry.
-  - <note what codified / what's still watch + its N>
+  - Name every CI-only script in the build brief (PR 14 failed on one); logged as signal `run-ci-only-gates-locally` (watch, N=1).
+  - A divergence entry must pin what our side still equals (signal `divergence-entries-must-pin-our-values`, watch, N=1).
+  - Treat the design's ExifTool table as a prediction for the build to re-measure: one row (stray-byte warnings) was wrong.
+  - CI `oracle-records` now fails on untracked records (done in PR 15).
+
+- **Signals dispositioned at this close?**
+  Walked all `type: lesson` signals: `flag-default-explicitness` stays watch; `measure-exit-status-without-a-pipe` stays open at N=1 (SPEC-011's design measured with a file for stdout and the tool's own status, so no recurrence); two new lessons added at N=1 as watch. Nothing codified: none reached its bar.
+
 - **Should any spec-level reflections be promoted to stage-level lessons?**
-  - <one-line items — record below-bar ones as `watch` signals; don't codify yet>
+  - "State cap and halt interactions as a table of cases" (SPEC-009) held again in SPEC-010 (the ICC offset rule was still left open at design; the builder decided and verify approved it); recorded as a below-bar watch note only.
+  - Carried forward (not blockers): SBYTE oracle selector (signal), merged multi-Exif view in the library and C2PA-in-JUMBF detection (questions `several-exif-segments`, `c2pa-detection-inside-jumbf`), capturing ExifTool warnings when values were found, upstream `decisions-audit.sh` block-list parsing.
