@@ -50,7 +50,7 @@ handback:
   pr: null
   completed_at: 2026-11-05         # YYYY-MM-DD
   notes: "tokens transcribed by the orchestrator from the sub-agent metered result (first round)"
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-05
 ---
 
 # HANDOFF-023: Audit model (sniff, inventory, PII categories and findings)

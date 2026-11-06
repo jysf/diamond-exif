@@ -6,7 +6,7 @@
 task:
   id: SPEC-012
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: verify  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -63,11 +63,27 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: 450000
-  sessions: []
+  sessions:
+    - cycle: build
+      agent: claude-sonnet-5-5
+      interface: other
+      tokens_total: 426991
+      estimated_usd: 2.82
+      duration_minutes: 33
+      recorded_at: 2026-11-05
+      notes: "tokens transcribed by the orchestrator from the sub-agent metered result (first round)"
+    - cycle: build
+      agent: claude-sonnet-5-5
+      interface: other
+      tokens_total: 20575
+      estimated_usd: 0.14
+      duration_minutes: 3
+      recorded_at: 2026-11-05
+      notes: "fix round applying the DEC-008 amendment (resumed builder, before verify). The harness reported a cumulative 447,566 for the resumed agent; this is the 20,575 above the 426,991 already recorded for the first round."
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 447566
+    estimated_usd: 2.96
+    session_count: 2
 ---
 
 # SPEC-012: Audit model: container sniff, inventory, PII categories and findings (pure library); DEC for the category table
