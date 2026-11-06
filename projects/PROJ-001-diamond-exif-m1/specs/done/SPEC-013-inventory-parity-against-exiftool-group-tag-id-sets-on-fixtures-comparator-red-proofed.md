@@ -75,14 +75,14 @@ cost:
     - cycle: verify
       agent: claude-opus-5-5
       interface: other
-      tokens_total: 288202
-      estimated_usd: 1.90
-      duration_minutes: 26
+      tokens_total: 291785
+      estimated_usd: 1.93
+      duration_minutes: 39
       recorded_at: 2026-11-06
       notes: "verify verdict APPROVED at 434edfc; tokens transcribed by the orchestrator from the sub-agent metered result"
   totals:
-    tokens_total: 763607
-    estimated_usd: 5.04
+    tokens_total: 767190
+    estimated_usd: 5.06
     session_count: 2
 shipped_at: 2026-11-06
 ---

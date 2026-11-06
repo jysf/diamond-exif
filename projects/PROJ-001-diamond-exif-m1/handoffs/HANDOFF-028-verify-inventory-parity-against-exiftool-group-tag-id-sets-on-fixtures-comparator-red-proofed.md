@@ -43,9 +43,9 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: 288202             # orchestrator-recorded from the metered sub-agent result (subagent_tokens, final figure)
-  estimated_usd: 1.90
-  duration_minutes: 26             # 1,555,787 ms, includes idle time
+  tokens_total: 291785             # orchestrator-recorded from the metered sub-agent result (subagent_tokens, final figure)
+  estimated_usd: 1.93
+  duration_minutes: 39             # 2,356,065 ms, includes idle time
   branch: worktree-agent-a5f27d1307a5a6ee1
   pr: null
   completed_at: 2026-11-06         # YYYY-MM-DD
