@@ -9,6 +9,7 @@
 
 #![allow(dead_code)]
 
+use exif_core::jpeg::{JpegMetadata, Region};
 use exif_core::tiff::{Container, IfdKind};
 
 /// How a selector's value is rendered and compared.
@@ -312,23 +313,141 @@ pub struct Divergence {
 }
 
 /// Divergences measured so far (SPEC-005, ExifTool 13.55, macOS).
-pub const KNOWN_DIVERGENCES: &[Divergence] = &[Divergence {
-    fixture: "two-hop-cycle",
-    selector: "*",
-    command: "exiftool -T -n -s3 -IFD0:ImageWidth -IFD0:ImageHeight -IFD0:Orientation \
+pub const KNOWN_DIVERGENCES: &[Divergence] = &[
+    Divergence {
+        fixture: "two-hop-cycle",
+        selector: "*",
+        command: "exiftool -T -n -s3 -IFD0:ImageWidth -IFD0:ImageHeight -IFD0:Orientation \
               fuzz/seeds/tiff_ifd/two-hop-cycle",
-    exiftool_version: "13.55",
-    measured_stdout: "empty stdout; the process grew to about 8.9 GB resident within 5 s, \
+        exiftool_version: "13.55",
+        measured_stdout: "empty stdout; the process grew to about 8.9 GB resident within 5 s, \
                       was killed by SIGKILL (exit status 137) after 53.4 s, and wrote \
                       'Deep recursion on subroutine ProcessDirectory' and \
                       'Deep recursion on subroutine ProcessExif' to stderr. exif-core reads \
                       IFD0:ImageWidth = 1, records a CyclicIfd issue at offset 8, and returns.",
-    right_side: "exif-core: the TIFF Supplement / Tech Note 1 define SubIFDs as a list of IFDs \
+        right_side:
+            "exif-core: the TIFF Supplement / Tech Note 1 define SubIFDs as a list of IFDs \
                  hanging off IFD0, so one pointing back at IFD0 is malformed input that a \
                  reader must survive, which exif-core does by reporting the cycle and keeping what \
                  it read.",
-    question_id: "exiftool-two-hop-cycle-does-not-return",
-}];
+        question_id: "exiftool-two-hop-cycle-does-not-return",
+    },
+    // ── SPEC-011: JPEG (ExifTool 13.55, macOS). Each command line is the one the
+    // recorder runs: the 20 Exif selectors, then the two region selectors for a
+    // hand-built fixture, the 20 for a fuzz seed. ─────────────────────────────────
+    Divergence {
+        fixture: "jpeg-exif-after-scan",
+        selector: EXIF_ANY,
+        command: "exiftool -T -n -s3 <the 22 selectors of oracle::jpeg_names()> \
+              jpeg-exif-after-scan (SOI, SOS header, 2 scan bytes, APP1 Exif\\0\\0 + \
+              exif-basic-le, EOI)",
+        exiftool_version: "13.55",
+        measured_stdout: "all 22 fields are '-' and nothing is written to stderr. exif-core reads \
+                      the Exif block (Segment::after_scan() is true for it): IFD0:Make = \
+                      DiamondCam and the rest of exif-basic-le.",
+        right_side:
+            "exif-core, for an upload audit and sanitiser: metadata that sits after the scan \
+                 is still metadata another reader can pick up, and reading more than the \
+                 reference is the safe direction; callers that care ask Segment::after_scan().",
+        question_id: "exiftool-ignores-exif-after-scan",
+    },
+    Divergence {
+        fixture: "jpeg-seed-exif-after-scan",
+        selector: EXIF_ANY,
+        command: "exiftool -T -n -s3 <the 20 Exif selectors of oracle::SELECTORS> \
+              fuzz/seeds/jpeg_segments/exif-after-scan",
+        exiftool_version: "13.55",
+        measured_stdout: "all 20 fields are '-' and nothing is written to stderr. exif-core reads \
+                      the Exif block after the scan: IFD0:Make = DiamondCam.",
+        right_side: "exif-core, as for jpeg-exif-after-scan (the same finding on the fuzz seed).",
+        question_id: "exiftool-ignores-exif-after-scan",
+    },
+    Divergence {
+        fixture: "jpeg-exif-last-segment-at-eof",
+        selector: EXIF_ANY,
+        command: "exiftool -T -n -s3 <the 22 selectors of oracle::jpeg_names()> \
+              jpeg-exif-last-segment-at-eof (SOI, APP1 Exif\\0\\0 + exif-basic-le, and the \
+              file ends exactly at the end of that segment)",
+        exiftool_version: "13.55",
+        measured_stdout: "all 22 fields are '-'; stderr is 'Warning: JPEG format error - <file>'. \
+                      exif-core reads the Exif block and records MissingSos and MissingEoi \
+                      at the JPEG layer.",
+        right_side:
+            "exif-core: the segment is complete (its declared length fits), so the Exif is \
+                 readable; reporting the missing SOS and EOI is the right place for the damage. \
+                 Reading more than the reference is the safe direction for an audit.",
+        question_id: "exiftool-drops-exif-when-last-segment-ends-at-eof",
+    },
+    Divergence {
+        fixture: "jpeg-seventeen-exif-last-differs",
+        selector: "IFD0:Make",
+        command: "exiftool -T -n -s3 <the 22 selectors of oracle::jpeg_names()> \
+              jpeg-seventeen-exif-last-differs (seventeen Exif APP1s; the first sixteen say \
+              Make = SameFirst16, the seventeenth says LastOnly17)",
+        exiftool_version: "13.55",
+        measured_stdout: "IFD0:Make = LastOnly17 and every other field '-': ExifTool reads all \
+                      seventeen segments and the last one wins. exif-core parses at most \
+                      MAX_EXIF_BLOCKS = 16 blocks, so the harness's last-block model reads \
+                      IFD0:Make = SameFirst16.",
+        right_side: "neither is wrong per the format (the Exif standard allows one Exif APP1); \
+                 exif-core's cap is the documented bounded-work choice (DEC-006) and the 17th \
+                 segment still costs an ExtraExif issue.",
+        question_id: "exiftool-reads-17th-exif-block",
+    },
+    Divergence {
+        fixture: "jpeg-exif-before-and-after-scan",
+        selector: "IFD0:Make",
+        command: "exiftool -T -n -s3 <the 22 selectors of oracle::jpeg_names()> \
+              jpeg-exif-before-and-after-scan (SOI, Exif A: Make AlphaCam + Model OnlyInA, SOS \
+              header, 2 scan bytes, Exif B: Make BravoCam, EOI)",
+        exiftool_version: "13.55",
+        measured_stdout: "IFD0:Make = AlphaCam, IFD0:Model = OnlyInA, every other field '-', no \
+                      stderr: the block after the scan is ignored. The harness model reads \
+                      blocks after the scan too (the library does), so the later block B wins: \
+                      IFD0:Make = BravoCam, IFD0:Model = OnlyInA.",
+        right_side:
+            "exif-core for an audit (a block after the scan is metadata another reader can \
+                 pick up); the divergence is the same finding as exiftool-ignores-exif-after-scan \
+                 seen on a value both sides read.",
+        question_id: "exiftool-ignores-exif-after-scan",
+    },
+    Divergence {
+        fixture: "jpeg-gps-split-across-two-blocks",
+        selector: "Composite:GPSLatitude",
+        command: "exiftool -T -n -s3 <the 22 selectors of oracle::jpeg_names()> \
+              jpeg-gps-split-across-two-blocks (Exif A: GPS IFD with GPSLatitudeRef N and \
+              GPSLatitude 37/1 30/1 0/1; Exif B: GPS IFD with only GPSLatitudeRef S)",
+        exiftool_version: "13.55",
+        measured_stdout:
+            "Composite:GPSLatitude = -37.5 (ExifTool combines A's latitude with B's ref \
+                      S; it also reports GPS:GPSLatitudeRef = S). The harness model computes the \
+                      composite inside ONE block, the latest block that can: A alone, N, so it \
+                      reads 37.5.",
+        right_side: "neither: a documented limit of the harness model (it merges tags per block, \
+                 ExifTool merges them across blocks before deriving the composite); the library \
+                 reads each block on its own by design.",
+        question_id: "exiftool-composite-gps-across-exif-blocks",
+    },
+];
+
+/// For a fixture covered by an [`EXIF_ANY`] divergence: the committed record of
+/// the SAME TIFF in a place both tools read, whose ExifTool fields our Exif
+/// reading must equal. Without it the wildcard would let any value of ours pass
+/// (verify finding M1).
+pub const EXIF_PINS: &[(&str, &str)] = &[
+    ("jpeg-exif-after-scan", "jpeg-exif-basic-le"),
+    ("jpeg-exif-last-segment-at-eof", "jpeg-exif-basic-le"),
+    // The seed's TIFF is the one in seed `exif-in-jpeg`.
+    ("jpeg-seed-exif-after-scan", "jpeg-seed-exif-in-jpeg"),
+];
+
+/// The record name that pins `fixture`, if it has an [`EXIF_ANY`] divergence.
+pub fn exif_pin_record(fixture: &str) -> Option<&'static str> {
+    EXIF_PINS
+        .iter()
+        .find(|(f, _)| *f == fixture)
+        .map(|(_, r)| *r)
+}
 
 /// An input ExifTool 13.55 does not return on (a `"*"` divergence). Neither the
 /// recorder nor the live sweep runs ExifTool on it: the measured behaviour is
@@ -345,11 +464,23 @@ pub fn not_run_outcome(d: &Divergence) -> String {
     )
 }
 
-/// Whether `(fixture, selector)` is a reported divergence.
+/// The `selector` of a [`Divergence`] that covers every Exif value selector in
+/// [`SELECTORS`] (not the region presence selectors): "ExifTool reads none of
+/// the Exif in this input, ours reads it" is one finding, not twenty.
+pub const EXIF_ANY: &str = "exif:*";
+
+/// Whether `selector` is one of the Exif value selectors in [`SELECTORS`].
+pub fn is_exif_selector(selector: &str) -> bool {
+    SELECTORS.iter().any(|s| s.exiftool == selector)
+}
+
+/// Whether `(fixture, selector)` is a reported divergence. A divergence whose
+/// selector is [`EXIF_ANY`] covers every Exif value selector.
 pub fn known_divergence(fixture: &str, selector: &str) -> Option<&'static Divergence> {
-    KNOWN_DIVERGENCES
-        .iter()
-        .find(|d| d.fixture == fixture && d.selector == selector)
+    KNOWN_DIVERGENCES.iter().find(|d| {
+        d.fixture == fixture
+            && (d.selector == selector || (d.selector == EXIF_ANY && is_exif_selector(selector)))
+    })
 }
 
 /// A value that differs from `v` in exactly the way `norm` compares: used by
@@ -368,6 +499,220 @@ pub fn perturb(norm: Norm, v: &str) -> String {
             }
         }
     }
+}
+
+// ── JPEG (SPEC-011) ─────────────────────────────────────────────────────────
+
+/// Our reading of every selector from a JPEG, modelled on what ExifTool 13.55
+/// was measured to do with several Exif segments: the UNION of the tags of the
+/// blocks, and where two blocks carry the same tag the LATER block's value wins
+/// (`jpeg-two-exif-same-tag` and `-reversed`, `jpeg-seventeen-exif-last-differs`).
+/// So each selector reads from the last Exif block, in file order, whose
+/// container parsed and that has the tag; `None` if no block does. For a file
+/// with at most one Exif block this equals [`read_ours`] of that block.
+///
+/// This is the harness's model, deliberately not a library feature: the library
+/// keeps "the first block is primary, the rest cost `ExtraExif`" (DEC-006) and
+/// the question of exposing a merged view is open (`several-exif-segments`).
+pub fn read_ours_jpeg(meta: &JpegMetadata<'_>, selectors: &[Selector]) -> Vec<Option<String>> {
+    selectors
+        .iter()
+        .map(|s| {
+            meta.exif_blocks()
+                .iter()
+                .rev()
+                .find_map(|b| b.container().ok().and_then(|c| read_one(c, s)))
+        })
+        .collect()
+}
+
+/// A selector compared by PRESENCE only: some located region exists on our side
+/// and ExifTool prints a value for its tag. No value comparison (SPEC-011
+/// non-goal).
+#[derive(Debug, Clone, Copy)]
+pub struct RegionSelector {
+    pub exiftool: &'static str,
+    pub kind: RegionKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegionKind {
+    /// Any `Region::Xmp`.
+    Xmp,
+    /// Any `Region::Iptc`.
+    Iptc,
+}
+
+/// `XMP-xmp:CreatorTool` <-> a located XMP packet, `IPTC:ObjectName` <-> a
+/// located IPTC (`0x0404`) resource. Only meaningful on fixtures whose packet
+/// or dataset really carries that tag (the hand-built `jpeg-xmp*` and
+/// `jpeg-iptc*` fixtures); the fuzz seeds are compared on [`SELECTORS`] only.
+pub const REGION_SELECTORS: &[RegionSelector] = &[
+    RegionSelector {
+        exiftool: "XMP-xmp:CreatorTool",
+        kind: RegionKind::Xmp,
+    },
+    RegionSelector {
+        exiftool: "IPTC:ObjectName",
+        kind: RegionKind::Iptc,
+    },
+];
+
+/// What a present region reads as.
+pub const PRESENT: &str = "present";
+
+/// The ExifTool selector strings of [`SELECTORS`] then [`REGION_SELECTORS`]:
+/// the command line of a hand-built JPEG fixture.
+pub fn jpeg_names() -> Vec<&'static str> {
+    let mut v = names(SELECTORS);
+    v.extend(REGION_SELECTORS.iter().map(|r| r.exiftool));
+    v
+}
+
+/// Our region presence, one entry per [`REGION_SELECTORS`].
+pub fn read_regions(meta: &JpegMetadata<'_>) -> Vec<Option<String>> {
+    REGION_SELECTORS
+        .iter()
+        .map(|r| {
+            let found = meta.regions().iter().any(|region| {
+                matches!(
+                    (r.kind, region),
+                    (RegionKind::Xmp, Region::Xmp { .. }) | (RegionKind::Iptc, Region::Iptc { .. })
+                )
+            });
+            found.then(|| PRESENT.to_string())
+        })
+        .collect()
+}
+
+/// Our whole JPEG reading: the Exif selectors (the harness model above), then
+/// the region presence.
+pub fn read_jpeg_all(meta: &JpegMetadata<'_>) -> Vec<Option<String>> {
+    let mut v = read_ours_jpeg(meta, SELECTORS);
+    v.extend(read_regions(meta));
+    v
+}
+
+/// ExifTool's values reduced to presence (`Some(_)` -> `Some("present")`).
+fn presence(theirs: &[Option<String>]) -> Vec<Option<String>> {
+    theirs
+        .iter()
+        .map(|t| t.as_ref().map(|_| PRESENT.to_string()))
+        .collect()
+}
+
+/// Compare a [`read_jpeg_all`] reading with ExifTool's fields for
+/// [`jpeg_names`]: value comparison for the Exif selectors, presence for the
+/// region selectors. Nothing is filtered: [`compare_jpeg`] applies the known
+/// divergences.
+pub fn diff_jpeg(ours: &[Option<String>], theirs: &[Option<String>]) -> Vec<Mismatch> {
+    let n = SELECTORS.len();
+    assert_eq!(ours.len(), n + REGION_SELECTORS.len(), "ours length");
+    assert_eq!(theirs.len(), n + REGION_SELECTORS.len(), "theirs length");
+    let mut out = diff(
+        ours.get(..n).unwrap_or_default(),
+        theirs.get(..n).unwrap_or_default(),
+        SELECTORS,
+    );
+    let (o, t) = (
+        ours.get(n..).unwrap_or_default(),
+        presence(theirs.get(n..).unwrap_or_default()),
+    );
+    for ((r, a), b) in REGION_SELECTORS.iter().zip(o).zip(&t) {
+        if a != b {
+            out.push(Mismatch {
+                selector: r.exiftool,
+                ours: a.clone(),
+                theirs: b.clone(),
+            });
+        }
+    }
+    out
+}
+
+/// The result of comparing one JPEG with ExifTool, with the known divergences
+/// applied in BOTH directions: a mismatch covered by an entry is `explained`;
+/// an entry that no mismatch matches any more is `stale` (a divergence that
+/// stops being one fails the test, so the list cannot rot).
+#[derive(Debug, Default)]
+pub struct JpegComparison {
+    /// Mismatches no [`KNOWN_DIVERGENCES`] entry covers.
+    pub unexplained: Vec<Mismatch>,
+    /// Mismatches a [`KNOWN_DIVERGENCES`] entry covers.
+    pub explained: Vec<Mismatch>,
+    /// Entries for this fixture that no mismatch exercises.
+    pub stale: Vec<String>,
+}
+
+impl JpegComparison {
+    pub fn is_clean(&self) -> bool {
+        self.unexplained.is_empty() && self.stale.is_empty()
+    }
+}
+
+/// [`diff_jpeg`] plus the known-divergence accounting for fixture `name`. For a
+/// wildcard ([`EXIF_ANY`]) entry every covered mismatch must also be of one
+/// shape: ours reads a value, ExifTool reads none.
+pub fn compare_jpeg(
+    name: &str,
+    ours: &[Option<String>],
+    theirs: &[Option<String>],
+) -> JpegComparison {
+    compare_jpeg_pinned(name, ours, theirs, None)
+}
+
+/// [`compare_jpeg`] with the pin for an [`EXIF_ANY`] fixture: `pin` is
+/// ExifTool's fields (at least the Exif selectors) for the record named by
+/// [`exif_pin_record`]. Our Exif reading must equal them; a fixture that has a
+/// wildcard entry and is compared WITHOUT a pin is itself a failure (`stale`).
+pub fn compare_jpeg_pinned(
+    name: &str,
+    ours: &[Option<String>],
+    theirs: &[Option<String>],
+    pin: Option<&[Option<String>]>,
+) -> JpegComparison {
+    let found = diff_jpeg(ours, theirs);
+    let mut cmp = JpegComparison::default();
+    for m in &found {
+        match known_divergence(name, m.selector) {
+            Some(d) if d.selector == EXIF_ANY && !(m.ours.is_some() && m.theirs.is_none()) => {
+                cmp.unexplained.push(m.clone());
+            }
+            Some(_) => cmp.explained.push(m.clone()),
+            None => cmp.unexplained.push(m.clone()),
+        }
+    }
+    if KNOWN_DIVERGENCES
+        .iter()
+        .any(|d| d.fixture == name && d.selector == EXIF_ANY)
+    {
+        let n = SELECTORS.len();
+        match (pin, ours.get(..n)) {
+            (Some(p), Some(o)) if p.len() >= n => {
+                let p = p.get(..n).unwrap_or_default();
+                cmp.unexplained.extend(diff(o, p, SELECTORS));
+            }
+            _ => cmp.stale.push(format!(
+                "{name}: a wildcard ({EXIF_ANY}) divergence needs the pinned reading of {:?}",
+                exif_pin_record(name)
+            )),
+        }
+    }
+    for d in KNOWN_DIVERGENCES
+        .iter()
+        .filter(|d| d.fixture == name && d.selector != "*")
+    {
+        let exercised = cmp.explained.iter().any(|m| {
+            d.selector == m.selector || (d.selector == EXIF_ANY && is_exif_selector(m.selector))
+        });
+        if !exercised {
+            cmp.stale.push(format!(
+                "{} {}: the divergence ({}) is no longer present",
+                d.fixture, d.selector, d.question_id
+            ));
+        }
+    }
+    cmp
 }
 
 #[cfg(test)]

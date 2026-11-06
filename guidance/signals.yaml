@@ -146,3 +146,15 @@ signals:
     last_touched: 2026-11-05
     raised_by: claude
     notes: "Related rule: measurement-over-generalised (exact command and scope for every measured claim)."
+
+  - id: oracle-has-no-sbyte-selector
+    type: process-debt
+    summary: "The parity oracle has no selector that reads an SBYTE value: no standard Exif tag of that type is in the selector table, so the SBYTE decoder is checked by unit tests only, not against ExifTool."
+    evidence: "SPEC-011 design left it out by decision (non-goal: 'The SBYTE selector'); SPEC-008's signed/float fixtures cover SSHORT, SLONG, FLOAT and DOUBLE only. N=1."
+    bar: null
+    status: open
+    disposition_at: project-close
+    first_flagged: 2026-11-05
+    last_touched: 2026-11-05
+    raised_by: claude-sonnet-5-5
+    notes: "Needs a measured ExifTool tag that honours a declared SBYTE type (the SPEC-008 measurement found three of seventeen candidates did not follow the declared type)."

@@ -81,9 +81,9 @@ line is carried onto the spec as `task.complexity`.
 
 - [x] SPEC-009 (shipped on 2026-11-05) — [M] JPEG segment walker with tolerant issues and the jpeg_segments fuzz target
 - [x] SPEC-010 (shipped on 2026-11-05) — [M] Exif and located metadata regions from JPEG
-- [ ] SPEC-011 (frame) — [L] JPEG read parity against ExifTool
+- [x] SPEC-011 (shipped on 2026-11-05) — [L] JPEG read parity against ExifTool
 
-**Count:** 2 shipped / 1 active / 0 pending
+**Count:** 3 shipped / 0 active / 0 pending
 
 ## Design Notes
 

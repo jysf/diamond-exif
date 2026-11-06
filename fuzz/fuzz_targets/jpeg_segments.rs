@@ -14,7 +14,8 @@
 //!   order, with the framing bytes `FF marker length` in front of the payload,
 //!   and the payload borrowed from the input (zero-copy).
 //! * Each signature kind holds iff its marker and signature match (written out
-//!   here, independent of the library's own table).
+//!   here, independent of the library's own table). Exif is five bytes
+//!   (`Exif\0`) in an APP1 payload of at least six (DEC-007), asserted both ways.
 //! * `scan_region()` is `Some` iff some segment is `Sos`; it starts at the
 //!   first `SOS` marker and ends at `eoi + 2`, or at the end of the input.
 //! * `trailer()` is empty without an `EOI`, else everything after it.
@@ -70,7 +71,8 @@ fn lies_inside(outer: &[u8], inner: &[u8]) -> bool {
 fn expected_kind(marker: u8, payload: &[u8]) -> SegmentKind {
     match marker {
         0xE0 if payload.starts_with(b"JFIF\0") => SegmentKind::Jfif,
-        0xE1 if payload.starts_with(b"Exif\0\0") => SegmentKind::Exif,
+        // DEC-007: five signature bytes and at least six bytes of payload.
+        0xE1 if payload.len() >= 6 && payload.starts_with(b"Exif\0") => SegmentKind::Exif,
         0xE1 if payload.starts_with(b"http://ns.adobe.com/xap/1.0/\0") => SegmentKind::Xmp,
         0xE1 if payload.starts_with(b"http://ns.adobe.com/xmp/extension/\0") => {
             SegmentKind::ExtendedXmp
@@ -151,7 +153,8 @@ fn check(data: &[u8]) {
         let m = seg.marker();
         assert_eq!(
             k == SegmentKind::Exif,
-            m == 0xE1 && payload.starts_with(b"Exif\0\0")
+            m == 0xE1 && payload.len() >= 6 && payload.starts_with(b"Exif\0"),
+            "Exif iff APP1, at least 6 bytes and the first five are Exif\\0 (DEC-007)"
         );
         assert_eq!(
             k == SegmentKind::Xmp,

@@ -6,7 +6,8 @@
 //! * one [`ExifBlock`] per Exif segment (the first is primary; at most
 //!   [`MAX_EXIF_BLOCKS`] are parsed), each holding the tolerant TIFF
 //!   [`Container`] the unchanged TIFF engine made of the payload after the
-//!   `Exif\0\0` signature, or the fatal TIFF error;
+//!   six-byte Exif header (`Exif\0` and one unchecked byte, DEC-007), or the
+//!   fatal TIFF error;
 //! * located, not decoded, [`Region`]s for XMP, extended XMP, ICC chunks, IPTC
 //!   (the Photoshop `8BIM` resource `0x0404`) and JUMBF, each with its small
 //!   header read and its data borrowed from the input.
@@ -45,8 +46,8 @@ use crate::error::Error;
 use crate::tiff::{Container, ParseIssue};
 
 use super::{
-    Jpeg, JpegIssue, SegmentKind, MAX_JPEG_ISSUES, MAX_JPEG_SEGMENTS, SIG_EXIF, SIG_EXTENDED_XMP,
-    SIG_ICC, SIG_IPTC, SIG_JUMBF, SIG_XMP,
+    Jpeg, JpegIssue, SegmentKind, EXIF_HEADER_LEN, MAX_JPEG_ISSUES, MAX_JPEG_SEGMENTS,
+    SIG_EXTENDED_XMP, SIG_ICC, SIG_IPTC, SIG_JUMBF, SIG_XMP,
 };
 
 /// Most Exif segments parsed from one JPEG. Further ones still cost an
@@ -70,6 +71,10 @@ const IPTC_RESOURCE_ID: u16 = 0x0404;
 
 /// One parsed Exif segment: where it came from and what the TIFF engine made
 /// of it.
+///
+/// Every offset inside [`ExifBlock::container`] (IFD offsets, issue offsets) is
+/// relative to the start of [`ExifBlock::tiff`], not to the JPEG. To get a file
+/// offset add `segment.offset() + 10` (see [`AnyIssue::Exif`]).
 #[derive(Debug, Clone)]
 pub struct ExifBlock<'a> {
     segment: usize,
@@ -83,8 +88,8 @@ impl<'a> ExifBlock<'a> {
         self.segment
     }
 
-    /// The payload after the six-byte `Exif\0\0` signature, borrowed from the
-    /// input (DEC-002).
+    /// The payload after the six-byte Exif header (`Exif\0` and one byte that
+    /// is not checked, DEC-007), borrowed from the input (DEC-002).
     pub fn tiff(&self) -> &'a [u8] {
         self.tiff
     }
@@ -184,10 +189,17 @@ pub enum AnyIssue<'a> {
     /// A JPEG-layer issue (the walk's or the extraction's).
     Jpeg(&'a JpegIssue),
     /// A TIFF-layer issue of one Exif block.
+    ///
+    /// The issue's offsets are relative to the start of the block's TIFF data
+    /// ([`ExifBlock::tiff`]), not to the JPEG. The file offset of a TIFF-relative
+    /// offset `o` is `segment.offset() + 10 + o`, where `segment` is
+    /// `jpeg().segments()[exif_blocks()[block].segment()]` and 10 is the
+    /// segment's own `FF` marker byte (1), marker code (1), length (2) and the
+    /// six-byte Exif header.
     Exif {
         /// Index into [`JpegMetadata::exif_blocks`].
         block: usize,
-        /// The block's own issue.
+        /// The block's own issue; its offsets are TIFF-relative (see above).
         issue: &'a ParseIssue,
     },
 }
@@ -431,7 +443,7 @@ fn extract(jpeg: Jpeg<'_>) -> JpegMetadata<'_> {
                     ex.record(Error::ExtraExif { at }, at);
                 }
                 if exif_seen < MAX_EXIF_BLOCKS {
-                    if let Some(tiff) = after(SIG_EXIF.len()) {
+                    if let Some(tiff) = after(EXIF_HEADER_LEN) {
                         exif_blocks.push(ExifBlock {
                             segment: index,
                             tiff,
@@ -791,6 +803,70 @@ mod tests {
             .to_str()
             .unwrap()
             .to_string()
+    }
+
+    /// DEC-007: an Exif APP1 is recognised by its first five bytes `Exif\0`;
+    /// the sixth byte is not checked and the TIFF data still starts at payload
+    /// offset 6. Measured against ExifTool 13.55 in SPEC-011.
+    #[test]
+    fn exif_signature_is_five_bytes_sixth_byte_ignored() {
+        let blob = good_tiff();
+        for sixth in [0x00u8, 0x01, 0x7F, 0xFF] {
+            let mut payload = b"Exif\0".to_vec();
+            payload.push(sixth);
+            payload.extend_from_slice(&blob);
+            let d = one(seg(0xE1, &payload));
+            let m = read(&d).unwrap();
+            assert_eq!(
+                m.jpeg().segments()[0].kind(),
+                SegmentKind::Exif,
+                "sixth byte {sixth:#04x}"
+            );
+            assert_eq!(m.exif_blocks().len(), 1, "sixth byte {sixth:#04x}");
+            assert_eq!(
+                m.exif_blocks()[0].tiff(),
+                &blob[..],
+                "sixth byte {sixth:#04x}"
+            );
+            assert_eq!(make(m.exif().expect("parsed")), "DiamondCam");
+            assert!(m.is_clean(), "sixth byte {sixth:#04x}: {:?}", errs(&m));
+        }
+        // Exactly six bytes (`Exif\0` plus any sixth byte): an Exif block whose
+        // TIFF data is empty, a typed per-block error and no JPEG-layer issue.
+        for sixth in [0x00u8, 0x01] {
+            let d = one(seg(0xE1, &[b"Exif\0"[..].to_vec(), vec![sixth]].concat()));
+            let m = read(&d).unwrap();
+            assert_eq!(m.jpeg().segments()[0].kind(), SegmentKind::Exif);
+            assert_eq!(m.exif_blocks().len(), 1);
+            assert!(m.exif_blocks()[0].tiff().is_empty());
+            assert!(m.exif_blocks()[0].container().is_err());
+            assert!(errs(&m).is_empty());
+        }
+        // Not Exif: a five-byte payload, a four-byte payload, a non-NUL fifth
+        // byte, and a wrong first byte.
+        let not_exif: [&[u8]; 5] = [
+            b"Exif\0",
+            b"Exif",
+            b"Exif\x01\0II*\0",
+            b"exif\0\0II*\0",
+            b"",
+        ];
+        for payload in not_exif {
+            let d = one(seg(0xE1, payload));
+            let m = read(&d).unwrap();
+            assert_eq!(
+                m.jpeg().segments()[0].kind(),
+                SegmentKind::App(1),
+                "{payload:?}"
+            );
+            assert!(m.exif_blocks().is_empty(), "{payload:?}");
+            assert!(m.exif().is_none());
+        }
+        // The signature must be under APP1.
+        let d = one(seg(0xE2, &[&b"Exif\0\x01"[..], &blob].concat()));
+        let m = read(&d).unwrap();
+        assert_eq!(m.jpeg().segments()[0].kind(), SegmentKind::App(2));
+        assert!(m.exif_blocks().is_empty());
     }
 
     #[test]
@@ -1335,14 +1411,37 @@ mod tests {
             Error::TooManyIssues { .. }
         ));
         assert!(m.jpeg_issues().len() <= MAX_JPEG_METADATA_ISSUES);
-        // The most the extraction can add: a short segment each, at the segment cap.
+        // The segment cap's halt (a 4097th segment) suppresses the extraction
+        // altogether, so this shape is a halted case, not the worst case: the
+        // extraction adds nothing and the total is just the walker's.
         let mut d = soi();
         for _ in 0..MAX_JPEG_SEGMENTS {
             d.extend_from_slice(&tiny);
         }
         d.extend_from_slice(&sos()); // the 4097th segment halts the walk
         let m = read(&d).unwrap();
+        assert!(matches!(
+            m.jpeg_issues().last().unwrap().error(),
+            Error::TooManySegments { .. }
+        ));
+        assert_eq!(m.jpeg_issues().len(), 1);
         assert!(m.jpeg_issues().len() <= MAX_JPEG_METADATA_ISSUES);
+        // The real worst case (SPEC-010 verify L1): exactly 4096 minimal
+        // segments, no SOS and no halt. The walker adds MissingSos and
+        // MissingEoi; the extraction adds one RegionTooShort per segment.
+        let mut d = soi();
+        for _ in 0..MAX_JPEG_SEGMENTS {
+            d.extend_from_slice(&tiny);
+        }
+        let m = read(&d).unwrap();
+        assert_eq!(m.jpeg().segments().len(), MAX_JPEG_SEGMENTS);
+        assert_eq!(m.jpeg().issues().len(), 2);
+        assert_eq!(m.jpeg_issues().len(), 2 + MAX_JPEG_SEGMENTS);
+        assert!(m.jpeg_issues().len() <= MAX_JPEG_METADATA_ISSUES);
+        assert!(!m
+            .jpeg_issues()
+            .iter()
+            .any(|i| matches!(i.error(), Error::TooManySegments { .. })));
     }
 
     #[test]

@@ -18,6 +18,11 @@
 //! failure). Library code under `src/` is never modified: faults go into the
 //! throw-away copy only.
 //!
+//! SPEC-011 points the same apparatus at JPEG: the probe binary reads a file that
+//! starts `FF D8` through `jpeg::read` and the harness's several-Exif model, the
+//! mutants m1-m7 fault the JPEG layer (`src/jpeg/`), and two byte mutations
+//! corrupt an offset inside the APP1 payload and truncate between APP1 and SOS.
+//!
 //! The probe builds are slower than ordinary tests (each one compiles a small
 //! crate); `just mutation-oracle` runs just this file.
 
@@ -25,6 +30,8 @@
 mod mutate;
 #[path = "support/oracle.rs"]
 mod oracle;
+#[path = "support/oracle_jpeg.rs"]
+mod oracle_jpeg;
 #[path = "support/oracle_tiff.rs"]
 mod oracle_tiff;
 #[path = "support/probe.rs"]
@@ -391,34 +398,102 @@ fn mutant_signed_short_is_read_unsigned_is_caught() {
 
 // ── The injection scaffolding is itself guarded ────────────────────────────
 
-/// No `RED-PROOF INJECTION` marker in the library or any other non-test source:
-/// an injection can only live in a staged copy.
-#[test]
-fn no_injection_marker_outside_the_tests() {
-    fn walk(dir: &Path, hits: &mut Vec<PathBuf>) {
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return;
-        };
-        for e in entries.flatten() {
-            let path = e.path();
-            let name = e.file_name();
-            if name == "target" || name == ".git" {
-                continue;
-            }
-            if path.is_dir() {
-                walk(&path, hits);
-            } else if let Ok(text) = std::fs::read_to_string(&path) {
-                if text.contains(MARKER) {
-                    hits.push(path);
-                }
+/// Every file under `dir` (recursively, skipping `target` and `.git`) that
+/// contains the injection marker, except `skip` (by file name).
+fn marker_hits(dir: &Path, skip: &[&str], hits: &mut Vec<PathBuf>, scanned: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for e in entries.flatten() {
+        let path = e.path();
+        let name = e.file_name();
+        if name == "target" || name == ".git" {
+            continue;
+        }
+        if path.is_dir() {
+            marker_hits(&path, skip, hits, scanned);
+        } else if skip.iter().any(|s| name == *s) {
+            continue;
+        } else if let Ok(text) = std::fs::read_to_string(&path) {
+            scanned.push(path.clone());
+            if text.contains(MARKER) {
+                hits.push(path);
             }
         }
     }
+}
+
+/// No `RED-PROOF INJECTION` marker in the library or any other non-test source:
+/// an injection can only live in a staged copy. SPEC-011 widens the scan to
+/// `tests/support/*.rs` (it had missed `tests/support/oracle.rs`, whose copy the
+/// probe crate compiles): the one file allowed to hold the marker text is
+/// `probe.rs`, which DEFINES it, and that file is checked to hold it exactly once.
+#[test]
+fn injection_marker_does_not_leak_into_src_or_tests_support() {
     let mut hits = Vec::new();
+    let mut scanned = Vec::new();
     for dir in ["src", "examples", "fuzz", "scripts"] {
-        walk(&root().join(dir), &mut hits);
+        marker_hits(&root().join(dir), &[], &mut hits, &mut scanned);
     }
+    marker_hits(
+        &root().join("tests/support"),
+        &["probe.rs"],
+        &mut hits,
+        &mut scanned,
+    );
     assert!(hits.is_empty(), "injection marker leaked into: {hits:?}");
+
+    // The REAL scan covers what it claims (verify V12): every file under
+    // tests/support is in the scanned set, except probe.rs, which defines the
+    // marker and is exempt by name.
+    let support = root().join("tests/support");
+    let mut on_disk: Vec<PathBuf> = std::fs::read_dir(&support)
+        .expect("read tests/support")
+        .map(|e| e.expect("dir entry").path())
+        .filter(|p| p.is_file())
+        .collect();
+    on_disk.sort();
+    assert!(on_disk.len() >= 6, "tests/support: {on_disk:?}");
+    for file in &on_disk {
+        let exempt = file.file_name().is_some_and(|n| n == "probe.rs");
+        assert_eq!(
+            scanned.contains(file),
+            !exempt,
+            "{} must be scanned unless it is probe.rs",
+            file.display()
+        );
+    }
+    for needed in [
+        "oracle.rs",
+        "oracle_jpeg.rs",
+        "oracle_tiff.rs",
+        "tools.rs",
+        "mutate.rs",
+    ] {
+        assert!(
+            scanned.contains(&support.join(needed)),
+            "{needed} is not in the scanned set"
+        );
+    }
+
+    // The scan covers what it says: the definition is in probe.rs exactly once,
+    // and the scan does catch a marker in a file named like a support file.
+    let probe_src = std::fs::read_to_string(root().join("tests/support/probe.rs")).expect("read");
+    assert_eq!(probe_src.matches(MARKER).count(), 1, "the one definition");
+    let dir = TempDir::new("marker-scan");
+    let fake = dir.path().join("tests/support");
+    std::fs::create_dir_all(&fake).expect("mkdir");
+    for name in ["oracle.rs", "oracle_jpeg.rs", "mutate.rs", "tools.rs"] {
+        std::fs::write(fake.join(name), format!("let x = 1; {MARKER}\n")).expect("write");
+    }
+    let mut found = Vec::new();
+    marker_hits(&fake, &["probe.rs"], &mut found, &mut Vec::new());
+    assert_eq!(found.len(), 4, "{found:?}");
+    // The skip is by exact name: probe.rs is the only exemption.
+    std::fs::write(fake.join("probe.rs"), MARKER).expect("write");
+    let mut found = Vec::new();
+    marker_hits(&fake, &["probe.rs"], &mut found, &mut Vec::new());
+    assert_eq!(found.len(), 4, "probe.rs alone is skipped: {found:?}");
 }
 
 // ── Byte-mutation red-proofs (no probe crate: mutate the bytes in process) ──
@@ -677,6 +752,722 @@ fn truncating_into_the_exif_ifd_loses_exactly_what_it_should() {
         .position(|s| s.exiftool == "ExifIFD:ISO")
         .expect("ISO");
     assert_eq!(ours[iso], record[iso], "the inline SHORT survives");
+}
+
+// ═══ JPEG (SPEC-011) ═══════════════════════════════════════════════════════
+//
+// The same two apparatuses, pointed at JPEG. A mutant is compared with the
+// COMMITTED `jpeg-*.txt` records through `oracle::compare_jpeg`, so a divergence
+// the library is supposed to have (ours reads, ExifTool does not) is part of the
+// control, and a fault that makes such a divergence DISAPPEAR is a red result
+// too (a stale entry), exactly like a new mismatch.
+
+fn jpeg_theirs(name: &str) -> Vec<Option<String>> {
+    let path = root()
+        .join("tests/oracle-fixtures/exiftool")
+        .join(format!("{name}.txt"));
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+        panic!(
+            "cannot read {} ({e}); run `just oracle-record`",
+            path.display()
+        )
+    });
+    let rec = tools::parse_record(&text).unwrap_or_else(|| panic!("{name}: bad record header"));
+    tools::parse_fields(&oracle::jpeg_names(), &rec.stdout)
+        .unwrap_or_else(|e| panic!("{name}: {e}"))
+}
+
+/// `oracle::compare_jpeg` with the pin a wildcard fixture needs (M1).
+fn compare_pinned(
+    name: &str,
+    ours: &[Option<String>],
+    theirs: &[Option<String>],
+) -> oracle::JpegComparison {
+    let pin = oracle::exif_pin_record(name).map(jpeg_theirs_record);
+    oracle::compare_jpeg_pinned(name, ours, theirs, pin.as_deref())
+}
+
+/// ExifTool's fields from a committed record, 20 or 22 wide (Exif part kept).
+fn jpeg_theirs_record(name: &str) -> Vec<Option<String>> {
+    let path = root()
+        .join("tests/oracle-fixtures/exiftool")
+        .join(format!("{name}.txt"));
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{name}: {e}"));
+    let rec = tools::parse_record(&text).unwrap_or_else(|| panic!("{name}: bad header"));
+    rec.stdout
+        .trim_end_matches('\n')
+        .split('\t')
+        .take(oracle::SELECTORS.len())
+        .map(|f| if f == "-" { None } else { Some(f.to_string()) })
+        .collect()
+}
+
+fn jpeg_fixture(name: &str) -> Vec<u8> {
+    oracle_jpeg::fixtures()
+        .into_iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, b)| b)
+        .unwrap_or_else(|| panic!("no JPEG fixture named {name}"))
+}
+
+/// Our in-process reading of a JPEG fixture (22 fields).
+fn jpeg_ours(bytes: &[u8]) -> Vec<Option<String>> {
+    match exif_core::jpeg::read(bytes) {
+        Ok(m) => oracle::read_jpeg_all(&m),
+        Err(_) => vec![None; oracle::jpeg_names().len()],
+    }
+}
+
+/// Stage + build a probe crate, run it on each JPEG fixture and compare with the
+/// committed record (divergences applied). `Err` only for apparatus failures.
+fn jpeg_probe(
+    label: &str,
+    fixtures: &[&str],
+    inject: Option<&dyn Fn(&Path)>,
+) -> Result<Vec<(String, oracle::JpegComparison)>, String> {
+    let files = TempDir::new(&format!("{label}-files"));
+    let paths: Vec<(String, PathBuf)> = fixtures
+        .iter()
+        .map(|n| {
+            let path = files.path().join(format!("{n}.jpg"));
+            std::fs::write(&path, jpeg_fixture(n)).expect("write fixture");
+            ((*n).to_string(), path)
+        })
+        .collect();
+    let crate_dir = TempDir::new(label);
+    probe::stage_probe_crate(crate_dir.path(), inject);
+    let bin = probe::build_probe(crate_dir.path())?;
+    let mut out = Vec::new();
+    for (name, path) in &paths {
+        let ours = probe::run_probe(&bin, path)?;
+        assert_eq!(
+            ours.len(),
+            oracle::jpeg_names().len(),
+            "{name}: the probe's JPEG mode prints one field per JPEG selector"
+        );
+        out.push((
+            name.clone(),
+            compare_pinned(name, &ours, &jpeg_theirs(name)),
+        ));
+    }
+    Ok(out)
+}
+
+fn assert_jpeg_control_clean(label: &str, fixtures: &[&str]) {
+    let control = jpeg_probe(&format!("{label}-control"), fixtures, None)
+        .unwrap_or_else(|e| panic!("{label}: the CONTROL could not be built or run: {e}"));
+    for (name, cmp) in control {
+        assert!(
+            cmp.is_clean(),
+            "{label}: the unmutated control is not clean on {name}: unexplained [{}] stale {:?}",
+            describe(&cmp.unexplained),
+            cmp.stale
+        );
+    }
+}
+
+/// Control first (clean), then the mutant.
+fn jpeg_control_then_mutant(
+    label: &str,
+    fixtures: &[&str],
+    inject: &dyn Fn(&Path),
+) -> Vec<(String, oracle::JpegComparison)> {
+    assert_jpeg_control_clean(label, fixtures);
+    jpeg_probe(&format!("{label}-mutant"), fixtures, Some(inject))
+        .unwrap_or_else(|e| panic!("{label}: the MUTANT could not be built or run: {e}"))
+}
+
+fn cmp_for<'a>(
+    all: &'a [(String, oracle::JpegComparison)],
+    fixture: &str,
+) -> &'a oracle::JpegComparison {
+    let c = all
+        .iter()
+        .find(|(n, _)| n == fixture)
+        .map(|(_, c)| c)
+        .unwrap_or_else(|| panic!("no result for {fixture}"));
+    // Printed so the red result is visible in `--nocapture` output.
+    println!(
+        "MUTANT RESULT {fixture}: unexplained [{}] stale {:?} explained [{}]",
+        describe(&c.unexplained),
+        c.stale,
+        describe(&c.explained)
+    );
+    c
+}
+
+/// The selectors ExifTool reported on a fixture (those a "reads nothing" fault
+/// must turn into mismatches).
+fn reported(fixture: &str) -> Vec<&'static str> {
+    sorted(
+        oracle::jpeg_names()
+            .into_iter()
+            .zip(jpeg_theirs(fixture))
+            .filter(|(_, t)| t.is_some())
+            .map(|(n, _)| n)
+            .collect(),
+    )
+}
+
+/// Every fixture any JPEG mutant uses.
+const JPEG_MUTANT_FIXTURES: &[&str] = &[
+    "jpeg-exif-basic-le",
+    "jpeg-exif-gps-ne-le",
+    "jpeg-exif-sixth-byte-nonzero",
+    "jpeg-two-exif-same-tag",
+    "jpeg-two-exif-same-tag-reversed",
+    "jpeg-two-exif-disjoint-tags",
+    "jpeg-exif-after-scan",
+    "jpeg-seventeen-exif-last-differs",
+    "jpeg-exif-in-app2",
+    "jpeg-iptc",
+    "jpeg-iptc-without-0404",
+];
+
+#[test]
+fn jpeg_probe_control_run_is_clean_before_every_mutant() {
+    // One control over every fixture the mutants use, then all the others: the
+    // unmutated apparatus (copy, build, JPEG-mode probe, rendering) reproduces
+    // the committed ExifTool answers, with the known divergences exercised.
+    let all: Vec<String> = oracle_jpeg::fixtures()
+        .into_iter()
+        .map(|(n, _)| n)
+        .collect();
+    for used in JPEG_MUTANT_FIXTURES {
+        assert!(all.iter().any(|n| n == used), "{used} is not a fixture");
+    }
+    let refs: Vec<&str> = all.iter().map(String::as_str).collect();
+    assert_jpeg_control_clean("jpeg-all-fixtures", &refs);
+
+    // And the control is not vacuous: the probe's reading is the in-process one.
+    let files = TempDir::new("jpeg-control-same-files");
+    let crate_dir = TempDir::new("jpeg-control-same");
+    probe::stage_probe_crate(crate_dir.path(), None);
+    let bin = probe::build_probe(crate_dir.path()).expect("build");
+    for name in ["jpeg-exif-gps-ne-le", "jpeg-two-exif-same-tag", "jpeg-iptc"] {
+        let path = files.path().join(format!("{name}.jpg"));
+        std::fs::write(&path, jpeg_fixture(name)).expect("write");
+        let via_probe = probe::run_probe(&bin, &path).expect("run");
+        assert_eq!(via_probe, jpeg_ours(&jpeg_fixture(name)), "{name}");
+    }
+}
+
+// Mutant m1. Needle (src/jpeg/metadata.rs, `extract`, Rule 1): `after(EXIF_HEADER_LEN)`.
+// The TIFF slice starts at payload offset 5, one byte early: it begins with the
+// sixth signature byte (a NUL), so no TIFF header is found and no tag is read.
+#[test]
+fn jpeg_mutant_tiff_slice_starts_at_five_is_named() {
+    let inject = |src: &Path| {
+        probe::inject_replace(
+            &src.join("jpeg/metadata.rs"),
+            "after(EXIF_HEADER_LEN)",
+            &marked("after(5)"),
+        );
+    };
+    let fixtures = ["jpeg-exif-basic-le", "jpeg-exif-gps-ne-le"];
+    let got = jpeg_control_then_mutant("jpeg-m1-slice-at-5", &fixtures, &inject);
+    for f in fixtures {
+        let c = cmp_for(&got, f);
+        assert_eq!(
+            named(&c.unexplained),
+            reported(f),
+            "{f}: {}",
+            describe(&c.unexplained)
+        );
+        assert!(
+            c.unexplained
+                .iter()
+                .all(|m| m.ours.is_none() && m.theirs.is_some()),
+            "{f}: {}",
+            describe(&c.unexplained)
+        );
+    }
+    assert!(named(&cmp_for(&got, "jpeg-exif-basic-le").unexplained).contains(&"IFD0:Make"));
+}
+
+// Mutant m2: the DEC-007 regression. Needle (src/jpeg/mod.rs, `classify`): the
+// Exif arm. The six-byte signature test is restored, so `Exif\0` + a non-zero
+// sixth byte is no longer an Exif block.
+#[test]
+fn jpeg_mutant_six_byte_signature_restored_is_named() {
+    let inject = |src: &Path| {
+        probe::inject_replace(
+            &src.join("jpeg/mod.rs"),
+            "0xE1 if payload.len() >= EXIF_HEADER_LEN && payload.starts_with(SIG_EXIF) => {",
+            &marked("0xE1 if payload.starts_with(b\"Exif\\0\\0\") => {"),
+        );
+    };
+    let fixtures = ["jpeg-exif-sixth-byte-nonzero", "jpeg-exif-basic-le"];
+    let got = jpeg_control_then_mutant("jpeg-m2-six-byte", &fixtures, &inject);
+    let c = cmp_for(&got, "jpeg-exif-sixth-byte-nonzero");
+    assert_eq!(
+        named(&c.unexplained),
+        reported("jpeg-exif-sixth-byte-nonzero"),
+        "{}",
+        describe(&c.unexplained)
+    );
+    assert!(c
+        .unexplained
+        .iter()
+        .all(|m| m.ours.is_none() && m.theirs.is_some()));
+    assert!(named(&c.unexplained).contains(&"IFD0:Make"));
+    // The canonical signature is unaffected.
+    assert!(cmp_for(&got, "jpeg-exif-basic-le").is_clean());
+}
+
+// Mutant m3. Needle (src/jpeg/metadata.rs, `extract`): `exif_blocks.push(ExifBlock {`.
+// Each new block is put in FRONT, so the block list is in reverse file order and
+// the LAST file block becomes `exif()`'s primary. It is caught through the
+// harness's several-Exif model (`oracle::read_ours_jpeg`: the later block in the
+// list wins), by the two same-tag fixtures; the disjoint-tags fixture reads the
+// same either way and stays clean.
+#[test]
+fn jpeg_mutant_last_block_primary_is_named() {
+    let inject = |src: &Path| {
+        probe::inject_replace(
+            &src.join("jpeg/metadata.rs"),
+            "exif_blocks.push(ExifBlock {",
+            &marked("exif_blocks.insert(0, ExifBlock {"),
+        );
+    };
+    let fixtures = [
+        "jpeg-two-exif-same-tag",
+        "jpeg-two-exif-same-tag-reversed",
+        "jpeg-two-exif-disjoint-tags",
+        "jpeg-exif-basic-le",
+    ];
+    let got = jpeg_control_then_mutant("jpeg-m3-last-primary", &fixtures, &inject);
+    let c = cmp_for(&got, "jpeg-two-exif-same-tag");
+    assert_eq!(
+        named(&c.unexplained),
+        vec!["IFD0:Make"],
+        "{}",
+        describe(&c.unexplained)
+    );
+    assert_eq!(c.unexplained[0].ours.as_deref(), Some("AlphaCam"));
+    assert_eq!(c.unexplained[0].theirs.as_deref(), Some("BravoCam"));
+    let c = cmp_for(&got, "jpeg-two-exif-same-tag-reversed");
+    assert_eq!(
+        named(&c.unexplained),
+        vec!["IFD0:Make"],
+        "{}",
+        describe(&c.unexplained)
+    );
+    assert_eq!(c.unexplained[0].ours.as_deref(), Some("BravoCam"));
+    assert_eq!(c.unexplained[0].theirs.as_deref(), Some("AlphaCam"));
+    assert!(cmp_for(&got, "jpeg-two-exif-disjoint-tags").is_clean());
+    assert!(cmp_for(&got, "jpeg-exif-basic-le").is_clean());
+}
+
+// Mutant m4. Needle (src/jpeg/metadata.rs, `extract`): `SegmentKind::Exif => {`.
+// An Exif segment after the first SOS is skipped. That makes the library AGREE
+// with ExifTool on `jpeg-exif-after-scan`, so the named failure is the recorded
+// divergence disappearing (a stale entry), not a new mismatch; every fixture with
+// its Exif before the scan is unaffected.
+#[test]
+fn jpeg_mutant_exif_after_scan_skipped_is_named() {
+    let inject = |src: &Path| {
+        probe::inject_replace(
+            &src.join("jpeg/metadata.rs"),
+            "SegmentKind::Exif => {",
+            &marked(
+                "SegmentKind::Exif if segment.after_scan() => {}\n            SegmentKind::Exif => {",
+            ),
+        );
+    };
+    let fixtures = ["jpeg-exif-after-scan", "jpeg-exif-basic-le"];
+    let got = jpeg_control_then_mutant("jpeg-m4-after-scan", &fixtures, &inject);
+    let c = cmp_for(&got, "jpeg-exif-after-scan");
+    // Two reds: the pin (the wildcard fixture's reading must equal ExifTool's
+    // reading of the same TIFF read normally: every field is now lost) and the
+    // stale divergence.
+    assert_eq!(
+        named(&c.unexplained),
+        reported("jpeg-exif-basic-le"),
+        "{}",
+        describe(&c.unexplained)
+    );
+    assert!(c.unexplained.iter().all(|m| m.ours.is_none()));
+    assert_eq!(c.stale.len(), 1, "{:?}", c.stale);
+    assert!(
+        c.stale[0].contains("jpeg-exif-after-scan")
+            && c.stale[0].contains(oracle::EXIF_ANY)
+            && c.stale[0].contains("exiftool-ignores-exif-after-scan"),
+        "{:?}",
+        c.stale
+    );
+    assert!(cmp_for(&got, "jpeg-exif-basic-le").is_clean());
+}
+
+// Mutant m5. Needle (src/jpeg/metadata.rs): `pub const MAX_EXIF_BLOCKS: usize = 16;`.
+// Off by one HIGH (17): the seventeenth block is parsed, the harness's last-block
+// model reads `LastOnly17` and agrees with ExifTool, so the recorded divergence
+// disappears (a stale entry naming it). Off by one LOW (15) is also tried and is
+// reported honestly: the fixture's first sixteen blocks are identical, so ours
+// still reads `SameFirst16` and the divergence is unchanged; a cap of 15 is
+// caught by the library's own unit tests (`seventeen_exif...`), not by this
+// fixture.
+#[test]
+fn jpeg_mutant_exif_block_cap_off_by_one_is_caught() {
+    let fixtures = ["jpeg-seventeen-exif-last-differs", "jpeg-exif-basic-le"];
+    let cap = |n: u32| {
+        move |src: &Path| {
+            probe::inject_replace(
+                &src.join("jpeg/metadata.rs"),
+                "pub const MAX_EXIF_BLOCKS: usize = 16;",
+                &marked(&format!("pub const MAX_EXIF_BLOCKS: usize = {n};")),
+            );
+        }
+    };
+    let high = cap(17);
+    let got = jpeg_control_then_mutant("jpeg-m5-cap-17", &fixtures, &high);
+    let c = cmp_for(&got, "jpeg-seventeen-exif-last-differs");
+    assert!(c.unexplained.is_empty(), "{}", describe(&c.unexplained));
+    assert_eq!(c.stale.len(), 1, "{:?}", c.stale);
+    assert!(
+        c.stale[0].contains("jpeg-seventeen-exif-last-differs")
+            && c.stale[0].contains("IFD0:Make")
+            && c.stale[0].contains("exiftool-reads-17th-exif-block"),
+        "{:?}",
+        c.stale
+    );
+    assert!(cmp_for(&got, "jpeg-exif-basic-le").is_clean());
+
+    // The low variant (control already run above for this apparatus).
+    let low = cap(15);
+    let got = jpeg_probe("jpeg-m5-cap-15", &fixtures, Some(&low)).expect("build and run");
+    let c = cmp_for(&got, "jpeg-seventeen-exif-last-differs");
+    assert!(
+        c.is_clean() && named(&c.explained) == vec!["IFD0:Make"],
+        "cap 15 leaves this fixture's reading unchanged: unexplained [{}] stale {:?}",
+        describe(&c.unexplained),
+        c.stale
+    );
+}
+
+// Mutant m6. Needle (src/jpeg/mod.rs, `classify`): the Exif arm. The APP1 marker
+// guard is relaxed to any APPn, so `Exif\0\0` + a TIFF under APP2 becomes an
+// Exif block that ExifTool does not read.
+#[test]
+fn jpeg_mutant_app1_marker_guard_relaxed_is_named() {
+    let inject = |src: &Path| {
+        probe::inject_replace(
+            &src.join("jpeg/mod.rs"),
+            "0xE1 if payload.len() >= EXIF_HEADER_LEN && payload.starts_with(SIG_EXIF) => {",
+            &marked(
+                "0xE0..=0xEF if payload.len() >= EXIF_HEADER_LEN && payload.starts_with(SIG_EXIF) => {",
+            ),
+        );
+    };
+    let fixtures = ["jpeg-exif-in-app2", "jpeg-exif-basic-le"];
+    let got = jpeg_control_then_mutant("jpeg-m6-marker-guard", &fixtures, &inject);
+    let c = cmp_for(&got, "jpeg-exif-in-app2");
+    // Ours now reads exif-basic-le's values where ExifTool reads nothing: every
+    // Exif selector that fixture's TIFF holds is named, in the one direction.
+    let want = reported("jpeg-exif-basic-le");
+    assert_eq!(named(&c.unexplained), want, "{}", describe(&c.unexplained));
+    assert!(c
+        .unexplained
+        .iter()
+        .all(|m| m.ours.is_some() && m.theirs.is_none()));
+    assert!(named(&c.unexplained).contains(&"IFD0:Make"));
+    assert!(cmp_for(&got, "jpeg-exif-basic-le").is_clean());
+}
+
+// Mutant m7. Needle (src/jpeg/metadata.rs, `iptc`): `resource.id == IPTC_RESOURCE_ID`.
+// The id compare is inverted: the 0x0404 resource is no longer located and every
+// OTHER resource is.
+#[test]
+fn jpeg_mutant_iptc_id_compare_wrong_is_named() {
+    let inject = |src: &Path| {
+        probe::inject_replace(
+            &src.join("jpeg/metadata.rs"),
+            "resource.id == IPTC_RESOURCE_ID",
+            &marked("resource.id != IPTC_RESOURCE_ID"),
+        );
+    };
+    let fixtures = ["jpeg-iptc", "jpeg-iptc-without-0404", "jpeg-exif-basic-le"];
+    let got = jpeg_control_then_mutant("jpeg-m7-iptc-id", &fixtures, &inject);
+    let c = cmp_for(&got, "jpeg-iptc");
+    assert_eq!(
+        named(&c.unexplained),
+        vec!["IPTC:ObjectName"],
+        "{}",
+        describe(&c.unexplained)
+    );
+    assert!(c.unexplained[0].ours.is_none() && c.unexplained[0].theirs.is_some());
+    let c = cmp_for(&got, "jpeg-iptc-without-0404");
+    assert_eq!(
+        named(&c.unexplained),
+        vec!["IPTC:ObjectName"],
+        "{}",
+        describe(&c.unexplained)
+    );
+    assert!(c.unexplained[0].ours.is_some() && c.unexplained[0].theirs.is_none());
+    assert!(cmp_for(&got, "jpeg-exif-basic-le").is_clean());
+}
+
+// ── Probe wall-clock limit (SPEC-008 carry-over, SPEC-011) ─────────────────
+
+/// A probe whose library loops forever must be killed within the limit and the
+/// failure must be typed, not a hang. The loop is injected into the COPY's
+/// `extract`; the limit is passed explicitly (a tiny one), so no test touches the
+/// process environment. The build limit gets the same treatment with a limit too
+/// small for any cargo run.
+#[test]
+fn probe_build_and_run_have_a_wall_clock_limit() {
+    use std::time::{Duration, Instant};
+
+    // The environment override is a positive integer or the default (pure).
+    assert_eq!(
+        probe::parse_limit_secs(Some("2"), probe::DEFAULT_RUN_SECS),
+        2
+    );
+    assert_eq!(
+        probe::parse_limit_secs(Some("0"), probe::DEFAULT_RUN_SECS),
+        probe::DEFAULT_RUN_SECS
+    );
+    assert_eq!(probe::BUILD_LIMIT_VAR, "DIAMOND_EXIF_PROBE_BUILD_SECS");
+    assert_eq!(probe::RUN_LIMIT_VAR, "DIAMOND_EXIF_PROBE_RUN_SECS");
+
+    // Run: a library that never returns from `extract`.
+    let inject = |src: &Path| {
+        probe::inject_replace(
+            &src.join("jpeg/metadata.rs"),
+            "fn extract(jpeg: Jpeg<'_>) -> JpegMetadata<'_> {",
+            &marked(
+                "fn extract(jpeg: Jpeg<'_>) -> JpegMetadata<'_> {\n    #[allow(clippy::empty_loop)]\n    loop {}",
+            ),
+        );
+    };
+    let files = TempDir::new("probe-limit-files");
+    let file = files.path().join("jpeg-exif-basic-le.jpg");
+    std::fs::write(&file, jpeg_fixture("jpeg-exif-basic-le")).expect("write");
+    let crate_dir = TempDir::new("probe-limit");
+    probe::stage_probe_crate(crate_dir.path(), Some(&inject));
+    let bin = probe::build_probe(crate_dir.path()).expect("the looping probe still builds");
+    let started = Instant::now();
+    let err = probe::run_probe_with_limit(&bin, &file, Duration::from_secs(2))
+        .expect_err("a probe that loops must not return a reading");
+    let elapsed = started.elapsed();
+    assert!(
+        err.contains("killed") && err.contains(probe::RUN_LIMIT_VAR),
+        "a typed timeout error: {err}"
+    );
+    assert!(
+        elapsed >= Duration::from_secs(2) && elapsed < Duration::from_secs(15),
+        "killed after about 2 s, took {elapsed:?}"
+    );
+
+    // Build: a limit no cargo run can meet.
+    let dir = TempDir::new("probe-build-limit");
+    probe::stage_probe_crate(dir.path(), None);
+    let started = Instant::now();
+    let err = probe::build_probe_with_limit(dir.path(), Duration::from_millis(1))
+        .expect_err("a build cannot finish in 1 ms");
+    assert!(
+        err.contains("killed") && err.contains(probe::BUILD_LIMIT_VAR),
+        "a typed timeout error: {err}"
+    );
+    assert!(started.elapsed() < Duration::from_secs(10));
+}
+
+// ── Byte-mutation red-proofs on a JPEG (no probe crate) ─────────────────────
+
+/// Where the TIFF blob of the (single) Exif APP1 starts in a fixture's bytes,
+/// found WITHOUT the library under test: the first `Exif\0\0` signature plus 6.
+fn tiff_start(jpeg: &[u8]) -> usize {
+    let sig = b"Exif\0\0";
+    jpeg.windows(sig.len())
+        .position(|w| w == sig)
+        .expect("an Exif signature")
+        + sig.len()
+}
+
+// Byte mutation J1 (design section 8, red-proof 2). `jpeg-exif-gps-full-le` has
+// IFD0, an Exif IFD and a GPS IFD inside its APP1 payload. The GPS pointer VALUE
+// (an offset relative to the TIFF blob) is set past the end, at file offset
+// `segment + 10 + value_at` (here found as the signature position + 6 +
+// `locate_entry`'s TIFF-relative offset). Compared with the ORIGINAL fixture's
+// committed record: (a) exactly the GPS selectors go red, nothing else; (b) the
+// JPEG layer stays clean and the damage is one issue on that Exif block (the
+// layering of DEC-006), checked directly in the next test.
+#[test]
+fn jpeg_byte_mutation_corrupt_ifd_offset_in_app1_payload_is_named() {
+    let test = "jpeg_byte_mutation_corrupt_ifd_offset_in_app1_payload_is_named";
+    let name = "jpeg-exif-gps-full-le";
+    let original = jpeg_fixture(name);
+    let record = jpeg_theirs(name);
+
+    // Control: the unmutated bytes agree with the record.
+    assert!(compare_pinned(name, &jpeg_ours(&original), &record).is_clean());
+
+    let start = tiff_start(&original);
+    let tiff = &original[start..];
+    let order = mutate::order_of(tiff).expect("a TIFF inside the APP1");
+    let ifd0 =
+        usize::try_from(mutate::read_u32_at(tiff, 4, order).expect("IFD0 offset")).expect("fits");
+    let loc = mutate::locate_entry(tiff, ifd0, 0x8825).expect("the GPS pointer is in IFD0");
+    let mut mutated = original.clone();
+    assert!(mutate::set_u32_at(
+        &mut mutated,
+        start + loc.value_at,
+        0x00FF_0000,
+        order
+    ));
+    assert_ne!(mutated, original);
+    assert_eq!(
+        mutated.len(),
+        original.len(),
+        "only the pointer value changed"
+    );
+
+    let ours = jpeg_ours(&mutated);
+    let cmp = compare_pinned(name, &ours, &record);
+    println!(
+        "{test}: GPS pointer value -> 0x00FF0000 at file offset {}: [{}]",
+        start + loc.value_at,
+        describe(&cmp.unexplained)
+    );
+    assert_eq!(
+        named(&cmp.unexplained),
+        sorted(GPS_SELECTORS.to_vec()),
+        "{}",
+        describe(&cmp.unexplained)
+    );
+    assert!(cmp
+        .unexplained
+        .iter()
+        .all(|m| m.ours.is_none() && m.theirs.is_some()));
+    assert!(cmp.stale.is_empty());
+    // Everything else (IFD0, the Exif IFD) still matches.
+    let kept = oracle::jpeg_names()
+        .iter()
+        .zip(&ours)
+        .zip(&record)
+        .filter(|((n, o), t)| o.is_some() && t.is_some() && !GPS_SELECTORS.contains(n))
+        .count();
+    assert!(kept >= 10, "only {kept} fields survived");
+
+    // Live variant: ExifTool on the same mutated bytes agrees with ours.
+    if !live_gate(&format!("{test} (live variant)")) {
+        return;
+    }
+    let path =
+        tools::temp_file_with_ext("mutated-jpeg-gps-pointer", "jpg", &mutated).expect("temp file");
+    let live = tools::run_exiftool(&path, &oracle::jpeg_names());
+    let _ = std::fs::remove_file(&path);
+    let live = live.unwrap_or_else(|e| panic!("{test} (live variant): {e}"));
+    for (n, v) in oracle::jpeg_names().iter().zip(&live) {
+        if GPS_SELECTORS.contains(n) {
+            assert!(v.is_none(), "live ExifTool still reports {n}: {v:?}");
+        }
+    }
+    let live_cmp = compare_pinned(name, &ours, &live);
+    assert!(
+        live_cmp.unexplained.is_empty(),
+        "ours and live ExifTool must agree on the mutated bytes: {}",
+        describe(&live_cmp.unexplained)
+    );
+    println!("{test} (live variant): ExifTool agrees, GPS selectors are `-`");
+}
+
+// Layering (DEC-006): the same corruption leaves the JPEG layer clean and shows
+// up as exactly one issue on the Exif block, whose link is the GPS pointer; the
+// layered view names it and `is_clean` is false.
+#[test]
+fn jpeg_byte_mutation_keeps_the_jpeg_layer_clean_and_the_damage_on_the_block() {
+    use exif_core::jpeg::AnyIssue;
+    let name = "jpeg-exif-gps-full-le";
+    let original = jpeg_fixture(name);
+    let start = tiff_start(&original);
+    let tiff = &original[start..];
+    let order = mutate::order_of(tiff).expect("order");
+    let ifd0 = usize::try_from(mutate::read_u32_at(tiff, 4, order).expect("IFD0")).expect("fits");
+    let loc = mutate::locate_entry(tiff, ifd0, 0x8825).expect("GPS pointer");
+
+    // Control: the original reads clean at every layer.
+    let meta = exif_core::jpeg::read(&original).expect("a JPEG");
+    assert!(meta.is_clean() && meta.jpeg().is_clean());
+    assert_eq!(meta.issues().count(), 0);
+
+    let mut mutated = original.clone();
+    assert!(mutate::set_u32_at(
+        &mut mutated,
+        start + loc.value_at,
+        0x00FF_0000,
+        order
+    ));
+    let meta = exif_core::jpeg::read(&mutated).expect("a damaged Exif is not fatal");
+    assert!(meta.jpeg().is_clean(), "{:?}", meta.jpeg().issues());
+    assert!(meta.jpeg_issues().is_empty(), "the JPEG layer stays clean");
+    assert!(!meta.is_clean());
+    assert_eq!(meta.exif_blocks().len(), 1);
+    let issues: Vec<AnyIssue<'_>> = meta.issues().collect();
+    assert_eq!(issues.len(), 1, "{issues:?}");
+    match issues[0] {
+        AnyIssue::Exif { block, issue } => {
+            assert_eq!(block, 0);
+            assert_eq!(issue.link(), Link::Tag(0x8825));
+            // The offset is relative to the TIFF blob (not to the file).
+            assert_eq!(issue.offset(), Some(0x00FF_0000));
+        }
+        other => panic!("expected an Exif-layer issue, got {other:?}"),
+    }
+}
+
+// Byte mutation J2 (design section 8, red-proof 2c). `jpeg-exif-gps-full-le` cut
+// exactly where the scan starts (after the APP1, before the SOS marker): the
+// outcome is typed (Ok; MissingSos then MissingEoi; the Exif block still read and
+// clean), the values equal the original's, and nothing panics at any prefix of the
+// file. ExifTool reads nothing from the cut-at-APP1 shape (the recorded
+// divergence `jpeg-exif-last-segment-at-eof`); that is not asserted here.
+#[test]
+fn jpeg_truncated_between_app1_and_sos_is_a_typed_outcome() {
+    use exif_core::jpeg::{self, SegmentKind};
+    let name = "jpeg-exif-gps-full-le";
+    let original = jpeg_fixture(name);
+    let full = jpeg::read(&original).expect("a JPEG");
+    let sos = full
+        .jpeg()
+        .segments()
+        .iter()
+        .find(|s| s.kind() == SegmentKind::Sos)
+        .expect("an SOS");
+    let cut = &original[..sos.offset()];
+
+    let meta = jpeg::read(cut).expect("a truncated JPEG is not fatal");
+    let kinds: Vec<&Error> = meta.jpeg_issues().iter().map(|i| i.error()).collect();
+    assert_eq!(kinds, [&Error::MissingSos, &Error::MissingEoi]);
+    assert_eq!(meta.exif_blocks().len(), 1);
+    assert!(meta.exif_blocks()[0]
+        .container()
+        .is_ok_and(|c| c.is_clean()));
+    assert_eq!(
+        oracle::read_jpeg_all(&meta),
+        oracle::read_jpeg_all(&full),
+        "the cut loses no tag"
+    );
+    println!(
+        "truncated at the SOS (file offset {}): JPEG-layer issues {:?}, {} Exif block, same tags",
+        sos.offset(),
+        kinds,
+        meta.exif_blocks().len()
+    );
+    // Against the original's record: identical, nothing named.
+    let cmp = compare_pinned(name, &oracle::read_jpeg_all(&meta), &jpeg_theirs(name));
+    assert!(cmp.is_clean(), "{cmp:?}");
+
+    // No prefix of the file panics, and every one is Ok or a typed fatal.
+    for len in 0..=original.len() {
+        match jpeg::read(&original[..len]) {
+            Ok(m) => {
+                let _ = oracle::read_jpeg_all(&m);
+                let _ = m.issues().count();
+            }
+            Err(e) => assert!(len < 2 || e.to_string().len() > 1, "{len}: {e}"),
+        }
+    }
 }
 
 // ── The live variant skips loudly without ExifTool ─────────────────────────

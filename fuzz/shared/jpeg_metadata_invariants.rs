@@ -25,6 +25,13 @@ mod metadata_invariants {
     const SIG_IPTC: usize = 14;
     const SIG_JUMBF: usize = 2;
 
+    /// DEC-007, written out independently of the library: a segment is Exif iff
+    /// it is APP1, at least six bytes long, and its first FIVE bytes are
+    /// `Exif\0` (the sixth is not checked).
+    pub fn exif_by_signature(marker: u8, payload: &[u8]) -> bool {
+        marker == 0xE1 && payload.len() >= 6 && payload[..5] == *b"Exif\0"
+    }
+
     /// Whether `inner` lies wholly inside `outer` (empty slices included).
     fn inside(outer: &[u8], inner: &[u8]) -> bool {
         let (o, i) = (outer.as_ptr_range(), inner.as_ptr_range());
@@ -377,6 +384,14 @@ mod metadata_invariants {
         assert_eq!(xmp_regions, xmp_segments, "one Xmp region per Xmp segment");
 
         // ── Exif blocks ─────────────────────────────────────────────────────
+        // The Exif kind is an iff in both directions (DEC-007).
+        for seg in segments {
+            assert_eq!(
+                seg.kind() == SegmentKind::Exif,
+                exif_by_signature(seg.marker(), seg.payload()),
+                "Exif iff APP1, >= 6 bytes and the first five bytes are Exif\\0"
+            );
+        }
         let exif_segments: Vec<usize> = segments
             .iter()
             .enumerate()

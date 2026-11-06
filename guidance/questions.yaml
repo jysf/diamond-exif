@@ -211,13 +211,142 @@ questions:
   - id: exiftool-several-exif-segments
     question: "How does ExifTool treat a JPEG with several Exif (APP1 Exif) segments: which one wins, are the others merged, are they warned about?"
     priority: medium
-    status: open
+    status: answered
     raised_by: claude-sonnet-5-5
     raised_at: 2026-11-05
     assigned_to: null
     notes: |
       SPEC-010 takes the first Exif segment as primary, parses at most 16, and
       records an `ExtraExif` JPEG-layer issue for each further one (DEC-006).
-      That is a policy, not a measurement. To be measured in SPEC-011 with
-      two-Exif and 17-Exif fixtures (`-T -n -s3`, plus stderr warnings) and,
-      if ExifTool differs (e.g. merges or prefers the last), recorded in a DEC.
+      That is a policy, not a measurement. ANSWERED (SPEC-011, measured; no DEC
+      needed, the library policy did not change): ExifTool 13.55 reads the UNION
+      of the tags of all the Exif segments and, where two carry the same tag, the
+      LATER segment's value wins (jpeg-two-exif-same-tag and -reversed, committed
+      records tests/oracle-fixtures/exiftool/jpeg-two-exif-*.txt). It printed no
+      warning for either. The oracle models that rule in the test harness
+      (oracle::read_ours_jpeg). Whether the LIBRARY should expose a merged view is
+      the separate open question `several-exif-segments`.
+
+  - id: several-exif-segments
+    question: "Should exif-core expose a merged multi-Exif view (union of tags, later segment wins, as ExifTool does), or keep 'the first Exif is primary, the rest cost ExtraExif'?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-05
+    assigned_to: null
+    notes: |
+      Left open for the exif-audit CLI stage. Measured (SPEC-011, ExifTool
+      13.55, `exiftool -T -n -s3 <22 selectors> <file>`): with two Exif APP1
+      segments carrying different IFD0:Make values ExifTool reports the later
+      one, and tags only the first carries survive (the union); with seventeen
+      segments it reads the seventeenth (jpeg-seventeen-exif-last-differs:
+      LastOnly17). exif-core keeps DEC-006's policy: the first block whose
+      container parsed is exif(), at most 16 blocks are parsed, every further
+      Exif segment costs an ExtraExif issue. The harness compares against the
+      union with the later block winning, so a multi-Exif file is checked against
+      what ExifTool actually reports, and the one place the cap makes ours differ
+      (the 17th block) is a recorded divergence. An audit that must report every
+      value a downstream ExifTool-based tool would see needs the merged view or
+      a per-block listing; the data is already in exif_blocks().
+      Verify info (HANDOFF-022): "union of tags, the later block wins" is a
+      FITTED MODEL of what was measured (2, 17 and 20 blocks, fatal or damaged
+      later blocks), not ExifTool's documented rule. With two Exif APP1s,
+      `exiftool -Warning` reports `[minor] File contains multi-segment EXIF`
+      (the `-T` command line the oracle uses does not print it, see
+      `exiftool-warnings-only-when-no-tag-is-found`). Two measured limits of the
+      model are recorded as divergences: an Exif block AFTER the scan is ignored
+      by ExifTool but read by the model (`jpeg-exif-before-and-after-scan`,
+      question `exiftool-ignores-exif-after-scan`), and the Composite GPS
+      coordinate is derived by ExifTool across blocks, by the model per block
+      (`exiftool-composite-gps-across-exif-blocks`).
+
+  - id: exiftool-composite-gps-across-exif-blocks
+    question: "ExifTool combines GPS tags from different Exif segments into one Composite coordinate; the harness model derives it per block. Is that limit acceptable, and does the audit need a cross-block view?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-05
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-011 fix round, verify finding L2). Command: `exiftool -T
+      -n -s3 <the 22 selectors> jpeg-gps-split-across-two-blocks` (Exif A: GPS
+      IFD with GPSLatitudeRef N and GPSLatitude 37/1 30/1 0/1; Exif B: GPS IFD
+      with only GPSLatitudeRef S). ExifTool 13.55: Composite:GPSLatitude = -37.5
+      (A's latitude with B's ref). The model (oracle::read_ours_jpeg) reads the
+      latest block that can produce the composite: A alone, N, 37.5. Neither
+      side is wrong; the library reads each block on its own. Recorded as a
+      KNOWN_DIVERGENCES entry on Composite:GPSLatitude.
+
+  - id: exiftool-ignores-exif-after-scan
+    question: "ExifTool 13.55 reads no Exif from an APP1 after the first SOS while exif-core reads it: is exif-core's behaviour the one an audit and sanitiser want?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-05
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-011). Commands: `exiftool -T -n -s3 <the 22 selectors of
+      oracle::jpeg_names()> jpeg-exif-after-scan` (SOI, SOS header, 2 scan bytes,
+      APP1 Exif + exif-basic-le, EOI) and the 20-selector form on
+      fuzz/seeds/jpeg_segments/exif-after-scan. ExifTool 13.55 (Homebrew, macOS).
+      Measured stdout: every field '-', nothing on stderr. exif-core: reads the
+      block (Segment::after_scan() is true), IFD0:Make = DiamondCam.
+      Right side: exif-core for an audit/sanitiser (metadata a different reader can
+      pick up must be reported and removed; reading more than the reference is the
+      safe direction). Recorded as KNOWN_DIVERGENCES `exif:*` entries for the
+      fixture and the seed; the tests require them to stay present.
+      Open: whether to flag such a block in the audit output as "after the scan".
+
+  - id: exiftool-drops-exif-when-last-segment-ends-at-eof
+    question: "ExifTool 13.55 reads no Exif when the Exif APP1 is the last segment and the file ends exactly there; exif-core reads it. Keep exif-core's behaviour?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-05
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-011). Command: `exiftool -T -n -s3 <the 22 selectors>
+      jpeg-exif-last-segment-at-eof` (SOI, APP1 Exif + exif-basic-le, EOF).
+      ExifTool 13.55: every field '-', stderr `Warning: JPEG format error -
+      <file>`. exif-core: reads the block and records MissingSos and MissingEoi
+      at the JPEG layer. Controls measured: the same file with a COM segment
+      after the Exif (jpeg-exif-then-com-at-eof) or an EOI (jpeg-exif-eoi-no-sos)
+      is read by both. Right side: exif-core (the segment is complete; the damage
+      belongs in the JPEG-layer issues). Recorded as a KNOWN_DIVERGENCES `exif:*`
+      entry.
+
+  - id: exiftool-reads-17th-exif-block
+    question: "ExifTool 13.55 reads all seventeen Exif segments of a JPEG (the last one wins); exif-core parses at most 16. Is the cap of 16 right?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-05
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-011). Command: `exiftool -T -n -s3 <the 22 selectors>
+      jpeg-seventeen-exif-last-differs` (seventeen Exif APP1s; the first sixteen
+      say Make = SameFirst16, the seventeenth LastOnly17). ExifTool 13.55:
+      IFD0:Make = LastOnly17, no stderr. exif-core: 16 blocks, 16 ExtraExif
+      issues; the harness's last-block model reads SameFirst16. Neither side is
+      wrong per the format (it allows one Exif APP1); the cap is the DEC-006
+      bounded-work choice. Recorded as a KNOWN_DIVERGENCES entry on IFD0:Make.
+      Mutation m5 (cap 16 -> 17) makes the divergence disappear and is caught.
+
+  - id: exiftool-warnings-only-when-no-tag-is-found
+    question: "Does ExifTool's command line print warnings (stderr) only when none of the requested tags was found, and should the oracle capture them another way?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-05
+    assigned_to: null
+    notes: |
+      Measured in SPEC-011 (ExifTool 13.55, `-T -n -s3 -IFD0:Make <file>`): the
+      same damage that prints `Warning: [minor] Skipped unknown 3 bytes after JPEG
+      COM segment - <file>` on a JPEG with no Exif prints NOTHING when the file
+      also carries a readable Exif (stdout then has the value). Likewise the
+      extended-XMP warning appears on fuzz/seeds/jpeg_segments/extended-xmp-pair
+      (all fields '-') but not on jpeg-extended-xmp-pair (CreatorTool found). So
+      the `# stderr:` lines of the JPEG records are a characterisation that holds
+      only for inputs where every requested field is '-'. Not investigated: whether
+      requesting the Warning tag explicitly (`-Warning`) captures them in all
+      cases.

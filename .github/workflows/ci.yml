@@ -141,8 +141,13 @@ jobs:
           tar xzf exiftool.tar.gz
           echo "${PWD}/Image-ExifTool-${EXIFTOOL_VERSION}" >> "$GITHUB_PATH"
       - run: cargo run --quiet --example oracle_record
+      # `git diff` cannot see a NEW untracked record, so use `status --porcelain`: any
+      # changed, deleted or newly written record file fails the job.
       - name: committed records are unchanged by a re-record
-        run: git diff --exit-code -- tests/oracle-fixtures/exiftool
+        run: |
+          set -euo pipefail
+          out="$(git status --porcelain -- tests/oracle-fixtures/exiftool)"
+          if [ -n "${out}" ]; then echo "${out}"; exit 1; fi
 
   licenses:
     name: rust / license policy (cargo-deny)

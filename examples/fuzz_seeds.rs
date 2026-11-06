@@ -932,6 +932,36 @@ fn jpeg_seeds() -> Vec<(&'static str, Vec<u8>)> {
             ]),
         ),
         ("seventeen-exif", seventeen_exif),
+        // ── SPEC-011 ────────────────────────────────────────────────────────
+        // DEC-007: `Exif\0` and a NON-zero sixth byte, then a valid TIFF. An
+        // Exif block (ExifTool 13.55 reads it too).
+        (
+            "exif-sixth-byte-nonzero",
+            jcat(&[
+                &JSOI,
+                &japp(0xE1, b"Exif\0\x01", &tiff_ok),
+                &jsos(),
+                scan,
+                &JEOI,
+            ]),
+        ),
+        // DEC-007: an APP1 payload of exactly the five signature bytes is not
+        // Exif (it has no sixth byte, so no TIFF data position).
+        (
+            "exif-five-byte-payload",
+            jcat(&[&JSOI, &jseg(0xE1, b"Exif\0"), &jsos(), &JEOI]),
+        ),
+        // SPEC-010 verify I1: a single ICC chunk whose sequence number is 0
+        // (sequence numbers are 1-based): one IccChunkMismatch.
+        (
+            "icc-seq-zero",
+            jcat(&[
+                &JSOI,
+                &japp(0xE2, b"ICC_PROFILE\0", b"\x00\x01only"),
+                &jsos(),
+                &JEOI,
+            ]),
+        ),
     ]
 }
 
