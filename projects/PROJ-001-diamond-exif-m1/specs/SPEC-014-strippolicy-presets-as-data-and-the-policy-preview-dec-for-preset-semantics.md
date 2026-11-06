@@ -6,7 +6,7 @@
 task:
   id: SPEC-014
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: verify  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -63,11 +63,19 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: 400000
-  sessions: []
+  sessions:
+    - cycle: build
+      agent: claude-sonnet-5-5
+      interface: other
+      tokens_total: 268470
+      estimated_usd: 1.77
+      duration_minutes: 18
+      recorded_at: 2026-11-06
+      notes: "tokens transcribed by the orchestrator from the sub-agent metered result (subagent_tokens 268,470; 1,094,453 ms wall-clock)"                      # one line if unusual (rework, no meter, etc.)
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 268470
+    estimated_usd: 1.77
+    session_count: 1
 ---
 
 # SPEC-014: StripPolicy presets as data and the policy preview; DEC for preset semantics

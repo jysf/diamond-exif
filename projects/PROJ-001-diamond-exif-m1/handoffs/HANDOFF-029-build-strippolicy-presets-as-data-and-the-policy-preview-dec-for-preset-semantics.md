@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: null
+  tokens_total: 268470             # orchestrator-recorded from the metered sub-agent result (subagent_tokens)
+  estimated_usd: 1.77
+  duration_minutes: 18
   branch: worktree-agent-a89950596c9661fe5
   pr: null
   completed_at: 2026-11-06         # YYYY-MM-DD
-  notes: "tokens_total null: a sub-agent cannot read its own meter; orchestrator transcribes the metered figure. No PR (not asked)."                      # one line if unusual (rework, no meter, etc.)
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "tokens transcribed by the orchestrator from the sub-agent metered result (subagent_tokens 268,470; 1,094,453 ms wall-clock)"                      # one line if unusual (rework, no meter, etc.)
+  synced_at: 2026-11-06
 ---
 
 # HANDOFF-029: StripPolicy presets as data and the policy preview; DEC for preset semantics
@@ -164,10 +164,10 @@ The harness's guards also have the 17 plants in `preview_plants()` (each guard h
 
 ### Cost self-report
 
-- **Tokens (total):** null. A sub-agent cannot read its own meter; the orchestrator transcribes the metered figure for this agent run.
-- **Estimated USD:** null
-- **Duration (minutes):** not measured by me (roughly an hour of wall time, a guess, not a reading)
-- **Source of the number:** none available to the executing agent
+- **Tokens (total):** 268,470 (orchestrator-transcribed from the metered sub-agent result; the agent could not read its own meter)
+- **Estimated USD:** 1.77 (268,470 tokens at 6.60 USD per Mtok)
+- **Duration (minutes):** 18 (harness wall-clock 1,094,453 ms)
+- **Source of the number:** harness report (subagent_tokens)
 
 ### Drift and new artifacts
 
