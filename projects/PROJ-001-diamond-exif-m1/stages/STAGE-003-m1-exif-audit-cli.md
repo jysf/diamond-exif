@@ -96,10 +96,10 @@ Format: `- [status] SPEC-ID (cycle) — one-line summary`
 - [ ] SPEC-013 (frame) — [M] Inventory parity against ExifTool: group + tag-id sets on fixtures, comparator red-proofed
 - [ ] SPEC-014 (frame) — [M] StripPolicy presets as data and the policy preview; DEC for preset semantics
 - [ ] SPEC-015 (frame) — [M] Text, JSON and CSV renderers and the `audit_render` fuzz target (well-formed on hostile input)
-- [ ] SPEC-017 (design) — [M] Bound Container memory: a total entry budget for the tolerant walk (found by the SPEC-012 build: a 789 KB TIFF parses cleanly to 33M entries, ~950 MB)
+- [x] SPEC-017 (shipped on 2026-11-06) — [M] Bound Container memory: a total entry budget for the tolerant walk (found by the SPEC-012 build: a 789 KB TIFF parses cleanly to 33M entries, ~950 MB)
 - [ ] SPEC-016 (frame) — [L] The `exif-audit` binary: arguments, directory walk, per-file isolation, exit codes, CLI integration tests, CI build job
 
-**Count:** 1 shipped / 5 active / 0 pending
+**Count:** 2 shipped / 4 active / 0 pending
 
 ## Design Notes
 
