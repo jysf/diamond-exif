@@ -38,7 +38,7 @@ references:
 # Blocking dependencies: specs that must SHIP before this one can start.
 # Distinct from references.related_specs (informational). Feeds the ready-set
 # (`just ready`) and safe fan-out. Optional; [] = no blockers.
-depends_on: [SPEC-015]                     # e.g. [SPEC-002]
+depends_on: [SPEC-015, SPEC-017]                     # e.g. [SPEC-002]
 
 # Fan-out lease — who/what holds this spec now (`just claim` / `just unclaim`).
 # Advisory; null = free. The hard lock for parallel agents is the worktree/branch.
