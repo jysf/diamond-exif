@@ -30,6 +30,28 @@ mod audit_invariants {
     /// The documented cap on items and, separately, on findings.
     pub const CAP: usize = 65_536;
 
+    thread_local! {
+        /// Work units the guards have done on this thread: one per element
+        /// they touch and one per input byte they re-read (SPEC-013 F5). The
+        /// linearity test in `tests/fuzz_layout.rs` counts them instead of
+        /// timing: a guard that rescans the findings per item, or re-parses
+        /// the input per finding, is quadratic in a count, on any host.
+        static STEPS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    }
+
+    fn tick(n: usize) {
+        STEPS.with(|s| s.set(s.get().saturating_add(n as u64)));
+    }
+
+    /// The work counter, see [`STEPS`].
+    pub fn steps() -> u64 {
+        STEPS.with(std::cell::Cell::get)
+    }
+
+    pub fn reset_steps() {
+        STEPS.with(|s| s.set(0));
+    }
+
     #[derive(Clone, Debug, PartialEq)]
     pub enum What {
         Tag {
@@ -560,6 +582,7 @@ mod audit_invariants {
 
     fn g_category_shape(_: &[u8], got: &Facts, _: &Facts) -> Result<(), String> {
         for (n, f) in got.findings.iter().enumerate() {
+            tick(1);
             // A region item is exactly its DEC-008 region category. The other
             // direction is NOT "region categories only on regions": DEC-008
             // also puts the TIFF tags 0x02BC (XMP), 0x83BB / 0x8649 (IPTC) and
@@ -599,9 +622,19 @@ mod audit_invariants {
             }
         }
         // Every region item has exactly one finding (they are all categorised).
+        // One pass over the findings marks the items they point at; one pass
+        // over the items reads the marks (linear, not a rescan per item).
+        let mut has_finding = vec![false; got.items.len()];
+        for f in &got.findings {
+            tick(1);
+            if let Some(slot) = f.item.and_then(|i| has_finding.get_mut(i)) {
+                *slot = true;
+            }
+        }
         for (i, item) in got.items.iter().enumerate() {
+            tick(1);
             if matches!(item.what, What::Region { .. })
-                && !got.findings.iter().any(|f| f.item == Some(i))
+                && !has_finding.get(i).copied().unwrap_or(false)
             {
                 return Err(format!("region item {i} has no finding"));
             }
@@ -632,20 +665,36 @@ mod audit_invariants {
         Ok(())
     }
 
-    /// The TIFF bytes an origin's offsets are relative to.
-    fn blob_for(data: &[u8], block: Option<usize>) -> Option<Vec<u8>> {
+    /// The TIFF bytes an origin's offsets are relative to: the whole input for
+    /// a bare TIFF, the block's own blob (a slice of the input, from `meta`,
+    /// the JPEG read once) for a JPEG.
+    fn blob_for<'a>(
+        data: &'a [u8],
+        meta: Option<&jpeg::JpegMetadata<'a>>,
+        block: Option<usize>,
+    ) -> Option<&'a [u8]> {
         match block {
-            None => Some(data.to_vec()),
-            Some(b) => jpeg::read(data)
-                .ok()?
-                .exif_blocks()
-                .get(b)
-                .map(|x| x.tiff().to_vec()),
+            None => Some(data),
+            Some(b) => meta?.exif_blocks().get(b).map(|x| x.tiff()),
         }
     }
 
     fn g_thumbnail(data: &[u8], got: &Facts, _: &Facts) -> Result<(), String> {
+        // The JPEG is read at most once, not once per thumbnail finding (that
+        // is O(findings x input) on a hostile JPEG; SPEC-013 F5).
+        let needs_jpeg = got.findings.iter().any(|f| {
+            f.category == "Thumbnail"
+                && f.thumb.as_ref().is_some_and(|t| t.range.is_some())
+                && f.at.block.is_some()
+        });
+        let meta = if needs_jpeg {
+            tick(data.len());
+            jpeg::read(data).ok()
+        } else {
+            None
+        };
         for (n, f) in got.findings.iter().enumerate() {
+            tick(1);
             let (Some(t), "Thumbnail") = (&f.thumb, f.category.as_str()) else {
                 continue;
             };
@@ -656,7 +705,7 @@ mod audit_invariants {
                     }
                 }
                 Some((o, l)) => {
-                    let blob = blob_for(data, f.at.block).ok_or_else(|| {
+                    let blob = blob_for(data, meta.as_ref(), f.at.block).ok_or_else(|| {
                         format!("finding {n}: no blob for block {:?}", f.at.block)
                     })?;
                     let end = u64::from(o) + u64::from(l);

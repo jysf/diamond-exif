@@ -296,6 +296,11 @@ questions:
       safe direction). Recorded as KNOWN_DIVERGENCES `exif:*` entries for the
       fixture and the seed; the tests require them to stay present.
       Open: whether to flag such a block in the audit output as "after the scan".
+      Inventory view (SPEC-013, Class F, `exiftool -a -u -G1 -H -s`): ExifTool lists
+      no tag for the block; we list all of its entries (ExifIFD x4 and IFD0 x10 for
+      `jpeg-exif-after-scan`, three for the seed), each flagged `after_scan`. For
+      `jpeg-exif-before-and-after-scan` ExifTool lists IFD0 0x010f once and we list
+      it twice. Pinned in `KNOWN_DIVERGENCES` (tests/support/inventory.rs).
 
   - id: exiftool-drops-exif-when-last-segment-ends-at-eof
     question: "ExifTool 13.55 reads no Exif when the Exif APP1 is the last segment and the file ends exactly there; exif-core reads it. Keep exif-core's behaviour?"
@@ -314,6 +319,10 @@ questions:
       is read by both. Right side: exif-core (the segment is complete; the damage
       belongs in the JPEG-layer issues). Recorded as a KNOWN_DIVERGENCES `exif:*`
       entry.
+      Inventory view (SPEC-013, Class F): `exiftool -a -u -G1 -H -s` lists no tag
+      for `jpeg-exif-last-segment-at-eof`; we list its 14 entries (ExifIFD x4,
+      IFD0 x10) and the file is not clean (jpeg_issues 2). Pinned in
+      `KNOWN_DIVERGENCES` (tests/support/inventory.rs).
 
   - id: exiftool-reads-17th-exif-block
     question: "ExifTool 13.55 reads all seventeen Exif segments of a JPEG (the last one wins); exif-core parses at most 16. Is the cap of 16 right?"
@@ -331,6 +340,12 @@ questions:
       wrong per the format (it allows one Exif APP1); the cap is the DEC-006
       bounded-work choice. Recorded as a KNOWN_DIVERGENCES entry on IFD0:Make.
       Mutation m5 (cap 16 -> 17) makes the divergence disappear and is caught.
+      Inventory view (SPEC-013, Class F): `exiftool -a -u -G1 -H -s` lists
+      `[IFD0] 0x010f` seventeen times for `jpeg-seventeen-exif-last-differs` and we
+      list it sixteen (seed `seventeen-exif`: seventeen copies of ExifIFD 0x9003,
+      GPS 0x0001 and IFD0 0x010f, we list sixteen). `ours_hides` is true, so the
+      file must not be clean: `jpeg_issues > 0` (16 ExtraExif), asserted by
+      `seventeenth_block_is_theirs_only_and_the_file_is_not_clean`.
 
   - id: exiftool-warnings-only-when-no-tag-is-found
     question: "Does ExifTool's command line print warnings (stderr) only when none of the requested tags was found, and should the oracle capture them another way?"
@@ -483,3 +498,120 @@ questions:
       not copy the entries. exif-audit will parse untrusted files in bulk (STAGE-003), so
       a per-file memory bound (entries per container, or lazily read IFDs) wants a TIFF
       spec before SPEC-016.
+
+  # ── SPEC-013: inventory parity against ExifTool 13.55 ──────────────────────
+  # Command for every entry below: `exiftool -a -u -G1 -H -s <file>`; the listings
+  # are committed in tests/oracle-fixtures/exiftool-inventory/ and the pinned
+  # differences are the KNOWN_DIVERGENCES table in tests/support/inventory.rs.
+  - id: exiftool-omits-entries-with-unreadable-values
+    question: "ExifTool 13.55 lists no tag for an IFD entry whose value it cannot read (payload or count runs past the end) while the audit lists the entry. Is listing it the right behaviour for an audit?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-06
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-013, Class A), five seeds: tiff_ifd/ascii-count-past-eof
+      (ours IFD0 0x010f, 0x0110, 0x0131, 0x0132, 0x013b; ExifTool lists no tag at
+      all), count-overflow and count-overflow-be (ours IFD0 0x02bd, 0x02be, 0x02bf,
+      0x02c1; ExifTool lists only 0x02c0 `Exif_0x02c0`, which we list too),
+      payload-past-eof and -be (ours IFD0 0x02bd; ExifTool lists ImageWidth only).
+      Right side: ours. An entry in the file is evidence even when its value
+      cannot be read, and an audit that dropped it would hide it. Every entry is a
+      pinned KNOWN_DIVERGENCES row (`ours_only`, `ours_hides: false`); the tests
+      `class_a_unreadable_values_are_ours_only_and_still_present` assert the entry
+      is in our listing and not in ExifTool's.
+
+  - id: exiftool-rereads-a-revisited-ifd
+    question: "When an IFD pointer names an offset already read, ExifTool 13.55 lists that IFD's entries again under the new group while the audit visits each offset once (DEC-005). Keep one visit?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-06
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-013, Class B), two seeds. tiff_ifd/exif-points-at-ifd0:
+      ExifTool lists `[IFD0] 0x0100 ImageWidth` and `[ExifIFD] 0x0100 ImageWidth`
+      (the Exif pointer names IFD0); we list IFD0 0x0100 once and record
+      CyclicIfd. tiff_ifd/self-cycle: `[IFD0] 0x0100` and `[IFD1] 0x0100` (IFD0's
+      next-IFD word names IFD0); same on our side. Right side: ours (the same
+      bytes, nothing new to strip). `ours_hides` is true, so the invariant
+      "ExifTool lists something we do not => the audit is not clean" applies and
+      holds: `Health::exif_issues > 0` on both.
+
+  - id: audit-depth-limit-and-ifd-caps-differ-from-exiftool
+    question: "The audit's IFD depth limit (8), SubIFD handling and entry budget (len / 12) differ from ExifTool 13.55's limits. Which differences matter to an audit, and does the not-clean signal suffice?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-06
+    assigned_to: null
+    notes: |
+      DIVERGENCES (SPEC-013, Classes C and D). C: tiff_ifd/deep-nesting: ExifTool
+      lists 12 `ImageWidth` lines (IFD0 and eleven `[SubIFD] 0x0100`); we list IFD0
+      and eight SubIFD entries and record IfdDepthExceeded, so `Health::exif_issues
+      > 0` and `clean == false` (asserted; `ours_hides` is true). D: ExifTool keeps
+      the first 10 SubIFDs of an array (`Warning: Ignoring N SubIFD directories`,
+      SPEC-017) and lists no entry of the overlapping ones; we list the entries
+      within the `len / 12` entry budget: tiff_ifd/overlapping-subifds (ours 255
+      `SubIFD 0x00ff`), audit/audit-many-overlapping-ifds (ours 767 `0x02ff`),
+      entry-budget-exact (ours `0x0002` x1, `0xffff` x3) and entry-budget-over
+      (ours `0x0003` x1, `0xffff` x2). Neither side is "the" answer: two documented
+      limits. The invariant that matters is the one asserted for every pinned
+      divergence: where ExifTool lists more than we do, the audit is not clean
+      (`ours_hides_implies_not_clean_for_every_divergence`, live and replay). The
+      Class D rows list MORE than ExifTool, so they hide nothing. Resolving the
+      limits is out of scope for SPEC-013.
+
+  - id: audit-directory-valued-tiff-tags
+    question: "The audit lists the TIFF tags 0x02BC, 0x83BB, 0x8649 and 0x8773 (XMP, IPTC, Photoshop, ICC) as plain tag items; ExifTool decodes their content into other groups and never lists the tag itself. Compare them differently?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-06
+    assigned_to: null
+    notes: |
+      NOT A DIVERGENCE (SPEC-013, Class H), a recorded exclusion. The inventory
+      model leaves the eight ids in `inventory::DIRECTORY_VALUED` out of the tag
+      multiset: the four pointer tags (0x8769, 0x8825, 0xA005, 0x014A: their child
+      IFDs' entries are compared in their own groups) and these four. Measured:
+      the one-entry TIFFs audit-tags/tag-02bc, -83bb, -8649, -8773 give no tag line
+      for the id (ExifTool lists the decoded contents, or nothing when the payload
+      does not decode); the region-group lines such a TIFF produces are dropped
+      for a bare TIFF (`tiff_region_lines_come_only_from_directory_valued_ids`).
+      Open: whether the audit CLI should compare the decoded contents too.
+
+  - id: exiftool-lists-no-group-for-undecodable-regions
+    question: "For a located JPEG region whose payload ExifTool 13.55 cannot decode (a header-only ICC profile, a bare jumb box, the minimal XMP, IPTC, ICC and JUMBF payloads of the seeds) ExifTool lists no group at all while the audit lists the region. Keep reporting the region?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-06
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-013, Class R; not in the design's table, found by the sweep):
+      13 inputs, all `regions_ours_only`, `ours_hides: false`. Hand-built stubs:
+      jpeg-icc-stub (a 128-byte header, zero tags: ExifTool lists nothing) and
+      jpeg-jumbf-stub (a bare `jumb` box: nothing); their well-formed twins
+      jpeg-icc-valid (16 `[ICC-header]` lines and `[ICC_Profile] ProfileDescription`)
+      and jpeg-jumbf-valid (`[JUMBF] JUMDType, JUMDToggles, JUMDLabel`) agree with us.
+      Eleven jpeg_segments seeds carry minimal payloads ExifTool does not decode
+      (exif-and-xmp, extended-xmp-pair, extended-xmp-short, icc-chunks-ok,
+      icc-chunks-mismatch, icc-seq-zero, icc-iptc-jumbf (ICC and JUMBF),
+      iptc-8bim (ExifTool lists `[Photoshop] 0x0408` only), iptc-truncated-resource,
+      jumbf-header, xmp-and-extended-xmp). Right side: ours, an audit locates a
+      segment that claims to be metadata even when its content is not valid.
+
+  - id: audit-unmodelled-exiftool-groups-jfif-photoshop
+    question: "ExifTool lists the JFIF (APP0) and Photoshop (non-IPTC resource) groups, which the audit has no item for; is that right for an audit?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-06
+    assigned_to: null
+    notes: |
+      NOT A DIVERGENCE (SPEC-013, Class G): `inventory::UNMODELLED_GROUPS` is
+      exactly `JFIF` (ids 0, 2, 3, 5 on every JFIF seed) and `Photoshop` (for
+      example 0x0408 when there is no 0x0404 resource); their lines are dropped by
+      name. Any other group in a listing is a ParseError, so a new group on a new
+      input is a decision. Nothing else was measured over the 178 distinct inputs.

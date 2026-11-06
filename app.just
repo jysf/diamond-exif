@@ -113,6 +113,9 @@ fuzz-smoke TARGET="":
 # tool installed, so they must be exactly what the installed ExifTool prints:
 # re-run this after changing fixtures()/the selector table or upgrading
 # ExifTool, and review `git diff`. Needs exiftool on PATH. Never run in CI.
+# SPEC-013 also writes the five inventory records (`exiftool -a -u -G1 -H -s`
+# over the hand-built fixtures, the DEC-008 one-entry TIFFs and the three seed
+# directories) into tests/oracle-fixtures/exiftool-inventory/.
 oracle-record:
     cargo run --example oracle_record
 

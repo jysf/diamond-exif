@@ -146,7 +146,7 @@ jobs:
       - name: committed records are unchanged by a re-record
         run: |
           set -euo pipefail
-          out="$(git status --porcelain -- tests/oracle-fixtures/exiftool)"
+          out="$(git status --porcelain -- tests/oracle-fixtures/exiftool tests/oracle-fixtures/exiftool-inventory)"
           if [ -n "${out}" ]; then echo "${out}"; exit 1; fi
 
   licenses:

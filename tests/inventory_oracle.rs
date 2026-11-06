@@ -882,6 +882,22 @@ fn seventeenth_block_is_theirs_only_and_the_file_is_not_clean() {
     }
 }
 
+/// Process rule 2: every divergence has a question in `guidance/questions.yaml`.
+#[test]
+fn every_divergence_names_an_existing_question() {
+    let text = std::fs::read_to_string(root().join("guidance/questions.yaml"))
+        .expect("read guidance/questions.yaml");
+    for k in KNOWN_DIVERGENCES {
+        assert!(
+            text.contains(&format!("  - id: {}\n", k.question)),
+            "{}: no question {} in guidance/questions.yaml",
+            k.fixture,
+            k.question
+        );
+        assert!(!k.measured.is_empty(), "{}: no measured output", k.fixture);
+    }
+}
+
 #[test]
 fn ours_hides_implies_not_clean_for_every_divergence() {
     let mut hiding = 0usize;
@@ -1515,7 +1531,7 @@ fn byte_mutation_changes_one_tag_id_in_a_jpeg_app1_and_is_named() {
     let order = mutate::order_of(&tiff).expect("TIFF header");
     let loc = mutate::locate_entry(&tiff, 8, 0x010f).expect("the Make entry in IFD0");
     // The tag field sits at (TIFF offset + 10 + 12 * index) inside the APP1.
-    assert!(loc.entry_at >= 10 && (loc.entry_at - 10) % 12 == 0);
+    assert!(loc.entry_at >= 10 && (loc.entry_at - 10).is_multiple_of(12));
     assert!(mutate::set_u16_at(
         &mut bytes,
         start + loc.entry_at,
