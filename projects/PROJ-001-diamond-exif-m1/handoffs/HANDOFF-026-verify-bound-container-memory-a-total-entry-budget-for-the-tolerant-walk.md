@@ -43,13 +43,13 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: 221119             # orchestrator-recorded from the metered sub-agent result (subagent_tokens)
-  estimated_usd: 1.46
-  duration_minutes: 16
+  tokens_total: 223965             # orchestrator-recorded from the metered sub-agent result (subagent_tokens), final figure
+  estimated_usd: 1.48
+  duration_minutes: 35
   branch: worktree-agent-a22dbec9cda81a459
   pr: null
   completed_at: 2026-11-06         # YYYY-MM-DD
-  notes: "verdict APPROVED at e44659a; tokens transcribed by the orchestrator from the sub-agent metered result (the harness marked that result possibly interim)"
+  notes: "verdict APPROVED at e44659a; tokens transcribed by the orchestrator from the sub-agent metered result (final figure after the harness marked the first result possibly interim; duration is wall-clock including idle time)"
   synced_at: 2026-11-06
 ---
 
