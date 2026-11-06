@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # the verifier cannot see its own count; the orchestrator transcribes the metered figure
-  estimated_usd: null
-  duration_minutes: null           # orchestrator transcribes the metered wall-clock
+  tokens_total: 288202             # orchestrator-recorded from the metered sub-agent result (subagent_tokens, final figure)
+  estimated_usd: 1.90
+  duration_minutes: 26             # 1,555,787 ms, includes idle time
   branch: worktree-agent-a5f27d1307a5a6ee1
   pr: null
   completed_at: 2026-11-06         # YYYY-MM-DD
-  notes: "verify verdict APPROVED at 434edfc; tokens_total null because the sub-agent cannot read its own meter (orchestrator transcribes subagent_tokens)"
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "verify verdict APPROVED at 434edfc; tokens transcribed by the orchestrator from the sub-agent metered result"
+  synced_at: 2026-11-06
 ---
 
 # HANDOFF-028: Verify inventory parity against ExifTool

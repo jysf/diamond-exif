@@ -612,6 +612,7 @@ questions:
     notes: |
       NOT A DIVERGENCE (SPEC-013, Class G): `inventory::UNMODELLED_GROUPS` is
       exactly `JFIF` (ids 0, 2, 3, 5 on every JFIF seed) and `Photoshop` (for
-      example 0x0408 when there is no 0x0404 resource); their lines are dropped by
+      example 0x0405 in jpeg-iptc-without-0404, and 0x0408 in the iptc-8bim seed, whose
+      0x0404 resource holds no IPTC dataset); their lines are dropped by
       name. Any other group in a listing is a ParseError, so a new group on a new
       input is a decision. Nothing else was measured over the 178 distinct inputs.

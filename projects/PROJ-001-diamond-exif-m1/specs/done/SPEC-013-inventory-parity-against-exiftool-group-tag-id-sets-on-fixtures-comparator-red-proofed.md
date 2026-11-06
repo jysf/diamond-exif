@@ -6,14 +6,14 @@
 task:
   id: SPEC-013
   type: story                      # epic | story | task | bug | chore
-  cycle: verify  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
-  complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
+  complexity_actual: L             # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: approved  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
@@ -72,10 +72,19 @@ cost:
       duration_minutes: 43
       recorded_at: 2026-11-06
       notes: "tokens transcribed by the orchestrator from the sub-agent metered result (subagent_tokens 475,405; 2,603,306 ms wall-clock including idle time)"
+    - cycle: verify
+      agent: claude-opus-5-5
+      interface: other
+      tokens_total: 288202
+      estimated_usd: 1.90
+      duration_minutes: 26
+      recorded_at: 2026-11-06
+      notes: "verify verdict APPROVED at 434edfc; tokens transcribed by the orchestrator from the sub-agent metered result"
   totals:
-    tokens_total: 475405
-    estimated_usd: 3.14
-    session_count: 1
+    tokens_total: 763607
+    estimated_usd: 5.04
+    session_count: 2
+shipped_at: 2026-11-06
 ---
 
 # SPEC-013: Inventory parity against ExifTool: group + tag-id sets on fixtures, comparator red-proofed
@@ -271,22 +280,19 @@ Names are normative (a rename or fold is a deviation to report).
 *Appended during **ship**. Three questions, short answers.*
 
 1. **What would I do differently next time?**
-   — <answer>
+   — Measure the whole corpus before writing the class table, not a sample: the design predicted no region differences on the seeds and the build found 13 (Class R) because my sweep ignored region lines on the ExifTool side. I also wrote the ICC fixture bytes from one measurement (15 header lines, desc size 13) that the build corrected (16 lines, size 17); state fixture recipes as shapes to re-measure.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — No decision changed. DEC-008's amendment candidates (0xC65D, 0x013C) stay a question. Class A to H are recorded as questions, and the invariant that a file we list fewer entries for is never reported clean is now enforced in the oracle; it could become a DEC if the audit CLI promises it to users. Candidate signal: a pinned-divergence table needs its own mutation test (the verifier's six table edits all went red, which is the proof).
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — Yes, already framed: SPEC-014 (policy presets), SPEC-015 (renderers and render fuzz target, now carrying three low findings from this verify), SPEC-016 (the CLI). No new spec.
 
 4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
    the defect-escape distribution is greppable across specs:
    `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
    `none` (clean first try).
-   — <one word>
+   — build
    *(Runtime/operational defects — the escape-prone class — only exist once the
    artifact meets its real host. `escaped` here is a signal to strengthen the
    §12 behavioral pre-flight for that surface.)*
@@ -298,4 +304,4 @@ Names are normative (a rename or fold is a deviation to report).
    `impact` field is transcribed from, and both halves are already written above
    (## Context is the before, ## Goal is the after): confirm the prediction,
    don't reconstruct it from memory.
-   — <answer | none>
+   — Check that the audit lists the same tags ExifTool does: 146 of 177 runnable inputs match exactly, the other 31 are pinned divergences, each with the right side named, and a file we list fewer entries for than ExifTool is never reported clean.

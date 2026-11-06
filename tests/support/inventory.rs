@@ -1051,7 +1051,7 @@ pub const KNOWN_DIVERGENCES: &[Divergence] = &[
     region_only(
         "seed-jpeg_segments/iptc-8bim",
         &[RegionKind::Iptc],
-        "ExifTool lists only Photoshop 0x0408 (no 0x0404 resource, so no IPTC group)",
+        "ExifTool lists only Photoshop 0x0408 (its 0x0404 resource holds no IPTC dataset, so ExifTool prints no IPTC group)",
     ),
     region_only(
         "seed-jpeg_segments/iptc-truncated-resource",
