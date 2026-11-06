@@ -87,6 +87,20 @@ impl Category {
         }
     }
 
+    /// Whether the category is a block the library locates but does not decode
+    /// (DEC-009): `Thumbnail`, `MakerNote`, `Xmp`, `Iptc`, `Jumbf`, `Icc`.
+    pub fn is_block(self) -> bool {
+        matches!(
+            self,
+            Category::Thumbnail
+                | Category::MakerNote
+                | Category::Xmp
+                | Category::Iptc
+                | Category::Jumbf
+                | Category::Icc
+        )
+    }
+
     /// A stable lowercase identifier (`snake_case`) for reports.
     pub fn name(self) -> &'static str {
         match self {
@@ -345,6 +359,31 @@ mod tests {
         names.sort_unstable();
         names.dedup();
         assert_eq!(names.len(), Category::ALL.len());
+    }
+
+    #[test]
+    fn is_block_is_exactly_the_six_block_categories() {
+        use Category::*;
+        let blocks = [Thumbnail, MakerNote, Xmp, Iptc, Jumbf, Icc];
+        let tags = [
+            Gps,
+            DeviceId,
+            Authorship,
+            FreeText,
+            Timestamps,
+            CameraModel,
+            Software,
+        ];
+        assert_eq!(blocks.len() + tags.len(), Category::ALL.len());
+        for c in blocks {
+            assert!(c.is_block(), "{c:?}");
+        }
+        for c in tags {
+            assert!(!c.is_block(), "{c:?}");
+        }
+        for c in Category::ALL {
+            assert!(blocks.contains(&c) != tags.contains(&c), "{c:?} in one list");
+        }
     }
 
     #[test]

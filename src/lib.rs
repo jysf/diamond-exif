@@ -15,7 +15,9 @@
 pub mod audit;
 pub mod error;
 pub mod jpeg;
+pub mod policy;
 pub mod reader;
 pub mod tiff;
 
 pub use error::{Error, Result};
+pub use policy::{StripPolicy, StripSpec};
