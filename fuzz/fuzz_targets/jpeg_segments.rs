@@ -24,6 +24,23 @@
 //! * Caps: at most `MAX_JPEG_SEGMENTS` segments and `MAX_JPEG_ISSUES + 1`
 //!   issues; a cap issue is the last one.
 //!
+//! From SPEC-010 the target also calls `jpeg::read` on every input and asserts
+//! the invariants in `fuzz/shared/jpeg_metadata_invariants.rs` (included, and
+//! shared with `tests/fuzz_layout.rs`): the extraction is re-derived there
+//! independently and compared both ways.
+//!
+//! * **Container independence:** each Exif block's container is `Ok` iff the
+//!   bare `Container::parse` of its `tiff()` is, with identical IFD structure,
+//!   and a fatal error equals the bare error.
+//! * **Cleanliness:** `is_clean()` iff no JPEG-layer issue and every block `Ok`
+//!   and clean; `issues().count()` is the JPEG count plus the blocks' counts.
+//! * **Blocks:** at most `MAX_EXIF_BLOCKS`; `ExtraExif` iff an Exif segment is
+//!   not the first (and nothing after a halt); `exif()` is the first `Ok` block.
+//! * **Regions:** the located regions equal the independently derived list; an
+//!   extended-XMP region exists iff its payload is at least 75 bytes;
+//!   `IccChunkMismatch` iff the chunks disagree; nothing is recorded after a
+//!   halt; `jpeg_issues().len() <= MAX_JPEG_METADATA_ISSUES`.
+//!
 //! This target CANNOT be run with the default PATH. `cargo fuzz` shells out to
 //! a bare `cargo build`, which resolves to Homebrew's stable cargo and rejects
 //! `-Zsanitizer=address`; the outer `+nightly` does not help. Put the rustup
@@ -269,6 +286,10 @@ fn check(data: &[u8]) {
     }
 }
 
+// `metadata_invariants::check`, shared with `tests/fuzz_layout.rs`.
+include!("../shared/jpeg_metadata_invariants.rs");
+
 fuzz_target!(|data: &[u8]| {
     check(data);
+    metadata_invariants::check(data);
 });

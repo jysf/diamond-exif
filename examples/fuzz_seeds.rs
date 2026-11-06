@@ -596,6 +596,56 @@ fn jcat(parts: &[&[u8]]) -> Vec<u8> {
     parts.concat()
 }
 
+/// A valid TIFF for the SPEC-010 seeds: Make "DiamondCam", an Exif IFD with
+/// DateTimeOriginal and a GPS IFD with GPSLatitudeRef.
+fn make_and_gps(w: &Writer) -> Vec<u8> {
+    let ifds = [
+        Ifd {
+            entries: vec![
+                entry(271, ASCII, 11, Val::Ext(b"DiamondCam\0".to_vec())),
+                entry(EXIF_IFD, LONG, 1, Val::Refs(vec![1])),
+                entry(GPS_INFO, LONG, 1, Val::Refs(vec![2])),
+            ],
+            next: Next::End,
+        },
+        Ifd {
+            entries: vec![entry(
+                36867,
+                ASCII,
+                20,
+                Val::Ext(b"2024:01:02 03:04:05\0".to_vec()),
+            )],
+            next: Next::End,
+        },
+        Ifd {
+            entries: vec![entry(1, ASCII, 2, inline_bytes(b"N\0"))],
+            next: Next::End,
+        },
+    ];
+    w.build(&ifds)
+}
+
+/// One Photoshop image resource block, padded by the format's own rules.
+fn jres(id: u16, name: &[u8], data: &[u8]) -> Vec<u8> {
+    let mut v = b"8BIM".to_vec();
+    v.extend_from_slice(&id.to_be_bytes());
+    v.push(u8::try_from(name.len()).expect("short name"));
+    v.extend_from_slice(name);
+    if (1 + name.len()) % 2 == 1 {
+        v.push(0);
+    }
+    v.extend_from_slice(&u32::try_from(data.len()).expect("short").to_be_bytes());
+    v.extend_from_slice(data);
+    if data.len() % 2 == 1 {
+        v.push(0);
+    }
+    v
+}
+
+fn japp(marker: u8, sig: &[u8], rest: &[u8]) -> Vec<u8> {
+    jseg(marker, &[sig, rest].concat())
+}
+
 fn jpeg_seeds() -> Vec<(&'static str, Vec<u8>)> {
     let mut app0 = b"JFIF\0".to_vec();
     app0.extend_from_slice(&[1, 1, 0, 0, 1, 0, 1, 0, 0]);
@@ -607,6 +657,23 @@ fn jpeg_seeds() -> Vec<(&'static str, Vec<u8>)> {
         jseg(0xE1, &p)
     };
     let com = jseg(0xFE, b"hi");
+    let tiff_ok = make_and_gps(&Writer { big: false });
+    let exif_seg = |tiff: &[u8]| japp(0xE1, b"Exif\0\0", tiff);
+    // One extended-XMP chunk: a 32-byte GUID, the full length, this chunk's
+    // offset, then the data.
+    let ext_chunk = |offset: u32, data: &[u8]| {
+        let mut rest = b"0123456789ABCDEF0123456789ABCDEF".to_vec();
+        rest.extend_from_slice(&16u32.to_be_bytes());
+        rest.extend_from_slice(&offset.to_be_bytes());
+        rest.extend_from_slice(data);
+        ext(&rest)
+    };
+    let mut seventeen_exif = JSOI.to_vec();
+    for _ in 0..17 {
+        seventeen_exif.extend_from_slice(&exif_seg(&tiff_ok));
+    }
+    seventeen_exif.extend_from_slice(&jsos());
+    seventeen_exif.extend_from_slice(&JEOI);
     let scan: &[u8] = &[0x12, 0xFF, 0x00, 0x34, 0xFF, 0xD0, 0x56];
 
     let minimal = jcat(&[
@@ -753,6 +820,118 @@ fn jpeg_seeds() -> Vec<(&'static str, Vec<u8>)> {
                 &JEOI,
             ]),
         ),
+        // ── SPEC-010: Exif hand-off and located regions ─────────────────────
+        (
+            "exif-in-jpeg",
+            jcat(&[&JSOI, &exif_seg(&tiff_ok), &jsos(), scan, &JEOI]),
+        ),
+        (
+            "two-exif",
+            jcat(&[
+                &JSOI,
+                &exif_seg(&tiff_ok),
+                &exif_seg(&valid(&Writer { big: true })),
+                &jsos(),
+                &JEOI,
+            ]),
+        ),
+        (
+            "exif-bad-tiff",
+            jcat(&[&JSOI, &exif_seg(b"junkjunk"), &jsos(), &JEOI]),
+        ),
+        (
+            "exif-after-scan",
+            jcat(&[&JSOI, &jsos(), scan, &exif_seg(&tiff_ok), &JEOI]),
+        ),
+        (
+            "xmp-and-extended-xmp",
+            jcat(&[
+                &JSOI,
+                &xmp,
+                &ext_chunk(5, b"first"),
+                &ext_chunk(10, b"second"),
+                &jsos(),
+                &JEOI,
+            ]),
+        ),
+        (
+            "extended-xmp-short",
+            jcat(&[&JSOI, &ext(&[7u8; 39]), &ext(&[7u8; 40]), &jsos(), &JEOI]),
+        ),
+        (
+            "icc-chunks-ok",
+            jcat(&[
+                &JSOI,
+                &japp(0xE2, b"ICC_PROFILE\0", b"\x01\x02first"),
+                &japp(0xE2, b"ICC_PROFILE\0", b"\x02\x02second"),
+                &jsos(),
+                &JEOI,
+            ]),
+        ),
+        (
+            "icc-chunks-mismatch",
+            jcat(&[
+                &JSOI,
+                &japp(0xE2, b"ICC_PROFILE\0", b"\x01\x03first"),
+                &japp(0xE2, b"ICC_PROFILE\0", b"\x01\x02again"),
+                &japp(0xE2, b"ICC_PROFILE\0", b"\x00"),
+                &jsos(),
+                &JEOI,
+            ]),
+        ),
+        (
+            "iptc-8bim",
+            jcat(&[
+                &JSOI,
+                &japp(
+                    0xED,
+                    b"Photoshop 3.0\0",
+                    &[
+                        jres(0x0408, b"ab", &[9, 9, 9]),
+                        jres(0x0404, b"", &[1, 2, 3, 4, 5]),
+                    ]
+                    .concat(),
+                ),
+                &jsos(),
+                &JEOI,
+            ]),
+        ),
+        (
+            "iptc-truncated-resource",
+            jcat(&[
+                &JSOI,
+                &japp(
+                    0xED,
+                    b"Photoshop 3.0\0",
+                    &[
+                        jres(0x0404, b"", &[1, 2]),
+                        b"8BIM\x04\x04\0\0\0\0\x01\0abc".to_vec(),
+                    ]
+                    .concat(),
+                ),
+                &jsos(),
+                &JEOI,
+            ]),
+        ),
+        (
+            "jumbf-header",
+            jcat(&[
+                &JSOI,
+                &japp(0xEB, b"JP", b"\0\x07\x01\x02\x03\x04jumb"),
+                &jsos(),
+                &JEOI,
+            ]),
+        ),
+        (
+            "jumbf-short",
+            jcat(&[
+                &JSOI,
+                &japp(0xEB, b"JP", b"\0\x07\x01\x02\x03"),
+                &jsos(),
+                &JEOI,
+            ]),
+        ),
+        ("seventeen-exif", seventeen_exif),
     ]
 }
 

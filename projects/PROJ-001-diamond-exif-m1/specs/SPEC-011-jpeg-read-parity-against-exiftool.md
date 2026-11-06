@@ -85,6 +85,12 @@ STAGE-001 built the oracle for bare TIFF; SPEC-005 and SPEC-008 gave it a red-pr
 
 JPEG fixtures and records, live and replay parity with zero unexplained mismatches, JPEG-shaped mutated-copy red-proofs (control first) and byte-mutation red-proofs, and every divergence found written down with its command, version and measured output. Carries the open low items from STAGE-001 that touch the apparatus (probe build/run time limit, marker-leak scan scope).
 
+## Carried from SPEC-010 verify (low findings)
+
+- Build the real worst case for `the_jpeg_layer_issue_total_never_exceeds_the_documented_constant` (4096 short segments, no SOS, no halt).
+- Add a deterministic test for an APP1 payload `Exif\0` followed by a non-zero byte (kills the 5-byte signature mutant), and an ICC seq-0 seed.
+- Document that `AnyIssue::Exif` offsets are relative to the TIFF blob (file offset = segment offset + 10) and that `RegionTooShort` mixes reference points.
+
 ## Non-Goals
 
 - PNG, WebP, HEIC; XMP/ICC/IPTC value comparison; writing; the `exif-audit` CLI

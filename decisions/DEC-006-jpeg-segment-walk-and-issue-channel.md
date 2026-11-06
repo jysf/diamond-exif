@@ -46,7 +46,7 @@ DEC-001 made the TIFF walk tolerant per IFD. A JPEG is a marker stream, and uplo
 ## Policy detail
 
 - **Fatal:** fewer than 2 bytes (`Truncated`) or no SOI (`NotJpeg`).
-- **Issue, walk continues:** a run of stray bytes between segments (`StrayBytes`, one issue per run), `FF 00` outside entropy data, a stray SOI, a segment length below 2 (`BadSegmentLength`; the two marker bytes are skipped and the walk rescans), a missing SOS or EOI at the end of the walk (`MissingSos`, `MissingEoi`).
+- **Issue, walk continues:** a run of stray bytes between segments (`StrayBytes`, one issue per run), `FF 00` outside entropy data, a stray SOI, a segment length below 2 (`BadSegmentLength`; as of SPEC-010 the marker **and** its two length bytes, four in all, are skipped, because the length bytes of a bad length are `00 00` or `00 01` and can never start a marker, so reporting them again as stray bytes was noise: one fault, one issue), a missing SOS or EOI at the end of the walk (`MissingSos`, `MissingEoi`).
 - **Issue, walk ends:** a segment whose declared length runs past the end of the input (`Truncated`; the segment is **omitted entirely**, never partially recorded, as for IFDs), the segment cap (`TooManySegments`), the issue cap (`TooManyIssues`).
 - **Standalone markers** (no length field): `TEM` (01), `RSTn` (D0-D7) and a mid-stream `SOI` carry no segment; outside entropy data they are stray bytes. `EOI` (D9) ends the walk; anything after it is the **trailer**, returned as a borrowed slice, not an issue (real files carry thumbnails and trailers there).
 - **Entropy-coded data** after an SOS header runs to the next marker that is not a stuffed `FF 00`, a restart `FF D0-D7` or `FF FF` fill. The walk resumes at that marker, so progressive files (several scans with DHT between) walk as a sequence of segments. The **scan region** is the borrowed slice from the first SOS marker to the end of EOI (or to the end of the input when EOI is missing).
@@ -60,6 +60,13 @@ DEC-001 made the TIFF walk tolerant per IFD. A JPEG is a marker stream, and uplo
 - **One merged `Issue` type for both layers.** Rejected: hides the layer and bends the TIFF issue shape.
 - **Partial segment recording on truncation.** Rejected: IFD-level atomicity is the established rule; a half segment has no trustworthy extent.
 - **Cap by input length instead of constants.** Rejected: a 1 MB file of `FF 00` pairs would still yield half a million issues.
+
+## Clarifications from the SPEC-010 design
+
+- **Exif hand-off.** The payload after the 6-byte `Exif\0\0` signature is parsed with `Container::parse`; its tolerant walk and issues are the TIFF layer's, unchanged (container independence: the same blob gives the same IFDs as a bare TIFF). A fatal TIFF error (bad header or IFD0) does not become a JPEG fatal: that Exif block simply has no `Container`, and the error is kept on the block.
+- **Several Exif segments.** The first Exif segment is the primary. Each further one costs a JPEG-layer issue `ExtraExif` and at most `MAX_EXIF_BLOCKS = 16` Exif segments are parsed in total (bounded work). ExifTool's behaviour with several is measured in SPEC-011, not assumed.
+- **Located, not decoded.** XMP, extended XMP, ICC chunks, IPTC (the Photoshop `8BIM` resource `0x0404`) and JUMBF are reported as borrowed regions with their small headers read (extended-XMP GUID/length/offset, ICC sequence/count, JUMBF `En`/`Z`); contents are never interpreted. C2PA *detection* inside JUMBF is deliberately not claimed here (it needs the box-level content type, a format fact to be measured when the audit stage needs it).
+- **Layered view.** The combined view is an iterator of an enum that names the layer (`Jpeg(&JpegIssue)` or `Exif { block, issue: &ParseIssue }`); issues are never converted into one flat type. The metadata object is clean only when the JPEG layer and every parsed Exif block are clean and no Exif block failed fatally.
 
 ## Consequences
 

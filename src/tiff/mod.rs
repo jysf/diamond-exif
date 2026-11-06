@@ -1666,6 +1666,14 @@ mod tests {
             Error::MissingEoi,
             Error::TooManySegments { limit: 4096 },
             Error::TooManyIssues { limit: 1024 },
+            Error::ExtraExif { at: 5 },
+            Error::RegionTooShort {
+                what: "x",
+                at: 1,
+                need: 2,
+                have: 1,
+            },
+            Error::IccChunkMismatch { at: 9 },
         ];
         for e in &errors {
             assert!(!e.to_string().is_empty(), "{e:?} has an empty Display");
@@ -1696,10 +1704,13 @@ mod tests {
                 Error::MissingEoi => 16,
                 Error::TooManySegments { .. } => 17,
                 Error::TooManyIssues { .. } => 18,
+                Error::ExtraExif { .. } => 19,
+                Error::RegionTooShort { .. } => 20,
+                Error::IccChunkMismatch { .. } => 21,
             }
         }
         let indices: Vec<usize> = errors.iter().map(index).collect();
-        assert_eq!(indices, (0..19).collect::<Vec<usize>>());
+        assert_eq!(indices, (0..22).collect::<Vec<usize>>());
     }
 
     // ── pointer tags (SPEC-004, DEC-005) ─────────────────────────────────────

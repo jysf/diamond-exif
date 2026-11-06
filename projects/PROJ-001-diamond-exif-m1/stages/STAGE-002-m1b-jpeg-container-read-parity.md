@@ -80,10 +80,10 @@ it) and rewrites the line in place. An optional `[S]`/`[M]`/`[L]` tag on the
 line is carried onto the spec as `task.complexity`.
 
 - [x] SPEC-009 (shipped on 2026-11-05) — [M] JPEG segment walker with tolerant issues and the jpeg_segments fuzz target
-- [ ] SPEC-010 (frame) — [M] Exif and located metadata regions from JPEG
+- [x] SPEC-010 (shipped on 2026-11-05) — [M] Exif and located metadata regions from JPEG
 - [ ] SPEC-011 (frame) — [L] JPEG read parity against ExifTool
 
-**Count:** 1 shipped / 2 active / 0 pending
+**Count:** 2 shipped / 1 active / 0 pending
 
 ## Design Notes
 

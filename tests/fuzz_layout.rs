@@ -64,7 +64,7 @@ const SEEDS: [&str; 29] = [
 ];
 
 /// JPEG seed names are fixed by `examples/fuzz_seeds.rs`.
-const JPEG_SEEDS: [&str; 21] = [
+const JPEG_SEEDS: [&str; 34] = [
     "minimal",
     "soi-only",
     "fill-bytes",
@@ -86,6 +86,20 @@ const JPEG_SEEDS: [&str; 21] = [
     "many-ff00",
     "icc-iptc-jumbf",
     "signatures-under-wrong-marker",
+    // SPEC-010: Exif hand-off and located regions.
+    "exif-in-jpeg",
+    "two-exif",
+    "exif-bad-tiff",
+    "exif-after-scan",
+    "xmp-and-extended-xmp",
+    "extended-xmp-short",
+    "icc-chunks-ok",
+    "icc-chunks-mismatch",
+    "iptc-8bim",
+    "iptc-truncated-resource",
+    "jumbf-header",
+    "jumbf-short",
+    "seventeen-exif",
 ];
 
 #[test]
@@ -436,6 +450,114 @@ fn every_jpeg_seed_walks_without_panicking() {
     );
 }
 
+/// Each SPEC-010 seed has the shape its name promises, so a seed that stopped
+/// reaching its code path fails here rather than silently going stale.
+#[test]
+fn spec_010_seeds_have_the_shapes_they_claim() {
+    use exif_core::jpeg::{self, Region};
+    let dir = root().join("fuzz/seeds/jpeg_segments");
+    let load = |name: &str| fs::read(dir.join(name)).unwrap_or_else(|e| panic!("{name}: {e}"));
+    let issues = |m: &jpeg::JpegMetadata<'_>| -> Vec<Error> {
+        m.jpeg_issues().iter().map(|i| i.error().clone()).collect()
+    };
+
+    let d = load("exif-in-jpeg");
+    let m = jpeg::read(&d).unwrap();
+    assert!(m.is_clean() && m.exif().is_some());
+    assert_eq!(m.exif().unwrap().ifds().len(), 3);
+
+    let d = load("two-exif");
+    let m = jpeg::read(&d).unwrap();
+    assert_eq!(m.exif_blocks().len(), 2);
+    assert!(matches!(issues(&m)[..], [Error::ExtraExif { .. }]));
+
+    let d = load("exif-bad-tiff");
+    let m = jpeg::read(&d).unwrap();
+    assert!(m.exif().is_none() && m.exif_blocks()[0].container().is_err());
+
+    let d = load("exif-after-scan");
+    let m = jpeg::read(&d).unwrap();
+    assert!(m.jpeg().segments()[1].after_scan() && m.exif().is_some());
+
+    let d = load("xmp-and-extended-xmp");
+    let m = jpeg::read(&d).unwrap();
+    assert!(matches!(m.regions()[0], Region::Xmp { .. }));
+    assert_eq!(
+        m.regions()
+            .iter()
+            .filter(|r| matches!(r, Region::ExtendedXmp { .. }))
+            .count(),
+        2
+    );
+
+    let d = load("extended-xmp-short");
+    let m = jpeg::read(&d).unwrap();
+    assert_eq!(m.regions().len(), 1);
+    assert!(matches!(
+        issues(&m)[..],
+        [Error::RegionTooShort { have: 39, .. }]
+    ));
+
+    let d = load("icc-chunks-ok");
+    assert!(jpeg::read(&d).unwrap().is_clean());
+    let d = load("icc-chunks-mismatch");
+    let m = jpeg::read(&d).unwrap();
+    // The third chunk has no room for seq/count; the aggregate comes last.
+    assert!(matches!(
+        issues(&m)[..],
+        [
+            Error::RegionTooShort {
+                what: "ICC chunk header",
+                ..
+            },
+            Error::IccChunkMismatch { .. }
+        ]
+    ));
+
+    let d = load("iptc-8bim");
+    let m = jpeg::read(&d).unwrap();
+    assert!(m.is_clean());
+    assert_eq!(m.regions().len(), 1);
+    assert_eq!(m.regions()[0].data(), &[1u8, 2, 3, 4, 5][..]);
+
+    let d = load("iptc-truncated-resource");
+    let m = jpeg::read(&d).unwrap();
+    assert_eq!(m.regions().len(), 1);
+    assert!(matches!(
+        issues(&m)[..],
+        [Error::RegionTooShort {
+            what: "8BIM resource",
+            ..
+        }]
+    ));
+
+    let d = load("jumbf-header");
+    let m = jpeg::read(&d).unwrap();
+    assert!(matches!(
+        m.regions()[0],
+        Region::Jumbf {
+            en: 7,
+            z: 0x0102_0304,
+            ..
+        }
+    ));
+    let d = load("jumbf-short");
+    let m = jpeg::read(&d).unwrap();
+    assert!(m.regions().is_empty());
+    assert!(matches!(
+        issues(&m)[..],
+        [Error::RegionTooShort {
+            what: "JUMBF header",
+            ..
+        }]
+    ));
+
+    let d = load("seventeen-exif");
+    let m = jpeg::read(&d).unwrap();
+    assert_eq!(m.exif_blocks().len(), jpeg::MAX_EXIF_BLOCKS);
+    assert_eq!(m.jpeg_issues().len(), 16);
+}
+
 /// The `jpeg_segments` harness contract on a few extra shapes the seeds do not
 /// cover: fatal inputs and an all-`FF` run.
 #[test]
@@ -456,6 +578,169 @@ fn jpeg_harness_holds_on_fatal_and_degenerate_inputs() {
         0xFF, 0xD8, 0xFF, 0xE2, 0x00, 0x08, b'E', b'x', b'i', b'f', 0, 0, 0xFF, 0xD9,
     ]);
     exercise_jpeg(&[0xFF, 0xD8, 0xFF, 0xE1, 0x00, 0x04, 1, 2, 0xFF, 0xD9]);
+}
+
+/// Every TIFF seed, wrapped as the Exif of a JPEG, satisfies the shared
+/// invariants. This is where a TIFF-layer issue meets a clean JPEG layer (the
+/// layered view and `is_clean`), and where a JPEG-layer issue (no EOI) meets a
+/// TIFF-layer one (the issue order).
+#[test]
+fn every_tiff_seed_wrapped_in_a_jpeg_satisfies_the_harness() {
+    let dir = root().join("fuzz/seeds/tiff_ifd");
+    let mut wrapped = 0;
+    for entry in fs::read_dir(&dir).unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()))
+    {
+        let path = entry.expect("dir entry").path();
+        let tiff = fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let payload = [&b"Exif\0\0"[..], &tiff].concat();
+        let Ok(len) = u16::try_from(payload.len() + 2) else {
+            continue; // does not fit one segment
+        };
+        let mut app1 = vec![0xFF, 0xE1, (len >> 8) as u8, len as u8];
+        app1.extend_from_slice(&payload);
+        let sos = [0xFF, 0xDA, 0, 8, 1, 1, 0, 0, 0x3F, 0];
+        // Clean around the Exif, and the same without SOS and EOI.
+        let mut clean = vec![0xFF, 0xD8];
+        clean.extend_from_slice(&app1);
+        clean.extend_from_slice(&sos);
+        clean.extend_from_slice(&[0xFF, 0xD9]);
+        exercise_jpeg(&clean);
+        let mut open = vec![0xFF, 0xD8];
+        open.extend_from_slice(&app1);
+        exercise_jpeg(&open);
+        wrapped += 1;
+    }
+    assert!(wrapped >= SEEDS.len(), "wrapped only {wrapped} TIFF seeds");
+}
+
+/// Shapes for each guard of the SPEC-010 extraction, one guard at a time, so
+/// the shared invariants see every single-guard variant a planted bug could
+/// leave behind (the seeds alone overlap: several guards would catch the same
+/// input). Each is a clean-walking JPEG around the given segments.
+#[test]
+fn jpeg_harness_holds_on_each_extraction_guard_alone() {
+    fn seg(marker: u8, payload: &[u8]) -> Vec<u8> {
+        let l = u16::try_from(payload.len() + 2).expect("short");
+        let mut v = vec![0xFF, marker, (l >> 8) as u8, l as u8];
+        v.extend_from_slice(payload);
+        v
+    }
+    fn jpeg(segs: &[Vec<u8>]) -> Vec<u8> {
+        let mut d = vec![0xFF, 0xD8];
+        for s in segs {
+            d.extend_from_slice(s);
+        }
+        d.extend_from_slice(&seg(0xDA, &[1, 1, 0, 0, 0x3F, 0]));
+        d.extend_from_slice(&[0xFF, 0xD9]);
+        d
+    }
+    let icc = |seq: u8, count: u8| seg(0xE2, &[&b"ICC_PROFILE\0"[..], &[seq, count, 9]].concat());
+    // ICC: each fault alone, and the consistent orders.
+    for chunks in [
+        vec![(1, 2), (2, 2)],
+        vec![(2, 2), (1, 2)],
+        vec![(1, 2), (2, 3)], // count differs, seqs fine
+        vec![(1, 3), (2, 2)], // first is the odd one out
+        vec![(0, 2), (1, 2)], // seq 0 only
+        vec![(1, 2), (0, 2)],
+        vec![(1, 2), (3, 2)], // seq above count only
+        vec![(1, 2), (1, 2)], // repeated seq only
+        vec![(1, 3), (2, 3)], // count 3, two chunks
+        vec![(1, 2), (2, 2), (2, 2)],
+        vec![(1, 1)],
+        vec![(1, 0)],
+    ] {
+        let segs: Vec<Vec<u8>> = chunks.iter().map(|&(s, c)| icc(s, c)).collect();
+        exercise_jpeg(&jpeg(&segs));
+    }
+    // Extended XMP either side of the 75-byte boundary (35 + 40).
+    let ext = |n: usize| {
+        seg(
+            0xE1,
+            &[&b"http://ns.adobe.com/xmp/extension/\0"[..], &vec![5u8; n]].concat(),
+        )
+    };
+    for n in [0, 39, 40, 41] {
+        exercise_jpeg(&jpeg(&[ext(n)]));
+    }
+    // JUMBF and ICC headers either side of their limits.
+    for n in [0, 5, 6, 7] {
+        exercise_jpeg(&jpeg(&[seg(0xEB, &[&b"JP"[..], &vec![1u8; n]].concat())]));
+    }
+    for n in [0, 1, 2, 3] {
+        exercise_jpeg(&jpeg(&[seg(
+            0xE2,
+            &[&b"ICC_PROFILE\0"[..], &vec![1u8; n]].concat(),
+        )]));
+    }
+    // IPTC: name and data parity, a missing last pad, a short size, stray bytes.
+    let res = |id: u16, name: &[u8], data: &[u8], pad: bool| {
+        let mut v = b"8BIM".to_vec();
+        v.extend_from_slice(&id.to_be_bytes());
+        v.push(name.len() as u8);
+        v.extend_from_slice(name);
+        if (1 + name.len()) % 2 == 1 {
+            v.push(0);
+        }
+        v.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        v.extend_from_slice(data);
+        if pad && data.len() % 2 == 1 {
+            v.push(0);
+        }
+        v
+    };
+    let ps = |body: &[u8]| seg(0xED, &[&b"Photoshop 3.0\0"[..], body].concat());
+    for name in [&b""[..], b"a", b"ab", b"abc"] {
+        for data in [&b""[..], b"1", b"12", b"123"] {
+            let body = [res(0x0408, name, data, true), res(0x0404, name, data, true)].concat();
+            exercise_jpeg(&jpeg(&[ps(&body)]));
+            // The last resource without its pad byte.
+            exercise_jpeg(&jpeg(&[ps(&res(0x0404, name, data, false))]));
+        }
+    }
+    let good = res(0x0404, b"x", b"abc", true);
+    for cut in 1..good.len() {
+        exercise_jpeg(&jpeg(&[ps(&[
+            res(0x0404, b"", b"z", true),
+            good[..cut].to_vec(),
+        ]
+        .concat())]));
+    }
+    exercise_jpeg(&jpeg(&[ps(&[good.clone(), b"JUNK".to_vec()].concat())]));
+    exercise_jpeg(&jpeg(&[ps(&[good.clone(), b"8B".to_vec()].concat())]));
+    // Exif: signature only, junk, a second and a 17th segment.
+    let exif = |tiff: &[u8]| seg(0xE1, &[&b"Exif\0\0"[..], tiff].concat());
+    exercise_jpeg(&jpeg(&[exif(b"")]));
+    exercise_jpeg(&jpeg(&[
+        exif(b"NOPE"),
+        exif(b"II*\0\x08\0\0\0\0\0\0\0\0\0"),
+    ]));
+    for n in [1, 2, 16, 17, 18] {
+        let segs: Vec<Vec<u8>> = (0..n)
+            .map(|_| exif(b"II*\0\x08\0\0\0\0\0\0\0\0\0"))
+            .collect();
+        exercise_jpeg(&jpeg(&segs));
+    }
+    // A halt: two Exif segments, then 1100 stray FF00 pairs (issue cap), and
+    // 4097 short segments (segment cap). Nothing may be recorded after either.
+    let mut d = vec![0xFF, 0xD8];
+    d.extend_from_slice(&exif(b"II*\0\x08\0\0\0\0\0\0\0\0\0"));
+    d.extend_from_slice(&exif(b"II*\0\x08\0\0\0\0\0\0\0\0\0"));
+    for _ in 0..1100 {
+        d.extend_from_slice(&[0xFF, 0x00]);
+    }
+    exercise_jpeg(&d);
+    let mut d = vec![0xFF, 0xD8];
+    for _ in 0..4097 {
+        d.extend_from_slice(&ext(0));
+    }
+    exercise_jpeg(&d);
+    // Not halted, with extraction issues after walker issues.
+    let mut d = vec![0xFF, 0xD8, 0x00, 0x01];
+    for _ in 0..50 {
+        d.extend_from_slice(&ext(3));
+    }
+    exercise_jpeg(&d);
 }
 
 // ── the jpeg_segments harness body, mirrored from the fuzz target ───────────
@@ -484,7 +769,11 @@ fn expected_kind(marker: u8, payload: &[u8]) -> SegmentKind {
     }
 }
 
+// The SPEC-010 `jpeg::read` invariants, shared with the fuzz target.
+include!("../fuzz/shared/jpeg_metadata_invariants.rs");
+
 fn exercise_jpeg(data: &[u8]) {
+    metadata_invariants::check(data);
     let strict = Jpeg::parse_strict(data);
     let jpeg = match Jpeg::parse(data) {
         Ok(jpeg) => jpeg,
