@@ -91,7 +91,7 @@ Severity order is `Low < Medium < High`. A report's severity is the maximum over
 | 0x8773 (34675) | InterColorProfile (TIFF tag) | Icc |
 | 0x0201 in an `Ifd1` | JPEGInterchangeFormat (thumbnail) | Thumbnail |
 
-An IFD1 without `0x0201` but with strip offsets (`0x0111`) is also a thumbnail (an uncompressed one): `Thumbnail` on the `0x0111` entry. Pointer tags (`0x8769`, `0x8825`, `0xA005`, `0x014A`) are structure, not findings: the GPS pointer's finding is the GPS IFD's own tags.
+An IFD1 without `0x0201` but with strip offsets (`0x0111`) is also a thumbnail (an uncompressed one): `Thumbnail` on the `0x0111` entry. Pointer tags (`0x8769`, `0x8825`, `0xA005`, `0x014A`) are structure, not findings: the GPS pointer's finding is the GPS IFD's own tags. (A pointer-tag id that appears *inside* a GPS IFD is a `Gps` finding like every other tag there: "every tag in a GPS IFD" wins over the pointer exemption, which applies to the IFDs the table covers.) ExifTool also names some ids this table leaves as inventory only (for example `0x013C` HostComputer, `0x010D` DocumentName, `0xC614` UniqueCameraModel, `0xC65D` RawDataUniqueID, `0xA432` LensInfo); adding any of them is an amendment, not a bug, and `0xC65D` and `0x013C` are the first candidates (identifiers a privacy scan would want).
 
 Regions found by the JPEG layer map: `Xmp` and `ExtendedXmp` to `Xmp`, `Iptc` to `Iptc`, `Icc` to `Icc`, `Jumbf` to `Jumbf`.
 

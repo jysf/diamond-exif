@@ -6,14 +6,14 @@
 task:
   id: SPEC-012
   type: story                      # epic | story | task | bug | chore
-  cycle: verify  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
-  complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
+  complexity_actual: L          # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: approved  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
@@ -80,10 +80,19 @@ cost:
       duration_minutes: 3
       recorded_at: 2026-11-05
       notes: "fix round applying the DEC-008 amendment (resumed builder, before verify). The harness reported a cumulative 447,566 for the resumed agent; this is the 20,575 above the 426,991 already recorded for the first round."
+    - cycle: verify
+      agent: claude-opus-5-5
+      interface: other
+      tokens_total: 243756
+      estimated_usd: 1.61
+      duration_minutes: 12
+      recorded_at: 2026-11-05
+      notes: "verdict APPROVED at 36f0022; tokens transcribed by the orchestrator from the sub-agent metered result"
   totals:
-    tokens_total: 447566
-    estimated_usd: 2.96
-    session_count: 2
+    tokens_total: 691322
+    estimated_usd: 4.57
+    session_count: 3
+shipped_at: 2026-11-05
 ---
 
 # SPEC-012: Audit model: container sniff, inventory, PII categories and findings (pure library); DEC for the category table
@@ -255,22 +264,19 @@ Named tests (a rename, fold or missing test is a deviation to report):
 *Appended during **ship**. Three questions, short answers.*
 
 1. **What would I do differently next time?**
-   — <answer>
+   — Check ids in a DEC against the reference tool at design, not at build: I wrote the Exif 3.0 ids `0xA437`-`0xA439` from memory and was wrong by one place; the build's live name check caught it, which is what it was for, but one ExifTool one-entry probe at design would have caught it first. Also reconcile the spec's invariants with the DEC before dispatch: "region categories only on Region items" contradicted DEC-008 (TIFF tags 700/33723/34377/34675 are container tags); the harness found it on its first seed run.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — DEC-008 amended twice (the shifted ids; one sentence on pointer tags inside a GPS IFD and the ExifTool-named ids left as inventory only). Verify's 25 own mutants (22 caught, 3 survived) again found only low test gaps, carried to SPEC-013. No template change.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — Already written: SPEC-017 (bound `Container` memory, found by this build's amplification measurement: a 789 KB TIFF parses cleanly to 33M entries, ~950 MB), placed before the binary. Verify's low findings F1-F6 are carried into SPEC-013's outline.
 
 4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
    the defect-escape distribution is greppable across specs:
    `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
    `none` (clean first try).
-   — <one word>
+   — build
    *(Runtime/operational defects — the escape-prone class — only exist once the
    artifact meets its real host. `escaped` here is a signal to strengthen the
    §12 behavioral pre-flight for that surface.)*
@@ -282,4 +288,4 @@ Named tests (a rename, fold or missing test is a deviation to report):
    `impact` field is transcribed from, and both halves are already written above
    (## Context is the before, ## Goal is the after): confirm the prediction,
    don't reconstruct it from memory.
-   — <answer | none>
+   — Hand `exif-core` any bytes and get a typed audit: the sniffed container, an inventory of every tag and region, and PII findings by category and severity (GPS and device identity High), with unreadable and unsupported files reported as such and never as clean; before, the library returned parsed structures with no privacy meaning. Confirming numbers: 170 unit tests, 41 ExifTool-checked tag ids, 22 of 25 verify mutants caught.

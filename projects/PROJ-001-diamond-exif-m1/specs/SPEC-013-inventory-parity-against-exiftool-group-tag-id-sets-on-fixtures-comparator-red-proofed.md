@@ -85,6 +85,14 @@ The audit model must claim an inventory, and an inventory claim is only worth so
 
 Committed ExifTool records of the tag listing (group and id) for the existing fixtures, a comparator for the sets, live and replay tests with zero unexplained differences, and red-proofs (control first) showing a dropped or invented tag is named. Every difference is a recorded divergence with command, version and measured output.
 
+## Carried from SPEC-012 verify (low findings)
+
+- A deterministic test that `Health::exif_issues` is the sum over all blocks (block 0 with issues, last block clean) (mutant M20 survived).
+- A deterministic test with a metadata region after the scan (`Origin::after_scan` on a region) (M21).
+- A thumbnail-pointer test with BYTE and SSHORT types so the SHORT/LONG check is pinned (M22).
+- Tighten the `tests/jpeg_oracle.rs` TIFF-records exemption from the `audit-` prefix to the exact `audit-tag-names.txt` (F1).
+- The audit fuzz harness: make `g_category_shape`'s region loop and `g_thumbnail`'s per-finding re-read linear (F5); consider `0xC65D` and `0x013C` as DEC-008 amendment candidates (F6).
+
 ## Non-Goals
 
 - Value comparison (already done for the 20 selectors); XMP/ICC/IPTC contents
