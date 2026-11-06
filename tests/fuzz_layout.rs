@@ -2261,3 +2261,115 @@ fn entry_budget_plants_are_each_rejected_by_their_own_guard_alone() {
         plants.len()
     );
 }
+
+// ── SPEC-013 F5: the audit harness's guards are linear in the input ─────────
+
+/// A JPEG segment: `FF marker length payload` (the length counts its own two
+/// bytes).
+fn lin_seg(marker: u8, payload: &[u8]) -> Vec<u8> {
+    let len = u16::try_from(payload.len() + 2).expect("segment fits");
+    let mut v = vec![0xFF, marker];
+    v.extend_from_slice(&len.to_be_bytes());
+    v.extend_from_slice(payload);
+    v
+}
+
+fn lin_jpeg(segments: &[Vec<u8>]) -> Vec<u8> {
+    let mut d = vec![0xFF, 0xD8];
+    for s in segments {
+        d.extend_from_slice(s);
+    }
+    d.extend_from_slice(&lin_seg(0xDA, &[1, 1, 0, 0, 0x3F, 0]));
+    d.extend_from_slice(&[0x12, 0x34, 0xFF, 0xD9]);
+    d
+}
+
+/// One Exif APP1 whose IFD1 holds `k` thumbnail-pointer entries: the first
+/// `0x0201`/`0x0202` pair gives every `0x0201` entry a valid range, so every
+/// one of the `k - 1` thumbnail findings has a range to re-read.
+fn many_thumbnails(k: usize) -> Vec<u8> {
+    let entry = |t: &mut Vec<u8>, tag: u16, v: u32| {
+        t.extend_from_slice(&tag.to_le_bytes());
+        t.extend_from_slice(&4u16.to_le_bytes());
+        t.extend_from_slice(&1u32.to_le_bytes());
+        t.extend_from_slice(&v.to_le_bytes());
+    };
+    let mut t = b"II\x2A\x00\x08\x00\x00\x00".to_vec();
+    t.extend_from_slice(&0u16.to_le_bytes()); // IFD0: no entries
+    t.extend_from_slice(&14u32.to_le_bytes()); // next: IFD1, right here
+    t.extend_from_slice(&u16::try_from(k).expect("k").to_le_bytes());
+    entry(&mut t, 0x0201, 0);
+    entry(&mut t, 0x0202, 4);
+    for _ in 2..k {
+        entry(&mut t, 0x0201, 0);
+    }
+    t.extend_from_slice(&0u32.to_le_bytes());
+    lin_jpeg(&[lin_seg(0xE1, &[&b"Exif\0\0"[..], &t].concat())])
+}
+
+/// `n` JUMBF APP11 segments: `n` region items, each with one finding.
+fn many_regions(n: usize) -> Vec<u8> {
+    let one = lin_seg(
+        0xEB,
+        &[0x4A, 0x50, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x6A],
+    );
+    lin_jpeg(&vec![one; n])
+}
+
+/// The work the guards do on `data` (counted, not timed), with the facts and
+/// the re-derivation computed before the counter is reset.
+fn guard_steps(data: &[u8]) -> (u64, usize, usize) {
+    let a = exif_core::audit::audit(data);
+    let got = audit_invariants::facts(&a);
+    let want = audit_invariants::rederive(data);
+    audit_invariants::reset_steps();
+    let bad = audit_invariants::violations(data, &got, &want);
+    assert!(
+        bad.is_empty(),
+        "guards fail on the linearity input: {bad:?}"
+    );
+    (
+        audit_invariants::steps(),
+        got.items.len(),
+        got.findings.len(),
+    )
+}
+
+/// F5 (HANDOFF-024): `g_category_shape`'s region loop and `g_thumbnail`'s
+/// per-finding re-read were O(items x findings) and O(findings x input) on a
+/// hostile JPEG. The guards now count their work; it must stay within a fixed
+/// multiple of (items + findings + input bytes), however large the input, and
+/// double when the input doubles.
+#[test]
+fn audit_harness_guards_are_linear_in_the_input() {
+    let big_thumbs = many_thumbnails(5_000);
+    let small_thumbs = many_thumbnails(2_500);
+    let big_regions = many_regions(3_000);
+    let small_regions = many_regions(1_500);
+    // The shapes are what they claim.
+    let (_, items, findings) = guard_steps(&big_thumbs);
+    assert!(items >= 5_000 && findings >= 4_990, "{items} {findings}");
+    let (_, items, findings) = guard_steps(&big_regions);
+    assert!(items >= 3_000 && findings >= 3_000, "{items} {findings}");
+
+    for (name, big, small) in [
+        ("thumbnails", &big_thumbs, &small_thumbs),
+        ("regions", &big_regions, &small_regions),
+    ] {
+        let (steps, items, findings) = guard_steps(big);
+        let bound = 8 * (items + findings) as u64 + 2 * big.len() as u64;
+        assert!(
+            steps <= bound,
+            "{name}: {steps} steps for {items} items, {findings} findings and {} bytes \
+             (bound {bound}): a guard is not linear",
+            big.len()
+        );
+        // Doubling the input at most doubles (with slack for rounding) the work.
+        let (half, _, _) = guard_steps(small);
+        println!("{name}: {half} steps at half size, {steps} at full ({bound} allowed)");
+        assert!(
+            steps <= 3 * half,
+            "{name}: {half} steps at half the size, {steps} at full: not linear"
+        );
+    }
+}

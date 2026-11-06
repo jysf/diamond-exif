@@ -1,0 +1,124 @@
+# command: exiftool -a -u -G1 -H -s <file>
+# exiftool-version: 13.55
+# corpus: seed-tiff_ifd
+## ascii-count-past-eof
+## ascii-shapes
+IFD0	0x010e	ImageDescription
+IFD0	0x010f	Make
+IFD0	0x0110	Model
+IFD0	0x0131	Software
+IFD0	0x0132	ModifyDate
+IFD0	0x013b	Artist
+IFD0	0x8298	Copyright
+IFD0	0x9003	DateTimeOriginal
+IFD0	0x0112	Orientation
+## chain
+IFD0	0x0100	ImageWidth
+IFD1	0x0100	ImageWidth
+IFD2	0x0100	ImageWidth
+## chain-be
+IFD0	0x0100	ImageWidth
+IFD1	0x0100	ImageWidth
+IFD2	0x0100	ImageWidth
+## corrupt-subifd
+IFD0	0x0100	ImageWidth
+## count-overflow
+IFD0	0x02c0	Exif_0x02c0
+## count-overflow-be
+IFD0	0x02c0	Exif_0x02c0
+## deep-nesting
+IFD0	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+## depth-limit-exact
+IFD0	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+## entry-budget-exact
+## entry-budget-over
+## entry-count-past-eof
+## exif-gps-interop
+IFD0	0x0100	ImageWidth
+ExifIFD	0x0100	ImageWidth
+InteropIFD	0x0100	ImageWidth
+GPS	0x0100	GPS_0x0100
+## exif-points-at-ifd0
+IFD0	0x0100	ImageWidth
+ExifIFD	0x0100	ImageWidth
+## gps-past-eof-exif-ok
+IFD0	0x0100	ImageWidth
+ExifIFD	0x0100	ImageWidth
+## ifd0-offset-zero
+## leaf-next-word
+IFD0	0x0100	ImageWidth
+ExifIFD	0x0100	ImageWidth
+## malformed-subifds-tag
+IFD0	0x0100	ImageWidth
+IFD1	0x0100	ImageWidth
+## next-past-eof
+IFD0	0x0100	ImageWidth
+## overlapping-subifds
+## payload-past-eof
+IFD0	0x0100	ImageWidth
+## payload-past-eof-be
+IFD0	0x0100	ImageWidth
+## pointer-bad-count
+IFD0	0x0100	ImageWidth
+## self-cycle
+IFD0	0x0100	ImageWidth
+IFD1	0x0100	ImageWidth
+## signed-and-float
+IFD0	0x0001	InteropIndex
+IFD0	0x0002	InteropVersion
+IFD0	0x0003	Exif_0x0003
+IFD0	0x0004	Exif_0x0004
+IFD0	0x0005	Exif_0x0005
+IFD0	0x0006	Exif_0x0006
+IFD0	0x0007	Exif_0x0007
+IFD0	0x0008	Exif_0x0008
+IFD0	0x0009	Exif_0x0009
+IFD0	0x000a	Exif_0x000a
+## subifd
+IFD0	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD1	0x0100	ImageWidth
+## subifd-be
+IFD0	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD1	0x0100	ImageWidth
+## subifds-count-over-cap
+IFD0	0x0100	ImageWidth
+## truncated-header
+## two-hop-cycle
+# outcome: not run: exiftool 13.55 does not return on this input (unbounded memory growth, about 9 GB in 5 s); see exiftool-two-hop-cycle-does-not-return
+## valid-be
+IFD0	0x0100	ImageWidth
+IFD0	0x0101	ImageHeight
+IFD0	0x0102	BitsPerSample
+IFD0	0x010e	ImageDescription
+IFD0	0x0112	Orientation
+IFD0	0x011a	XResolution
+IFD0	0x9204	ExposureCompensation
+## valid-le
+IFD0	0x0100	ImageWidth
+IFD0	0x0101	ImageHeight
+IFD0	0x0102	BitsPerSample
+IFD0	0x010e	ImageDescription
+IFD0	0x0112	Orientation
+IFD0	0x011a	XResolution
+IFD0	0x9204	ExposureCompensation

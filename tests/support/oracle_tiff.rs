@@ -13,7 +13,7 @@
 
 #![allow(dead_code)]
 
-const BYTE: u16 = 1;
+pub const BYTE: u16 = 1;
 pub const ASCII: u16 = 2;
 pub const SHORT: u16 = 3;
 pub const LONG: u16 = 4;
@@ -65,6 +65,8 @@ enum Val {
     Raw(u32),
     /// The offset of another IFD in the same file, by index.
     Ifd(usize),
+    /// An out-of-line array of IFD offsets (two or more), by index.
+    Ifds(Vec<usize>),
 }
 
 /// One IFD entry, before layout.
@@ -129,6 +131,11 @@ pub fn long(big: bool, tag: u16, v: u32) -> Ent {
     ent(tag, pack(LONG, 1, put(big, v, 4)))
 }
 
+/// `BYTE` entry (one unsigned 8-bit value; the byte order does not matter).
+pub fn byte(tag: u16, v: u8) -> Ent {
+    ent(tag, pack(BYTE, 1, vec![v]))
+}
+
 /// `SSHORT` entry (one signed 16-bit value).
 pub fn sshort(big: bool, tag: u16, v: i16) -> Ent {
     ent(tag, pack(SSHORT, 1, put(big, u32::from(v as u16), 2)))
@@ -184,6 +191,18 @@ pub fn ptr(tag: u16, idx: usize) -> Ent {
     }
 }
 
+/// A `SubIFDs`-style pointer entry: `LONG`, one offset per IFD index in `idxs`
+/// (at least two, so the array is stored out of line).
+pub fn ptr_array(tag: u16, idxs: &[usize]) -> Ent {
+    assert!(idxs.len() >= 2, "an inline single offset is `ptr`");
+    Ent {
+        tag,
+        typ: LONG,
+        count: idxs.len() as u32,
+        val: Val::Ifds(idxs.to_vec()),
+    }
+}
+
 /// A pointer entry with a literal, unbacked offset.
 pub fn ptr_raw(tag: u16, offset: u32) -> Ent {
     Ent {
@@ -218,6 +237,9 @@ pub fn assemble(big: bool, ifds: &[IfdSpec]) -> Vec<u8> {
             if let Val::Ext(b) = &e.val {
                 at += b.len() + (b.len() & 1);
             }
+            if let Val::Ifds(v) = &e.val {
+                at += 4 * v.len();
+            }
         }
     }
     // Pass 2: bytes.
@@ -246,6 +268,12 @@ pub fn assemble(big: bool, ifds: &[IfdSpec]) -> Vec<u8> {
                     payloads.extend(b);
                     if b.len() & 1 == 1 {
                         payloads.push(0);
+                    }
+                }
+                Val::Ifds(list) => {
+                    out.extend(put(big, (payload_base + payloads.len()) as u32, 4));
+                    for i in list {
+                        payloads.extend(put(big, offsets.get(*i).copied().unwrap_or(0), 4));
                     }
                 }
                 Val::Raw(o) => out.extend(put(big, *o, 4)),
@@ -371,6 +399,38 @@ fn ifd1_corrupt() -> Vec<u8> {
     let ifd1_at = 8 + 2 + 24 + 4 + (b"ThumbBroken\0".len());
     bytes.truncate(ifd1_at + 7);
     bytes
+}
+
+/// SPEC-013: the extra TIFF shapes of the inventory parity check. Kept apart
+/// from [`fixtures`] so the 12 SPEC-005 fixtures and their records do not move.
+///
+/// * `tiff-chain-four`: IFD0, IFD1 and two more chained IFDs (ExifTool groups
+///   `IFD2` and `IFD3`), one distinct ASCII tag in each.
+/// * `tiff-subifds-three`: IFD0 whose `SubIFDs` tag names three leaf IFDs
+///   (ExifTool groups `SubIFD`, `SubIFD1`, `SubIFD2`), one distinct tag in each.
+pub fn inventory_fixtures() -> Vec<(&'static str, Vec<u8>)> {
+    let chain = assemble(
+        false,
+        &[
+            ifd_next(vec![ascii(T_MAKE, b"Zero\0")], 1),
+            ifd_next(vec![ascii(T_MODEL, b"One\0")], 2),
+            ifd_next(vec![ascii(T_SOFTWARE, b"Two\0")], 3),
+            ifd(vec![ascii(T_ARTIST, b"Three\0")]),
+        ],
+    );
+    let subs = assemble(
+        false,
+        &[
+            ifd(vec![
+                ascii(T_MAKE, b"Parent\0"),
+                ptr_array(0x014A, &[1, 2, 3]),
+            ]),
+            ifd(vec![long(false, T_IMAGE_WIDTH, 1)]),
+            ifd(vec![long(false, T_IMAGE_LENGTH, 2)]),
+            ifd(vec![short(false, T_ORIENTATION, 3)]),
+        ],
+    );
+    vec![("tiff-chain-four", chain), ("tiff-subifds-three", subs)]
 }
 
 /// Fixtures whose parse is designed to fail (none today): names listed here

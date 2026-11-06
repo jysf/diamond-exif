@@ -449,7 +449,8 @@ fn tiff_records_are_byte_identical_to_the_committed_set() {
         );
     }
     // And there is nothing else that is not a JPEG record, apart from the
-    // SPEC-012 `audit-` record (the names ExifTool gives the DEC-008 tag ids),
+    // SPEC-012 record `audit-tag-names.txt` (the names ExifTool gives the DEC-008
+    // tag ids; exempted by its exact name, SPEC-013 F1),
     // which is neither a TIFF nor a JPEG record.
     let dir = root().join("tests/oracle-fixtures/exiftool");
     let others = std::fs::read_dir(&dir)
@@ -460,7 +461,7 @@ fn tiff_records_are_byte_identical_to_the_committed_set() {
                 .to_string_lossy()
                 .into_owned()
         })
-        .filter(|n| !n.starts_with("jpeg-") && !n.starts_with("audit-"))
+        .filter(|n| !n.starts_with("jpeg-") && n != "audit-tag-names.txt")
         .count();
     // 41 older TIFF records, plus the SPEC-017 ones: one for each of the three
     // new `tiff_ifd` seeds and `hostile-subifds-overlap` (whose `# stderr:`

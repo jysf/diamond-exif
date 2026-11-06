@@ -1,0 +1,264 @@
+# command: exiftool -a -u -G1 -H -s <file>
+# exiftool-version: 13.55
+# corpus: seed-audit
+## audit-bigtiff-magic
+## audit-empty-marker
+## audit-exif-gps-and-thumbnail
+IFD0	0x010f	Make
+ExifIFD	0x9003	DateTimeOriginal
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0003	GPSLongitudeRef
+IFD1	0x0201	ThumbnailOffset
+IFD1	0x0202	ThumbnailLength
+IFD1	-	ThumbnailImage
+## audit-ifd1-strips
+IFD0	0x010f	Make
+IFD1	0x0111	StripOffsets
+IFD1	0x0117	StripByteCounts
+## audit-many-overlapping-ifds
+## audit-png-magic
+## audit-two-blocks-same-tag
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+## jpeg-app-after-scan
+## jpeg-app1-len-0
+## jpeg-app1-len-1
+## jpeg-app1-len-2
+## jpeg-app1-len-ffff
+## jpeg-app1-past-eof
+## jpeg-exif-after-scan
+## jpeg-exif-and-xmp
+## jpeg-exif-bad-tiff
+## jpeg-exif-five-byte-payload
+## jpeg-exif-in-jpeg
+IFD0	0x010f	Make
+ExifIFD	0x9003	DateTimeOriginal
+GPS	0x0001	GPSLatitudeRef
+## jpeg-exif-sixth-byte-nonzero
+IFD0	0x010f	Make
+ExifIFD	0x9003	DateTimeOriginal
+GPS	0x0001	GPSLatitudeRef
+## jpeg-extended-xmp-pair
+## jpeg-extended-xmp-short
+## jpeg-ff00-stray
+## jpeg-fill-bytes
+JFIF	0x0000	JFIFVersion
+JFIF	0x0002	ResolutionUnit
+JFIF	0x0003	XResolution
+JFIF	0x0005	YResolution
+## jpeg-icc-chunks-mismatch
+## jpeg-icc-chunks-ok
+## jpeg-icc-iptc-jumbf
+## jpeg-icc-seq-zero
+## jpeg-iptc-8bim
+Photoshop	0x0408	GridGuidesInfo
+## jpeg-iptc-truncated-resource
+## jpeg-jumbf-header
+## jpeg-jumbf-short
+## jpeg-many-ff00
+## jpeg-many-segments
+## jpeg-minimal
+JFIF	0x0000	JFIFVersion
+JFIF	0x0002	ResolutionUnit
+JFIF	0x0003	XResolution
+JFIF	0x0005	YResolution
+## jpeg-no-sos
+JFIF	0x0000	JFIFVersion
+JFIF	0x0002	ResolutionUnit
+JFIF	0x0003	XResolution
+JFIF	0x0005	YResolution
+## jpeg-progressive-two-scans
+## jpeg-seventeen-exif
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+## jpeg-signatures-under-wrong-marker
+## jpeg-soi-only
+## jpeg-sos-no-eoi
+## jpeg-stray-bytes
+## jpeg-trailer-after-eoi
+## jpeg-two-exif
+IFD0	0x010f	Make
+IFD0	0x0100	ImageWidth
+IFD0	0x0101	ImageHeight
+IFD0	0x0102	BitsPerSample
+IFD0	0x010e	ImageDescription
+IFD0	0x0112	Orientation
+IFD0	0x011a	XResolution
+IFD0	0x9204	ExposureCompensation
+ExifIFD	0x9003	DateTimeOriginal
+GPS	0x0001	GPSLatitudeRef
+## jpeg-xmp-and-extended-xmp
+## tiff-ascii-count-past-eof
+## tiff-ascii-shapes
+IFD0	0x010e	ImageDescription
+IFD0	0x010f	Make
+IFD0	0x0110	Model
+IFD0	0x0131	Software
+IFD0	0x0132	ModifyDate
+IFD0	0x013b	Artist
+IFD0	0x8298	Copyright
+IFD0	0x9003	DateTimeOriginal
+IFD0	0x0112	Orientation
+## tiff-chain
+IFD0	0x0100	ImageWidth
+IFD1	0x0100	ImageWidth
+IFD2	0x0100	ImageWidth
+## tiff-chain-be
+IFD0	0x0100	ImageWidth
+IFD1	0x0100	ImageWidth
+IFD2	0x0100	ImageWidth
+## tiff-corrupt-subifd
+IFD0	0x0100	ImageWidth
+## tiff-count-overflow
+IFD0	0x02c0	Exif_0x02c0
+## tiff-count-overflow-be
+IFD0	0x02c0	Exif_0x02c0
+## tiff-deep-nesting
+IFD0	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+## tiff-depth-limit-exact
+IFD0	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+## tiff-entry-budget-exact
+## tiff-entry-budget-over
+## tiff-entry-count-past-eof
+## tiff-exif-gps-interop
+IFD0	0x0100	ImageWidth
+ExifIFD	0x0100	ImageWidth
+InteropIFD	0x0100	ImageWidth
+GPS	0x0100	GPS_0x0100
+## tiff-exif-points-at-ifd0
+IFD0	0x0100	ImageWidth
+ExifIFD	0x0100	ImageWidth
+## tiff-gps-past-eof-exif-ok
+IFD0	0x0100	ImageWidth
+ExifIFD	0x0100	ImageWidth
+## tiff-ifd0-offset-zero
+## tiff-leaf-next-word
+IFD0	0x0100	ImageWidth
+ExifIFD	0x0100	ImageWidth
+## tiff-malformed-subifds-tag
+IFD0	0x0100	ImageWidth
+IFD1	0x0100	ImageWidth
+## tiff-next-past-eof
+IFD0	0x0100	ImageWidth
+## tiff-overlapping-subifds
+## tiff-payload-past-eof
+IFD0	0x0100	ImageWidth
+## tiff-payload-past-eof-be
+IFD0	0x0100	ImageWidth
+## tiff-pointer-bad-count
+IFD0	0x0100	ImageWidth
+## tiff-self-cycle
+IFD0	0x0100	ImageWidth
+IFD1	0x0100	ImageWidth
+## tiff-signed-and-float
+IFD0	0x0001	InteropIndex
+IFD0	0x0002	InteropVersion
+IFD0	0x0003	Exif_0x0003
+IFD0	0x0004	Exif_0x0004
+IFD0	0x0005	Exif_0x0005
+IFD0	0x0006	Exif_0x0006
+IFD0	0x0007	Exif_0x0007
+IFD0	0x0008	Exif_0x0008
+IFD0	0x0009	Exif_0x0009
+IFD0	0x000a	Exif_0x000a
+## tiff-subifd
+IFD0	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD1	0x0100	ImageWidth
+## tiff-subifd-be
+IFD0	0x0100	ImageWidth
+SubIFD	0x0100	ImageWidth
+SubIFD1	0x0100	ImageWidth
+## tiff-subifds-count-over-cap
+IFD0	0x0100	ImageWidth
+## tiff-truncated-header
+## tiff-two-hop-cycle
+# outcome: not run: exiftool 13.55 does not return on this input (unbounded memory growth, about 9 GB in 5 s); see exiftool-two-hop-cycle-does-not-return
+## tiff-valid-be
+IFD0	0x0100	ImageWidth
+IFD0	0x0101	ImageHeight
+IFD0	0x0102	BitsPerSample
+IFD0	0x010e	ImageDescription
+IFD0	0x0112	Orientation
+IFD0	0x011a	XResolution
+IFD0	0x9204	ExposureCompensation
+## tiff-valid-le
+IFD0	0x0100	ImageWidth
+IFD0	0x0101	ImageHeight
+IFD0	0x0102	BitsPerSample
+IFD0	0x010e	ImageDescription
+IFD0	0x0112	Orientation
+IFD0	0x011a	XResolution
+IFD0	0x9204	ExposureCompensation

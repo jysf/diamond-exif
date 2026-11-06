@@ -387,6 +387,126 @@ fn with_sig_in(marker: u8, tiff: &[u8]) -> Vec<u8> {
     seg(marker, &[&b"Exif\0\0"[..], tiff].concat())
 }
 
+// ── SPEC-013: the extra shapes of the inventory parity check ────────────────
+
+/// An ICC profile: the 128-byte header (total length, version 2.1.0, class
+/// `mntr`, space `RGB `, PCS `XYZ `, `acsp` at 36, the rest zero), then a tag
+/// count and `tags` (each `(signature, data)`, data stored after the table).
+fn icc_profile(tags: &[(&[u8; 4], Vec<u8>)]) -> Vec<u8> {
+    let table = 4 + 12 * tags.len();
+    let mut body = Vec::new();
+    let mut records = Vec::new();
+    for (sig, data) in tags {
+        let at = 128 + table + body.len();
+        records.extend_from_slice(*sig);
+        records.extend_from_slice(&u32::try_from(at).expect("offset").to_be_bytes());
+        records.extend_from_slice(&u32::try_from(data.len()).expect("size").to_be_bytes());
+        body.extend_from_slice(data);
+    }
+    let total = 128 + table + body.len();
+    let mut p = vec![0u8; 128];
+    p[0..4].copy_from_slice(&u32::try_from(total).expect("length").to_be_bytes());
+    p[8..12].copy_from_slice(&[0x02, 0x10, 0x00, 0x00]);
+    p[12..16].copy_from_slice(b"mntr");
+    p[16..20].copy_from_slice(b"RGB ");
+    p[20..24].copy_from_slice(b"XYZ ");
+    p[36..40].copy_from_slice(b"acsp");
+    p.extend_from_slice(&u32::try_from(tags.len()).expect("count").to_be_bytes());
+    p.extend_from_slice(&records);
+    p.extend_from_slice(&body);
+    p
+}
+
+/// One APP2 chunk of an ICC profile: `ICC_PROFILE\0`, sequence 1 of 1, the
+/// profile.
+fn icc_app2(profile: &[u8]) -> Vec<u8> {
+    seg(
+        0xE2,
+        &[&b"ICC_PROFILE\0"[..], &[1, 1][..], profile].concat(),
+    )
+}
+
+/// An ISO box: a big-endian size counting its own eight header bytes, the
+/// four-character type, the payload.
+fn bmff_box(kind: &[u8; 4], payload: &[u8]) -> Vec<u8> {
+    let mut b = u32::try_from(8 + payload.len())
+        .expect("box size")
+        .to_be_bytes()
+        .to_vec();
+    b.extend_from_slice(kind);
+    b.extend_from_slice(payload);
+    b
+}
+
+/// One APP11 JUMBF segment: `JP`, box instance 1, sequence 1, then `boxes`.
+fn jumbf_app11(boxes: &[u8]) -> Vec<u8> {
+    seg(
+        0xEB,
+        &[
+            &[0x4A, 0x50, 0x00, 0x01][..],
+            &[0x00, 0x00, 0x00, 0x01][..],
+            boxes,
+        ]
+        .concat(),
+    )
+}
+
+/// The inventory-parity shapes, in a fixed order. Kept apart from
+/// [`fixtures`] so the 42 SPEC-011 fixtures and their records do not move.
+///
+/// * `jpeg-two-exif-with-gps-each`: two Exif blocks, each with a GPS IFD (the
+///   duplicate-keeping case beyond one tag).
+/// * `jpeg-icc-valid`: an ICC profile with one `desc` tag; `jpeg-icc-stub`: the
+///   same header and no tags.
+/// * `jpeg-jumbf-valid`: a JUMBF `jumb` box holding a `jumd` description box;
+///   `jpeg-jumbf-stub`: a bare `jumb` box. ExifTool 13.55 was measured to list
+///   nothing for either stub (see the inventory records).
+pub fn inventory_fixtures() -> Vec<(String, Vec<u8>)> {
+    let gps_block = |make: &[u8], lat_ref: &[u8], lon_ref: &[u8]| {
+        t::assemble(
+            false,
+            &[
+                t::ifd(vec![t::ascii(t::T_MAKE, make), t::ptr(t::T_GPS_IFD, 1)]),
+                t::ifd(vec![
+                    t::ascii(t::T_GPS_LAT_REF, lat_ref),
+                    t::rational(false, t::T_GPS_LAT, &[(37, 1), (30, 1), (0, 1)]),
+                    t::ascii(t::T_GPS_LON_REF, lon_ref),
+                    t::rational(false, t::T_GPS_LON, &[(122, 1), (5, 1), (0, 1)]),
+                ]),
+            ],
+        )
+    };
+    let two_gps = clean(&[
+        exif_app1(&gps_block(b"AlphaCam\0", b"N\0", b"E\0")),
+        exif_app1(&gps_block(b"BravoCam\0", b"S\0", b"W\0")),
+    ]);
+
+    let desc = [
+        &b"desc"[..],
+        &[0, 0, 0, 0][..],
+        &5u32.to_be_bytes()[..],
+        &b"abcd\0"[..],
+    ]
+    .concat();
+    let icc_valid = clean(&[icc_app2(&icc_profile(&[(b"desc", desc)]))]);
+    let icc_stub = clean(&[icc_app2(&icc_profile(&[]))]);
+
+    let jumd = bmff_box(
+        b"jumd",
+        &[&[0u8; 16][..], &[0x03][..], &b"test\0"[..]].concat(),
+    );
+    let jumbf_valid = clean(&[jumbf_app11(&bmff_box(b"jumb", &jumd))]);
+    let jumbf_stub = clean(&[jumbf_app11(&bmff_box(b"jumb", &[]))]);
+
+    vec![
+        ("jpeg-two-exif-with-gps-each".to_string(), two_gps),
+        ("jpeg-icc-valid".to_string(), icc_valid),
+        ("jpeg-icc-stub".to_string(), icc_stub),
+        ("jpeg-jumbf-valid".to_string(), jumbf_valid),
+        ("jpeg-jumbf-stub".to_string(), jumbf_stub),
+    ]
+}
+
 /// Every TIFF fixture, wrapped as `SOI, APP1 Exif\0\0 + tiff, SOS header + two
 /// scan bytes, EOI`, named `jpeg-<tiff-name>`.
 pub fn wrapped() -> Vec<(String, Vec<u8>)> {

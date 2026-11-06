@@ -85,6 +85,12 @@ Report text comes from hostile input: tag values are arbitrary bytes from files.
 
 Pure text, JSON and CSV renderers over `FileAudit` and `Preview` (and a run summary), deterministic with stable field order, plus an `audit_render` fuzz target that feeds arbitrary bytes through audit and render and checks the JSON and CSV are well-formed with an independent checker.
 
+## Carried from SPEC-013 verify (low findings)
+
+- The `audit_harness_guards_are_linear_in_the_input` test counts only where a `tick()` was placed, so a guard can stay linear in the counter yet quadratic in time (the verifier put the old rescan back without a tick and the test passed). Strengthen with a coarse wall-clock bound on a large input, or count the work at the loop itself.
+- The Class H rule in `tests/support/inventory.rs` drops every ExifTool region line for a bare TIFF; the companion test checks the file carries one of the four directory-valued ids but not that the region kind matches the id (0x83BB -> Iptc, 0x02BC -> Xmp, 0x8773 -> Icc, 0x8649 -> Photoshop/Iptc). Tighten when a second such input appears.
+- The inventory records do not keep ExifTool's exit status (it is 1 on four inputs where both sides are empty); record it if a future divergence could hide there.
+
 ## Non-Goals
 
 - Reading or writing files; argument handling (SPEC-016)

@@ -24,7 +24,7 @@ mod oracle_tiff;
 #[path = "support/tools.rs"]
 mod tools;
 
-use exif_core::tiff::{entry_budget, Container};
+use exif_core::tiff::{entry_budget, Container, IfdKind, Link};
 use exif_core::Error;
 use std::path::PathBuf;
 
@@ -174,6 +174,305 @@ fn existing_records_and_seeds_are_byte_identical() {
         "tiff-overlapping-subifds",
     ];
     check_dir("fuzz/seeds/audit", &OLD_AUDIT_SEEDS, &new_audit);
+}
+
+// ── SPEC-013, carried from the SPEC-017 verify (HANDOFF-026 m04, m07, m08) ──
+//
+// The budget is `len / 12`; only overlapping tables (distinct offsets, shared
+// bytes) can spend it. The images below overlap deliberately and are laid out
+// by hand: every offset is written next to the code that uses it, and each
+// shape has a control (the exact fit, which must parse clean) beside the case
+// that crosses by one entry.
+
+/// A little-endian image built by writing fields at absolute offsets; it grows
+/// with zero bytes as needed. IFD0's offset is `ifd0`.
+struct Img(Vec<u8>);
+
+impl Img {
+    fn new(ifd0: u32) -> Img {
+        let mut b = b"II\x2A\x00".to_vec();
+        b.extend_from_slice(&ifd0.to_le_bytes());
+        Img(b)
+    }
+    fn put(&mut self, at: usize, bytes: &[u8]) {
+        if self.0.len() < at + bytes.len() {
+            self.0.resize(at + bytes.len(), 0);
+        }
+        self.0[at..at + bytes.len()].copy_from_slice(bytes);
+    }
+    fn u16(&mut self, at: usize, v: u16) {
+        self.put(at, &v.to_le_bytes());
+    }
+    fn u32(&mut self, at: usize, v: u32) {
+        self.put(at, &v.to_le_bytes());
+    }
+    /// A 12-byte entry at `at`.
+    fn entry(&mut self, at: usize, tag: u16, ty: u16, count: u32, value: u32) {
+        self.u16(at, tag);
+        self.u16(at + 2, ty);
+        self.u32(at + 4, count);
+        self.u32(at + 8, value);
+    }
+    /// A pointer entry (`LONG`, count 1) to `target`.
+    fn pointer(&mut self, at: usize, tag: u16, target: usize) {
+        self.entry(at, tag, 4, 1, u32::try_from(target).expect("offset"));
+    }
+}
+
+/// Start of entry slot `j` of an IFD whose count word is at `ifd`.
+fn slot(ifd: usize, j: usize) -> usize {
+    ifd + 2 + 12 * j
+}
+
+const SUB_IFDS: u16 = 0x014A;
+const EXIF_PTR: u16 = 0x8769;
+const GPS_PTR: u16 = 0x8825;
+const INTEROP_PTR: u16 = 0xA005;
+
+fn issues_of(c: &Container<'_>) -> Vec<(Error, Link, Option<u32>)> {
+    c.issues()
+        .iter()
+        .map(|i| (i.error().clone(), i.link(), i.offset()))
+        .collect()
+}
+
+fn kinds_of(c: &Container<'_>) -> Vec<IfdKind> {
+    c.ifds().iter().map(|i| i.kind()).collect()
+}
+
+/// m04. A sub-IFD whose declared count (65,535) puts its table past the end of
+/// the file is a plain `Truncated` branch loss: it spends no budget and does
+/// not halt the walk. The sibling after it declares exactly the entries left in
+/// the budget and must be read in full, with no `TooManyEntries`.
+///
+/// Layout (74 bytes, budget 6): the sibling is at 8 (count 5, table 10..70,
+/// next-word 70..74); IFD0 sits inside that table at 22 (one entry: SubIFDs,
+/// two offsets, stored at 10); the truncated IFD is at 46, where the sibling's
+/// fourth entry is all `0xFF`, so its count word reads 65,535.
+#[test]
+fn a_truncated_ifd_spends_no_entry_budget() {
+    const SIBLING: usize = 8;
+    const COUNT: u16 = 5;
+    const IFD0: usize = 22;
+    const TRUNCATED: usize = 46;
+    let mut img = Img::new(u32::try_from(IFD0).unwrap());
+    img.u16(SIBLING, COUNT);
+    img.put(slot(SIBLING, 3), &[0xFF; 12]);
+    img.u32(SIBLING + 2, u32::try_from(TRUNCATED).unwrap()); // the array...
+    img.u32(SIBLING + 6, u32::try_from(SIBLING).unwrap()); // ...[truncated, sibling]
+    img.u16(IFD0, 1);
+    img.entry(
+        slot(IFD0, 0),
+        SUB_IFDS,
+        4,
+        2,
+        u32::try_from(SIBLING + 2).unwrap(),
+    );
+    img.u32(slot(IFD0, 1), 0); // IFD0's next-word
+    img.0.resize(SIBLING + 6 + 12 * usize::from(COUNT), 0);
+    let data = img.0;
+    assert_eq!(data.len(), 74);
+    let budget = entry_budget(data.len());
+    assert_eq!(budget, 6);
+
+    let c = Container::parse(&data).expect("parses");
+    // One issue only: the truncated table. No budget error, no halt.
+    let truncated = issues_of(&c);
+    assert_eq!(truncated.len(), 1, "{truncated:?}");
+    assert!(
+        matches!(truncated[0].0, Error::Truncated { .. }),
+        "{truncated:?}"
+    );
+    assert_eq!(truncated[0].1, Link::Tag(SUB_IFDS));
+    assert_eq!(truncated[0].2, Some(u32::try_from(TRUNCATED).unwrap()));
+    // IFD0 (1 entry) and the sibling (5 entries) both recorded: the sibling
+    // fits the 5 entries left exactly.
+    assert_eq!(kinds_of(&c), vec![IfdKind::Ifd0, IfdKind::Sub]);
+    assert_eq!(c.ifds()[1].offset(), 8);
+    assert_eq!(c.ifds()[1].entries().len(), 5);
+    assert_eq!(c.entry_count(), budget);
+}
+
+/// A chain of `n` IFDs of `c` entries each, laid out four bytes apart so each
+/// IFD's next-word is the last four bytes of the following table (IFD `k` is
+/// at `8 + 4k`; its next-word is at `8 + 4k + 2 + 12c`). `len = 4n + 12c + 10`.
+fn chain_image(c: u16, n: usize) -> Vec<u8> {
+    let at = |k: usize| 8 + 4 * k;
+    let mut img = Img::new(8);
+    for k in 0..n {
+        img.u16(at(k), c);
+    }
+    for k in 0..n.saturating_sub(1) {
+        img.u32(
+            at(k) + 2 + 12 * usize::from(c),
+            u32::try_from(at(k + 1)).unwrap(),
+        );
+    }
+    // The last IFD's table and next-word (zero) must be inside the file.
+    img.0.resize(at(n - 1) + 6 + 12 * usize::from(c), 0);
+    img.0
+}
+
+/// m07. The top-level chain (IFD0 -> IFD1 -> ...) spends the budget like every
+/// other link. One entry each: IFD0 and IFD1 fit exactly in 30 bytes (control);
+/// a third IFD in 34 bytes crosses (budget 2): it is omitted whole, the walk
+/// halts with `TooManyEntries` on the next-IFD link. Two entries each in 62
+/// bytes (budget 5): the first two IFDs (4 entries) are kept, the third crosses.
+/// Mutant m07 (budget skipped for `Link::Next`) reads them all.
+#[test]
+fn entry_budget_counts_the_top_level_chain() {
+    // Control: the exact fit parses clean.
+    let data = chain_image(1, 2);
+    assert_eq!(data.len(), 30);
+    let c = Container::parse(&data).expect("parses");
+    assert!(c.is_clean(), "{:?}", issues_of(&c));
+    assert_eq!(kinds_of(&c), vec![IfdKind::Ifd0, IfdKind::Ifd1]);
+    assert_eq!(c.entry_count(), entry_budget(data.len()));
+    assert_eq!(c.entry_count(), 2);
+
+    for (entries, n, len, budget, kept) in
+        [(1u16, 3usize, 34usize, 2usize, 2usize), (2, 7, 62, 5, 2)]
+    {
+        let data = chain_image(entries, n);
+        assert_eq!(data.len(), len);
+        assert_eq!(entry_budget(data.len()), budget);
+        let c = Container::parse(&data).expect("parses");
+        // The crossing IFD is omitted whole and the walk halts: exactly one
+        // issue, the budget, on the next-IFD link, at the crossing IFD.
+        assert_eq!(
+            issues_of(&c),
+            vec![(
+                Error::TooManyEntries { limit: budget },
+                Link::Next,
+                Some(u32::try_from(8 + 4 * kept).unwrap())
+            )],
+            "chain of {n} x {entries}"
+        );
+        assert_eq!(c.ifds().len(), kept, "chain of {n} x {entries}");
+        assert_eq!(c.entry_count(), kept * usize::from(entries));
+        assert!(c.entry_count() <= budget);
+    }
+}
+
+/// Which link the crossing IFD is reached by.
+#[derive(Clone, Copy)]
+enum Via {
+    Exif,
+    Gps,
+    Interop,
+}
+
+/// An image whose last IFD (`c` entries, reached by `via`) starts `k` entry
+/// slots before the end of the table that points at it, so that the two share
+/// bytes. `k = 1` fits the budget exactly; `k = 2` crosses it by one entry.
+/// Returns the image, the child's offset and the entries the walk keeps when
+/// the child is omitted.
+fn link_image(via: Via, k: usize, c: u16) -> (Vec<u8>, usize, usize) {
+    let c_us = usize::from(c);
+    match via {
+        // IFD0 (3 entries: the Exif pointer and two fillers) at 8; the Exif IFD
+        // starts in IFD0's last-but-(k-1) slot, so its count word is that
+        // slot's tag. Budget: 3 + c vs (3 - k + c) + 2 + ... see the asserts.
+        Via::Exif => {
+            let n0 = 3;
+            let child = slot(8, n0 - k);
+            let mut img = Img::new(8);
+            img.u16(8, 3);
+            img.pointer(slot(8, 0), EXIF_PTR, child);
+            img.u16(child, c); // the filler slot's tag is the child's count
+            img.0.resize(child + 6 + 12 * c_us, 0);
+            (img.0, child, n0)
+        }
+        // IFD0 (4 entries: Exif, GPS pointers and two fillers) at 8. The Exif
+        // IFD (1 entry) lies after everything else, so it fits; the GPS IFD
+        // overlaps the end of IFD0's table.
+        Via::Gps => {
+            let n0 = 4;
+            let child = slot(8, n0 - k);
+            let exif = child + 6 + 12 * c_us;
+            let mut img = Img::new(8);
+            img.u16(8, 4);
+            img.pointer(slot(8, 0), EXIF_PTR, exif);
+            img.pointer(slot(8, 1), GPS_PTR, child);
+            img.u16(child, c);
+            img.u16(exif, 1);
+            img.entry(slot(exif, 0), 0x0100, 3, 1, 0);
+            img.0.resize(exif + 18, 0);
+            (img.0, child, n0 + 1)
+        }
+        // IFD0 (1 entry, the Exif pointer) at 8; the Exif IFD at 26 has 3
+        // entries (the Interop pointer and two fillers); the Interop IFD
+        // overlaps the end of the Exif table.
+        Via::Interop => {
+            let exif = 26;
+            let n_x = 3;
+            let child = slot(exif, n_x - k);
+            let mut img = Img::new(8);
+            img.u16(8, 1);
+            img.pointer(slot(8, 0), EXIF_PTR, exif);
+            img.u16(exif, 3);
+            img.pointer(slot(exif, 0), INTEROP_PTR, child);
+            img.u16(child, c);
+            img.0.resize(child + 6 + 12 * c_us, 0);
+            (img.0, child, 1 + n_x)
+        }
+    }
+}
+
+/// m07/m08. The Exif, GPS and Interop links spend the budget too. For each
+/// link: the exact fit (control) parses clean with `entry_count == budget`;
+/// one slot more overlap crosses by one entry, and the crossing IFD is omitted
+/// whole, the walk halts, and `TooManyEntries` is the one issue, on that
+/// pointer tag. Mutant m08 (only `SubIFD` entries counted) sees no crossing in
+/// any of the three.
+#[test]
+fn entry_budget_counts_exif_gps_and_interop_links() {
+    for (name, via, tag, kind) in [
+        ("exif", Via::Exif, EXIF_PTR, IfdKind::Exif),
+        ("gps", Via::Gps, GPS_PTR, IfdKind::Gps),
+        ("interop", Via::Interop, INTEROP_PTR, IfdKind::Interop),
+    ] {
+        for c in [4u16, 6] {
+            // Control: exact fit.
+            let (data, _, _) = link_image(via, 1, c);
+            let ctl = Container::parse(&data).expect("parses");
+            assert!(ctl.is_clean(), "{name} c={c}: {:?}", issues_of(&ctl));
+            assert_eq!(
+                ctl.entry_count(),
+                entry_budget(data.len()),
+                "{name} c={c}: the control spends the budget exactly"
+            );
+            assert!(kinds_of(&ctl).contains(&kind), "{name} c={c}");
+
+            // One slot more overlap: over by one entry.
+            let (data, child, kept) = link_image(via, 2, c);
+            let budget = entry_budget(data.len());
+            let cr = Container::parse(&data).expect("parses");
+            assert_eq!(
+                issues_of(&cr),
+                vec![(
+                    Error::TooManyEntries { limit: budget },
+                    Link::Tag(tag),
+                    Some(u32::try_from(child).unwrap())
+                )],
+                "{name} c={c}"
+            );
+            assert!(
+                !kinds_of(&cr).contains(&kind),
+                "{name} c={c}: omitted whole"
+            );
+            assert_eq!(
+                cr.entry_count(),
+                kept,
+                "{name} c={c}: nothing after the crossing"
+            );
+            assert_eq!(
+                budget + 1,
+                kept + usize::from(c),
+                "{name} c={c}: over by one"
+            );
+        }
+    }
 }
 
 // Generated from the files committed before SPEC-017 (FNV-1a 64, sorted by name).
