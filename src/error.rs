@@ -185,6 +185,15 @@ pub enum Error {
         /// Input offset of the first segment found inconsistent.
         at: usize,
     },
+
+    /// The walk would have retained more than [`crate::tiff::entry_budget`]
+    /// entries in total (DEC-001): only overlapping IFD tables can do this,
+    /// because in a real file every entry occupies its own 12 bytes. The IFD
+    /// that would cross the budget is omitted and the walk ends.
+    TooManyEntries {
+        /// The total-entry budget that was reached (`data.len() / 12`).
+        limit: usize,
+    },
 }
 
 impl fmt::Display for Error {
@@ -213,6 +222,9 @@ impl fmt::Display for Error {
             }
             Error::TooManyIfds { limit } => {
                 write!(f, "IFD walk reached the limit of {limit} directories")
+            }
+            Error::TooManyEntries { limit } => {
+                write!(f, "IFD walk reached the limit of {limit} retained entries")
             }
             Error::UnexpectedFieldType { tag, field_type } => {
                 write!(f, "tag {tag} has unreadable field type {field_type}")

@@ -230,13 +230,14 @@ fn the_existing_63_seeds_are_byte_identical() {
         assert_eq!(bytes.len(), len, "{target}/{name}: length");
         assert_eq!(fnv1a_64(&bytes), hash, "{target}/{name}: contents changed");
     }
-    // And nothing but the three SPEC-011 seeds was added.
+    // And nothing but the three SPEC-011 seeds was added (the three SPEC-017
+    // `tiff_ifd` seeds make 32; `new_tiff_seeds_have_the_shapes_they_claim`).
     let count = |t: &str| {
         fs::read_dir(root().join("fuzz/seeds").join(t))
             .unwrap_or_else(|e| panic!("{t}: {e}"))
             .count()
     };
-    assert_eq!(count("tiff_ifd"), 29);
+    assert_eq!(count("tiff_ifd"), 32);
     assert_eq!(count("jpeg_segments"), 37);
 }
 
@@ -1351,13 +1352,14 @@ fn the_existing_66_seeds_are_byte_identical() {
         assert_eq!(bytes.len(), len, "{target}/{name}: length");
         assert_eq!(fnv1a_64(&bytes), hash, "{target}/{name}: contents changed");
     }
-    // Nothing was added to or removed from the two older targets.
+    // Nothing was added to or removed from the two older targets, except the
+    // three SPEC-017 `tiff_ifd` seeds.
     let count = |t: &str| {
         fs::read_dir(root().join("fuzz/seeds").join(t))
             .unwrap_or_else(|e| panic!("{t}: {e}"))
             .count()
     };
-    assert_eq!(count("tiff_ifd"), 29);
+    assert_eq!(count("tiff_ifd"), 32);
     assert_eq!(count("jpeg_segments"), 37);
 }
 
@@ -1407,6 +1409,14 @@ fn audit_seeds_are_committed_and_have_the_shapes_they_claim() {
     let mut want: Vec<String> = SEEDS.iter().map(|n| format!("tiff-{n}")).collect();
     want.extend(JPEG_SEEDS.iter().map(|n| format!("jpeg-{n}")));
     want.extend(AUDIT_NEW_SEEDS.iter().map(|n| n.to_string()));
+    // SPEC-017: the three new `tiff_ifd` seeds are copied under the same prefix.
+    for n in [
+        "entry-budget-exact",
+        "entry-budget-over",
+        "overlapping-subifds",
+    ] {
+        want.push(format!("tiff-{n}"));
+    }
     want.sort();
     assert_eq!(
         names, want,
@@ -1456,8 +1466,6 @@ fn audit_seeds_are_committed_and_have_the_shapes_they_claim() {
         .collect();
     assert_eq!(blocks, vec![Some(0), Some(1)]);
 
-    // The amplification shape at survivable size: 255 overlapping IFDs of 767
-    // entries from a file of about 11 KB, over the inventory cap.
     // An IFD1 of strips with no JPEG pointer: a Thumbnail finding on 0x0111,
     // with no range (the shape the real-target plant needed; see the handback).
     let strips = audit_seed("audit-ifd1-strips");
@@ -1467,16 +1475,27 @@ fn audit_seeds_are_committed_and_have_the_shapes_they_claim() {
     assert_eq!(t.len(), 1);
     assert_eq!(t[0].thumbnail.expect("range").range, None);
 
+    // The amplification shape at survivable size: 255 overlapping IFDs of 767
+    // entries from a file of about 11 KB. Before SPEC-017 it parsed to 256 IFDs
+    // and 195,586 entries and overflowed the inventory cap; the entry budget
+    // (`len / 12`) now keeps IFD0 and the first sub-IFD and omits the second,
+    // so the file is still the same bytes and the answer is a bounded one.
     let many = audit_seed("audit-many-overlapping-ifds");
     assert!(many.len() < 12 * 1024, "{} bytes", many.len());
     let c = Container::parse(&many).expect("parses");
-    assert_eq!(c.ifds().len(), 256);
+    assert_eq!(c.ifds().len(), 2);
     let entries: usize = c.ifds().iter().map(|i| i.entries().len()).sum();
-    assert_eq!(entries, 1 + 255 * 767);
-    assert!(entries > many.len() * 15, "amplification of the entries");
+    assert_eq!(entries, 1 + 767);
+    assert!(entries <= many.len() / 12, "within the entry budget");
+    assert!(matches!(
+        c.issues().last().map(|i| i.error()),
+        Some(Error::TooManyEntries { .. })
+    ));
     let a = audit(&many);
-    assert_eq!(a.items().len(), CAP);
-    assert!(a.health().inventory_truncated);
+    assert_eq!(a.items().len(), 1 + 767);
+    assert!(!a.health().inventory_truncated);
+    assert!(!a.health().clean, "a TooManyEntries issue is not clean");
+    assert_eq!(a.health().exif_issues, 1);
 }
 
 fn audit_degenerate_inputs() -> Vec<Vec<u8>> {
@@ -1516,7 +1535,7 @@ fn audit_harness_holds_on_every_seed_and_degenerate_inputs() {
         audit_invariants::check(&data);
         seen += 1;
     }
-    assert_eq!(seen, 73, "29 TIFF + 37 JPEG + 7 new");
+    assert_eq!(seen, 76, "32 TIFF + 37 JPEG + 7 new");
     for data in audit_degenerate_inputs() {
         audit_invariants::check(&data);
     }
@@ -1524,6 +1543,58 @@ fn audit_harness_holds_on_every_seed_and_degenerate_inputs() {
 
 /// One planted bug: a wrong answer put into the library's flattened answer for
 /// `input`, which the named guard, run ALONE, must reject.
+/// A plant input built in the test rather than read from a seed: the one
+/// honest way left to overflow the inventory cap (65,536 items) is a TIFF of
+/// about 786 KB with more than 65,536 real, disjoint entries, which is too big
+/// to commit (and no longer reachable with overlapping tables: SPEC-017).
+const GENERATED_BIG_INVENTORY: &str = "generated:big-inventory";
+
+/// 65,537 disjoint entries (an unremarkable tag, so no finding) in two IFDs:
+/// IFD0 with 65,535 and an IFD1 with 2, in 786,464 bytes (budget 65,538).
+fn big_inventory() -> Vec<u8> {
+    let first: usize = 65_535;
+    let mut out = b"II\x2A\x00\x08\x00\x00\x00".to_vec();
+    out.extend_from_slice(&u16::try_from(first).expect("u16").to_le_bytes());
+    for _ in 0..first {
+        out.extend_from_slice(&0xC000u16.to_le_bytes());
+        out.extend_from_slice(&1u16.to_le_bytes());
+        out.extend_from_slice(&1u32.to_le_bytes());
+        out.extend_from_slice(&[0, 0, 0, 0]);
+    }
+    let ifd1_at = u32::try_from(out.len() + 4).expect("u32");
+    out.extend_from_slice(&ifd1_at.to_le_bytes());
+    out.extend_from_slice(&2u16.to_le_bytes());
+    for _ in 0..2 {
+        out.extend_from_slice(&0xC000u16.to_le_bytes());
+        out.extend_from_slice(&1u16.to_le_bytes());
+        out.extend_from_slice(&1u32.to_le_bytes());
+        out.extend_from_slice(&[0, 0, 0, 0]);
+    }
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out
+}
+
+fn plant_input(name: &str) -> Vec<u8> {
+    if name == GENERATED_BIG_INVENTORY {
+        big_inventory()
+    } else {
+        audit_seed(name)
+    }
+}
+
+#[test]
+fn the_generated_big_inventory_really_overflows_the_cap() {
+    use exif_core::audit::audit;
+    let data = big_inventory();
+    let c = Container::parse(&data).expect("parses");
+    assert!(c.is_clean(), "{:?}", c.issues());
+    assert_eq!(c.entry_count(), 65_537);
+    assert!(c.entry_count() <= exif_core::tiff::entry_budget(data.len()));
+    let a = audit(&data);
+    assert_eq!(a.items().len(), CAP);
+    assert!(a.health().inventory_truncated);
+}
+
 struct Plant {
     name: &'static str,
     input: &'static str,
@@ -1898,7 +1969,7 @@ fn plants() -> Vec<Plant> {
         },
         Plant {
             name: "truncation not flagged",
-            input: "audit-many-overlapping-ifds",
+            input: GENERATED_BIG_INVENTORY,
             guard: "health",
             apply: |f| f.health.truncated = false,
         },
@@ -1968,7 +2039,7 @@ fn audit_harness_each_iff_invariant_goes_red_when_planted() {
         );
     }
     for p in &plants {
-        let data = audit_seed(p.input);
+        let data = plant_input(p.input);
         let got = audit_invariants::facts(&audit(&data));
         let want = audit_invariants::rederive(&data);
         // CONTROL: the unplanted answer satisfies every guard.
@@ -1996,6 +2067,197 @@ fn audit_harness_each_iff_invariant_goes_red_when_planted() {
     }
     println!(
         "{} plants, each rejected by its own guard alone",
+        plants.len()
+    );
+}
+
+// ── SPEC-017: the total entry budget ─────────────────────────────────────────
+
+include!("../fuzz/shared/entry_budget_invariants.rs");
+
+fn tiff_seed(name: &str) -> Vec<u8> {
+    let path = root().join("fuzz/seeds/tiff_ifd").join(name);
+    fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+#[test]
+fn new_tiff_seeds_have_the_shapes_they_claim() {
+    use exif_core::tiff::entry_budget;
+
+    // Exactly on the budget: clean.
+    let exact = tiff_seed("entry-budget-exact");
+    assert_eq!(exact.len(), 66);
+    let c = Container::parse(&exact).expect("parses");
+    assert!(c.is_clean(), "{:?}", c.issues());
+    assert_eq!(c.entry_count(), 5);
+    assert_eq!(c.entry_count(), entry_budget(exact.len()));
+
+    // One over: the second sub-IFD is omitted whole, one issue.
+    let over = tiff_seed("entry-budget-over");
+    assert_eq!(over.len(), 78);
+    let c = Container::parse(&over).expect("parses");
+    assert_eq!(entry_budget(over.len()), 6);
+    assert_eq!(c.entry_count(), 4);
+    assert_eq!(c.ifds().len(), 2);
+    assert_eq!(c.issues().len(), 1);
+    assert_eq!(c.issues()[0].error(), &Error::TooManyEntries { limit: 6 });
+
+    // The reduced hostile shape: 40 sub-IFDs of 255 entries in 3.3 KB.
+    let many = tiff_seed("overlapping-subifds");
+    assert!(many.len() < 4 * 1024, "{} bytes", many.len());
+    let c = Container::parse(&many).expect("parses");
+    let budget = entry_budget(many.len());
+    assert_eq!(c.entry_count(), 1 + 255);
+    assert!(c.entry_count() <= budget);
+    assert!(
+        c.entry_count() + 255 > budget,
+        "the second sub-IFD must cross"
+    );
+    assert_eq!(c.ifds().len(), 2);
+    assert_eq!(c.issues().len(), 1);
+    assert_eq!(
+        c.issues()[0].error(),
+        &Error::TooManyEntries { limit: budget }
+    );
+    // Without the budget this file would have kept IFD0 and 40 sub-IFDs.
+    let ifd0 = c.ifd0().expect("ifd0");
+    assert_eq!(ifd0.entry(330).expect("SubIFDs").count(), 40);
+}
+
+#[test]
+fn tiff_harness_entry_budget_invariants_hold_on_every_seed() {
+    let mut seen = 0usize;
+    for target in ["tiff_ifd", "audit"] {
+        let dir = root().join("fuzz/seeds").join(target);
+        for entry in fs::read_dir(&dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display())) {
+            let path = entry.expect("entry").path();
+            let data = fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+            entry_budget_invariants::check_input(&data);
+            if let Ok(c) = Container::parse(&data) {
+                entry_budget_invariants::check_container(&data, &c);
+            }
+            seen += 1;
+        }
+    }
+    assert_eq!(seen, 32 + 76);
+    // The degenerate inputs too, and the generated big inventory.
+    for data in audit_degenerate_inputs() {
+        entry_budget_invariants::check_input(&data);
+    }
+    entry_budget_invariants::check_input(&big_inventory());
+}
+
+/// One planted bug, applied to the flattened answer of a seed; the named
+/// guard, run ALONE, must reject it.
+struct BudgetPlant {
+    name: &'static str,
+    seed: &'static str,
+    guard: &'static str,
+    apply: fn(&mut entry_budget_invariants::Shape),
+}
+
+fn budget_plants() -> Vec<BudgetPlant> {
+    use entry_budget_invariants::Halt;
+    vec![
+        // The check removed: more entries than the budget are retained.
+        BudgetPlant {
+            name: "check removed (one entry over the budget retained)",
+            seed: "entry-budget-exact",
+            guard: "budget",
+            apply: |s| {
+                s.entry_count = s.budget + 1;
+                s.reported_count = s.entry_count;
+            },
+        },
+        BudgetPlant {
+            name: "entry_count() disagrees with the IFDs",
+            seed: "entry-budget-exact",
+            guard: "budget",
+            apply: |s| s.reported_count += 1,
+        },
+        // `>` against `>=`: a halt where the total only EQUALS the budget.
+        BudgetPlant {
+            name: "halts on an exact fit (>= instead of >)",
+            seed: "entry-budget-over",
+            guard: "crossing",
+            apply: |s| s.declared_at_halt = Some(s.budget - s.entry_count),
+        },
+        // The refused IFD was recorded anyway: the omission is not atomic.
+        BudgetPlant {
+            name: "the refused IFD was recorded (omission not atomic)",
+            seed: "entry-budget-over",
+            guard: "crossing",
+            apply: |s| {
+                let at = s.issues[0].1.expect("offset");
+                s.ifd_offsets.push(at);
+            },
+        },
+        BudgetPlant {
+            name: "wrong limit reported",
+            seed: "entry-budget-over",
+            guard: "crossing",
+            apply: |s| s.limits[0] += 1,
+        },
+        BudgetPlant {
+            name: "TooManyEntries pushed twice",
+            seed: "entry-budget-over",
+            guard: "once-last",
+            apply: |s| {
+                let again = s.issues[0];
+                s.issues.push(again);
+                s.limits.push(s.budget);
+            },
+        },
+        BudgetPlant {
+            name: "halt skipped (an issue recorded after it)",
+            seed: "entry-budget-over",
+            guard: "once-last",
+            apply: |s| s.issues.push((Halt::Other, None)),
+        },
+        BudgetPlant {
+            name: "TooManyIfds recorded with it",
+            seed: "entry-budget-over",
+            guard: "exclusive",
+            apply: |s| s.issues.insert(0, (Halt::Ifds, None)),
+        },
+    ]
+}
+
+#[test]
+fn entry_budget_plants_are_each_rejected_by_their_own_guard_alone() {
+    let plants = budget_plants();
+    for (name, _) in entry_budget_invariants::GUARDS {
+        assert!(
+            plants.iter().any(|p| p.guard == name),
+            "no plant for guard {name}"
+        );
+    }
+    for p in &plants {
+        let data = tiff_seed(p.seed);
+        let c = Container::parse(&data).expect("parses");
+        let good = entry_budget_invariants::shape(&data, &c);
+        // CONTROL: the unplanted answer satisfies every guard.
+        let control = entry_budget_invariants::violations(&good);
+        assert!(
+            control.is_empty(),
+            "{}: control on {}: {control:?}",
+            p.name,
+            p.seed
+        );
+        let mut bad = good.clone();
+        (p.apply)(&mut bad);
+        assert_ne!(bad, good, "{}: the plant changed nothing", p.name);
+        // MUTATION: rejected by the named guard ALONE.
+        assert!(
+            entry_budget_invariants::run_guard(p.guard, &bad).is_err(),
+            "{}: guard {} did not reject the planted bug on {}",
+            p.name,
+            p.guard,
+            p.seed
+        );
+    }
+    println!(
+        "{} entry-budget plants, each rejected by its own guard alone",
         plants.len()
     );
 }

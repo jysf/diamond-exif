@@ -93,6 +93,11 @@ Committed ExifTool records of the tag listing (group and id) for the existing fi
 - Tighten the `tests/jpeg_oracle.rs` TIFF-records exemption from the `audit-` prefix to the exact `audit-tag-names.txt` (F1).
 - The audit fuzz harness: make `g_category_shape`'s region loop and `g_thumbnail`'s per-finding re-read linear (F5); consider `0xC65D` and `0x013C` as DEC-008 amendment candidates (F6).
 
+## Carried from SPEC-017 verify (low findings)
+
+- A deterministic test that a `Truncated` IFD spends no entry budget: a truncated big-count sub-IFD followed by a sibling that exactly fits the remaining budget (mutant m04 survived the suite; only fuzz caught it).
+- Budget accounting on non-SubIFD links: tests that exercise the chain (`Link::Next`) and Exif/GPS/Interop links against the budget (m07/m08 were caught by one incidental test and fuzz only).
+
 ## Non-Goals
 
 - Value comparison (already done for the 20 selectors); XMP/ICC/IPTC contents

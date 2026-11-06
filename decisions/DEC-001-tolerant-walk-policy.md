@@ -76,6 +76,10 @@ Refinements that follow from the decision, recorded so the code and this file ag
 - **Issue shape.** `ParseIssue` = typed `Error` + `Link` (`Next` or `Tag(u16)`) + index of the IFD holding the pointer + target offset (`None` when the pointer value was unreadable). `Error` gains `Clone, PartialEq, Eq`.
 - **Strict wrapper.** `Container::parse_strict` ships in SPEC-003 (it is a few lines) and doubles as the differential oracle for the fuzz target and for the tests that flip.
 
+## Clarifications from the SPEC-017 design
+
+- **A second global budget: retained entries.** Besides `MAX_IFDS` (visits), the walk has a total-entry budget: the entries of all recorded IFDs, IFD0 included, may not exceed `data.len() / 12` (every entry occupies its own 12-byte slot in a file whose IFD tables do not overlap, so a real file never reaches it; only overlapping tables can). An IFD whose declared entry count would cross it is **omitted atomically** (decided from the declared count, before any entry is decoded), one `TooManyEntries { limit }` issue is recorded, and, like `TooManyIfds`, the **whole walk halts** (a global budget fails every other branch the same way; halting bounds time as well as memory). Memory is thereby linear in the input, not in `MAX_IFDS x 65,535`. Measured motivation: a 789,516-byte TIFF naming 511 overlapping IFDs parsed cleanly to 33,488,386 entries (about 804 MB, ~1,018x the input) before this rule; ExifTool 13.55 on the same shape returns in 0.04 s at 22 MB because it ignores all but the first 10 SubIFD directories (`Warning: Ignoring N SubIFD directories`), a different policy that this library does not copy (its SubIFD cap stays `MAX_IFDS`).
+
 ## Consequences
 
 - **Positive:** partial results survive corruption; the audit CLI gets corruption as findings; the policy is testable (a corrupt GPS IFD leaves IFD0 readable).

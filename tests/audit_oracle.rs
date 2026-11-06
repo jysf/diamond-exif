@@ -11,12 +11,16 @@
 //! recorded one, so it can neither grow nor rot silently.
 //!
 //! Amplification: a hostile TIFF can name hundreds of overlapping IFDs of
-//! 65,535 entries each inside a small file, and `Container` keeps every
-//! entry of every IFD. The ignored test prints the numbers; the bounded test
-//! checks the same shape at a size that finishes quickly.
+//! 65,535 entries each inside a small file. SPEC-012 measured that `Container`
+//! kept every entry of every IFD (about 804 MB from 789,516 bytes); SPEC-017
+//! bounds the total at `len / 12` entries. One test prints the numbers at the
+//! full shape; the other checks a smaller shape. The ExifTool side of the
+//! shape is in `tests/budget_oracle.rs`.
 
 #[path = "support/audit_tags.rs"]
 mod audit_tags;
+#[path = "support/hostile.rs"]
+mod hostile;
 #[path = "support/tools.rs"]
 mod tools;
 
@@ -222,40 +226,6 @@ fn name_parsers_read_exiftool_output_shapes() {
 
 // ── Container amplification ─────────────────────────────────────────────────
 
-/// A TIFF whose IFD0 holds one `SubIFDs` entry naming `n_sub` IFDs at offsets
-/// two bytes apart. Each of them is "65,535 entries" because the bytes there
-/// are all `0xFF`, so the entry tables overlap and the file is only a little
-/// over 786 KB however many IFDs it names.
-fn hostile(n_sub: usize) -> Vec<u8> {
-    const ENTRIES: usize = 0xFFFF;
-    let array_at = 8 + 2 + 12 + 4;
-    let base = array_at + 4 * n_sub;
-    let base = base + (base % 2);
-    let mut out = b"II\x2A\x00\x08\x00\x00\x00".to_vec();
-    out.extend_from_slice(&1u16.to_le_bytes());
-    out.extend_from_slice(&330u16.to_le_bytes());
-    out.extend_from_slice(&4u16.to_le_bytes());
-    out.extend_from_slice(&(n_sub as u32).to_le_bytes());
-    out.extend_from_slice(&(array_at as u32).to_le_bytes());
-    out.extend_from_slice(&0u32.to_le_bytes());
-    for k in 0..n_sub {
-        out.extend_from_slice(&((base + 2 * k) as u32).to_le_bytes());
-    }
-    while out.len() < base {
-        out.push(0);
-    }
-    let region = 2 * n_sub.saturating_sub(1) + 2 + 12 * ENTRIES + 4;
-    out.resize(base + region, 0xFF);
-    // The next-IFD words sit in the last `2 * (n_sub - 1) + 4` bytes of the
-    // region; zero them so no IFD chains on (a chained attempt would spend one
-    // of the 512 IFD visits on a failure and halve the amplification).
-    let next_words = base + 2 + 12 * ENTRIES;
-    for b in out.iter_mut().skip(next_words) {
-        *b = 0;
-    }
-    out
-}
-
 fn rss_kb() -> Option<u64> {
     let out = std::process::Command::new("ps")
         .args(["-o", "rss=", "-p", &std::process::id().to_string()])
@@ -270,19 +240,32 @@ fn total_entries(c: &Container<'_>) -> usize {
 
 #[test]
 fn container_amplification_is_bounded_in_test() {
-    // The same shape at 8 IFDs: 8 x 65,535 entries from a file of about 790 KB.
-    let bytes = hostile(8);
+    // The same shape at 8 IFDs: 8 x 65,535 entries asked for in a file of
+    // about 790 KB. Before SPEC-017 all of them were kept (524,281 entries,
+    // an audit inventory over the cap); the entry budget (`len / 12`) now
+    // keeps IFD0 and the first sub-IFD and omits the second.
+    let bytes = hostile::hostile(8);
+    let budget = exif_core::tiff::entry_budget(bytes.len());
     let start = Instant::now();
     let c = Container::parse(&bytes).expect("parses");
     let parse = start.elapsed();
-    assert_eq!(c.ifds().len(), 9, "IFD0 plus 8 overlapping SubIFDs");
-    assert_eq!(total_entries(&c), 1 + 8 * 65_535);
-    // The audit on top keeps its own inventory bounded.
+    assert_eq!(c.ifds().len(), 2, "IFD0 plus the first overlapping SubIFD");
+    assert_eq!(total_entries(&c), 1 + 65_535);
+    assert!(total_entries(&c) <= budget);
+    assert_eq!(c.issues().len(), 1);
+    assert!(matches!(
+        c.issues()[0].error(),
+        exif_core::Error::TooManyEntries { .. }
+    ));
+    // The audit on top keeps its own inventory, which now holds exactly the
+    // retained entries (65,536 = the cap, not over it) and reports the parse
+    // issue.
     let start = Instant::now();
     let a = audit(&bytes);
     let audited = start.elapsed();
     assert_eq!(a.items().len(), MAX_INVENTORY_ITEMS);
-    assert!(a.health().inventory_truncated);
+    assert!(!a.health().inventory_truncated);
+    assert_eq!(a.health().exif_issues, 1);
     assert!(!a.health().clean);
     assert!(
         parse.as_secs() < 30 && audited.as_secs() < 60,
@@ -297,21 +280,27 @@ fn container_amplification_is_bounded_in_test() {
     );
 }
 
-/// SPEC-012: measure the worst case and print the numbers. Not part of the
-/// normal run (about 800 MB). Run it with
-/// `cargo test --release --test audit_oracle container_amplification_is_measured_and_reported -- --ignored --nocapture`
-/// under `/usr/bin/time -l` for the process's peak memory.
+/// SPEC-012 measured the worst case (33,488,386 entries, about 804 MB, ~1,018x
+/// the input, 103 ms); SPEC-017 bounds it. This asserts the bound at the full
+/// `MAX_IFDS` shape and prints the numbers (run with `-- --nocapture`, under
+/// `/usr/bin/time -l` for the process's peak memory). Cheap now, so it is not
+/// ignored.
 #[test]
-#[ignore = "measurement: allocates close to a gigabyte; run with --ignored --nocapture"]
-fn container_amplification_is_measured_and_reported() {
-    let n_sub: usize = 511; // MAX_IFDS (512) minus IFD0
-    let bytes = hostile(n_sub);
-    println!("input: {} bytes ({n_sub} overlapping SubIFDs)", bytes.len());
+fn container_amplification_is_bounded_and_reported() {
+    let bytes = hostile::hostile(hostile::N_SUB);
+    assert_eq!(bytes.len(), 789_516);
+    let budget = exif_core::tiff::entry_budget(bytes.len());
+    println!(
+        "input: {} bytes ({} overlapping SubIFDs), entry budget {budget}",
+        bytes.len(),
+        hostile::N_SUB
+    );
     println!("rss before parse: {:?} KB", rss_kb());
     let start = Instant::now();
     let c = Container::parse(&bytes).expect("parses");
     let parse = start.elapsed();
     let entries = total_entries(&c);
+    let entry_size = std::mem::size_of::<exif_core::tiff::Entry>();
     println!(
         "Container::parse: {parse:?}, {} IFDs, {entries} entries, {} issues, rss after: {:?} KB",
         c.ifds().len(),
@@ -319,9 +308,20 @@ fn container_amplification_is_measured_and_reported() {
         rss_kb()
     );
     println!(
-        "entries x size_of::<Entry>() = {} bytes; amplification {:.0}x of the input",
-        entries * std::mem::size_of::<exif_core::tiff::Entry>(),
-        (entries * std::mem::size_of::<exif_core::tiff::Entry>()) as f64 / bytes.len() as f64
+        "entries x size_of::<Entry>() = {} bytes; amplification {:.2}x of the input",
+        entries * entry_size,
+        (entries * entry_size) as f64 / bytes.len() as f64
+    );
+    // The bound: entries within the budget, so at most 2x the input in bytes
+    // (24 bytes per entry against 12 per slot), one halting issue, no
+    // TooManyIfds.
+    assert!(entries <= budget, "{entries} entries, budget {budget}");
+    assert_eq!(entries, c.entry_count());
+    assert!(entries * entry_size <= 2 * bytes.len());
+    assert_eq!(c.issues().len(), 1);
+    assert_eq!(
+        c.issues()[0].error(),
+        &exif_core::Error::TooManyEntries { limit: budget }
     );
     drop(c);
     let start = Instant::now();
@@ -335,4 +335,6 @@ fn container_amplification_is_measured_and_reported() {
         a.health().inventory_truncated,
         rss_kb()
     );
+    assert_eq!(a.items().len(), 65_536);
+    assert!(!a.health().clean);
 }

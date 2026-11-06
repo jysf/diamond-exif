@@ -18,6 +18,13 @@
 //! equal the declared count, and an ASCII value must partition its payload
 //! (text, NUL, rest), borrow from the input, and agree with `from_utf8`.
 //!
+//! Since SPEC-017 (DEC-001) the total entry budget is checked in
+//! `fuzz/shared/entry_budget_invariants.rs` (included below, shared with
+//! `tests/fuzz_layout.rs`): the retained entries never exceed `len / 12`;
+//! `TooManyEntries` appears at most once, only as the last issue and never with
+//! `TooManyIfds`; and it is genuine (the refused IFD's declared count really
+//! crosses the budget, and that IFD is not recorded).
+//!
 //! The walk must stay in sync with the public reader API: a spec that adds a
 //! reader must add it here in the same change.
 //!
@@ -39,6 +46,9 @@ use libfuzzer_sys::fuzz_target;
 
 use exif_core::tiff::{Container, Entry, IfdKind, MAX_IFDS, MAX_ISSUES, MAX_TAG_VALUES};
 use exif_core::Error;
+
+// `entry_budget_invariants::check_container`, shared with `tests/fuzz_layout.rs`.
+include!("../shared/entry_budget_invariants.rs");
 
 /// Tags worth probing with `scalar`/`values` on IFD0: width, length, bits per
 /// sample, orientation, SubIFDs, and one that is never present.
@@ -230,6 +240,10 @@ fuzz_target!(|data: &[u8]| {
         let _ = (issue.error(), issue.link(), issue.offset());
         assert!(!issue.to_string().is_empty());
     }
+
+    // SPEC-017: the total entry budget (named guards, shared with the layout
+    // test, which plants each bug).
+    entry_budget_invariants::check_container(data, &container);
 
     // The attempt budget halts the walk, so TooManyIfds is always the last
     // issue (iff-style: present implies last, and a non-last one is a bug).

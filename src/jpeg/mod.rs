@@ -1303,6 +1303,7 @@ mod tests {
                 have: 1,
             },
             Error::IccChunkMismatch { at: 9 },
+            Error::TooManyEntries { limit: 65_536 },
         ];
         for e in &errors {
             assert!(!e.to_string().is_empty(), "{e:?} has an empty Display");
@@ -1332,10 +1333,11 @@ mod tests {
                 Error::ExtraExif { .. } => 19,
                 Error::RegionTooShort { .. } => 20,
                 Error::IccChunkMismatch { .. } => 21,
+                Error::TooManyEntries { .. } => 22,
             }
         }
         let indices: Vec<usize> = errors.iter().map(index).collect();
-        assert_eq!(indices, (0..22).collect::<Vec<usize>>());
+        assert_eq!(indices, (0..23).collect::<Vec<usize>>());
 
         let kinds = [
             SegmentKind::Jfif,

@@ -1591,6 +1591,7 @@ mod tests {
                 Error::ExtraExif { .. } => 19,
                 Error::RegionTooShort { .. } => 20,
                 Error::IccChunkMismatch { .. } => 21,
+                Error::TooManyEntries { .. } => 22,
             }
         }
         let indices: Vec<usize> = errors.iter().map(index).collect();
