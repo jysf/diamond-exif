@@ -6,14 +6,14 @@
 task:
   id: SPEC-011
   type: story                      # epic | story | task | bug | chore
-  cycle: verify  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
-  complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
+  complexity_actual: L          # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: punch-list  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
@@ -80,10 +80,19 @@ cost:
       duration_minutes: 13
       recorded_at: 2026-11-05
       notes: "verdict PUNCH LIST at da4e052; tokens transcribed by the orchestrator from the sub-agent metered result"
+    - cycle: build
+      agent: claude-sonnet-5-5
+      interface: other
+      tokens_total: 51586
+      estimated_usd: 0.34
+      duration_minutes: 7
+      recorded_at: 2026-11-05
+      notes: "fix round closing the verify punch list (resumed builder). The harness reported a cumulative 467,326 for the resumed agent; this is the 51,586 above the 415,740 already recorded for the first round."
   totals:
-    tokens_total: 697223
-    estimated_usd: 4.60
-    session_count: 2
+    tokens_total: 748809
+    estimated_usd: 4.94
+    session_count: 3
+shipped_at: 2026-11-05
 ---
 
 # SPEC-011: JPEG read parity against ExifTool
@@ -110,7 +119,7 @@ STAGE-001 built the oracle for bare TIFF; SPEC-005 and SPEC-008 gave it a red-pr
 | Exif APP1 *after* EOI | reads nothing; warns `Missing JPEG SOS` | not read; `MissingSos` |
 | truncated mid-scan / SOS header only | reads it | reads it; `MissingEoi` |
 | bad TIFF inside Exif | warns `Malformed APP1 EXIF segment`, nothing read | block error, JPEG layer clean |
-| stray bytes between segments | warns `Skipped unknown N bytes` | `StrayBytes` |
+| stray bytes between segments | warns `Skipped unknown N bytes` **only when no requested tag was found** (build re-measurement; question `exiftool-warnings-only-when-no-tag-is-found`) | `StrayBytes` |
 | APP1 length 1 / past EOF | warns `JPEG format error` | `BadSegmentLength` / `Truncated` |
 | XMP APP1 (valid packet) | `XMP-xmp:CreatorTool` present | `Region::Xmp` |
 | IPTC in APP13 `Photoshop 3.0` + `8BIM` 0x0404 | `IPTC:ObjectName` present | `Region::Iptc` |
@@ -268,22 +277,19 @@ Named tests (a rename or fold is a deviation to report):
 *Appended during **ship**. Three questions, short answers.*
 
 1. **What would I do differently next time?**
-   — <answer>
+   — State the design's measured table as a prediction to re-measure (I did, and one row was wrong: ExifTool prints its stray-byte warning only when no requested tag is found), and design the wildcard divergence with a value pin from the start: "a divergence entry is never a loosening" was in the spec, and the wildcard I specified still loosened it until verify caught it. Also run the CI-only red-proof scripts in the build brief (I did this time; the previous PR failed on one).
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — DEC-007 written at design (five-byte Exif signature, measured). The harness model of ExifTool's multi-Exif rule is a fitted model, not a documented rule; recorded in `several-exif-segments`. The CI `oracle-records` job now fails on untracked records as well as changed ones. Verify's own-mutants method again found the real gaps (3 survivors, all closed).
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — Not yet: the open items are the audit-stage decisions (`several-exif-segments`: merged Exif view in the library; the C2PA-in-JUMBF question), the SBYTE selector (signals), and capturing ExifTool warnings when values were found. The PNG/WebP stage and the `exif-audit` CLI stage come next; STAGE-002 itself needs closing.
 
 4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
    the defect-escape distribution is greppable across specs:
    `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
    `none` (clean first try).
-   — <one word>
+   — verify
    *(Runtime/operational defects — the escape-prone class — only exist once the
    artifact meets its real host. `escaped` here is a signal to strengthen the
    §12 behavioral pre-flight for that surface.)*
@@ -295,4 +301,4 @@ Named tests (a rename or fold is a deviation to report):
    `impact` field is transcribed from, and both halves are already written above
    (## Context is the before, ## Goal is the after): confirm the prediction,
    don't reconstruct it from memory.
-   — <answer | none>
+   — Check a JPEG, however damaged, against ExifTool: 120 committed records, every wrapped TIFF fixture reading identically bare and inside a JPEG, and every difference written down with its command, version and output; and an Exif block with a non-zero sixth signature byte (which ExifTool reads) is no longer missed.
