@@ -2384,6 +2384,109 @@ fn preview_input_of(data: &[u8]) -> PreviewInput {
     audit_invariants::preview_input(data, &a, &f)
 }
 
+/// One little-endian IFD: `(tag, type, count, value-field)` entries (inline
+/// values only), then the next-IFD offset.
+fn le_ifd(entries: &[(u16, u16, u32, u32)], next: u32) -> Vec<u8> {
+    let mut v = u16::try_from(entries.len())
+        .expect("few")
+        .to_le_bytes()
+        .to_vec();
+    for (tag, typ, count, val) in entries {
+        v.extend_from_slice(&tag.to_le_bytes());
+        v.extend_from_slice(&typ.to_le_bytes());
+        v.extend_from_slice(&count.to_le_bytes());
+        v.extend_from_slice(&val.to_le_bytes());
+    }
+    v.extend_from_slice(&next.to_le_bytes());
+    v
+}
+
+/// A TIFF with a tag of each of the seven tag categories (IFD0, ExifIFD, GPS,
+/// IFD1), a MakerNote and an IFD1 thumbnail; every value is inline.
+fn full_house_tiff_bytes() -> Vec<u8> {
+    const A: u32 = 0x0000_0061; // "a\0" as an inline ASCII value
+    let ifd0_len = 2 + 12 * 8 + 4;
+    let exif_len = 2 + 12 * 3 + 4;
+    let gps_len = 2 + 12 + 4;
+    let exif_at = u32::try_from(8 + ifd0_len).expect("small");
+    let gps_at = exif_at + u32::try_from(exif_len).expect("small");
+    let ifd1_at = gps_at + u32::try_from(gps_len).expect("small");
+    let mut t = b"II\x2A\x00\x08\x00\x00\x00".to_vec();
+    t.extend(le_ifd(
+        &[
+            (0x010E, 2, 2, A), // FreeText
+            (0x010F, 2, 2, A), // CameraModel
+            (0x0131, 2, 2, A), // Software
+            (0x0132, 2, 2, A), // Timestamps
+            (0x013B, 2, 2, A), // Authorship
+            (0x8769, 4, 1, exif_at),
+            (0x8825, 4, 1, gps_at),
+            (0xA431, 2, 2, A), // DeviceId
+        ],
+        ifd1_at,
+    ));
+    t.extend(le_ifd(
+        &[(0x9003, 2, 2, A), (0xA431, 2, 2, A), (0x927C, 7, 4, A)],
+        0,
+    ));
+    t.extend(le_ifd(&[(0x0001, 2, 2, A)], 0));
+    t.extend(le_ifd(&[(0x0201, 4, 1, 0), (0x0202, 4, 1, 0)], 0));
+    t
+}
+
+/// The full-house JPEG: that TIFF in an Exif APP1, plus XMP, IPTC, ICC, JUMBF.
+fn full_house_jpeg_bytes() -> Vec<u8> {
+    let iptc_data = [0x1C, 0x02, 0x05, 0x00, 0x01, b'T'];
+    let mut res = b"8BIM".to_vec();
+    res.extend_from_slice(&0x0404u16.to_be_bytes());
+    res.extend_from_slice(&[0, 0, 0, 0, 0, 6]);
+    res.extend_from_slice(&iptc_data);
+    lin_jpeg(&[
+        lin_seg(0xE1, &[&b"Exif\0\0"[..], &full_house_tiff_bytes()].concat()),
+        lin_seg(
+            0xE1,
+            &[&b"http://ns.adobe.com/xap/1.0/\0"[..], &b"<x/>"[..]].concat(),
+        ),
+        lin_seg(0xED, &[&b"Photoshop 3.0\0"[..], &res].concat()),
+        lin_seg(0xE2, b"ICC_PROFILE\0\x01\x01profile"),
+        lin_seg(
+            0xEB,
+            &[0x4A, 0x50, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x6A],
+        ),
+    ])
+}
+
+#[test]
+fn the_full_house_inputs_carry_every_category() {
+    use exif_core::audit::{audit, Category};
+    let tiff = full_house_tiff_bytes();
+    let a = audit(&tiff);
+    let have: Vec<Category> = a.findings().iter().map(|f| f.category).collect();
+    for c in [
+        Category::Gps,
+        Category::DeviceId,
+        Category::Authorship,
+        Category::FreeText,
+        Category::Timestamps,
+        Category::CameraModel,
+        Category::Software,
+        Category::MakerNote,
+        Category::Thumbnail,
+    ] {
+        assert!(have.contains(&c), "tiff lacks {c:?}");
+    }
+    assert!(a.health().clean);
+    let jpeg = full_house_jpeg_bytes();
+    let a = audit(&jpeg);
+    let have: Vec<Category> = a.findings().iter().map(|f| f.category).collect();
+    for c in Category::ALL {
+        assert!(have.contains(&c), "jpeg lacks {c:?}");
+    }
+    assert!(a.health().clean);
+    audit_invariants::check(&tiff);
+    audit_invariants::check(&jpeg);
+}
+
 #[test]
 fn preview_guards_hold_on_every_seed_and_degenerate_inputs() {
     let mut inputs: Vec<(String, Vec<u8>)> = Vec::new();
@@ -2402,6 +2505,10 @@ fn preview_guards_hold_on_every_seed_and_degenerate_inputs() {
     // A truncated audit (the inventory cap is overflowed) exercises rule 4's
     // conservative branch.
     inputs.push((GENERATED_BIG_INVENTORY.to_string(), big_inventory()));
+    // The seeds hold no DeviceId, MakerNote or Jumbf-next-to-Exif shape; the
+    // full-house inputs put every category in front of the guards.
+    inputs.push(("full-house tiff".to_string(), full_house_tiff_bytes()));
+    inputs.push(("full-house jpeg".to_string(), full_house_jpeg_bytes()));
     let mut with_findings = 0usize;
     let mut truncated = 0usize;
     for (name, data) in &inputs {
