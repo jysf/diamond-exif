@@ -6,7 +6,7 @@
 task:
   id: SPEC-017
   type: story                      # epic | story | task | bug | chore
-  cycle: frame                     # frame | design | build | verify | ship
+  cycle: design                    # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: S                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -31,9 +31,9 @@ handoff:
   created_at: null
 
 references:
-  decisions: []                    # [DEC-NNN, DEC-MMM]
-  constraints: []                  # [constraint-id-1, constraint-id-2]
-  related_specs: []                # [SPEC-NNN]
+  decisions: [DEC-001, DEC-005, DEC-002]                    # [DEC-NNN, DEC-MMM]
+  constraints: [panic-free-library, forbid-unsafe-code, fuzz-target-per-surface, test-before-implementation, oracle-must-be-shown-red, no-new-top-level-deps-without-decision]                  # [constraint-id-1, constraint-id-2]
+  related_specs: [SPEC-012, SPEC-016]                # [SPEC-NNN]
 
 # Blocking dependencies: specs that must SHIP before this one can start.
 # Distinct from references.related_specs (informational). Feeds the ready-set
@@ -47,7 +47,7 @@ claimed_by: null
 # One sentence on what this spec contributes to its stage's
 # value_contribution. For plumbing: "infrastructure enabling
 # STAGE-003's <capability>". Optional; null is acceptable.
-value_link: null
+value_link: "STAGE-003: the reader can be pointed at untrusted files in bulk without a 790 KB file costing 950 MB"
 
 # Self-reported AI cost per cycle. Each cycle (design, build, verify,
 # ship) appends one entry to sessions[]. Totals are computed at ship.
@@ -62,7 +62,7 @@ cost:
   # design. Never a gate — its only job is to be compared with the actual
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
-  tokens_estimate: null
+  tokens_estimate: 300000
   sessions: []
   totals:
     tokens_total: 0
@@ -74,19 +74,92 @@ cost:
 
 ## Context
 
-Found by the SPEC-012 build and measured, not guessed: `Container::parse` has no cap on the **total** number of entries it keeps. DEC-001/DEC-005 bound IFD *count* (512 attempts) and the per-IFD entry table by the input length, but 512 distinct, overlapping IFDs can each claim up to 65,535 entries inside the same few hundred kilobytes. Measured (ExifTool not involved; ExifTool 13.55 was not run on it): a 789,516-byte TIFF (IFD0 with one `SubIFDs` entry of 511 offsets two bytes apart into `0xFF` bytes, next-IFD words zero) parses **cleanly** to 512 IFDs and 33,488,386 entries, about 804 MB at 24 bytes per entry (~1,018x the input), ~950 MB peak RSS, 103 ms. Recorded as question `tiff-container-memory-amplification`. The hostile-input fuzz target has not found it because its inputs are small.
+Found and measured by the SPEC-012 build and re-measured in this design: `Container::parse` bounds IFD *count* (`MAX_IFDS` = 512 visits) and each IFD's table by the input length, but nothing bounds the **total** entries kept. Overlapping IFD tables (distinct offsets, same bytes) let 511 SubIFDs each claim 65,535 entries inside the same ~790 KB: it parses **cleanly** to 33,488,386 entries, about 804 MB at 24 bytes per entry (~1,018x the input), ~950 MB peak, 103 ms, with no issue. A server parsing uploads, and SPEC-016's directory scanner, cannot accept that.
 
-This is a denial-of-service shape for any server that parses uploads, and SPEC-016 (the binary) will parse untrusted files in bulk. It belongs before SPEC-016, and it is a reader fix, not an audit concern.
+**Design-time measurement** (ExifTool 13.55, macOS, each call under `perl -e 'alarm 25'`, the same file shape built by `hostile.py`: IFD0 with one `SubIFDs` entry of N offsets two bytes apart into `0xFF` bytes, next-words zero): N = 8, 60 and 511 all return in 0.04-0.05 s at about 22 MB resident. For N = 60 and 511 it prints `Warning: Ignoring 50 / 501 SubIFD directories` (it keeps the first 10); for N = 8 it prints `Warning: Bad format (65535) for SubIFD entry 0` and reads nothing. So the reference tool is not exposed to this shape; this library is, and the fix is ours. We do **not** copy ExifTool's 10-SubIFD limit (a different policy; our SubIFD cap stays `MAX_IFDS`, DEC-005).
+
+**The rule that falls out of the format** (DEC-001 clarification written in this design, normative): a real file's IFD tables are disjoint and each entry occupies its own 12 bytes, so the total of retained entries times 12 can never exceed the file length. The budget is exactly that: `entry_budget = data.len() / 12`. No magic constant to tune, memory linear in the input (at most `2 x len` bytes of entries), and real files sit far below it (sampled local photos carry 49-63 IFD entries in total, against tables that are a small fraction of an Exif blob of kilobytes).
 
 ## Goal
 
-A documented total-entry budget in the tolerant walk (a constant, exceeded once by a terminal halting issue, as the IFD and issue caps are), so memory is bounded by a constant instead of by overlapping-IFD arithmetic; the hostile file above becomes a typed outcome (the walk halts with an issue, entries kept so far are still readable), with a fuzz seed for it and the oracle records unchanged.
+The tolerant walk stops retaining entries once their total would exceed `data.len() / 12`: the IFD that would cross the budget is omitted atomically, one `TooManyEntries` issue is recorded, and the walk halts (everything recorded so far stays readable). The 789 KB file above becomes a typed outcome with about `len/12` entries at most. Nothing about any well-formed or merely damaged file changes.
+
+## Inputs
+
+- **Reads:** `src/tiff/mod.rs` (`Walk`, `follow`, `read_ifd`, `MAX_IFDS`, `MAX_ISSUES`, `ENTRY_SIZE`), `src/error.rs`, `src/tiff/issue.rs`, DEC-001 (incl. its SPEC-017 clarification), DEC-005
+- **Tests that move:** `tests/audit_oracle.rs::container_amplification_is_measured_and_reported` (and its bounded in-test version), the audit fuzz seed `audit-many-overlapping-ifds`, anything that built overlapping tables on purpose
+- Constraints: `panic-free-library` (five lints, `checked`/`saturating` arithmetic), `forbid-unsafe-code`, `fuzz-target-per-surface`, `test-before-implementation`, `oracle-must-be-shown-red`, no dependencies
+
+## Outputs
+
+### Library (`src/tiff/mod.rs`, `src/error.rs`)
+
+- `Error::TooManyEntries { limit: usize }` (additive on the `#[non_exhaustive]` enum), `Display`: "IFD walk reached the limit of {limit} retained entries". Extend the exhaustive error-display guard tests.
+- `pub fn entry_budget(data_len: usize) -> usize` (`data_len / ENTRY_SIZE`, `ENTRY_SIZE` stays private or becomes a documented constant) and `Container::entry_count(&self) -> usize` (total entries retained), both documented.
+- `Walk` gains `entries: usize` (entries of recorded IFDs, IFD0 included). In `follow`, **before decoding any entry**, read the IFD's declared count and, if `walk.entries + count > budget`, record `TooManyEntries { limit: budget }` (link, from_ifd, `Some(offset)`), omit the IFD, set `walk.halted`, return `None`. The count check happens before the `Vec<Entry>` is allocated, so the omitted IFD allocates nothing (the same discipline as the SubIFDs count cap, DEC-005). IFD0 goes through the same accounting (it cannot exceed the budget: a table past the end is already `Truncated`, so no special case, but it is counted).
+- `MAX_ISSUES` is unchanged (the halting issue is `TooManyEntries` or `TooManyIfds`, never both, and it occupies a budgeted attempt); a test pins the bound.
+- Doc updates: `Container::parse`, the module limits section, `MAX_ISSUES`.
+
+### Fixtures and records
+
+- Hostile and boundary fixtures are **generated in tests** (the 790 KB file is not committed): `hostile(n)` as in `tests/audit_oracle.rs`, plus a hand-built overlapping pair whose totals sit exactly on and one over the budget.
+- One oracle record `tests/oracle-fixtures/exiftool/hostile-subifds-overlap.txt` for the N = 511 shape (small: ExifTool prints dashes plus the SubIFD warning in `# stderr:`; the file is regenerated at record/live time). The existing 120+1 records and 66+7 seeds stay byte-identical, and every existing parity test passes unchanged. If any existing fixture, seed or record changes behaviour, that is a **finding to report**, not something to paper over.
+
+### Fuzz
+
+- `tiff_ifd` and `audit` targets gain the invariant `container.entry_count() <= entry_budget(data.len())` (always), `TooManyEntries` appears at most once, only as the last issue, and never together with `TooManyIfds`; when present, no IFD is recorded after it. Shown red by planting the check out (against the real libFuzzer target) and by a single-guard variant where two guards overlap.
+- New `tiff_ifd` seeds: `entry-budget-exact` (totals equal the budget, clean), `entry-budget-over` (one over, `TooManyEntries`), `overlapping-subifds` (a reduced hostile shape that crosses the budget). The 29 existing `tiff_ifd` seeds stay byte-identical; the audit seed `audit-many-overlapping-ifds` is regenerated only if its bytes must change (it should not: the file is the same, its behaviour changes), and its test expectation is updated.
+
+## Acceptance Criteria
+
+- The 789,516-byte N = 511 file: `Container::parse` returns Ok with `entry_count() <= len/12`, one `TooManyEntries` issue (last), no `TooManyIfds`; IFDs recorded before the cross are intact. Peak memory of the parse is measured and reported (target: a small multiple of the input, not ~1,000x).
+- Boundary exact: total entries equal to the budget parse clean; one more crosses and is omitted atomically (the IFD is absent, not truncated).
+- No well-formed fixture changes: every existing test, record and seed behaves as before (reported if not). Real-photo plausibility is documented: the budget leaves at least 10x headroom on the sampled photos' Exif blobs (build re-measures with ExifTool on any 3 local JPEGs and records the numbers in the Handback; no photo is committed).
+- `TooManyEntries` is reported by `parse_strict` as the first issue's error like any other; the audit reports it as a parse issue (health not clean) with no change to the audit module.
+- Gates: fmt (both graphs), `just lint`, `lint-fuzz`, `lint-no-allow`, `lint-red-proof`, `lint-fuzz-red-proof` (run locally), `cargo test` on stable and 1.90.0 with `DIAMOND_EXIF_REQUIRE_ORACLE=1`, `-F unsafe_code`, `deny`, `deny-fuzz`, `validate`, `decisions-audit`, `cost-audit`, `oracle-record` with a clean `git status`; 60 s smoke clean for `tiff_ifd` and `audit` with executions and coverage recorded. No dependencies.
+
+## Failing Tests
+
+Named tests (a rename or missing test is a deviation to report):
+
+**src/tiff (unit):**
+- `entry_budget_is_input_length_over_twelve` (including 0, 11, 12, 13, `usize::MAX`)
+- `a_total_exactly_on_the_budget_parses_clean`
+- `one_entry_over_the_budget_omits_that_ifd_and_halts`
+- `the_over_budget_ifd_allocates_no_entries` (decided from the declared count: assert via a table past the budget that is also truncated, where the budget error wins only if the order in the spec holds; builder pins the actual order and reports it)
+- `entries_before_the_crossing_ifd_are_kept_and_readable`
+- `too_many_entries_is_the_last_issue_and_never_with_too_many_ifds`
+- `the_hostile_overlapping_subifds_file_is_bounded` (N = 511 built in the test; asserts entry_count and issue shape; measures nothing slow)
+- `max_issues_bound_still_holds_with_the_entry_budget`
+- `parse_strict_reports_too_many_entries`
+- `every_error_variant_this_module_returns_displays_something` (extended)
+- `ifd0_is_counted_in_the_budget`
+
+**tests/audit_oracle.rs and tests/jpeg_oracle.rs (or a new tests/budget_oracle.rs):**
+- `container_amplification_is_bounded_and_reported` (replaces the measurement test: asserts the bound, prints the numbers)
+- `live_hostile_subifds_exiftool_survives_and_we_report_the_budget` and `replay_hostile_subifds_record_header_has_the_warning` (skip loudly without the tool)
+- `existing_records_and_seeds_are_byte_identical` (hash lists)
+
+**tests/fuzz_layout.rs and the targets:**
+- `tiff_harness_entry_budget_invariants_hold_on_every_seed` and the plants as table-driven tests (check removed; `<` vs `<=`; `TooManyEntries` also pushed twice; halt skipped), both directions
+- `new_tiff_seeds_have_the_shapes_they_claim`
 
 ## Non-Goals
 
-- Changing what any well-formed or merely damaged file reads (the budget must sit far above real files: the design picks it from measured camera files' entry counts and ExifTool's behaviour on the hostile file, probed alone under the time limit)
-- Streaming or lazily-decoded entries (a larger redesign)
-- Any audit, report or CLI change; JPEG-layer budgets (already bounded by segment size)
+- Copying ExifTool's 10-SubIFD limit, lowering `MAX_IFDS`, or lazy/streaming entry decoding
+- Per-IFD or per-tag value budgets (`MAX_TAG_VALUES` already covers values)
+- Any change to the audit model, renderers or CLI; any JPEG-layer budget change
+- Committing a large hostile file
+
+## Notes for the Implementer
+
+- Test-first: write the budget tests against the current code and watch the hostile-file test go red (it parses to 33M entries today), then implement.
+- Keep the arithmetic `checked`/`saturating`; the budget for `usize::MAX` input must not overflow. The check uses the declared count (a `u16`), before allocating.
+- Where the order of checks inside `follow` matters (budget vs truncation vs cycle vs depth), pin the actual order in a test and say so in the Handback; the spec's intent is: attempts, depth and cycle checks as today, then count-vs-budget before any entry is decoded.
+- Real-photo plausibility: run `exiftool -a -u -G1 -s <jpeg>` on three local JPEGs and count IFD entries (the design sampled 8: 49-63 entries); report the counts and the blob sizes; commit nothing.
+- Probe any new ExifTool input alone under the time limit before it joins a loop. Run the two CI-only red-proof scripts locally.
+- Report in the Handback: every deviation, any existing fixture/seed/record whose behaviour changed, the before/after memory of the hostile file, fuzz executions and coverage, each red-proof before/after.
+- Do not push or open a PR; do not advance cycles; do not edit `decisions/`.
 
 ---
 
