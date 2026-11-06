@@ -183,7 +183,7 @@ mod audit_invariants {
     /// DEC-008, typed again: the category of a tag id outside GPS and Interop
     /// IFDs, where the id decides.
     fn by_id(tag: u16) -> Option<&'static str> {
-        let table: [(u16, &str); 37] = [
+        let table: [(u16, &str); 40] = [
             (0x010E, "FreeText"),
             (0x010F, "CameraModel"),
             (0x0110, "CameraModel"),
@@ -215,8 +215,11 @@ mod audit_invariants {
             (0x9C9D, "Authorship"),
             (0xA436, "FreeText"),
             (0xA437, "Authorship"),
-            (0xA438, "Software"),
+            (0xA438, "Authorship"),
             (0xA439, "Software"),
+            (0xA43A, "Software"),
+            (0xA43B, "Software"),
+            (0xA43C, "Software"),
             (0x02BC, "Xmp"),
             (0x83BB, "Iptc"),
             (0x8649, "Iptc"),

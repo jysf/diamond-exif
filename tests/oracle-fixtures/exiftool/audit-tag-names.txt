@@ -68,6 +68,12 @@
 0xA438	v3	ImageEditor
 0xA439	IFD0	CameraFirmware
 0xA439	v3	CameraFirmware
+0xA43A	IFD0	RAWDevelopingSoftware
+0xA43A	v3	RAWDevelopingSoftware
+0xA43B	IFD0	ImageEditingSoftware
+0xA43B	v3	ImageEditingSoftware
+0xA43C	IFD0	MetadataEditingSoftware
+0xA43C	v3	MetadataEditingSoftware
 0x02BC	v3	ApplicationNotes
 0x83BB	IPTC	Caption-Abstract
 0x83BB	v3	IPTC-NAA
