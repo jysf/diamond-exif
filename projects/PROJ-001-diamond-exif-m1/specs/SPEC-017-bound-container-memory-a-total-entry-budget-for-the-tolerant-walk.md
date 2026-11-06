@@ -6,7 +6,7 @@
 task:
   id: SPEC-017
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: verify  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: S                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -63,11 +63,19 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: 300000
-  sessions: []
+  sessions:
+    - cycle: build
+      agent: claude-sonnet-5-5
+      interface: other
+      tokens_total: 283432
+      estimated_usd: 1.87
+      duration_minutes: 25
+      recorded_at: 2026-11-05
+      notes: "tokens transcribed by the orchestrator from the sub-agent metered result" 
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 283432
+    estimated_usd: 1.87
+    session_count: 1
 ---
 
 # SPEC-017: Bound Container memory: a total entry budget for the tolerant walk

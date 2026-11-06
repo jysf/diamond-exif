@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: null
+  tokens_total: 283432             # orchestrator-recorded from the metered sub-agent result (subagent_tokens)
+  estimated_usd: 1.87
+  duration_minutes: 25
   branch: worktree-agent-aa47050276922284a
   pr: null
   completed_at: 2026-11-05         # YYYY-MM-DD
-  notes: "implementer cannot see its own token count; orchestrator transcribes the metered figure. Truncation-first check order is a deviation from the spec text (see Handback)." 
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "tokens transcribed by the orchestrator from the sub-agent metered result" 
+  synced_at: 2026-11-05
 ---
 
 # HANDOFF-025: Bound Container memory (total entry budget)
