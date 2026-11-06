@@ -79,7 +79,7 @@ The design and porting brief are complete and carry named failure modes. The fir
 - [ ] (not yet defined) — writer and strip policies (M1c, M1d)
 - [ ] (not yet defined) — M1e/M1f: HEIC read, IPTC/ICC passthrough, 24 h fuzz gate, publish
 
-**Count:** 1 shipped / 1 active / 2 pending
+**Count:** 2 shipped / 0 active / 4 pending
 
 ## Dependencies
 
