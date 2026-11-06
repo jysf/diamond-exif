@@ -154,6 +154,33 @@ pub enum Error {
         /// The issue-count limit that was reached.
         limit: usize,
     },
+
+    /// An Exif segment beyond the first in one JPEG. The first is the primary
+    /// (DEC-006); each further one costs this JPEG-layer issue.
+    ExtraExif {
+        /// Input offset of the extra Exif segment's own `FF` marker byte.
+        at: usize,
+    },
+
+    /// A located region's small header, or a resource inside it, does not fit
+    /// in its segment. No partial region is reported.
+    RegionTooShort {
+        /// Which header or resource was short.
+        what: &'static str,
+        /// Input offset of the segment (or of the resource inside it).
+        at: usize,
+        /// Bytes the header or resource needed, counted from its start.
+        need: usize,
+        /// Bytes that were available from its start.
+        have: usize,
+    },
+
+    /// The ICC profile chunks of one JPEG disagree among themselves (count,
+    /// sequence number, repeated or missing chunk). One issue per JPEG.
+    IccChunkMismatch {
+        /// Input offset of the first segment found inconsistent.
+        at: usize,
+    },
 }
 
 impl fmt::Display for Error {
@@ -231,6 +258,26 @@ impl fmt::Display for Error {
             }
             Error::TooManyIssues { limit } => {
                 write!(f, "JPEG walk reached the limit of {limit} issues")
+            }
+            Error::ExtraExif { at } => {
+                write!(
+                    f,
+                    "extra Exif segment at offset {at} (the first is primary)"
+                )
+            }
+            Error::RegionTooShort {
+                what,
+                at,
+                need,
+                have,
+            } => {
+                write!(
+                    f,
+                    "{what} at offset {at} is too short: needs {need} byte(s), has {have}"
+                )
+            }
+            Error::IccChunkMismatch { at } => {
+                write!(f, "ICC profile chunks are inconsistent from offset {at}")
             }
         }
     }

@@ -18,16 +18,34 @@
 //!
 //! Every iteration of the walk loop advances the cursor by at least one byte
 //! or ends the walk: a stray run is at least one byte long, a fill byte
-//! advances by one, every marker branch advances by at least two, and the scan
+//! advances by one, every marker branch advances by at least two (a bad
+//! segment length by four: the marker and its two length bytes), and the scan
 //! search only moves forward. The loop is iterative; there is no recursion.
+//!
+//! # Fill bytes at the end of the input
+//!
+//! A run of `FF` fill bytes is skipped to the last `FF` of the run, which is
+//! the marker's own `FF`. If the run reaches the end of the input there is no
+//! marker code after it, so the walk records [`Error::Truncated`] at that last
+//! `FF` (length 2) and ends.
+//!
+//! # Metadata
+//!
+//! [`read`] runs the walk and then extracts the Exif blocks and the located,
+//! not decoded, XMP, ICC, IPTC and JUMBF regions (SPEC-010); see
+//! [`JpegMetadata`].
 
 mod issue;
+mod metadata;
 
 use core::fmt;
 
 use crate::error::Error;
 
 pub use issue::JpegIssue;
+pub use metadata::{
+    read, AnyIssue, ExifBlock, JpegMetadata, Region, MAX_EXIF_BLOCKS, MAX_JPEG_METADATA_ISSUES,
+};
 
 /// Most segments one walk records. The `MAX_JPEG_SEGMENTS + 1`-th halts the
 /// walk with [`Error::TooManySegments`].
@@ -280,7 +298,10 @@ impl<'a> Walk<'a> {
                 },
                 p,
             );
-            return Some(p.saturating_add(2));
+            // The length bytes of a bad length are `00 00` or `00 01` and can
+            // never start a marker, so skip the marker and both of them: one
+            // fault is one issue (DEC-006).
+            return Some(p.saturating_add(4));
         }
         let total = usize::from(declared).saturating_add(2);
         let end = p.saturating_add(total);
@@ -351,6 +372,9 @@ pub struct Jpeg<'a> {
     scan_region: Option<&'a [u8]>,
     eoi_offset: Option<usize>,
     trailer: &'a [u8],
+    /// Whether a cap halted the walk. Nothing is recorded after a halt, and
+    /// that includes the extraction issues of [`read`].
+    halted: bool,
 }
 
 impl<'a> Jpeg<'a> {
@@ -399,6 +423,7 @@ impl<'a> Jpeg<'a> {
             scan_region,
             eoi_offset: walk.eoi,
             trailer,
+            halted: walk.halted,
         })
     }
 
@@ -435,6 +460,11 @@ impl<'a> Jpeg<'a> {
     /// Offset of the `EOI` marker's `FF`.
     pub fn eoi_offset(&self) -> Option<usize> {
         self.eoi_offset
+    }
+
+    /// Whether a cap halted the walk (the last issue is then the halting one).
+    pub(crate) fn halted(&self) -> bool {
+        self.halted
     }
 
     /// The bytes after `EOI`; empty when there is no `EOI`.
@@ -651,13 +681,12 @@ mod tests {
             assert_eq!(
                 errors(&j),
                 [
+                    // One fault, one issue: the marker and both length bytes
+                    // are skipped (SPEC-010 walker change).
                     Error::BadSegmentLength {
                         marker: 0xE1,
                         length: u16::from(l)
                     },
-                    // Rescan after the two skipped marker bytes: the length
-                    // bytes themselves are a stray run (rule 2.1).
-                    Error::StrayBytes { at: 4, len: 2 },
                 ],
                 "length {l}"
             );
@@ -665,6 +694,32 @@ mod tests {
             let kinds: Vec<SegmentKind> = j.segments().iter().map(Segment::kind).collect();
             assert_eq!(kinds, [SegmentKind::Com, SegmentKind::Sos]);
         }
+    }
+
+    #[test]
+    fn a_bad_length_skips_the_marker_and_both_length_bytes() {
+        // After `FF E1 00 00` the next byte is read as the next marker's `FF`:
+        // no stray-byte run, and the COM that follows is at offset 6.
+        let d = cat(&[&soi(), &[0xFF, 0xE1, 0x00, 0x00], &com(), &sos(), &eoi()]);
+        let j = Jpeg::parse(&d).unwrap();
+        assert_eq!(j.issues().len(), 1);
+        assert_eq!(j.segments()[0].offset(), 6);
+        assert_eq!(j.segments()[0].kind(), SegmentKind::Com);
+        // The bad length right at the end of the input: four bytes skipped,
+        // the cursor lands exactly on the end and the walk ends.
+        let d = cat(&[&soi(), &[0xFF, 0xE1, 0x00, 0x01]]);
+        let j = Jpeg::parse(&d).unwrap();
+        assert_eq!(
+            errors(&j),
+            [
+                Error::BadSegmentLength {
+                    marker: 0xE1,
+                    length: 1
+                },
+                Error::MissingSos,
+                Error::MissingEoi
+            ]
+        );
     }
 
     #[test]
@@ -1225,6 +1280,14 @@ mod tests {
             Error::MissingEoi,
             Error::TooManySegments { limit: 4096 },
             Error::TooManyIssues { limit: 1024 },
+            Error::ExtraExif { at: 5 },
+            Error::RegionTooShort {
+                what: "x",
+                at: 1,
+                need: 2,
+                have: 1,
+            },
+            Error::IccChunkMismatch { at: 9 },
         ];
         for e in &errors {
             assert!(!e.to_string().is_empty(), "{e:?} has an empty Display");
@@ -1251,10 +1314,13 @@ mod tests {
                 Error::MissingEoi => 16,
                 Error::TooManySegments { .. } => 17,
                 Error::TooManyIssues { .. } => 18,
+                Error::ExtraExif { .. } => 19,
+                Error::RegionTooShort { .. } => 20,
+                Error::IccChunkMismatch { .. } => 21,
             }
         }
         let indices: Vec<usize> = errors.iter().map(index).collect();
-        assert_eq!(indices, (0..19).collect::<Vec<usize>>());
+        assert_eq!(indices, (0..22).collect::<Vec<usize>>());
 
         let kinds = [
             SegmentKind::Jfif,

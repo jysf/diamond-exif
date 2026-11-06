@@ -1,7 +1,7 @@
 //! Recoverable problems found while walking a JPEG (DEC-006).
 //!
 //! Kept apart from the TIFF-level `ParseIssue`: the layers do not lose their
-//! identity (how a caller sees both at once is SPEC-010's decision).
+//! identity; a caller sees both at once through `AnyIssue` (SPEC-010).
 
 use core::fmt;
 

@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-05
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-010
@@ -42,14 +42,14 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
+  status: completed                # completed | blocked | rejected
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # tokens_total × your rate, or your harness's number
   duration_minutes: null
-  branch: null
+  branch: worktree-agent-ab395ff3e0934e17f
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # one line if unusual (rework, no meter, etc.)
+  completed_at: 2026-11-05         # YYYY-MM-DD
+  notes: "No token meter is visible to the implementer subagent; tokens_total, estimated_usd and duration_minutes are null and the orchestrator transcribes the metered figure from the Agent result. Committed locally, not pushed."
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -91,63 +91,70 @@ Constraints: `panic-free-library` (five-lint deny set in non-test code), `forbid
 ## Return Criteria — how to hand back
 
 **Completing this handoff means filling in the `handback:` front-matter block
-above AND the `## Handback` section below.** An unfilled handback is an
-incomplete cycle, and `just handback-sync` will tell the orchestrator so.
-
-On success:
-1. Fill the `handback:` front-matter — **including a real `tokens_total`**.
-2. Fill the `## Handback` section (the reflection is part of it, not optional).
-3. Set `handoff.status` → `completed` and `handback.status` → `completed`.
-4. Open a PR (build) or return your verdict (verify).
-
-If you cannot complete the task:
-1. Fill the `## Handback` section with what was done and what blocked you.
-2. Set `handoff.status` → `rejected`, `handback.status` → `blocked`.
-3. **Still report your token usage** — blocked work costs money too.
-4. Set the spec's `task.blocked: true` and add a question to
-   `/guidance/questions.yaml`.
-
----
-
-## Handback
-
-*Filled in by the receiving agent. The orchestrator does not reconstruct any of
-this — it transcribes it. The reflection questions are part of completion.*
+above AND the `## Handback
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** branch `worktree-agent-ab395ff3e0934e17f`, one local commit on top of `e2bc31e` (fast-forwarded from `claude/rust-exif-metadata-6351d5`, so `0052025` is included). Not pushed, no PR, cycle not advanced.
+- **Completed at:** 2026-11-05
+- **All acceptance criteria met?** Yes. `jpeg::read` implements rules 1-8; every named test exists and passes; the seven mutations are shown red; five fuzz invariants are shown red with planted bugs, one against the real libFuzzer target; the 60 s smoke is clean. Gate results are below.
+- **For `verify`:** not applicable.
+
+**Gates (all green, on the final tree):** `cargo fmt --check` on both graphs (root with stable and with 1.90.0; `fuzz/` with `--manifest-path`; the included `fuzz/shared/*.rs` formatted with `rustfmt --edition 2021`), `just lint`, `just lint-fuzz`, `just lint-no-allow`, `cargo test` on stable (Homebrew 1.99.1) and on `~/.cargo/bin/cargo +1.90.0` (143 unit, 4 crate_policy, 10 fuzz_layout, 28 metadata_oracle, 36 mutation_oracle; 1 ignored each in the two oracle files as before), `cargo rustc --lib -- -F unsafe_code`, `just deny`, `just deny-fuzz`, `just validate`, `just decisions-audit` (0 structural errors; the scope warnings are the existing ones), `just cost-audit`, `just oracle-record` (empty diff under `tests/`; `two-hop-cycle` not run, as before). `[dependencies]` and `[dev-dependencies]` are still empty.
+
+**Required mutations (each applied alone to `src/jpeg/metadata.rs`, `cargo test --lib jpeg::`, then reverted):**
+
+| | Mutation | Red by (primary named test) |
+|---|---|---|
+| a | `tiff` slice from `SIG_EXIF.len() - 1` / `+ 1` | `the_tiff_slice_starts_after_the_six_byte_signature` (and 9 more Exif tests) |
+| b | `ExtraExif` for the first Exif (`>= 0`); and for the third on (`> 1`) | `a_second_exif_segment_is_an_extra_exif_issue_and_still_a_block`, `exif_blocks_are_capped_at_sixteen_but_extras_are_all_reported` |
+| c | block cap `<` to `<=`; and `< MAX - 1` | `exif_blocks_are_capped_at_sixteen_but_extras_are_all_reported` |
+| d | ICC check removed | `icc_chunk_mismatches_are_one_issue`, `icc_chunks_report_sequence_and_count` |
+| e | 8BIM name padding removed / inverted; data pad dropped | `iptc_0404_resource_is_located_with_even_padding` (plus the truncated/stray/no-0404 tests) |
+| f | `is_clean` ignores block cleanliness (`all(true)`); ignores only cleanliness (`is_ok`) | `is_clean_requires_every_layer`, `a_damaged_gps_ifd_leaves_a_clean_jpeg_layer` |
+| g | extended-XMP header 39 instead of 40 | `a_short_extended_xmp_header_is_region_too_short`, `extended_xmp_header_fields_are_read` |
+
+Extra single-guard mutations, all red by `icc_chunk_mismatches_are_one_issue`: each of the four ICC guards (`differs`, `seq == 0`, `seq > count`, `repeated`) removed alone, the final count check removed, and the final-count `at` moved to the last chunk. `record` ignoring a halt is red by `nothing_is_recorded_after_a_halt`; GUID 31, JUMBF header 5 and IPTC resource id `0x0405` are red too. **One survivor, equivalent by construction:** removing `|| self.issues.len() >= MAX_JPEG_METADATA_ISSUES` from `Extract::record` stays green because the bound is unreachable (at most one issue per segment plus one ICC aggregate); it is a belt-and-braces guard, and `the_jpeg_layer_issue_total_never_exceeds_the_documented_constant` pins the constant itself.
+
+**Fuzz plants** (each applied alone to `src/jpeg/metadata.rs`, run against the shared invariants through `cargo test --test fuzz_layout`, then reverted). Red: `Container::parse` of a tiff truncated by one byte (container independence); `is_clean` ignoring block issues and, separately, ignoring only fatal blocks (cleanliness iff); `ExtraExif` for the first Exif, and only from the third on (ExtraExif iff); block cap off by one; extended-XMP header 39 (the 75-byte iff); each ICC guard removed alone, the final count check removed, and two issues instead of one (IccChunkMismatch iff, once, last); `record` ignoring a halt; IPTC name padding inverted and data pad dropped; XMP packet off by one; JUMBF header 5; Exif tiff slice 5; `issues()` with the layers swapped. Two plants initially survived and each exposed a weak spot that is now fixed: ignoring block issues (no input had a TIFF-layer issue under a clean JPEG layer; fixed by `every_tiff_seed_wrapped_in_a_jpeg_satisfies_the_harness`) and the swapped layer order (my "JPEG issue after an Exif issue" check used `last_block == 0`, which cannot see block 0; fixed with a `seen_exif` flag). **Against the real target:** with the `seq > count` ICC guard removed, `just fuzz-smoke jpeg_segments` crashed within the 60 s with `IccChunkMismatch iff the chunks disagree` (artifact input: `FF D8 ... FF E2 00 16 "ICC_PROFILE\0" 02 01 ...`); the plant was reverted and `fuzz/artifacts` removed.
+
+**60 s smoke, clean (final tree):** `just fuzz-smoke jpeg_segments`, "Done 109751 runs in 61 second(s)", final line `#109751 DONE cov: 1480 ft: 6328 corp: 509/2490Kb exec/s: 1799` (an earlier clean run on the same code: 123214 runs). Exit 0.
+
+**Seeds:** 13 new in `fuzz/seeds/jpeg_segments/` (21 existing + 13 new = 34 JPEG seeds; the 29 TIFF seeds are unchanged). The existing 50 seeds are byte-identical (`git status` shows only the 13 new files as untracked, none modified).
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null. The implementer subagent has no token counter (no `/cost`, no `usage` object visible); the orchestrator transcribes the metered figure from the Agent result.
+- **Estimated USD:** null
+- **Duration (minutes):** null (not measured)
+- **Source of the number:** none available
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
+- **New decisions emitted:** none (`decisions/` is not mine to edit).
 - **Deviations from spec:**
-  - [list]
+  1. **Shared invariants file instead of two mirrored copies.** The new fuzz invariants live once in `fuzz/shared/jpeg_metadata_invariants.rs` and are `include!`d by both `fuzz/fuzz_targets/jpeg_segments.rs` and `tests/fuzz_layout.rs`, so the stable-toolchain test and the libFuzzer target cannot drift. "`exercise` mirrors the new invariants" is therefore met by sharing, not by a second copy. The file is formatted with `rustfmt --edition 2021` by hand because `cargo fmt` does not follow `include!`.
+  2. **The invariants re-derive the whole extraction independently** (regions, expected extraction issues, the ICC consistency test by sorting sequence numbers, the IPTC walk) and compare both ways, which is stronger than the spec's list (it covers it).
+  3. **A `pub(crate) Jpeg::halted()` accessor** (one new private field on `Jpeg`) carries the walker's halt to the extraction. Rule 7 does not say what happens to extraction issues after a cap; I applied the handoff's "nothing is recorded after a halt": when the walk halted (`TooManySegments` or `TooManyIssues`), `Extract::record` records nothing, so no `ExtraExif`, `RegionTooShort`, stray-byte or ICC issue follows the halting issue, which stays last. Exif blocks and regions are still reported after a halt; only issues are suppressed. The fuzz invariants state the iffs "unless halted" accordingly (`ExtraExif` count, `RegionTooShort` for extended XMP, the ICC aggregate).
+  4. **ICC `at` rule (defined in the module docs and tested):** chunks are checked in segment order against the first chunk's `count`; a chunk is inconsistent if its `count` differs from the first's (not for the first chunk itself), its `seq` is 0 or above its own `count`, or its `seq` repeats; the first inconsistent chunk's segment offset is `at`, so when the first chunk is the odd one out the second chunk is named. If every chunk is individually consistent but the number of chunks differs from `count` (for example count 3 with two chunks), `at` is the **first chunk's** offset (the chunk that declared the count). The spec left this case open; the tests pin it.
+  5. **IPTC issue offsets and sizes.** For the `8BIM resource` `RegionTooShort`, `at` is the input offset of the resource (not the segment), `need` is counted from the resource start (6 when the id is cut short, 7 when the name length byte is missing, then the end of the fixed fields, then the end of the data) and `have` is the bytes left from the resource start. `StrayBytes` `at` is likewise the input offset of the first stray byte and `len` the remainder. For the other regions `at` is the segment's offset as specified. The last resource of a segment may omit its trailing pad byte (tolerated, no issue).
+  6. **Tests added beyond the named ones:** in `metadata.rs`, `nothing_is_recorded_after_a_halt`, `issues_name_the_layer_jpeg_first_then_blocks_in_order`, `regions_are_in_segment_order_and_borrow_from_the_input`, `signatures_under_the_wrong_marker_yield_nothing`; in `tests/fuzz_layout.rs`, `spec_010_seeds_have_the_shapes_they_claim`, `every_tiff_seed_wrapped_in_a_jpeg_satisfies_the_harness` and `jpeg_harness_holds_on_each_extraction_guard_alone`. No named test is renamed, folded or missing. `a_bad_length_skips_the_marker_and_both_length_bytes` and the updated `length_zero_and_one_are_bad_lengths_and_the_walk_continues` live in `src/jpeg/mod.rs`'s test module (that is where the SPEC-009 test was), and `every_error_variant_this_module_returns_displays_something` exists in both modules (the SPEC-009 one now covers 22 variants; the metadata one covers the three new ones and the display contents).
+  7. **`src/tiff/mod.rs`:** only its test-module error guard was extended (three variants), as allowed. The existing exhaustive-match guards in `src/jpeg/mod.rs` tests were extended too (they fail to compile otherwise).
+  8. **The seed `icc-chunks-mismatch` has three chunks** (a count of 3, a count of 2 with seq 1, and a third chunk too short for its header), so it yields two issues in the order `RegionTooShort`, then the single `IccChunkMismatch` last; the layout test pins that order.
+  9. **No `lib.rs` change:** the new names are re-exported from `exif_core::jpeg` (the module `lib.rs` already exposes); `src/lib.rs` itself is untouched.
+- **Derived numbers:** `MAX_JPEG_METADATA_ISSUES = (1024 + 1) + (4096 + 1) = 5122`, as the spec's formula produces; nothing disagreed.
 - **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - The two open questions are added to `guidance/questions.yaml` (`c2pa-detection-inside-jumbf`, `exiftool-several-exif-segments`). SPEC-011 should measure several-Exif behaviour with two- and 17-Exif fixtures.
+  - The ICC "count mismatch with consistent chunks" `at` choice (first chunk) and the IPTC `at` offsets (resource, not segment) are policy picks the verifier may want to confirm.
+  - `fuzz/shared/*.rs` is not covered by `cargo fmt --check`; if more shared harness files appear, a `just` check for them would be worth adding.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — Rule 7 and the "nothing is recorded after a halt" line do not say how a halted walk and the extraction interact (suppress issues only, or also regions), nor how the extraction learns of the halt; and the ICC `at` for "consistent chunks but wrong number" was left open. Both are decided above and pinned by tests.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — A statement that the shared-harness approach (one file for the target and the stable test) is allowed would have saved a judgement call; DEC-004 only talks about the fuzz graph being separate. Also `cargo fmt` not reaching `include!`d files is a small trap.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Write the independent "expected extraction" in the fuzz harness first and derive the unit tests' expectations from the same reading of the rules; two plants survived the first round only because the harness inputs overlapped, which the per-guard inputs and the wrapped TIFF seeds now cover.

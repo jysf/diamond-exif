@@ -193,3 +193,31 @@ questions:
       the same bytes with String::from_utf8_lossy (U+FFFD), and the harness
       reads ExifTool's stdout lossily too, so the two renderings differ in
       form. The oracle has no byte-exact path for non-UTF-8 text yet.
+
+  - id: c2pa-detection-inside-jumbf
+    question: "How is C2PA detected inside a JUMBF segment (the box-level content type), and when does the audit stage need it?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-05
+    assigned_to: null
+    notes: |
+      SPEC-010 locates JUMBF (APP11 `JP`, `En`, `Z`, data) but deliberately
+      claims no C2PA detection (DEC-006): that needs the JUMBF box header and
+      content-type UUID, a format fact to be measured against the published
+      spec and ExifTool when the audit/strip stages need it. Until then a JUMBF
+      region is reported without saying what it is.
+
+  - id: exiftool-several-exif-segments
+    question: "How does ExifTool treat a JPEG with several Exif (APP1 Exif) segments: which one wins, are the others merged, are they warned about?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-05
+    assigned_to: null
+    notes: |
+      SPEC-010 takes the first Exif segment as primary, parses at most 16, and
+      records an `ExtraExif` JPEG-layer issue for each further one (DEC-006).
+      That is a policy, not a measurement. To be measured in SPEC-011 with
+      two-Exif and 17-Exif fixtures (`-T -n -s3`, plus stderr warnings) and,
+      if ExifTool differs (e.g. merges or prefers the last), recorded in a DEC.

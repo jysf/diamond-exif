@@ -164,7 +164,7 @@ just build        # cargo build --release
 just deny         # cargo deny check licenses (LIBRARY graph only)
 just deny-fuzz    # same gate over the fuzz/ graph (DEC-004)
 just lint-fuzz    # clippy -D warnings over the fuzz/ graph (DEC-004)
-just fuzz-smoke [TARGET]  # 60 s run of tiff_ifd or jpeg_segments (no TARGET: both in turn): needs nightly + ~/.cargo/bin first on PATH
+just fuzz-smoke [TARGET]  # 60 s run of tiff_ifd or jpeg_segments (no TARGET: both in turn): needs nightly + ~/.cargo/bin first on PATH. jpeg_segments also asserts the jpeg::read invariants of fuzz/shared/jpeg_metadata_invariants.rs (SPEC-010; included by the target and by tests/fuzz_layout.rs)
 just oracle-record  # re-record ExifTool's output into tests/oracle-fixtures/exiftool/ (needs exiftool; CI re-runs it and fails on any diff)
 cargo test --test metadata_oracle   # ExifTool read-parity oracle (live + replay)
 just mutation-oracle  # SPEC-008 red-proofs: faults in a throw-away copy of src/ + byte corruptions vs the committed ExifTool records (about 3 s warm; needs no ExifTool)
