@@ -1,0 +1,120 @@
+# command: exiftool -a -u -G1 -H -s <file>
+# exiftool-version: 13.55
+# corpus: seed-jpeg_segments
+## app-after-scan
+## app1-len-0
+## app1-len-1
+## app1-len-2
+## app1-len-ffff
+## app1-past-eof
+## exif-after-scan
+## exif-and-xmp
+## exif-bad-tiff
+## exif-five-byte-payload
+## exif-in-jpeg
+IFD0	0x010f	Make
+ExifIFD	0x9003	DateTimeOriginal
+GPS	0x0001	GPSLatitudeRef
+## exif-sixth-byte-nonzero
+IFD0	0x010f	Make
+ExifIFD	0x9003	DateTimeOriginal
+GPS	0x0001	GPSLatitudeRef
+## extended-xmp-pair
+## extended-xmp-short
+## ff00-stray
+## fill-bytes
+JFIF	0x0000	JFIFVersion
+JFIF	0x0002	ResolutionUnit
+JFIF	0x0003	XResolution
+JFIF	0x0005	YResolution
+## icc-chunks-mismatch
+## icc-chunks-ok
+## icc-iptc-jumbf
+## icc-seq-zero
+## iptc-8bim
+Photoshop	0x0408	GridGuidesInfo
+## iptc-truncated-resource
+## jumbf-header
+## jumbf-short
+## many-ff00
+## many-segments
+## minimal
+JFIF	0x0000	JFIFVersion
+JFIF	0x0002	ResolutionUnit
+JFIF	0x0003	XResolution
+JFIF	0x0005	YResolution
+## no-sos
+JFIF	0x0000	JFIFVersion
+JFIF	0x0002	ResolutionUnit
+JFIF	0x0003	XResolution
+JFIF	0x0005	YResolution
+## progressive-two-scans
+## seventeen-exif
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9003	DateTimeOriginal
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0001	GPSLatitudeRef
+## signatures-under-wrong-marker
+## soi-only
+## sos-no-eoi
+## stray-bytes
+## trailer-after-eoi
+## two-exif
+IFD0	0x010f	Make
+IFD0	0x0100	ImageWidth
+IFD0	0x0101	ImageHeight
+IFD0	0x0102	BitsPerSample
+IFD0	0x010e	ImageDescription
+IFD0	0x0112	Orientation
+IFD0	0x011a	XResolution
+IFD0	0x9204	ExposureCompensation
+ExifIFD	0x9003	DateTimeOriginal
+GPS	0x0001	GPSLatitudeRef
+## xmp-and-extended-xmp

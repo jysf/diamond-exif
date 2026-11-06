@@ -1,0 +1,427 @@
+# command: exiftool -a -u -G1 -H -s <file>
+# exiftool-version: 13.55
+# corpus: fixtures
+## exif-basic-le
+IFD0	0x0100	ImageWidth
+IFD0	0x0101	ImageHeight
+IFD0	0x010f	Make
+IFD0	0x0110	Model
+IFD0	0x0112	Orientation
+IFD0	0x011a	XResolution
+IFD0	0x0131	Software
+IFD0	0x0132	ModifyDate
+IFD0	0x013b	Artist
+IFD0	0x8298	Copyright
+ExifIFD	0x829d	FNumber
+ExifIFD	0x8827	ISO
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9204	ExposureCompensation
+## exif-basic-be
+IFD0	0x0100	ImageWidth
+IFD0	0x0101	ImageHeight
+IFD0	0x010f	Make
+IFD0	0x0110	Model
+IFD0	0x0112	Orientation
+IFD0	0x011a	XResolution
+IFD0	0x0131	Software
+IFD0	0x0132	ModifyDate
+IFD0	0x013b	Artist
+IFD0	0x8298	Copyright
+ExifIFD	0x829d	FNumber
+ExifIFD	0x8827	ISO
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9204	ExposureCompensation
+## exif-gps-ne-le
+IFD0	0x010f	Make
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0002	GPSLatitude
+GPS	0x0003	GPSLongitudeRef
+GPS	0x0004	GPSLongitude
+## exif-gps-nw-le
+IFD0	0x010f	Make
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0002	GPSLatitude
+GPS	0x0003	GPSLongitudeRef
+GPS	0x0004	GPSLongitude
+## exif-gps-se-be
+IFD0	0x010f	Make
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0002	GPSLatitude
+GPS	0x0003	GPSLongitudeRef
+GPS	0x0004	GPSLongitude
+## exif-gps-sw-be
+IFD0	0x010f	Make
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0002	GPSLatitude
+GPS	0x0003	GPSLongitudeRef
+GPS	0x0004	GPSLongitude
+## ascii-edges
+IFD0	0x010f	Make
+IFD0	0x0110	Model
+IFD0	0x013b	Artist
+## gps-corrupt-exif-ok
+IFD0	0x010f	Make
+ExifIFD	0x8827	ISO
+## ifd1-corrupt
+IFD0	0x010f	Make
+IFD0	0x0112	Orientation
+## exif-gps-full-le
+IFD0	0x0100	ImageWidth
+IFD0	0x0101	ImageHeight
+IFD0	0x010f	Make
+IFD0	0x0110	Model
+IFD0	0x0112	Orientation
+IFD0	0x011a	XResolution
+IFD0	0x0131	Software
+IFD0	0x0132	ModifyDate
+IFD0	0x013b	Artist
+IFD0	0x8298	Copyright
+ExifIFD	0x829d	FNumber
+ExifIFD	0x8827	ISO
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9204	ExposureCompensation
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0002	GPSLatitude
+GPS	0x0003	GPSLongitudeRef
+GPS	0x0004	GPSLongitude
+## signed-float-le
+IFD0	0x010f	Make
+ExifIFD	0x829a	ExposureTime
+ExifIFD	0x8822	ExposureProgram
+ExifIFD	0x920a	FocalLength
+ExifIFD	0xa002	ExifImageWidth
+## signed-float-be
+IFD0	0x010f	Make
+ExifIFD	0x829a	ExposureTime
+ExifIFD	0x8822	ExposureProgram
+ExifIFD	0x920a	FocalLength
+ExifIFD	0xa002	ExifImageWidth
+## tiff-chain-four
+IFD0	0x010f	Make
+IFD1	0x0110	Model
+IFD2	0x0131	Software
+IFD3	0x013b	Artist
+## tiff-subifds-three
+IFD0	0x010f	Make
+SubIFD	0x0100	ImageWidth
+SubIFD1	0x0101	ImageHeight
+SubIFD2	0x0112	Orientation
+## jpeg-exif-basic-le
+IFD0	0x0100	ImageWidth
+IFD0	0x0101	ImageHeight
+IFD0	0x010f	Make
+IFD0	0x0110	Model
+IFD0	0x0112	Orientation
+IFD0	0x011a	XResolution
+IFD0	0x0131	Software
+IFD0	0x0132	ModifyDate
+IFD0	0x013b	Artist
+IFD0	0x8298	Copyright
+ExifIFD	0x829d	FNumber
+ExifIFD	0x8827	ISO
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9204	ExposureCompensation
+## jpeg-exif-basic-be
+IFD0	0x0100	ImageWidth
+IFD0	0x0101	ImageHeight
+IFD0	0x010f	Make
+IFD0	0x0110	Model
+IFD0	0x0112	Orientation
+IFD0	0x011a	XResolution
+IFD0	0x0131	Software
+IFD0	0x0132	ModifyDate
+IFD0	0x013b	Artist
+IFD0	0x8298	Copyright
+ExifIFD	0x829d	FNumber
+ExifIFD	0x8827	ISO
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9204	ExposureCompensation
+## jpeg-exif-gps-ne-le
+IFD0	0x010f	Make
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0002	GPSLatitude
+GPS	0x0003	GPSLongitudeRef
+GPS	0x0004	GPSLongitude
+## jpeg-exif-gps-nw-le
+IFD0	0x010f	Make
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0002	GPSLatitude
+GPS	0x0003	GPSLongitudeRef
+GPS	0x0004	GPSLongitude
+## jpeg-exif-gps-se-be
+IFD0	0x010f	Make
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0002	GPSLatitude
+GPS	0x0003	GPSLongitudeRef
+GPS	0x0004	GPSLongitude
+## jpeg-exif-gps-sw-be
+IFD0	0x010f	Make
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0002	GPSLatitude
+GPS	0x0003	GPSLongitudeRef
+GPS	0x0004	GPSLongitude
+## jpeg-ascii-edges
+IFD0	0x010f	Make
+IFD0	0x0110	Model
+IFD0	0x013b	Artist
+## jpeg-gps-corrupt-exif-ok
+IFD0	0x010f	Make
+ExifIFD	0x8827	ISO
+## jpeg-ifd1-corrupt
+IFD0	0x010f	Make
+IFD0	0x0112	Orientation
+## jpeg-exif-gps-full-le
+IFD0	0x0100	ImageWidth
+IFD0	0x0101	ImageHeight
+IFD0	0x010f	Make
+IFD0	0x0110	Model
+IFD0	0x0112	Orientation
+IFD0	0x011a	XResolution
+IFD0	0x0131	Software
+IFD0	0x0132	ModifyDate
+IFD0	0x013b	Artist
+IFD0	0x8298	Copyright
+ExifIFD	0x829d	FNumber
+ExifIFD	0x8827	ISO
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9204	ExposureCompensation
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0002	GPSLatitude
+GPS	0x0003	GPSLongitudeRef
+GPS	0x0004	GPSLongitude
+## jpeg-signed-float-le
+IFD0	0x010f	Make
+ExifIFD	0x829a	ExposureTime
+ExifIFD	0x8822	ExposureProgram
+ExifIFD	0x920a	FocalLength
+ExifIFD	0xa002	ExifImageWidth
+## jpeg-signed-float-be
+IFD0	0x010f	Make
+ExifIFD	0x829a	ExposureTime
+ExifIFD	0x8822	ExposureProgram
+ExifIFD	0x920a	FocalLength
+ExifIFD	0xa002	ExifImageWidth
+## jpeg-jfif-then-exif
+JFIF	0x0000	JFIFVersion
+JFIF	0x0002	ResolutionUnit
+JFIF	0x0003	XResolution
+JFIF	0x0005	YResolution
+IFD0	0x0100	ImageWidth
+IFD0	0x0101	ImageHeight
+IFD0	0x010f	Make
+IFD0	0x0110	Model
+IFD0	0x0112	Orientation
+IFD0	0x011a	XResolution
+IFD0	0x0131	Software
+IFD0	0x0132	ModifyDate
+IFD0	0x013b	Artist
+IFD0	0x8298	Copyright
+ExifIFD	0x829d	FNumber
+ExifIFD	0x8827	ISO
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9204	ExposureCompensation
+## jpeg-exif-then-jfif
+IFD0	0x0100	ImageWidth
+IFD0	0x0101	ImageHeight
+IFD0	0x010f	Make
+IFD0	0x0110	Model
+IFD0	0x0112	Orientation
+IFD0	0x011a	XResolution
+IFD0	0x0131	Software
+IFD0	0x0132	ModifyDate
+IFD0	0x013b	Artist
+IFD0	0x8298	Copyright
+ExifIFD	0x829d	FNumber
+ExifIFD	0x8827	ISO
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9204	ExposureCompensation
+JFIF	0x0000	JFIFVersion
+JFIF	0x0002	ResolutionUnit
+JFIF	0x0003	XResolution
+JFIF	0x0005	YResolution
+## jpeg-exif-in-app2
+## jpeg-exif-sixth-byte-nonzero
+IFD0	0x0100	ImageWidth
+IFD0	0x0101	ImageHeight
+IFD0	0x010f	Make
+IFD0	0x0110	Model
+IFD0	0x0112	Orientation
+IFD0	0x011a	XResolution
+IFD0	0x0131	Software
+IFD0	0x0132	ModifyDate
+IFD0	0x013b	Artist
+IFD0	0x8298	Copyright
+ExifIFD	0x829d	FNumber
+ExifIFD	0x8827	ISO
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9204	ExposureCompensation
+## jpeg-exif-fifth-byte-nonzero
+## jpeg-exif-five-byte-payload
+## jpeg-two-exif-same-tag
+IFD0	0x010f	Make
+IFD0	0x0110	Model
+IFD0	0x010f	Make
+## jpeg-two-exif-same-tag-reversed
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x0110	Model
+## jpeg-two-exif-disjoint-tags
+IFD0	0x010f	Make
+IFD0	0x0110	Model
+## jpeg-seventeen-exif-last-differs
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+## jpeg-exif-good-then-fatal
+IFD0	0x010f	Make
+IFD0	0x0110	Model
+## jpeg-exif-fatal-then-good
+IFD0	0x010f	Make
+IFD0	0x0110	Model
+## jpeg-exif-before-and-after-scan
+IFD0	0x010f	Make
+IFD0	0x0110	Model
+## jpeg-gps-split-across-two-blocks
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0002	GPSLatitude
+GPS	0x0001	GPSLatitudeRef
+## jpeg-exif-after-scan
+## jpeg-exif-after-eoi
+## jpeg-exif-last-segment-at-eof
+## jpeg-exif-then-com-at-eof
+IFD0	0x0100	ImageWidth
+IFD0	0x0101	ImageHeight
+IFD0	0x010f	Make
+IFD0	0x0110	Model
+IFD0	0x0112	Orientation
+IFD0	0x011a	XResolution
+IFD0	0x0131	Software
+IFD0	0x0132	ModifyDate
+IFD0	0x013b	Artist
+IFD0	0x8298	Copyright
+ExifIFD	0x829d	FNumber
+ExifIFD	0x8827	ISO
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9204	ExposureCompensation
+## jpeg-exif-eoi-no-sos
+IFD0	0x0100	ImageWidth
+IFD0	0x0101	ImageHeight
+IFD0	0x010f	Make
+IFD0	0x0110	Model
+IFD0	0x0112	Orientation
+IFD0	0x011a	XResolution
+IFD0	0x0131	Software
+IFD0	0x0132	ModifyDate
+IFD0	0x013b	Artist
+IFD0	0x8298	Copyright
+ExifIFD	0x829d	FNumber
+ExifIFD	0x8827	ISO
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9204	ExposureCompensation
+## jpeg-truncated-between-app1-and-sos
+IFD0	0x0100	ImageWidth
+IFD0	0x0101	ImageHeight
+IFD0	0x010f	Make
+IFD0	0x0110	Model
+IFD0	0x0112	Orientation
+IFD0	0x011a	XResolution
+IFD0	0x0131	Software
+IFD0	0x0132	ModifyDate
+IFD0	0x013b	Artist
+IFD0	0x8298	Copyright
+ExifIFD	0x829d	FNumber
+ExifIFD	0x8827	ISO
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9204	ExposureCompensation
+## jpeg-truncated-mid-scan
+IFD0	0x0100	ImageWidth
+IFD0	0x0101	ImageHeight
+IFD0	0x010f	Make
+IFD0	0x0110	Model
+IFD0	0x0112	Orientation
+IFD0	0x011a	XResolution
+IFD0	0x0131	Software
+IFD0	0x0132	ModifyDate
+IFD0	0x013b	Artist
+IFD0	0x8298	Copyright
+ExifIFD	0x829d	FNumber
+ExifIFD	0x8827	ISO
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9204	ExposureCompensation
+## jpeg-truncated-mid-app1
+## jpeg-stray-bytes
+IFD0	0x0100	ImageWidth
+IFD0	0x0101	ImageHeight
+IFD0	0x010f	Make
+IFD0	0x0110	Model
+IFD0	0x0112	Orientation
+IFD0	0x011a	XResolution
+IFD0	0x0131	Software
+IFD0	0x0132	ModifyDate
+IFD0	0x013b	Artist
+IFD0	0x8298	Copyright
+ExifIFD	0x829d	FNumber
+ExifIFD	0x8827	ISO
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0x9204	ExposureCompensation
+## jpeg-bad-length
+## jpeg-bad-tiff-in-exif
+## jpeg-xmp
+XMP-xmp	-	CreatorTool
+## jpeg-xmp-in-wrong-marker
+## jpeg-iptc
+IPTC	0x0005	ObjectName
+IPTC	0x0050	By-line
+## jpeg-iptc-without-0404
+Photoshop	0x0405	RawImageMode
+## jpeg-extended-xmp-pair
+XMP-xmp	-	CreatorTool
+## jpeg-two-exif-with-gps-each
+IFD0	0x010f	Make
+IFD0	0x010f	Make
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0002	GPSLatitude
+GPS	0x0003	GPSLongitudeRef
+GPS	0x0004	GPSLongitude
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0002	GPSLatitude
+GPS	0x0003	GPSLongitudeRef
+GPS	0x0004	GPSLongitude
+## jpeg-icc-valid
+ICC-header	0x0004	ProfileCMMType
+ICC-header	0x0008	ProfileVersion
+ICC-header	0x000c	ProfileClass
+ICC-header	0x0010	ColorSpaceData
+ICC-header	0x0014	ProfileConnectionSpace
+ICC-header	0x0018	ProfileDateTime
+ICC-header	0x0024	ProfileFileSignature
+ICC-header	0x0028	PrimaryPlatform
+ICC-header	0x002c	CMMFlags
+ICC-header	0x0030	DeviceManufacturer
+ICC-header	0x0034	DeviceModel
+ICC-header	0x0038	DeviceAttributes
+ICC-header	0x0040	RenderingIntent
+ICC-header	0x0044	ConnectionSpaceIlluminant
+ICC-header	0x0050	ProfileCreator
+ICC-header	0x0054	ProfileID
+ICC_Profile	-	ProfileDescription
+## jpeg-icc-stub
+## jpeg-jumbf-valid
+JUMBF	-	JUMDType
+JUMBF	-	JUMDToggles
+JUMBF	-	JUMDLabel
+## jpeg-jumbf-stub

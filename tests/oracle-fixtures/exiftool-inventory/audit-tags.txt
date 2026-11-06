@@ -1,0 +1,84 @@
+# command: exiftool -a -u -G1 -H -s <file>
+# exiftool-version: 13.55
+# corpus: audit-tags
+## tag-010e
+IFD0	0x010e	ImageDescription
+## tag-010f
+IFD0	0x010f	Make
+## tag-0110
+IFD0	0x0110	Model
+## tag-0131
+IFD0	0x0131	Software
+## tag-0132
+IFD0	0x0132	ModifyDate
+## tag-013b
+IFD0	0x013b	Artist
+## tag-8298
+IFD0	0x8298	Copyright
+## tag-9003
+IFD0	0x9003	DateTimeOriginal
+## tag-9004
+IFD0	0x9004	CreateDate
+## tag-9010
+IFD0	0x9010	OffsetTime
+## tag-9011
+IFD0	0x9011	OffsetTimeOriginal
+## tag-9012
+IFD0	0x9012	OffsetTimeDigitized
+## tag-9290
+IFD0	0x9290	SubSecTime
+## tag-9291
+IFD0	0x9291	SubSecTimeOriginal
+## tag-9292
+IFD0	0x9292	SubSecTimeDigitized
+## tag-9286
+IFD0	0x9286	UserComment
+## tag-927c
+IFD0	0x927c	MakerNoteUnknownText
+## tag-a420
+IFD0	0xa420	ImageUniqueID
+## tag-a430
+IFD0	0xa430	OwnerName
+## tag-a431
+IFD0	0xa431	SerialNumber
+## tag-a435
+IFD0	0xa435	LensSerialNumber
+## tag-a433
+IFD0	0xa433	LensMake
+## tag-a434
+IFD0	0xa434	LensModel
+## tag-c62f
+IFD0	0xc62f	CameraSerialNumber
+## tag-9c9b
+IFD0	0x9c9b	XPTitle
+## tag-9c9c
+IFD0	0x9c9c	XPComment
+## tag-9c9e
+IFD0	0x9c9e	XPKeywords
+## tag-9c9f
+IFD0	0x9c9f	XPSubject
+## tag-9c9d
+IFD0	0x9c9d	XPAuthor
+## tag-a436
+IFD0	0xa436	ImageTitle
+## tag-a437
+IFD0	0xa437	Photographer
+## tag-a438
+IFD0	0xa438	ImageEditor
+## tag-a439
+IFD0	0xa439	CameraFirmware
+## tag-a43a
+IFD0	0xa43a	RAWDevelopingSoftware
+## tag-a43b
+IFD0	0xa43b	ImageEditingSoftware
+## tag-a43c
+IFD0	0xa43c	MetadataEditingSoftware
+## tag-02bc
+## tag-83bb
+IPTC	0x0078	Caption-Abstract
+## tag-8649
+## tag-8773
+## tag-0201
+IFD1	0x0201	ThumbnailOffset
+IFD1	0x0202	ThumbnailLength
+IFD1	-	ThumbnailImage

@@ -15,11 +15,22 @@
 //! of the signal; the TIFF records are written exactly as before (the CI job
 //! `oracle-records` re-records and diffs them, and the TIFF records must not
 //! move).
+//!
+//! SPEC-013 adds the inventory records, one per corpus, in
+//! `tests/oracle-fixtures/exiftool-inventory/`: `exiftool -a -u -G1 -H -s` over
+//! every input of the hand-built fixtures, the DEC-008 one-entry TIFFs and the
+//! three seed directories, as `group<TAB>id<TAB>name` lines (file-level groups
+//! removed). ExifTool is run once per distinct input (by content); an input it
+//! does not return on is recorded as not run.
 
 #[path = "../tests/support/audit_tags.rs"]
 mod audit_tags;
 #[path = "../tests/support/hostile.rs"]
 mod hostile;
+#[path = "../tests/support/inventory.rs"]
+mod inventory;
+#[path = "../tests/support/inventory_corpus.rs"]
+mod inventory_corpus;
 #[path = "../tests/support/oracle.rs"]
 mod oracle;
 #[path = "../tests/support/oracle_jpeg.rs"]
@@ -171,4 +182,74 @@ fn main() {
     );
     fs::write(root.join(hostile::RECORD), text).expect("write hostile record");
     println!("oracle-record: wrote the hostile-subifds-overlap record");
+
+    record_inventory(&root, &version);
+}
+
+/// SPEC-013: the inventory records (`exiftool -a -u -G1 -H -s`), one file per
+/// corpus. Each distinct input (by content) is run once, alone, under the tool
+/// time limit; an input in `inventory_corpus::NOT_RUN_KEYS` is never run.
+fn record_inventory(root: &std::path::Path, version: &str) {
+    use std::collections::BTreeMap;
+    let dir = root.join(inventory_corpus::RECORD_DIR);
+    fs::create_dir_all(&dir).expect("create inventory record dir");
+    let all = inventory_corpus::all_inputs(root);
+    let distinct = inventory_corpus::distinct(&all);
+
+    // bytes -> (outcome, stderr, kept lines)
+    type Answer = (Option<String>, Vec<String>, Vec<inventory::Line>);
+    let mut answers: BTreeMap<Vec<u8>, Answer> = BTreeMap::new();
+    for d in &distinct {
+        let input = &d.canonical;
+        if inventory_corpus::is_not_run(d) {
+            println!("oracle-record: NOT RUN on {}", input.key());
+            answers.insert(
+                input.bytes.clone(),
+                (
+                    Some(inventory_corpus::NOT_RUN_OUTCOME.to_string()),
+                    Vec::new(),
+                    Vec::new(),
+                ),
+            );
+            continue;
+        }
+        let path = tools::temp_file_with_ext("inventory", input.ext(), &input.bytes)
+            .expect("write temp fixture");
+        let args: Vec<String> = inventory::COMMAND_ARGS
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let run = tools::run_tool("exiftool", &args, &path);
+        let _ = fs::remove_file(&path);
+        let out = run.unwrap_or_else(|e| panic!("exiftool on {}: {e}", input.key()));
+        let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        let lines =
+            inventory::parse_stdout(&stdout).unwrap_or_else(|e| panic!("{}: {e}", input.key()));
+        let warnings = tools::warning_lines(&stderr, &path);
+        answers.insert(input.bytes.clone(), (None, warnings, lines));
+    }
+
+    let mut sections = 0usize;
+    for corpus in inventory_corpus::CORPORA {
+        let mut text = inventory::record_header(version, corpus);
+        for input in inventory_corpus::inputs(root, corpus) {
+            let (outcome, stderr, lines) = answers.get(&input.bytes).expect("an answer per input");
+            text.push_str(&inventory::section_text(
+                &input.name,
+                outcome.as_deref(),
+                stderr,
+                lines,
+            ));
+            sections += 1;
+        }
+        fs::write(dir.join(inventory_corpus::record_file(corpus)), text)
+            .expect("write inventory record");
+    }
+    println!(
+        "oracle-record: wrote {} inventory records ({} sections, {} distinct inputs)",
+        inventory_corpus::CORPORA.len(),
+        sections,
+        distinct.len()
+    );
 }

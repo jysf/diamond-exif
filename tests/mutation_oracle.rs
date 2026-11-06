@@ -26,6 +26,12 @@
 //! The probe builds are slower than ordinary tests (each one compiles a small
 //! crate); `just mutation-oracle` runs just this file.
 
+#[path = "support/audit_tags.rs"]
+mod audit_tags;
+#[path = "support/inventory.rs"]
+mod inventory;
+#[path = "support/inventory_corpus.rs"]
+mod inventory_corpus;
 #[path = "support/mutate.rs"]
 mod mutate;
 #[path = "support/oracle.rs"]
@@ -1519,4 +1525,347 @@ fn the_gps_live_variant_skips_loudly_and_required_mode_fails() {
         )),
         "{both}"
     );
+}
+
+// ── SPEC-013: the inventory probe and the library faults i1 to i6 ───────────
+//
+// The probe crate's `--inventory` mode prints the audit's inventory (the lines
+// `inventory::ours` builds from `exif_core::audit::audit`), so a fault in the
+// COPY of `src/audit/` or `src/tiff/` is compared with ExifTool's committed
+// inventory through exactly the normalisation the live check uses. Same shape
+// as the value mutants: a control on the unmutated copy first (every input
+// agrees with its record, or has its pinned divergence), then the mutant,
+// which must give a NAMED difference: the exact `(group, id)` that moved.
+
+use inventory::{Inventory, InventoryDiff, Multiset, RegionKind};
+
+fn inv_input(key: &str) -> inventory_corpus::Input {
+    inventory_corpus::all_inputs(&root())
+        .into_iter()
+        .find(|i| i.key() == key)
+        .unwrap_or_else(|| panic!("no inventory input {key}"))
+}
+
+/// ExifTool's committed inventory of an input (regions dropped for a bare TIFF,
+/// Class H).
+fn inv_theirs(key: &str) -> Inventory {
+    let (corpus, name) = key.split_once('/').expect("corpus/name");
+    let path = root()
+        .join(inventory_corpus::RECORD_DIR)
+        .join(inventory_corpus::record_file(corpus));
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+        panic!(
+            "cannot read {} ({e}); run `just oracle-record`",
+            path.display()
+        )
+    });
+    let rec = inventory::parse_record(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let sec = rec
+        .sections
+        .iter()
+        .find(|s| s.name == name)
+        .unwrap_or_else(|| panic!("no section {name}"));
+    let mut inv = inventory::inventory_of(&sec.lines).expect("classifiable");
+    if !inv_input(key).is_jpeg() {
+        inv.regions.clear();
+    }
+    inv
+}
+
+/// Stage + build a probe crate (optionally faulted), run its inventory mode on
+/// each input key, and return what it printed. `Err` only for apparatus
+/// failures (build, run).
+fn inventory_probe(
+    label: &str,
+    keys: &[&str],
+    inject: Option<&dyn Fn(&Path)>,
+) -> Result<Vec<(String, Inventory)>, String> {
+    let files = TempDir::new(&format!("{label}-files"));
+    let crate_dir = TempDir::new(label);
+    probe::stage_probe_crate(crate_dir.path(), inject);
+    let bin = probe::build_probe(crate_dir.path())?;
+    let mut out = Vec::new();
+    for key in keys {
+        let input = inv_input(key);
+        let path = files
+            .path()
+            .join(format!("{}.{}", key.replace('/', "_"), input.ext()));
+        std::fs::write(&path, &input.bytes).expect("write input");
+        let text = probe::run_probe_inventory(&bin, &path)?;
+        out.push((
+            (*key).to_string(),
+            inventory::parse_probe_text(&text).map_err(|e| format!("{key}: {e}"))?,
+        ));
+    }
+    Ok(out)
+}
+
+/// The probe's reading of `key` against its committed record.
+fn inv_diff(all: &[(String, Inventory)], key: &str) -> InventoryDiff {
+    let mine = &all
+        .iter()
+        .find(|(k, _)| k == key)
+        .unwrap_or_else(|| panic!("no result for {key}"))
+        .1;
+    let d = inventory::diff(mine, &inv_theirs(key));
+    // Printed so the red result is visible in `--nocapture` output.
+    println!("MUTANT RESULT {key}:\n{d}");
+    d
+}
+
+fn set(rows: &[(&str, u16, usize)]) -> Multiset {
+    rows.iter()
+        .map(|&(g, id, n)| ((g.to_string(), id), n))
+        .collect()
+}
+
+/// The control: on the unmutated copy every key agrees with its committed
+/// record, or has exactly its pinned divergence.
+fn assert_inventory_control(label: &str, keys: &[&str]) {
+    let control = inventory_probe(&format!("{label}-control"), keys, None)
+        .unwrap_or_else(|e| panic!("{label}: the CONTROL could not be built or run: {e}"));
+    for (key, mine) in control {
+        let bytes = inv_input(&key).bytes;
+        let audit = exif_core::audit::audit(&bytes);
+        // The probe's reading is the in-process one.
+        assert_eq!(
+            mine,
+            inventory::ours(&audit),
+            "{label}: the probe's inventory of {key} is not the in-process one"
+        );
+        // And clean unless pinned; `clean` is taken from the audit itself.
+        let d = inventory::diff(&mine, &inv_theirs(&key));
+        inventory::check_against(inventory::KNOWN_DIVERGENCES, &key, &d, audit.health().clean)
+            .unwrap_or_else(|e| panic!("{label}: the unmutated control is not clean: {e}"));
+    }
+}
+
+fn inventory_control_then_mutant(
+    label: &str,
+    keys: &[&str],
+    inject: &dyn Fn(&Path),
+) -> Vec<(String, Inventory)> {
+    assert_inventory_control(label, keys);
+    inventory_probe(&format!("{label}-mutant"), keys, Some(inject))
+        .unwrap_or_else(|e| panic!("{label}: the MUTANT could not be built or run: {e}"))
+}
+
+/// Every input any inventory mutant uses.
+const INVENTORY_MUTANT_INPUTS: &[&str] = &[
+    "seed-tiff_ifd/exif-gps-interop",
+    "fixtures/exif-basic-le",
+    "fixtures/exif-gps-full-le",
+    "fixtures/tiff-chain-four",
+    "fixtures/jpeg-exif-after-scan",
+    "fixtures/jpeg-exif-before-and-after-scan",
+    "fixtures/jpeg-iptc",
+    "fixtures/jpeg-xmp",
+];
+
+#[test]
+fn inventory_probe_control_run_is_clean_before_every_mutant() {
+    // Every distinct input of every corpus except the one ExifTool never
+    // returns on (its answer is not recorded, so there is nothing to compare).
+    let all = inventory_corpus::all_inputs(&root());
+    let distinct = inventory_corpus::distinct(&all);
+    assert_eq!(distinct.len(), 178);
+    let keys: Vec<String> = distinct
+        .iter()
+        .filter(|d| !inventory_corpus::is_not_run(d))
+        .map(|d| d.canonical.key())
+        .collect();
+    assert_eq!(keys.len(), 177);
+    let refs: Vec<&str> = keys.iter().map(String::as_str).collect();
+    assert_inventory_control("inventory-all", &refs);
+    // The mutants' inputs are among them.
+    for used in INVENTORY_MUTANT_INPUTS {
+        assert!(keys.iter().any(|k| k == used), "{used} is not an input");
+    }
+}
+
+// Mutant i1. Needle (src/audit/mod.rs, `Builder::add_container`):
+//   let has_jpeg_pointer = ifd.has(TAG_JPEG_OFFSET);
+// The Interop IFD's entries are skipped: the inventory loses them.
+#[test]
+fn inventory_mutant_i1_interop_skipped_is_named() {
+    let key = "seed-tiff_ifd/exif-gps-interop";
+    let bytes = inv_input(key).bytes;
+    let want: Multiset = inventory::ours(&exif_core::audit::audit(&bytes))
+        .tags
+        .into_iter()
+        .filter(|((g, _), _)| g == "InteropIFD")
+        .collect();
+    assert!(!want.is_empty(), "the fixture has Interop entries");
+    let inject = |src: &Path| {
+        probe::inject_replace(
+            &src.join("audit/mod.rs"),
+            "let has_jpeg_pointer = ifd.has(TAG_JPEG_OFFSET);",
+            &marked(
+                "if ifd.kind() == IfdKind::Interop { continue; } \
+                 let has_jpeg_pointer = ifd.has(TAG_JPEG_OFFSET);",
+            ),
+        );
+    };
+    let all = inventory_control_then_mutant("inventory-i1", &[key], &inject);
+    let d = inv_diff(&all, key);
+    assert_eq!(
+        d.theirs_only, want,
+        "exactly the Interop entries are missing"
+    );
+    assert!(d.ours_only.is_empty() && d.regions_ours_only.is_empty());
+    assert!(d.to_string().contains("theirs only: InteropIFD"), "{d}");
+}
+
+// Mutant i2. Needle (src/audit/mod.rs, `Builder::add_container`):
+//   let tag = entry.tag();
+// The tag id is stored masked to its low byte.
+#[test]
+fn inventory_mutant_i2_masked_tag_id_is_named() {
+    let key = "fixtures/exif-basic-le";
+    let inject = |src: &Path| {
+        probe::inject_replace(
+            &src.join("audit/mod.rs"),
+            "let tag = entry.tag();",
+            &marked("let tag = entry.tag() & 0x00FF;"),
+        );
+    };
+    let all = inventory_control_then_mutant("inventory-i2", &[key], &inject);
+    let d = inv_diff(&all, key);
+    // Make (0x010f) is read as 0x000f: both sides name it.
+    assert_eq!(d.theirs_only.get(&("IFD0".to_string(), 0x010f)), Some(&1));
+    assert_eq!(d.ours_only.get(&("IFD0".to_string(), 0x000f)), Some(&1));
+    // And every id we list that ExifTool does not is now a single byte.
+    assert!(d.ours_only.keys().all(|(_, id)| *id <= 0x00FF), "{d}");
+}
+
+// Mutant i3. Needle (src/audit/mod.rs, `Builder::add_container`):
+//   ifd: ifd.kind(),
+// GPS items are labelled Exif.
+#[test]
+fn inventory_mutant_i3_gps_labelled_exif_is_named() {
+    let key = "fixtures/exif-gps-full-le";
+    let bytes = inv_input(key).bytes;
+    let gps: Vec<(u16, usize)> = inventory::ours(&exif_core::audit::audit(&bytes))
+        .tags
+        .iter()
+        .filter(|((g, _), _)| g == "GPS")
+        .map(|((_, id), n)| (*id, *n))
+        .collect();
+    assert!(!gps.is_empty());
+    let inject = |src: &Path| {
+        probe::inject_replace(
+            &src.join("audit/mod.rs"),
+            "ifd: ifd.kind(),",
+            &marked("ifd: if ifd.kind() == IfdKind::Gps { IfdKind::Exif } else { ifd.kind() },"),
+        );
+    };
+    let all = inventory_control_then_mutant("inventory-i3", &[key], &inject);
+    let d = inv_diff(&all, key);
+    let ours_only: Multiset = gps
+        .iter()
+        .map(|&(id, n)| (("ExifIFD".to_string(), id), n))
+        .collect();
+    let theirs_only: Multiset = gps
+        .iter()
+        .map(|&(id, n)| (("GPS".to_string(), id), n))
+        .collect();
+    assert_eq!(d.ours_only, ours_only);
+    assert_eq!(d.theirs_only, theirs_only);
+}
+
+// Mutant i4. Needle (src/audit/mod.rs, `audit_jpeg`):
+//   exif_issues = exif_issues.saturating_add(container.issues().len());
+// Exif blocks after the scan are dropped from the inventory. ExifTool reads
+// none of them either, so on `jpeg-exif-after-scan` the pinned divergence
+// DISAPPEARS: the comparison goes red as a divergence that stopped being one.
+#[test]
+fn inventory_mutant_i4_after_scan_blocks_dropped_makes_the_divergence_vanish() {
+    let keys = [
+        "fixtures/jpeg-exif-after-scan",
+        "fixtures/jpeg-exif-before-and-after-scan",
+    ];
+    let inject = |src: &Path| {
+        probe::inject_replace(
+            &src.join("audit/mod.rs"),
+            "exif_issues = exif_issues.saturating_add(container.issues().len());",
+            &marked(
+                "if after_scan(block.segment()) { continue; } \
+                 exif_issues = exif_issues.saturating_add(container.issues().len());",
+            ),
+        );
+    };
+    let all = inventory_control_then_mutant("inventory-i4", &keys, &inject);
+    for key in keys {
+        let d = inv_diff(&all, key);
+        // The pinned difference is gone: with the block dropped our inventory
+        // equals ExifTool's.
+        assert!(d.is_empty(), "{key}: {d}");
+        let err = inventory::check_against(inventory::KNOWN_DIVERGENCES, key, &d, true)
+            .expect_err("a divergence that stopped being one");
+        assert_eq!(
+            err,
+            inventory::CheckError::StoppedDiverging {
+                fixture: key.to_string()
+            }
+        );
+        assert!(err.to_string().contains(key), "{err}");
+    }
+}
+
+// Mutant i5. Needle (src/tiff/mod.rs, `chain_successor`):
+//   IfdKind::Ifd0 => Some(IfdKind::Ifd1),
+// The IFD after IFD0 is a plain chain IFD: every chain position is off by one.
+#[test]
+fn inventory_mutant_i5_chain_position_off_by_one_is_named() {
+    let key = "fixtures/tiff-chain-four";
+    let inject = |src: &Path| {
+        probe::inject_replace(
+            &src.join("tiff/mod.rs"),
+            "IfdKind::Ifd0 => Some(IfdKind::Ifd1),",
+            &marked("IfdKind::Ifd0 => Some(IfdKind::Chain),"),
+        );
+    };
+    let all = inventory_control_then_mutant("inventory-i5", &[key], &inject);
+    let d = inv_diff(&all, key);
+    assert_eq!(
+        d.ours_only,
+        set(&[
+            ("IFD2", 0x0110, 1),
+            ("IFD3", 0x0131, 1),
+            ("IFD4", 0x013b, 1)
+        ])
+    );
+    assert_eq!(
+        d.theirs_only,
+        set(&[
+            ("IFD1", 0x0110, 1),
+            ("IFD2", 0x0131, 1),
+            ("IFD3", 0x013b, 1)
+        ])
+    );
+}
+
+// Mutant i6. Needle (src/audit/mod.rs, `audit_jpeg`):
+//   Region::Iptc { segment, .. } => (RegionKind::Iptc, segment),
+// An IPTC region is reported as XMP.
+#[test]
+fn inventory_mutant_i6_iptc_region_as_xmp_is_named() {
+    let keys = ["fixtures/jpeg-iptc", "fixtures/jpeg-xmp"];
+    let inject = |src: &Path| {
+        probe::inject_replace(
+            &src.join("audit/mod.rs"),
+            "Region::Iptc { segment, .. } => (RegionKind::Iptc, segment),",
+            &marked("Region::Iptc { segment, .. } => (RegionKind::Xmp, segment),"),
+        );
+    };
+    let all = inventory_control_then_mutant("inventory-i6", &keys, &inject);
+    let d = inv_diff(&all, "fixtures/jpeg-iptc");
+    assert_eq!(d.regions_ours_only, [RegionKind::Xmp].into_iter().collect());
+    assert_eq!(
+        d.regions_theirs_only,
+        [RegionKind::Iptc].into_iter().collect()
+    );
+    assert!(d.ours_only.is_empty() && d.theirs_only.is_empty());
+    // The XMP fixture is unaffected: the fault is specific to IPTC.
+    assert!(inv_diff(&all, "fixtures/jpeg-xmp").is_empty());
 }

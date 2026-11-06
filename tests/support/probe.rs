@@ -217,7 +217,8 @@ fn repo_root() -> PathBuf {
 /// `-` marker is backslash-escaped; [`unescape`] undoes it. A parse error is
 /// reported on stderr with exit status 3 (a faulty library may well fail to
 /// parse a file the honest one reads).
-const PROBE_MAIN: &str = r#"mod oracle;
+const PROBE_MAIN: &str = r#"mod inventory;
+mod oracle;
 
 use exif_core::tiff::Container;
 
@@ -239,10 +240,17 @@ fn escape(s: &str) -> String {
 }
 
 fn main() {
-    let path = match std::env::args().nth(1) {
-        Some(p) => p,
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    // SPEC-013: `probe --inventory <file>` prints the audit's inventory (the
+    // lines `inventory::ours` builds), not the oracle readings.
+    let inventory_mode = args.first().is_some_and(|a| a == "--inventory");
+    if inventory_mode {
+        args.remove(0);
+    }
+    let path = match args.first() {
+        Some(p) => p.clone(),
         None => {
-            eprintln!("usage: probe <file>");
+            eprintln!("usage: probe [--inventory] <file>");
             std::process::exit(2);
         }
     };
@@ -253,6 +261,11 @@ fn main() {
             std::process::exit(2);
         }
     };
+    if inventory_mode {
+        let audit = exif_core::audit::audit(&data);
+        print!("{}", inventory::probe_text(&inventory::ours(&audit)));
+        return;
+    }
     let ours = if data.starts_with(&[0xFF, 0xD8]) {
         match exif_core::jpeg::read(&data) {
             Ok(meta) => oracle::read_jpeg_all(&meta),
@@ -337,6 +350,13 @@ pub fn stage_probe_crate(dest: &Path, inject: Option<&dyn Fn(&Path)>) {
         probe_dir.join("oracle.rs"),
     )
     .expect("copy oracle.rs");
+    // SPEC-013: the inventory model, copied unmodified, so a mutant is compared
+    // through exactly the normalisation the live inventory check uses.
+    std::fs::copy(
+        root.join("tests/support/inventory.rs"),
+        probe_dir.join("inventory.rs"),
+    )
+    .expect("copy inventory.rs");
     std::fs::write(probe_dir.join("main.rs"), PROBE_MAIN).expect("write probe main.rs");
 
     if let Some(inject) = inject {
@@ -407,6 +427,24 @@ pub fn run_probe_with_limit(
     let stdout = String::from_utf8(run.stdout).map_err(|e| format!("probe stdout: {e}"))?;
     let line = stdout.strip_suffix('\n').unwrap_or(&stdout);
     Ok(line.split('\t').map(unescape).collect())
+}
+
+/// Run a built probe in inventory mode on `file` (SPEC-013): its stdout, which
+/// `inventory::parse_probe_text` turns back into an `Inventory`. Bounded by
+/// [`RUN_LIMIT_VAR`]; every failure is a `String` with the captured stderr.
+pub fn run_probe_inventory(bin: &Path, file: &Path) -> Result<String, String> {
+    let mut cmd = Command::new(bin);
+    cmd.arg("--inventory").arg(file);
+    let run = run_with_limit(cmd, &format!("probe {}", bin.display()), run_limit())?;
+    if !run.status.success() {
+        return Err(format!(
+            "probe --inventory failed ({}) on {}:\n{}",
+            run.status,
+            file.display(),
+            String::from_utf8_lossy(&run.stderr)
+        ));
+    }
+    String::from_utf8(run.stdout).map_err(|e| format!("probe stdout: {e}"))
 }
 
 /// Build the staged crate in `dir` and run its probe on `file`.
