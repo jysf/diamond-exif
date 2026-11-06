@@ -214,6 +214,55 @@ fn seventeen_exif() -> Vec<u8> {
     clean(&segs)
 }
 
+/// Two Exif APP1s where one is good (Make AlphaCam, Model OnlyInA) and the
+/// other is not a TIFF at all (a fatal block), in either order.
+fn good_and_fatal(good_first: bool) -> Vec<u8> {
+    let good = exif_app1(&tiff_of(&[
+        (t::T_MAKE, "AlphaCam"),
+        (t::T_MODEL, "OnlyInA"),
+    ]));
+    let fatal = exif_app1(b"junkjunkjunkjunk");
+    if good_first {
+        clean(&[good, fatal])
+    } else {
+        clean(&[fatal, good])
+    }
+}
+
+/// Exif A (Make AlphaCam, Model OnlyInA) BEFORE the scan and Exif B (Make
+/// BravoCam) AFTER it.
+fn exif_before_and_after_scan() -> Vec<u8> {
+    let a = exif_app1(&tiff_of(&[
+        (t::T_MAKE, "AlphaCam"),
+        (t::T_MODEL, "OnlyInA"),
+    ]));
+    let b = exif_app1(&tiff_of(&[(t::T_MAKE, "BravoCam")]));
+    cat(&[&SOI, &a, &sos_header(), &SCAN, &b, &EOI])
+}
+
+/// GPS split across two Exif blocks: block A holds the latitude (37 deg 30 min
+/// 0 s) with ref `N`, block B holds only the latitude ref `S`.
+fn gps_split_across_two_blocks() -> Vec<u8> {
+    let a = t::assemble(
+        false,
+        &[
+            t::ifd(vec![t::ptr(t::T_GPS_IFD, 1)]),
+            t::ifd(vec![
+                t::ascii(t::T_GPS_LAT_REF, b"N\0"),
+                t::rational(false, t::T_GPS_LAT, &[(37, 1), (30, 1), (0, 1)]),
+            ]),
+        ],
+    );
+    let b = t::assemble(
+        false,
+        &[
+            t::ifd(vec![t::ptr(t::T_GPS_IFD, 1)]),
+            t::ifd(vec![t::ascii(t::T_GPS_LAT_REF, b"S\0")]),
+        ],
+    );
+    clean(&[exif_app1(&a), exif_app1(&b)])
+}
+
 /// The shape fixtures, in a fixed order.
 fn shapes() -> Vec<(&'static str, Vec<u8>)> {
     let basic = basic();
@@ -260,6 +309,19 @@ fn shapes() -> Vec<(&'static str, Vec<u8>)> {
         ("jpeg-two-exif-same-tag-reversed", two_exif_same_tag(false)),
         ("jpeg-two-exif-disjoint-tags", two_exif_disjoint()),
         ("jpeg-seventeen-exif-last-differs", seventeen_exif()),
+        // A fatal (not-a-TIFF) block next to a good one, both orders: the
+        // harness model must skip the fatal block, not stop at it.
+        ("jpeg-exif-good-then-fatal", good_and_fatal(true)),
+        ("jpeg-exif-fatal-then-good", good_and_fatal(false)),
+        // Exif before AND after the scan; GPS combined across two blocks.
+        (
+            "jpeg-exif-before-and-after-scan",
+            exif_before_and_after_scan(),
+        ),
+        (
+            "jpeg-gps-split-across-two-blocks",
+            gps_split_across_two_blocks(),
+        ),
         // Where the Exif sits in the segment stream.
         (
             "jpeg-exif-after-scan",
@@ -307,7 +369,7 @@ fn shapes() -> Vec<(&'static str, Vec<u8>)> {
         ),
         (
             "jpeg-iptc-without-0404",
-            clean(&[photoshop_seg(&[resource(0x0408, &iptc_data())])]),
+            clean(&[photoshop_seg(&[resource(0x0405, &iptc_data())])]),
         ),
         (
             "jpeg-extended-xmp-pair",

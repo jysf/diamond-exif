@@ -394,7 +394,60 @@ pub const KNOWN_DIVERGENCES: &[Divergence] = &[
                  segment still costs an ExtraExif issue.",
         question_id: "exiftool-reads-17th-exif-block",
     },
+    Divergence {
+        fixture: "jpeg-exif-before-and-after-scan",
+        selector: "IFD0:Make",
+        command: "exiftool -T -n -s3 <the 22 selectors of oracle::jpeg_names()> \
+              jpeg-exif-before-and-after-scan (SOI, Exif A: Make AlphaCam + Model OnlyInA, SOS \
+              header, 2 scan bytes, Exif B: Make BravoCam, EOI)",
+        exiftool_version: "13.55",
+        measured_stdout: "IFD0:Make = AlphaCam, IFD0:Model = OnlyInA, every other field '-', no \
+                      stderr: the block after the scan is ignored. The harness model reads \
+                      blocks after the scan too (the library does), so the later block B wins: \
+                      IFD0:Make = BravoCam, IFD0:Model = OnlyInA.",
+        right_side:
+            "exif-core for an audit (a block after the scan is metadata another reader can \
+                 pick up); the divergence is the same finding as exiftool-ignores-exif-after-scan \
+                 seen on a value both sides read.",
+        question_id: "exiftool-ignores-exif-after-scan",
+    },
+    Divergence {
+        fixture: "jpeg-gps-split-across-two-blocks",
+        selector: "Composite:GPSLatitude",
+        command: "exiftool -T -n -s3 <the 22 selectors of oracle::jpeg_names()> \
+              jpeg-gps-split-across-two-blocks (Exif A: GPS IFD with GPSLatitudeRef N and \
+              GPSLatitude 37/1 30/1 0/1; Exif B: GPS IFD with only GPSLatitudeRef S)",
+        exiftool_version: "13.55",
+        measured_stdout:
+            "Composite:GPSLatitude = -37.5 (ExifTool combines A's latitude with B's ref \
+                      S; it also reports GPS:GPSLatitudeRef = S). The harness model computes the \
+                      composite inside ONE block, the latest block that can: A alone, N, so it \
+                      reads 37.5.",
+        right_side: "neither: a documented limit of the harness model (it merges tags per block, \
+                 ExifTool merges them across blocks before deriving the composite); the library \
+                 reads each block on its own by design.",
+        question_id: "exiftool-composite-gps-across-exif-blocks",
+    },
 ];
+
+/// For a fixture covered by an [`EXIF_ANY`] divergence: the committed record of
+/// the SAME TIFF in a place both tools read, whose ExifTool fields our Exif
+/// reading must equal. Without it the wildcard would let any value of ours pass
+/// (verify finding M1).
+pub const EXIF_PINS: &[(&str, &str)] = &[
+    ("jpeg-exif-after-scan", "jpeg-exif-basic-le"),
+    ("jpeg-exif-last-segment-at-eof", "jpeg-exif-basic-le"),
+    // The seed's TIFF is the one in seed `exif-in-jpeg`.
+    ("jpeg-seed-exif-after-scan", "jpeg-seed-exif-in-jpeg"),
+];
+
+/// The record name that pins `fixture`, if it has an [`EXIF_ANY`] divergence.
+pub fn exif_pin_record(fixture: &str) -> Option<&'static str> {
+    EXIF_PINS
+        .iter()
+        .find(|(f, _)| *f == fixture)
+        .map(|(_, r)| *r)
+}
 
 /// An input ExifTool 13.55 does not return on (a `"*"` divergence). Neither the
 /// recorder nor the live sweep runs ExifTool on it: the measured behaviour is
@@ -605,6 +658,19 @@ pub fn compare_jpeg(
     ours: &[Option<String>],
     theirs: &[Option<String>],
 ) -> JpegComparison {
+    compare_jpeg_pinned(name, ours, theirs, None)
+}
+
+/// [`compare_jpeg`] with the pin for an [`EXIF_ANY`] fixture: `pin` is
+/// ExifTool's fields (at least the Exif selectors) for the record named by
+/// [`exif_pin_record`]. Our Exif reading must equal them; a fixture that has a
+/// wildcard entry and is compared WITHOUT a pin is itself a failure (`stale`).
+pub fn compare_jpeg_pinned(
+    name: &str,
+    ours: &[Option<String>],
+    theirs: &[Option<String>],
+    pin: Option<&[Option<String>]>,
+) -> JpegComparison {
     let found = diff_jpeg(ours, theirs);
     let mut cmp = JpegComparison::default();
     for m in &found {
@@ -614,6 +680,22 @@ pub fn compare_jpeg(
             }
             Some(_) => cmp.explained.push(m.clone()),
             None => cmp.unexplained.push(m.clone()),
+        }
+    }
+    if KNOWN_DIVERGENCES
+        .iter()
+        .any(|d| d.fixture == name && d.selector == EXIF_ANY)
+    {
+        let n = SELECTORS.len();
+        match (pin, ours.get(..n)) {
+            (Some(p), Some(o)) if p.len() >= n => {
+                let p = p.get(..n).unwrap_or_default();
+                cmp.unexplained.extend(diff(o, p, SELECTORS));
+            }
+            _ => cmp.stale.push(format!(
+                "{name}: a wildcard ({EXIF_ANY}) divergence needs the pinned reading of {:?}",
+                exif_pin_record(name)
+            )),
         }
     }
     for d in KNOWN_DIVERGENCES

@@ -248,6 +248,34 @@ questions:
       (the 17th block) is a recorded divergence. An audit that must report every
       value a downstream ExifTool-based tool would see needs the merged view or
       a per-block listing; the data is already in exif_blocks().
+      Verify info (HANDOFF-022): "union of tags, the later block wins" is a
+      FITTED MODEL of what was measured (2, 17 and 20 blocks, fatal or damaged
+      later blocks), not ExifTool's documented rule. With two Exif APP1s,
+      `exiftool -Warning` reports `[minor] File contains multi-segment EXIF`
+      (the `-T` command line the oracle uses does not print it, see
+      `exiftool-warnings-only-when-no-tag-is-found`). Two measured limits of the
+      model are recorded as divergences: an Exif block AFTER the scan is ignored
+      by ExifTool but read by the model (`jpeg-exif-before-and-after-scan`,
+      question `exiftool-ignores-exif-after-scan`), and the Composite GPS
+      coordinate is derived by ExifTool across blocks, by the model per block
+      (`exiftool-composite-gps-across-exif-blocks`).
+
+  - id: exiftool-composite-gps-across-exif-blocks
+    question: "ExifTool combines GPS tags from different Exif segments into one Composite coordinate; the harness model derives it per block. Is that limit acceptable, and does the audit need a cross-block view?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-05
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-011 fix round, verify finding L2). Command: `exiftool -T
+      -n -s3 <the 22 selectors> jpeg-gps-split-across-two-blocks` (Exif A: GPS
+      IFD with GPSLatitudeRef N and GPSLatitude 37/1 30/1 0/1; Exif B: GPS IFD
+      with only GPSLatitudeRef S). ExifTool 13.55: Composite:GPSLatitude = -37.5
+      (A's latitude with B's ref). The model (oracle::read_ours_jpeg) reads the
+      latest block that can produce the composite: A alone, N, 37.5. Neither
+      side is wrong; the library reads each block on its own. Recorded as a
+      KNOWN_DIVERGENCES entry on Composite:GPSLatitude.
 
   - id: exiftool-ignores-exif-after-scan
     question: "ExifTool 13.55 reads no Exif from an APP1 after the first SOS while exif-core reads it: is exif-core's behaviour the one an audit and sanitiser want?"

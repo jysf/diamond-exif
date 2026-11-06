@@ -218,3 +218,26 @@ Everything in the table reproduced (two-Exif union and later-wins both orders, a
 
 3. **If you did this task again, what would you do differently?**
    — Probe the stderr behaviour with and without a readable tag before designing the warning table, and write the records, the comparator and the wildcard divergence in one pass instead of discovering the stale-entry accounting during the mutants.
+
+### Fix round (verify punch list, HANDOFF-022)
+
+Tests, fixtures, records, docs only; `src/` behaviour unchanged (no `src/` file touched in this round). Four new fixtures were each probed ALONE under `perl -e 'alarm 8; exec @ARGV' exiftool ...` first: all exited 0, none hung. Fixtures 38 -> 42, hand-built records 38 -> 42 (JPEG records 75 -> 79); the 41 TIFF records, the 63 old seeds and the 37 seed records are unchanged.
+
+- **M1 (wildcard pins our values).** `oracle::EXIF_PINS` maps each `exif:*` fixture to the committed record of the same TIFF read normally (`jpeg-exif-after-scan` and `jpeg-exif-last-segment-at-eof` -> `jpeg-exif-basic-le`; seed `exif-after-scan` -> `jpeg-seed-exif-in-jpeg`). New `compare_jpeg_pinned`: for a fixture with a wildcard entry, our whole Exif reading must equal the pin (any difference is an unexplained mismatch naming the selector); comparing such a fixture WITHOUT a pin is itself a `stale` failure. Test `wildcard_divergences_pin_our_values_against_the_same_tiff_read_normally`: wrong Make, all-but-Make dropped, one field dropped (named exactly), wrong Model, and no-pin all fail. Red: with the pin ignored in the comparator, that test FAILS (mutant M1 below). Side effect: mutant m4 now also gives 14 unexplained `ours=None` mismatches (the pin) in addition to the stale entry; the m4 test asserts both.
+- **L1.** `jpeg-exif-before-and-after-scan` (Exif A Make AlphaCam + Model OnlyInA, SOS, Exif B Make BravoCam). ExifTool: AlphaCam / OnlyInA, no stderr. Model: BravoCam / OnlyInA. Per-selector `KNOWN_DIVERGENCES` entry on `IFD0:Make` (question `exiftool-ignores-exif-after-scan`), test `exif_before_and_after_the_scan_is_a_recorded_per_selector_divergence`. Model and library unchanged.
+- **L2.** `jpeg-gps-split-across-two-blocks` (A: lat 37/1 30/1 0/1 ref N; B: ref S only). ExifTool: `Composite:GPSLatitude = -37.5`; model 37.5. `KNOWN_DIVERGENCES` entry on `Composite:GPSLatitude`, new question `exiftool-composite-gps-across-exif-blocks`, test `composite_gps_across_two_blocks_is_a_recorded_limit_of_the_model`.
+- **L3.** Fixtures `jpeg-exif-good-then-fatal` and `jpeg-exif-fatal-then-good` (ExifTool: AlphaCam / OnlyInA in both orders; model agrees), test `a_fatal_exif_block_does_not_stop_the_model_either_order`. `jpeg-iptc-without-0404` now uses resource id `0x0405` (record re-recorded, unchanged output), test `the_iptc_negative_fixture_uses_resource_id_0405`. The marker-leak test now asserts on the REAL scan that every file under `tests/support` is in the scanned set except `probe.rs` (and names five required files).
+- **Info.** The warning-table doc comment and question `several-exif-segments` record: with two Exif segments `exiftool -Warning` says `[minor] File contains multi-segment EXIF`; "union, later block wins" is a model fitted to the measurements, not ExifTool's documented rule. Warning-table rows added for the four new fixtures (ExifTool `-T` stderr: none).
+
+Mutants re-run on the real tree (each reverted after, tree verified green):
+
+| Mutant | Result |
+|---|---|
+| V3 model's search stops at a fatal block (`map_while`) | RED: `a_fatal_exif_block_does_not_stop_the_model_either_order`, `oracle_names_the_one_field_perturbed_in_a_jpeg_record`, `replay_jpeg_records_are_clean_on_an_unmodified_reading`, `live_jpeg_parity_on_hand_built_fixtures` |
+| V5 resource id `0x0405` also accepted as IPTC | RED: `iptc_without_0404_and_xmp_in_wrong_marker_are_absent_on_both_sides`, `oracle_names_the_one_field_perturbed...`, `replay_jpeg_records_...`, `live_jpeg_parity_on_hand_built_fixtures` |
+| V12 marker scan skips `tests/support` | RED: `injection_marker_does_not_leak_into_src_or_tests_support` |
+| M1 pin ignored by `compare_jpeg_pinned` | RED: `wildcard_divergences_pin_our_values_against_the_same_tiff_read_normally` |
+
+Gates re-run after the round: see the report returned with the commit (fmt both graphs + shared harness file, `just lint`, `lint-fuzz`, `lint-no-allow`, `forbid-unsafe`, `deny`, `deny-fuzz`, `lint-red-proof`, `lint-fuzz-red-proof`, `validate`, `decisions-audit`, `cost-audit`, `cargo test` on 1.90.0 and stable with `DIAMOND_EXIF_REQUIRE_ORACLE=1`, `just oracle-record` with a clean `git status` afterwards).
+
+Deviations in this round: the pin is a separate function (`compare_jpeg_pinned`) with `compare_jpeg` kept as the unpinned entry point (it flags a wildcard fixture as stale), rather than a changed signature; the pin for the seed uses `jpeg-seed-exif-in-jpeg` (2 populated fields: Make and DateTimeOriginal) since that seed's TIFF has no other Exif values.

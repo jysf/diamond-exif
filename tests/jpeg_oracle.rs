@@ -172,6 +172,29 @@ fn hand_built_names() -> Vec<String> {
         .collect()
 }
 
+/// ExifTool's Exif fields of the record that pins a wildcard fixture, if any.
+fn pin_for(name: &str) -> Option<Vec<Option<String>>> {
+    let record = oracle::exif_pin_record(name)?;
+    let rec = read_record(record);
+    Some(
+        rec.stdout
+            .trim_end_matches('\n')
+            .split('\t')
+            .take(SELECTORS.len())
+            .map(|f| if f == "-" { None } else { Some(f.to_string()) })
+            .collect(),
+    )
+}
+
+/// `oracle::compare_jpeg` with the pin a wildcard fixture needs (M1).
+fn compare(
+    name: &str,
+    ours: &[Option<String>],
+    theirs: &[Option<String>],
+) -> oracle::JpegComparison {
+    oracle::compare_jpeg_pinned(name, ours, theirs, pin_for(name).as_deref())
+}
+
 // ── Fixtures ───────────────────────────────────────────────────────────────
 
 #[test]
@@ -184,7 +207,7 @@ fn jpeg_fixtures_are_deterministic_and_uniquely_named() {
     names.sort_unstable();
     names.dedup();
     assert_eq!(names.len(), count, "fixture names must be unique");
-    assert_eq!(count, 12 + 26, "12 wrapped TIFFs and 26 shapes");
+    assert_eq!(count, 12 + 30, "12 wrapped TIFFs and 30 shapes");
     // Record files are keyed by name: no collision with a TIFF fixture, a TIFF
     // seed, or the `jpeg-seed-` records.
     for (tiff, _) in oracle_tiff::fixtures() {
@@ -223,6 +246,10 @@ fn jpeg_fixtures_are_deterministic_and_uniquely_named() {
         "jpeg-iptc",
         "jpeg-iptc-without-0404",
         "jpeg-extended-xmp-pair",
+        "jpeg-exif-good-then-fatal",
+        "jpeg-exif-fatal-then-good",
+        "jpeg-exif-before-and-after-scan",
+        "jpeg-gps-split-across-two-blocks",
     ] {
         assert!(names.contains(&shape), "missing fixture {shape}");
     }
@@ -273,7 +300,7 @@ fn every_wrapped_tiff_fixture_is_present_and_matches_its_tiff_bytes() {
 fn replay_jpeg_records_are_clean_on_an_unmodified_reading() {
     let mut fixtures = 0usize;
     for (name, bytes) in oracle_jpeg::fixtures() {
-        let cmp = oracle::compare_jpeg(&name, &ours_fixture(&bytes), &theirs_fixture(&name));
+        let cmp = compare(&name, &ours_fixture(&bytes), &theirs_fixture(&name));
         assert!(
             cmp.is_clean(),
             "{name}: unexplained [{}] stale {:?}",
@@ -293,7 +320,7 @@ fn replay_jpeg_records_are_clean_on_an_unmodified_reading() {
             rec.outcome.is_none() && oracle::not_run_divergence(&name).is_none(),
             "{name}: no JPEG seed is a not-run input"
         );
-        let cmp = oracle::compare_jpeg(&name, &ours_seed(&bytes), &theirs_seed(&seed));
+        let cmp = compare(&name, &ours_seed(&bytes), &theirs_seed(&seed));
         assert!(
             cmp.is_clean(),
             "{name}: unexplained [{}] stale {:?}",
@@ -305,7 +332,7 @@ fn replay_jpeg_records_are_clean_on_an_unmodified_reading() {
         }
         seeds += 1;
     }
-    assert_eq!(fixtures, 38);
+    assert_eq!(fixtures, 42);
     assert_eq!(seeds, 37);
 }
 
@@ -444,7 +471,7 @@ fn tiff_records_are_byte_identical_to_the_committed_set() {
                 .starts_with("jpeg-")
         })
         .count();
-    assert_eq!(jpeg_records, 38 + 37);
+    assert_eq!(jpeg_records, 42 + 37);
 }
 
 /// Replay-and-perturb on JPEG records: for every field our reading has, change
@@ -461,10 +488,7 @@ fn oracle_names_the_one_field_perturbed_in_a_jpeg_record() {
         }
         let theirs = theirs_fixture(&name);
         let ours = ours_fixture(&bytes);
-        assert!(
-            oracle::compare_jpeg(&name, &ours, &theirs).is_clean(),
-            "{name}"
-        );
+        assert!(compare(&name, &ours, &theirs).is_clean(), "{name}");
         for (i, v) in ours.iter().enumerate() {
             let Some(v) = v else { continue };
             if v == oracle::SKIPPED {
@@ -477,7 +501,7 @@ fn oracle_names_the_one_field_perturbed_in_a_jpeg_record() {
             } else {
                 None // a region we located is removed
             };
-            let cmp = oracle::compare_jpeg(&name, &p, &theirs);
+            let cmp = compare(&name, &p, &theirs);
             assert_eq!(
                 cmp.unexplained.len(),
                 1,
@@ -516,12 +540,12 @@ fn oracle_names_the_one_field_perturbed_in_a_jpeg_record() {
     let mut ours = ours_fixture(&fixture("jpeg-xmp"));
     let xmp = index_of("XMP-xmp:CreatorTool");
     ours[xmp] = None;
-    let cmp = oracle::compare_jpeg("jpeg-xmp", &ours, &theirs);
+    let cmp = compare("jpeg-xmp", &ours, &theirs);
     assert_eq!(named(&cmp.unexplained), vec!["XMP-xmp:CreatorTool"]);
     let theirs = theirs_fixture("jpeg-xmp-in-wrong-marker");
     let mut ours = ours_fixture(&fixture("jpeg-xmp-in-wrong-marker"));
     ours[xmp] = Some(oracle::PRESENT.to_string());
-    let cmp = oracle::compare_jpeg("jpeg-xmp-in-wrong-marker", &ours, &theirs);
+    let cmp = compare("jpeg-xmp-in-wrong-marker", &ours, &theirs);
     assert_eq!(named(&cmp.unexplained), vec!["XMP-xmp:CreatorTool"]);
 }
 
@@ -567,7 +591,7 @@ fn container_independence_every_wrapped_fixture_reads_the_same_bare_and_in_jpeg(
         // Both comparisons are clean on their own committed records.
         assert!(oracle::diff(&bare_ours, &bare_theirs, SELECTORS).is_empty());
         assert!(
-            oracle::compare_jpeg(&name, &ours_fixture(&bytes), &jpeg_theirs).is_clean(),
+            compare(&name, &ours_fixture(&bytes), &jpeg_theirs).is_clean(),
             "{name}"
         );
     }
@@ -618,10 +642,7 @@ fn multi_exif_is_compared_against_the_union_with_the_later_block_winning() {
             want_model,
             "{name}: our model Model"
         );
-        assert!(
-            oracle::compare_jpeg(name, &ours, &theirs).is_clean(),
-            "{name}"
-        );
+        assert!(compare(name, &ours, &theirs).is_clean(), "{name}");
 
         // The library's own policy is different and unchanged: the FIRST block
         // is primary and the second costs an ExtraExif issue (DEC-006). That is
@@ -644,7 +665,7 @@ fn multi_exif_is_compared_against_the_union_with_the_later_block_winning() {
     let meta = jpeg::read(&bytes).expect("a JPEG");
     let mut first_only = ours_fixture(&bytes);
     first_only[make] = oracle::read_one(meta.exif().expect("primary"), &SELECTORS[2]);
-    let cmp = oracle::compare_jpeg(
+    let cmp = compare(
         "jpeg-two-exif-same-tag",
         &first_only,
         &theirs_fixture("jpeg-two-exif-same-tag"),
@@ -670,7 +691,7 @@ fn exif_signature_is_five_bytes_per_exiftool() {
         if read {
             assert_eq!(theirs[make].as_deref(), Some("DiamondCam"));
         }
-        let cmp = oracle::compare_jpeg(name, &ours, &theirs);
+        let cmp = compare(name, &ours, &theirs);
         assert!(
             cmp.is_clean() && cmp.explained.is_empty(),
             "{name}: {cmp:?}"
@@ -716,7 +737,7 @@ fn exif_after_scan_is_a_recorded_divergence_and_still_present() {
             ours_fixture(&bytes)
         };
         assert!(ours[index_of("IFD0:Make")].is_some(), "{name}: we read it");
-        let cmp = oracle::compare_jpeg(name, &ours, &theirs);
+        let cmp = compare(name, &ours, &theirs);
         assert!(cmp.is_clean(), "{name}: {cmp:?}");
         assert!(
             !cmp.explained.is_empty(),
@@ -754,7 +775,7 @@ fn last_segment_at_eof_is_a_recorded_divergence_and_still_present() {
     assert_eq!(meta.exif_blocks().len(), 1);
     let ours = ours_fixture(&bytes);
     assert!(ours[index_of("IFD0:Make")].is_some());
-    let cmp = oracle::compare_jpeg(name, &ours, &theirs);
+    let cmp = compare(name, &ours, &theirs);
     assert!(cmp.is_clean() && !cmp.explained.is_empty(), "{cmp:?}");
 
     // Controls: end the file after a COM segment, or after an EOI, and both
@@ -766,7 +787,7 @@ fn last_segment_at_eof_is_a_recorded_divergence_and_still_present() {
             theirs[index_of("IFD0:Make")].is_some(),
             "{control}: ExifTool"
         );
-        let cmp = oracle::compare_jpeg(control, &ours, &theirs);
+        let cmp = compare(control, &ours, &theirs);
         assert!(
             cmp.is_clean() && cmp.explained.is_empty(),
             "{control}: {cmp:?}"
@@ -791,7 +812,7 @@ fn seventeenth_exif_block_divergence_is_recorded_and_still_present() {
     assert_eq!(extra, 16, "sixteen ExtraExif issues for seventeen segments");
     let ours = ours_fixture(&bytes);
     assert_eq!(ours[make].as_deref(), Some("SameFirst16"));
-    let cmp = oracle::compare_jpeg(name, &ours, &theirs);
+    let cmp = compare(name, &ours, &theirs);
     assert!(cmp.is_clean(), "{cmp:?}");
     assert_eq!(named(&cmp.explained), vec!["IFD0:Make"]);
     assert!(cmp.explained[0].ours.is_some() && cmp.explained[0].theirs.is_some());
@@ -812,10 +833,7 @@ fn region_presence_xmp_and_iptc_agree_with_exiftool() {
         assert_eq!(theirs[iptc].is_some(), want_iptc, "{name}: ExifTool IPTC");
         assert_eq!(ours[xmp].is_some(), want_xmp, "{name}: our XMP region");
         assert_eq!(ours[iptc].is_some(), want_iptc, "{name}: our IPTC region");
-        assert!(
-            oracle::compare_jpeg(name, &ours, &theirs).is_clean(),
-            "{name}"
-        );
+        assert!(compare(name, &ours, &theirs).is_clean(), "{name}");
     }
     // Presence only: the values are ExifTool's, not compared.
     assert_eq!(
@@ -863,6 +881,12 @@ fn iptc_without_0404_and_xmp_in_wrong_marker_are_absent_on_both_sides() {
 /// A characterisation, asserted both ways: a changed library issue or a changed
 /// ExifTool warning fails. It does NOT claim the two are equivalent.
 ///
+/// Info (verify, HANDOFF-022): with two Exif segments `exiftool -Warning` says
+/// `[minor] File contains multi-segment EXIF`, which the `-T` stderr never shows;
+/// and "union of tags, the later block wins" is a model FITTED to what was
+/// measured (2, 17 and 20 blocks, fatal or damaged later blocks), not ExifTool's
+/// documented rule.
+///
 /// Measured finding that shapes this table: ExifTool's command line prints its
 /// warnings to stderr only when none of the requested tags was found. Every
 /// warning in the committed records is on an input whose fields are all `-`; a
@@ -890,6 +914,17 @@ const WARNING_TABLE: &[WarningRow] = &[
         "jpeg-seventeen-exif-last-differs",
         "ExtraExif*16",
         "ok*16",
+        None,
+    ),
+    // Two Exif segments are `[minor] File contains multi-segment EXIF` to
+    // `exiftool -Warning`; the `-T` command line prints nothing here.
+    ("jpeg-exif-good-then-fatal", "ExtraExif", "ok,fatal", None),
+    ("jpeg-exif-fatal-then-good", "ExtraExif", "fatal,ok", None),
+    ("jpeg-exif-before-and-after-scan", "ExtraExif", "ok*2", None),
+    (
+        "jpeg-gps-split-across-two-blocks",
+        "ExtraExif",
+        "ok*2",
         None,
     ),
     ("jpeg-exif-after-scan", "", "ok", None),
@@ -1064,18 +1099,18 @@ fn a_divergence_that_stops_being_one_fails() {
     ] {
         let ours = ours_fixture(&fixture(name));
         let theirs = theirs_fixture(name);
-        let honest = oracle::compare_jpeg(name, &ours, &theirs);
+        let honest = compare(name, &ours, &theirs);
         assert!(
             honest.is_clean() && !honest.explained.is_empty(),
             "{name}: {honest:?}"
         );
         // Flip: ExifTool is made to agree with us (as if it were fixed).
-        let flipped = oracle::compare_jpeg(name, &ours, &ours);
+        let flipped = compare(name, &ours, &ours);
         assert!(!flipped.is_clean(), "{name}: the list must not rot");
         assert!(!flipped.stale.is_empty(), "{name}");
         assert!(flipped.explained.is_empty() && flipped.unexplained.is_empty());
         // And the same divergence on a fixture with NO entry is just a failure.
-        let stranger = oracle::compare_jpeg("jpeg-exif-basic-le", &ours, &theirs);
+        let stranger = compare("jpeg-exif-basic-le", &ours, &theirs);
         assert!(
             !stranger.unexplained.is_empty(),
             "{name}: not covered elsewhere"
@@ -1090,10 +1125,10 @@ fn a_divergence_that_stops_being_one_fails() {
     theirs[make] = Some("Surprise".to_string());
     let mut blind = ours.clone();
     blind[make] = None;
-    let cmp = oracle::compare_jpeg(name, &blind, &theirs);
+    let cmp = compare(name, &blind, &theirs);
     assert!(cmp.unexplained.iter().any(|m| m.selector == "IFD0:Make"));
     // A value that differs (both Some) is not covered by the wildcard either.
-    let cmp = oracle::compare_jpeg(name, &ours, &{
+    let cmp = compare(name, &ours, &{
         let mut t = vec![None; ours.len()];
         t[make] = Some("Other".to_string());
         t
@@ -1103,7 +1138,7 @@ fn a_divergence_that_stops_being_one_fails() {
     let xmp = index_of("XMP-xmp:CreatorTool");
     let mut ours_x = ours.clone();
     ours_x[xmp] = Some(oracle::PRESENT.to_string());
-    let cmp = oracle::compare_jpeg(name, &ours_x, &theirs_fixture(name));
+    let cmp = compare(name, &ours_x, &theirs_fixture(name));
     assert!(cmp
         .unexplained
         .iter()
@@ -1163,7 +1198,7 @@ fn live_jpeg_parity_on_hand_built_fixtures() {
     let mut failures: Vec<String> = Vec::new();
     for (name, bytes) in oracle_jpeg::fixtures() {
         let (theirs, stdout, warnings) = live_run(&name, &bytes, &names);
-        let cmp = oracle::compare_jpeg(&name, &ours_fixture(&bytes), &theirs);
+        let cmp = compare(&name, &ours_fixture(&bytes), &theirs);
         for m in &cmp.unexplained {
             failures.push(format!("{name}: {m}"));
         }
@@ -1216,7 +1251,7 @@ fn live_jpeg_parity_on_the_jpeg_fuzz_seeds() {
             tools::parse_fields(&names, &stdout).unwrap_or_else(|e| panic!("{name}: {e}"));
         compared += theirs.iter().filter(|t| t.is_some()).count();
         theirs.extend(oracle::REGION_SELECTORS.iter().map(|_| None));
-        let cmp = oracle::compare_jpeg(&name, &ours_seed(bytes), &theirs);
+        let cmp = compare(&name, &ours_seed(bytes), &theirs);
         for m in &cmp.unexplained {
             failures.push(format!("{name}: {m}"));
         }
@@ -1291,3 +1326,183 @@ fn live_jpeg_skip_is_loud_and_required_mode_fails() {
 // Silence an unused-import warning on the one type only some builds use.
 #[allow(dead_code)]
 fn _selector_type_is_used(_: &Selector) {}
+
+// ── Fix round (verify punch list, HANDOFF-022) ─────────────────────────────
+
+/// M1: a wildcard (`exif:*`) divergence must still pin OUR values. For each
+/// wildcard fixture, our Exif reading has to equal ExifTool's reading of the same
+/// TIFF in a place both tools read (`oracle::EXIF_PINS`); a wrong value, or a
+/// dropped field, or comparing without the pin, is a failure.
+#[test]
+fn wildcard_divergences_pin_our_values_against_the_same_tiff_read_normally() {
+    let make = index_of("IFD0:Make");
+    let model = index_of("IFD0:Model");
+    let cases = [
+        ("jpeg-exif-after-scan", false),
+        ("jpeg-exif-last-segment-at-eof", false),
+        ("jpeg-seed-exif-after-scan", true),
+    ];
+    for (name, seed) in cases {
+        let (ours, theirs) = if seed {
+            let bytes = std::fs::read(root().join("fuzz/seeds/jpeg_segments/exif-after-scan"))
+                .expect("seed");
+            (ours_seed(&bytes), theirs_seed("exif-after-scan"))
+        } else {
+            (ours_fixture(&fixture(name)), theirs_fixture(name))
+        };
+        let pin = pin_for(name).expect("a pinned fixture");
+        assert!(
+            pin.iter().filter(|p| p.is_some()).count() >= 2,
+            "{name}: pin"
+        );
+
+        // Honest: clean, with the divergence present.
+        let honest = compare(name, &ours, &theirs);
+        assert!(
+            honest.is_clean() && !honest.explained.is_empty(),
+            "{name}: {honest:?}"
+        );
+
+        // A wrong value of ours (and nothing else lost) is NOT explained.
+        let mut wrong = ours.clone();
+        wrong[make] = Some("WRONG-VALUE".to_string());
+        let cmp = compare(name, &wrong, &theirs);
+        assert!(!cmp.is_clean(), "{name}: a wrong Make passed: {cmp:?}");
+        assert!(cmp.unexplained.iter().any(|m| m.selector == "IFD0:Make"));
+
+        // Every field dropped but Make is NOT explained.
+        let mut dropped = vec![None; ours.len()];
+        dropped[make] = ours[make].clone();
+        let cmp = compare(name, &dropped, &theirs);
+        assert!(!cmp.is_clean(), "{name}: dropped fields passed: {cmp:?}");
+        assert!(
+            cmp.unexplained.len() + 1 >= pin.iter().filter(|p| p.is_some()).count(),
+            "{name}: {}",
+            describe(&cmp.unexplained)
+        );
+
+        // One dropped field is named exactly.
+        let one_at = ours
+            .iter()
+            .take(SELECTORS.len())
+            .position(|o| o.is_some() && o != &ours[make])
+            .expect("a second populated field");
+        let mut one = ours.clone();
+        one[one_at] = None;
+        let cmp = compare(name, &one, &theirs);
+        assert!(!cmp.is_clean(), "{name}: one dropped field passed");
+        assert_eq!(named(&cmp.unexplained), vec![SELECTORS[one_at].exiftool]);
+
+        // A second field, wrong.
+        if ours[model].is_some() {
+            let mut w = ours.clone();
+            w[model] = Some("WRONG-MODEL".to_string());
+            assert!(!compare(name, &w, &theirs).is_clean());
+        }
+
+        // No pin, no pass.
+        let unpinned = oracle::compare_jpeg(name, &ours, &theirs);
+        assert!(!unpinned.is_clean(), "{name}: compared without its pin");
+        assert!(unpinned.stale.iter().any(|s| s.contains("pinned reading")));
+    }
+}
+
+/// L1: Exif before the scan AND a different Exif after it. ExifTool ignores the
+/// second; the model (like the library) reads it, so the later block wins on
+/// Make: a per-selector divergence, with the value pinned on both sides.
+#[test]
+fn exif_before_and_after_the_scan_is_a_recorded_per_selector_divergence() {
+    let name = "jpeg-exif-before-and-after-scan";
+    let make = index_of("IFD0:Make");
+    let model = index_of("IFD0:Model");
+    let theirs = theirs_fixture(name);
+    assert_eq!(theirs[make].as_deref(), Some("AlphaCam"));
+    assert_eq!(theirs[model].as_deref(), Some("OnlyInA"));
+    let bytes = fixture(name);
+    let meta = jpeg::read(&bytes).expect("a JPEG");
+    let after: Vec<bool> = meta
+        .jpeg()
+        .segments()
+        .iter()
+        .filter(|s| s.kind() == SegmentKind::Exif)
+        .map(|s| s.after_scan())
+        .collect();
+    assert_eq!(after, [false, true]);
+    let ours = ours_fixture(&bytes);
+    assert_eq!(ours[make].as_deref(), Some("BravoCam"));
+    assert_eq!(ours[model].as_deref(), Some("OnlyInA"));
+    let cmp = compare(name, &ours, &theirs);
+    assert!(cmp.is_clean(), "{cmp:?}");
+    assert_eq!(named(&cmp.explained), vec!["IFD0:Make"]);
+    // Both sides Some: the entry is per selector, not the wildcard.
+    assert!(cmp.explained[0].ours.is_some() && cmp.explained[0].theirs.is_some());
+    assert!(oracle::KNOWN_DIVERGENCES
+        .iter()
+        .any(|d| d.fixture == name && d.selector == "IFD0:Make"));
+}
+
+/// L2: ExifTool derives the Composite GPS coordinate across blocks; the model
+/// derives it per block. A documented limit, recorded as a divergence.
+#[test]
+fn composite_gps_across_two_blocks_is_a_recorded_limit_of_the_model() {
+    let name = "jpeg-gps-split-across-two-blocks";
+    let lat = index_of("Composite:GPSLatitude");
+    let theirs = theirs_fixture(name);
+    assert_eq!(theirs[lat].as_deref(), Some("-37.5"));
+    let bytes = fixture(name);
+    let ours = ours_fixture(&bytes);
+    assert_eq!(ours[lat].as_deref(), Some("37.5"));
+    assert_eq!(jpeg::read(&bytes).expect("a JPEG").exif_blocks().len(), 2);
+    let cmp = compare(name, &ours, &theirs);
+    assert!(cmp.is_clean(), "{cmp:?}");
+    assert_eq!(named(&cmp.explained), vec!["Composite:GPSLatitude"]);
+}
+
+/// L3 / V3: a fatal (not-a-TIFF) Exif block, before or after a good one, must
+/// not stop the model's search: both orders read the good block, as ExifTool does.
+#[test]
+fn a_fatal_exif_block_does_not_stop_the_model_either_order() {
+    let make = index_of("IFD0:Make");
+    let model = index_of("IFD0:Model");
+    for name in ["jpeg-exif-good-then-fatal", "jpeg-exif-fatal-then-good"] {
+        let theirs = theirs_fixture(name);
+        assert_eq!(
+            theirs[make].as_deref(),
+            Some("AlphaCam"),
+            "{name}: ExifTool"
+        );
+        assert_eq!(
+            theirs[model].as_deref(),
+            Some("OnlyInA"),
+            "{name}: ExifTool"
+        );
+        let bytes = fixture(name);
+        let meta = jpeg::read(&bytes).expect("a JPEG");
+        let fatal = meta
+            .exif_blocks()
+            .iter()
+            .filter(|b| b.container().is_err())
+            .count();
+        assert_eq!((meta.exif_blocks().len(), fatal), (2, 1), "{name}");
+        let ours = ours_fixture(&bytes);
+        assert_eq!(ours[make].as_deref(), Some("AlphaCam"), "{name}: model");
+        assert!(compare(name, &ours, &theirs).is_clean(), "{name}");
+    }
+}
+
+/// L3 / V5: the IPTC negative fixture uses resource id 0x0405 (an id next to the
+/// IPTC one), so an id compare that accepts it is caught.
+#[test]
+fn the_iptc_negative_fixture_uses_resource_id_0405() {
+    let bytes = fixture("jpeg-iptc-without-0404");
+    let at = bytes
+        .windows(4)
+        .position(|w| w == b"8BIM")
+        .expect("an 8BIM resource");
+    assert_eq!(&bytes[at + 4..at + 6], &[0x04, 0x05]);
+    assert_eq!(
+        bytes.windows(4).filter(|w| *w == b"8BIM").count(),
+        1,
+        "exactly one resource"
+    );
+}

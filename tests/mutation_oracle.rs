@@ -400,7 +400,7 @@ fn mutant_signed_short_is_read_unsigned_is_caught() {
 
 /// Every file under `dir` (recursively, skipping `target` and `.git`) that
 /// contains the injection marker, except `skip` (by file name).
-fn marker_hits(dir: &Path, skip: &[&str], hits: &mut Vec<PathBuf>) {
+fn marker_hits(dir: &Path, skip: &[&str], hits: &mut Vec<PathBuf>, scanned: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
@@ -411,10 +411,11 @@ fn marker_hits(dir: &Path, skip: &[&str], hits: &mut Vec<PathBuf>) {
             continue;
         }
         if path.is_dir() {
-            marker_hits(&path, skip, hits);
+            marker_hits(&path, skip, hits, scanned);
         } else if skip.iter().any(|s| name == *s) {
             continue;
         } else if let Ok(text) = std::fs::read_to_string(&path) {
+            scanned.push(path.clone());
             if text.contains(MARKER) {
                 hits.push(path);
             }
@@ -430,11 +431,50 @@ fn marker_hits(dir: &Path, skip: &[&str], hits: &mut Vec<PathBuf>) {
 #[test]
 fn injection_marker_does_not_leak_into_src_or_tests_support() {
     let mut hits = Vec::new();
+    let mut scanned = Vec::new();
     for dir in ["src", "examples", "fuzz", "scripts"] {
-        marker_hits(&root().join(dir), &[], &mut hits);
+        marker_hits(&root().join(dir), &[], &mut hits, &mut scanned);
     }
-    marker_hits(&root().join("tests/support"), &["probe.rs"], &mut hits);
+    marker_hits(
+        &root().join("tests/support"),
+        &["probe.rs"],
+        &mut hits,
+        &mut scanned,
+    );
     assert!(hits.is_empty(), "injection marker leaked into: {hits:?}");
+
+    // The REAL scan covers what it claims (verify V12): every file under
+    // tests/support is in the scanned set, except probe.rs, which defines the
+    // marker and is exempt by name.
+    let support = root().join("tests/support");
+    let mut on_disk: Vec<PathBuf> = std::fs::read_dir(&support)
+        .expect("read tests/support")
+        .map(|e| e.expect("dir entry").path())
+        .filter(|p| p.is_file())
+        .collect();
+    on_disk.sort();
+    assert!(on_disk.len() >= 6, "tests/support: {on_disk:?}");
+    for file in &on_disk {
+        let exempt = file.file_name().is_some_and(|n| n == "probe.rs");
+        assert_eq!(
+            scanned.contains(file),
+            !exempt,
+            "{} must be scanned unless it is probe.rs",
+            file.display()
+        );
+    }
+    for needed in [
+        "oracle.rs",
+        "oracle_jpeg.rs",
+        "oracle_tiff.rs",
+        "tools.rs",
+        "mutate.rs",
+    ] {
+        assert!(
+            scanned.contains(&support.join(needed)),
+            "{needed} is not in the scanned set"
+        );
+    }
 
     // The scan covers what it says: the definition is in probe.rs exactly once,
     // and the scan does catch a marker in a file named like a support file.
@@ -447,12 +487,12 @@ fn injection_marker_does_not_leak_into_src_or_tests_support() {
         std::fs::write(fake.join(name), format!("let x = 1; {MARKER}\n")).expect("write");
     }
     let mut found = Vec::new();
-    marker_hits(&fake, &["probe.rs"], &mut found);
+    marker_hits(&fake, &["probe.rs"], &mut found, &mut Vec::new());
     assert_eq!(found.len(), 4, "{found:?}");
     // The skip is by exact name: probe.rs is the only exemption.
     std::fs::write(fake.join("probe.rs"), MARKER).expect("write");
     let mut found = Vec::new();
-    marker_hits(&fake, &["probe.rs"], &mut found);
+    marker_hits(&fake, &["probe.rs"], &mut found, &mut Vec::new());
     assert_eq!(found.len(), 4, "probe.rs alone is skipped: {found:?}");
 }
 
@@ -737,6 +777,31 @@ fn jpeg_theirs(name: &str) -> Vec<Option<String>> {
         .unwrap_or_else(|e| panic!("{name}: {e}"))
 }
 
+/// `oracle::compare_jpeg` with the pin a wildcard fixture needs (M1).
+fn compare_pinned(
+    name: &str,
+    ours: &[Option<String>],
+    theirs: &[Option<String>],
+) -> oracle::JpegComparison {
+    let pin = oracle::exif_pin_record(name).map(jpeg_theirs_record);
+    oracle::compare_jpeg_pinned(name, ours, theirs, pin.as_deref())
+}
+
+/// ExifTool's fields from a committed record, 20 or 22 wide (Exif part kept).
+fn jpeg_theirs_record(name: &str) -> Vec<Option<String>> {
+    let path = root()
+        .join("tests/oracle-fixtures/exiftool")
+        .join(format!("{name}.txt"));
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{name}: {e}"));
+    let rec = tools::parse_record(&text).unwrap_or_else(|| panic!("{name}: bad header"));
+    rec.stdout
+        .trim_end_matches('\n')
+        .split('\t')
+        .take(oracle::SELECTORS.len())
+        .map(|f| if f == "-" { None } else { Some(f.to_string()) })
+        .collect()
+}
+
 fn jpeg_fixture(name: &str) -> Vec<u8> {
     oracle_jpeg::fixtures()
         .into_iter()
@@ -782,7 +847,7 @@ fn jpeg_probe(
         );
         out.push((
             name.clone(),
-            oracle::compare_jpeg(name, &ours, &jpeg_theirs(name)),
+            compare_pinned(name, &ours, &jpeg_theirs(name)),
         ));
     }
     Ok(out)
@@ -1013,7 +1078,16 @@ fn jpeg_mutant_exif_after_scan_skipped_is_named() {
     let fixtures = ["jpeg-exif-after-scan", "jpeg-exif-basic-le"];
     let got = jpeg_control_then_mutant("jpeg-m4-after-scan", &fixtures, &inject);
     let c = cmp_for(&got, "jpeg-exif-after-scan");
-    assert!(c.unexplained.is_empty(), "{}", describe(&c.unexplained));
+    // Two reds: the pin (the wildcard fixture's reading must equal ExifTool's
+    // reading of the same TIFF read normally: every field is now lost) and the
+    // stale divergence.
+    assert_eq!(
+        named(&c.unexplained),
+        reported("jpeg-exif-basic-le"),
+        "{}",
+        describe(&c.unexplained)
+    );
+    assert!(c.unexplained.iter().all(|m| m.ours.is_none()));
     assert_eq!(c.stale.len(), 1, "{:?}", c.stale);
     assert!(
         c.stale[0].contains("jpeg-exif-after-scan")
@@ -1226,7 +1300,7 @@ fn jpeg_byte_mutation_corrupt_ifd_offset_in_app1_payload_is_named() {
     let record = jpeg_theirs(name);
 
     // Control: the unmutated bytes agree with the record.
-    assert!(oracle::compare_jpeg(name, &jpeg_ours(&original), &record).is_clean());
+    assert!(compare_pinned(name, &jpeg_ours(&original), &record).is_clean());
 
     let start = tiff_start(&original);
     let tiff = &original[start..];
@@ -1249,7 +1323,7 @@ fn jpeg_byte_mutation_corrupt_ifd_offset_in_app1_payload_is_named() {
     );
 
     let ours = jpeg_ours(&mutated);
-    let cmp = oracle::compare_jpeg(name, &ours, &record);
+    let cmp = compare_pinned(name, &ours, &record);
     println!(
         "{test}: GPS pointer value -> 0x00FF0000 at file offset {}: [{}]",
         start + loc.value_at,
@@ -1289,7 +1363,7 @@ fn jpeg_byte_mutation_corrupt_ifd_offset_in_app1_payload_is_named() {
             assert!(v.is_none(), "live ExifTool still reports {n}: {v:?}");
         }
     }
-    let live_cmp = oracle::compare_jpeg(name, &ours, &live);
+    let live_cmp = compare_pinned(name, &ours, &live);
     assert!(
         live_cmp.unexplained.is_empty(),
         "ours and live ExifTool must agree on the mutated bytes: {}",
@@ -1381,7 +1455,7 @@ fn jpeg_truncated_between_app1_and_sos_is_a_typed_outcome() {
         meta.exif_blocks().len()
     );
     // Against the original's record: identical, nothing named.
-    let cmp = oracle::compare_jpeg(name, &oracle::read_jpeg_all(&meta), &jpeg_theirs(name));
+    let cmp = compare_pinned(name, &oracle::read_jpeg_all(&meta), &jpeg_theirs(name));
     assert!(cmp.is_clean(), "{cmp:?}");
 
     // No prefix of the file panics, and every one is Ok or a typed fatal.
