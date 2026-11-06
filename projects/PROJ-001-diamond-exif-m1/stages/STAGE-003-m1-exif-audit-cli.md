@@ -92,7 +92,7 @@ them. Update status as specs progress.
 
 Format: `- [status] SPEC-ID (cycle) — one-line summary`
 
-- [ ] SPEC-012 (frame) — [M] Audit model: container sniff, inventory, PII categories and findings (pure library); DEC for the category table
+- [ ] SPEC-012 (design) — [M] Audit model: container sniff, inventory, PII categories and findings (pure library); DEC for the category table
 - [ ] SPEC-013 (frame) — [M] Inventory parity against ExifTool: group + tag-id sets on fixtures, comparator red-proofed
 - [ ] SPEC-014 (frame) — [M] StripPolicy presets as data and the policy preview; DEC for preset semantics
 - [ ] SPEC-015 (frame) — [M] Text, JSON and CSV renderers and the `audit_render` fuzz target (well-formed on hostile input)
