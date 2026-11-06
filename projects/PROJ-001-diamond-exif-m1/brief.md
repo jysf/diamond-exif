@@ -75,7 +75,7 @@ The design and porting brief are complete and carry named failure modes. The fir
 - [x] STAGE-001 (shipped 2026-11-05) — M1a foundation: scaffold, gates, DEC-001..005, strict TIFF skeleton port, tolerant walk, multi-IFD walk, decoders, oracle discipline, mutated-copy red-proofs, CI
 - [x] STAGE-002 (shipped on 2026-11-05) — M1b JPEG container read parity: segment walker + `jpeg_segments` fuzz, Exif and located regions, ExifTool parity and JPEG red-proofs
 - [ ] (not yet defined) — PNG and WebP readers with their fuzz targets and oracle rows (M1b rest)
-- [ ] (not yet defined) — `exif-audit` CLI (STAGE-003 in the kickoff numbering)
+- [ ] STAGE-003 (active) — `exif-audit` CLI: audit model, inventory parity, strip-policy preview, renderers + fuzz, the binary
 - [ ] (not yet defined) — writer and strip policies (M1c, M1d)
 - [ ] (not yet defined) — M1e/M1f: HEIC read, IPTC/ICC passthrough, 24 h fuzz gate, publish
 

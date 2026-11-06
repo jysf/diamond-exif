@@ -350,3 +350,43 @@ questions:
       only for inputs where every requested field is '-'. Not investigated: whether
       requesting the Warning tag explicitly (`-Warning`) captures them in all
       cases.
+
+  - id: audit-thumbnail-recursion
+    question: "Should the audit scan inside an embedded thumbnail JPEG (IFD1 JPEGInterchangeFormat), which can carry its own Exif and GPS?"
+    priority: medium
+    status: open
+    raised_by: claude
+    raised_at: 2026-11-05
+    assigned_to: null
+    notes: |
+      Raised at the STAGE-003 framing. A thumbnail can keep metadata the main image
+      had stripped, so "no GPS found" would be wrong if the audit does not look.
+      Not measured yet: whether ExifTool reports the thumbnail's own tags (it does
+      with -ThumbnailImage extraction but not by default). Presence of a thumbnail is
+      a finding from SPEC-012 regardless; recursion is the question. Decide at the
+      design of SPEC-012 or defer to a later spec with a measured case.
+
+  - id: audit-exit-code-contract
+    question: "What exit codes does exif-audit use (clean / findings at or above the threshold / per-file errors / usage error), and does an unsupported file count as a failure?"
+    priority: medium
+    status: open
+    raised_by: claude
+    raised_at: 2026-11-05
+    assigned_to: null
+    notes: |
+      Decided at the design of SPEC-016 and recorded in a DEC (CI jobs depend on it).
+      Principle already fixed in the STAGE-003 frame: an unsupported or unreadable file
+      is a reported outcome, never silently counted as clean.
+
+  - id: audit-makernote-serials
+    question: "How should the audit treat device serial numbers that live inside MakerNotes, which are not parsed?"
+    priority: low
+    status: open
+    raised_by: claude
+    raised_at: 2026-11-05
+    assigned_to: null
+    notes: |
+      The frame decides the honest limit: report "MakerNote present (not parsed)" as a
+      finding, do not claim a clean device-identity category. Whether to parse a few
+      well-known vendor serial tags is a later spec; ExifTool does, so an inventory
+      divergence is expected there and must be recorded, not hidden.
