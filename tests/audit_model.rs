@@ -92,7 +92,7 @@ fn seed_dir(target: &str) -> PathBuf {
 
 #[test]
 fn audit_never_panics_on_every_committed_seed() {
-    // 29 TIFF + 37 JPEG + the audit directory (66 copies + 7 new shapes).
+    // 32 TIFF + 37 JPEG + the audit directory (69 copies + 7 new shapes).
     let mut seen = [0usize; 3];
     for (slot, target) in ["tiff_ifd", "jpeg_segments", "audit"].iter().enumerate() {
         let dir = seed_dir(target);
@@ -117,5 +117,5 @@ fn audit_never_panics_on_every_committed_seed() {
             seen[slot] += 1;
         }
     }
-    assert_eq!(seen, [29, 37, 73]);
+    assert_eq!(seen, [32, 37, 76]);
 }

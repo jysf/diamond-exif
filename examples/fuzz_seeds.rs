@@ -1066,6 +1066,69 @@ fn many_overlapping_ifds(n: usize) -> Vec<u8> {
     out
 }
 
+/// SPEC-017: IFD0 (one `SubIFDs` entry) naming two sub-IFDs two bytes apart,
+/// each declaring `c` entries over the same `0xFF` bytes. The file is
+/// `42 + 12 c` bytes, so the entry budget (`len / 12`) is `c + 3` and the walk
+/// wants `1 + 2 c`: `c = 2` lands exactly on it (clean), `c = 3` is one over.
+fn budget_pair(c: u16) -> Vec<u8> {
+    let (array_at, base) = (26usize, 34usize);
+    let mut out = b"II\x2A\x00\x08\x00\x00\x00".to_vec();
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&SUB_IFDS.to_le_bytes());
+    out.extend_from_slice(&LONG.to_le_bytes());
+    out.extend_from_slice(&2u32.to_le_bytes());
+    out.extend_from_slice(&u32::try_from(array_at).expect("small").to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    for k in 0..2usize {
+        out.extend_from_slice(&u32::try_from(base + 2 * k).expect("small").to_le_bytes());
+    }
+    out.resize(base + 2 + 2 + 12 * usize::from(c) + 4, 0xFF);
+    // Zero both next-words (the tail after the first table's entries).
+    let next_words = base + 2 + 12 * usize::from(c);
+    for b in out.iter_mut().skip(next_words) {
+        *b = 0;
+    }
+    for k in 0..2usize {
+        let at = base + 2 * k;
+        out[at..at + 2].copy_from_slice(&c.to_le_bytes());
+    }
+    out
+}
+
+/// SPEC-017: a reduced hostile shape that crosses the entry budget. IFD0 names
+/// `n` sub-IFDs two bytes apart, each declaring 255 entries over the same
+/// repeating bytes: about 3.3 KB for `n = 40`, budget 276, so IFD0 (1) and the
+/// first sub-IFD (255) fit and the second is omitted with `TooManyEntries`.
+fn overlapping_subifds(n: usize) -> Vec<u8> {
+    const COUNT: usize = 0x00FF;
+    let array_at = 8 + 2 + 12 + 4;
+    let base = array_at + 4 * n;
+    let base = base + base % 2;
+    let mut out = b"II\x2A\x00\x08\x00\x00\x00".to_vec();
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&SUB_IFDS.to_le_bytes());
+    out.extend_from_slice(&LONG.to_le_bytes());
+    out.extend_from_slice(&u32::try_from(n).expect("few").to_le_bytes());
+    out.extend_from_slice(&u32::try_from(array_at).expect("small").to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    for k in 0..n {
+        out.extend_from_slice(&u32::try_from(base + 2 * k).expect("small").to_le_bytes());
+    }
+    out.resize(base, 0);
+    // The repeating two bytes `FF 00` put the entry count 0x00FF at every even
+    // offset of the region.
+    let region = 2 * (n - 1) + 2 + 12 * COUNT + 4;
+    for i in 0..region {
+        out.push(if i % 2 == 0 { 0xFF } else { 0x00 });
+    }
+    // Zero the next-IFD words so no IFD chains on.
+    let next_words = base + 2 + 12 * COUNT;
+    for b in out.iter_mut().skip(next_words) {
+        *b = 0;
+    }
+    out
+}
+
 /// The `audit` target's seeds: every TIFF and JPEG seed of the other two
 /// targets (copied under a `tiff-` / `jpeg-` prefix) and the SPEC-012 shapes.
 fn audit_seeds(
@@ -1156,6 +1219,9 @@ fn main() {
         ("ascii-shapes", ascii_shapes(&le)),
         ("signed-and-float", signed_and_float(&le)),
         ("ascii-count-past-eof", ascii_count_past_eof(&le)),
+        ("entry-budget-exact", budget_pair(2)),
+        ("entry-budget-over", budget_pair(3)),
+        ("overlapping-subifds", overlapping_subifds(40)),
     ];
     for (name, bytes) in &seeds {
         fs::write(dir.join(name), bytes).expect("write seed");

@@ -30,6 +30,10 @@
 //!   blocks and no truncation; the issue and failed-block counts equal the
 //!   readers' own.
 //! * `max_severity()` is the maximum over every finding found, `None` iff none.
+//! * SPEC-017: the total entry budget of every container the audit reads
+//!   (`fuzz/shared/entry_budget_invariants.rs`): retained entries never exceed
+//!   `len / 12`, and `TooManyEntries` is at most once, last, never with
+//!   `TooManyIfds`, and genuine.
 //!
 //! This target CANNOT be run with the default PATH. `cargo fuzz` shells out to
 //! a bare `cargo build`, which resolves to Homebrew's stable cargo and rejects
@@ -49,7 +53,10 @@ use libfuzzer_sys::fuzz_target;
 
 // `audit_invariants::check`, shared with `tests/fuzz_layout.rs`.
 include!("../shared/audit_invariants.rs");
+// `entry_budget_invariants::check_input`, shared with `tests/fuzz_layout.rs`.
+include!("../shared/entry_budget_invariants.rs");
 
 fuzz_target!(|data: &[u8]| {
     audit_invariants::check(data);
+    entry_budget_invariants::check_input(data);
 });

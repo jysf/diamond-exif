@@ -462,7 +462,10 @@ fn tiff_records_are_byte_identical_to_the_committed_set() {
         })
         .filter(|n| !n.starts_with("jpeg-") && !n.starts_with("audit-"))
         .count();
-    assert_eq!(others, 41);
+    // 41 older TIFF records, plus the SPEC-017 ones: one for each of the three
+    // new `tiff_ifd` seeds and `hostile-subifds-overlap` (whose `# stderr:`
+    // line is the ExifTool warning; it is not in `TIFF_RECORD_HASHES`).
+    assert_eq!(others, 41 + 3 + 1);
     let jpeg_records = std::fs::read_dir(&dir)
         .expect("read records")
         .filter(|e| {

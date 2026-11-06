@@ -18,6 +18,8 @@
 
 #[path = "../tests/support/audit_tags.rs"]
 mod audit_tags;
+#[path = "../tests/support/hostile.rs"]
+mod hostile;
 #[path = "../tests/support/oracle.rs"]
 mod oracle;
 #[path = "../tests/support/oracle_jpeg.rs"]
@@ -148,4 +150,25 @@ fn main() {
         "oracle-record: wrote the audit tag-name record ({} ids)",
         measured.len()
     );
+
+    // SPEC-017: the 511-SubIFD overlapping shape. ExifTool 13.55 ignores all
+    // but the first 10 SubIFD directories and prints a warning; the record
+    // keeps that warning (`# stderr:`) and the dashes. Probed alone under the
+    // time limit before it joined this recorder (0.04 s, about 22 MB).
+    let bytes = hostile::hostile(hostile::N_SUB);
+    let path = tools::temp_file_for("hostile-subifds-overlap", &bytes).expect("write temp file");
+    let names = oracle::names(oracle::SEED_SELECTORS);
+    let run = tools::run_exiftool_full(&path, &names);
+    let _ = fs::remove_file(&path);
+    let (stdout, stderr) = run.expect("run exiftool");
+    let warnings = tools::warning_lines(&stderr, &path);
+    let text = tools::record_text_jpeg(
+        &names,
+        &version,
+        "hostile hostile-subifds-overlap",
+        &warnings,
+        &stdout,
+    );
+    fs::write(root.join(hostile::RECORD), text).expect("write hostile record");
+    println!("oracle-record: wrote the hostile-subifds-overlap record");
 }

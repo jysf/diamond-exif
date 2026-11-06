@@ -33,7 +33,7 @@
 //! every product or sum that could overflow, and a typed [`Error`] on every
 //! failure.
 //!
-//! # The three guards
+//! # The guards
 //!
 //! A TIFF is a graph, not a tree, and nothing in the format stops it being
 //! cyclic:
@@ -50,6 +50,14 @@
 //!   the size of the machine. A `SubIFDs` entry declaring more than
 //!   [`MAX_IFDS`] offsets is rejected before any offset is decoded, and
 //!   [`MAX_ISSUES`] bounds the issue list.
+//! - **Entry budget.** The entries of all recorded IFDs together may not
+//!   exceed [`entry_budget`] (`data.len() / 12`). Overlapping tables are the
+//!   only way to reach it, since a real file's entries each occupy their own
+//!   12 bytes. The IFD that would cross it is omitted whole (decided from its
+//!   declared count, before any entry is decoded), one
+//!   [`Error::TooManyEntries`] issue is recorded and the walk ends, like
+//!   [`Error::TooManyIfds`]. Memory is linear in the input, not in
+//!   `MAX_IFDS x 65,535`.
 
 pub mod issue;
 pub mod tags;
@@ -86,8 +94,10 @@ pub const MAX_IFDS: usize = 512;
 
 /// Guaranteed upper bound on `Container::issues().len()` (DEC-005).
 ///
-/// At most one failed attempt per budgeted visit, plus one `TooManyIfds`
-/// (together `MAX_IFDS + 1`), plus at most four pointer-tag issues
+/// At most one failed attempt per budgeted visit, plus one halting issue
+/// (`TooManyIfds` or `TooManyEntries`, never both: the first ends the walk,
+/// and a `TooManyEntries` attempt is itself one of the budgeted visits;
+/// together `MAX_IFDS + 1`), plus at most four pointer-tag issues
 /// (`SubIFDs`, Exif, GPS, Interop) per recorded IFD (`4 * MAX_IFDS`).
 pub const MAX_ISSUES: usize = 5 * MAX_IFDS + 1;
 
@@ -102,6 +112,22 @@ const TIFF_VERSION: u16 = 42;
 
 /// TIFF 6.0 §2: every IFD entry is exactly 12 bytes.
 const ENTRY_SIZE: usize = 12;
+
+/// The total number of IFD entries one walk may retain for an input of
+/// `data_len` bytes: `data_len / 12` (DEC-001, SPEC-017).
+///
+/// In a real file every entry occupies its own 12 bytes and IFD tables do not
+/// overlap, so the entries of all its IFDs together can never exceed this.
+/// Only overlapping tables (distinct offsets, shared bytes) can, and they are
+/// how a small input would otherwise buy an enormous `Vec<Entry>` (511
+/// SubIFDs of 65,535 entries each in 790 KB). The bound makes the memory the
+/// entries cost linear in the input: at most `2 x data_len` bytes at 24 bytes
+/// per [`Entry`]. There is no constant to tune.
+pub fn entry_budget(data_len: usize) -> usize {
+    // `checked_div` rather than `/`: the divisor is a non-zero constant, but
+    // the library denies the arithmetic lint and there is no `unwrap` here.
+    data_len.checked_div(ENTRY_SIZE).unwrap_or(0)
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Entries and IFDs
@@ -376,7 +402,11 @@ struct Walk {
     visited: Vec<u32>,
     /// Non-zero pointers followed so far, IFD0 counting as the first.
     attempts: usize,
-    /// Set when the global budget is exhausted: ends the whole walk.
+    /// Entries of the IFDs recorded so far, IFD0 included: spent against
+    /// [`entry_budget`].
+    entries: usize,
+    /// Set when a global budget (IFD visits or retained entries) is
+    /// exhausted: ends the whole walk.
     halted: bool,
 }
 
@@ -389,6 +419,11 @@ impl<'a> Container<'a> {
     /// and is recorded as a [`ParseIssue`], see [`Container::issues`]. Depth
     /// first: an IFD is recorded, then its `SubIFDs`, Exif, GPS and Interop
     /// pointers are walked (DEC-005), then the chain continues.
+    ///
+    /// Two global budgets end the whole walk: [`MAX_IFDS`] visits
+    /// ([`Error::TooManyIfds`]) and [`entry_budget`] retained entries
+    /// ([`Error::TooManyEntries`], the IFD that would cross it is omitted).
+    /// Everything recorded before the halt stays readable.
     pub fn parse(data: &'a [u8]) -> Result<Container<'a>, Error> {
         let mark: [u8; 2] = data
             .get(0..2)
@@ -420,7 +455,11 @@ impl<'a> Container<'a> {
 
         // IFD0 is the only fatal IFD: it does not go through `follow`, and
         // there is no partial IFD0.
-        let (entries, next) = container.read_ifd(ifd0_offset)?;
+        // Its table must lie inside the input, so it cannot exceed the entry
+        // budget (`count * 12 <= len`); it is still counted against it.
+        let budget = entry_budget(data.len());
+        let (entries, next) = container.read_ifd(ifd0_offset, budget)?;
+        let ifd0_entries = entries.len();
         container.ifds.push(Ifd {
             offset: ifd0_offset,
             depth: 0,
@@ -432,6 +471,7 @@ impl<'a> Container<'a> {
         let mut walk = Walk {
             visited: vec![ifd0_offset],
             attempts: 1,
+            entries: ifd0_entries,
             halted: false,
         };
         container.walk_from(&mut walk, 0);
@@ -470,6 +510,14 @@ impl<'a> Container<'a> {
     /// Every recoverable problem found by the walk, in walk order.
     pub fn issues(&self) -> &[ParseIssue] {
         &self.issues
+    }
+
+    /// The total number of entries retained, summed over every recorded IFD
+    /// (IFD0 included). Never more than [`entry_budget`] of the input length.
+    pub fn entry_count(&self) -> usize {
+        self.ifds
+            .iter()
+            .fold(0usize, |total, ifd| total.saturating_add(ifd.entries.len()))
     }
 
     /// Whether the walk found no issues at all.
@@ -655,8 +703,13 @@ impl<'a> Container<'a> {
         }
         walk.visited.push(offset);
 
-        match self.read_ifd(offset) {
+        // What is left of the retained-entry budget (DEC-001, SPEC-017). The
+        // check itself is in `read_ifd`, on the declared count, before any
+        // entry is decoded or allocated.
+        let budget = entry_budget(self.data.len());
+        match self.read_ifd(offset, budget.saturating_sub(walk.entries)) {
             Ok((entries, next)) => {
+                walk.entries = walk.entries.saturating_add(entries.len());
                 let index = self.ifds.len();
                 self.ifds.push(Ifd {
                     offset,
@@ -669,6 +722,12 @@ impl<'a> Container<'a> {
                 Some(index)
             }
             Err(error) => {
+                // Like `TooManyIfds`, the budget is global: every other branch
+                // would fail the same way, so the whole walk ends here and
+                // nothing more is recorded.
+                if matches!(error, Error::TooManyEntries { .. }) {
+                    walk.halted = true;
+                }
                 self.issues
                     .push(ParseIssue::new(error, link, from_ifd, Some(offset)));
                 None
@@ -677,7 +736,14 @@ impl<'a> Container<'a> {
     }
 
     /// Read the entry table at `offset` and the chain pointer after it.
-    fn read_ifd(&self, offset: u32) -> Result<(Vec<Entry>, u32), Error> {
+    ///
+    /// `budget_left` is how many more entries the walk may retain. Order of
+    /// checks: the count word, then the table's bounds (`Truncated`), then the
+    /// declared count against `budget_left` (`TooManyEntries`), and only then
+    /// the `Vec<Entry>` is allocated and entries decoded. The over-budget IFD
+    /// therefore allocates nothing; a table that is not in the input is a
+    /// plain `Truncated` branch loss and spends no budget.
+    fn read_ifd(&self, offset: u32, budget_left: usize) -> Result<(Vec<Entry>, u32), Error> {
         let at = offset_to_usize(offset)?;
         let count = read_u16(self.data, at, self.byte_order)?;
 
@@ -699,6 +765,12 @@ impl<'a> Container<'a> {
                 at: entries_at,
                 len: table_len,
             })?;
+
+        if usize::from(count) > budget_left {
+            return Err(Error::TooManyEntries {
+                limit: entry_budget(self.data.len()),
+            });
+        }
 
         let mut entries = Vec::with_capacity(usize::from(count));
         // `as_chunks` rather than `chunks_exact`: it yields `&[u8; ENTRY_SIZE]`,
@@ -1674,6 +1746,7 @@ mod tests {
                 have: 1,
             },
             Error::IccChunkMismatch { at: 9 },
+            Error::TooManyEntries { limit: 65_536 },
         ];
         for e in &errors {
             assert!(!e.to_string().is_empty(), "{e:?} has an empty Display");
@@ -1707,10 +1780,11 @@ mod tests {
                 Error::ExtraExif { .. } => 19,
                 Error::RegionTooShort { .. } => 20,
                 Error::IccChunkMismatch { .. } => 21,
+                Error::TooManyEntries { .. } => 22,
             }
         }
         let indices: Vec<usize> = errors.iter().map(index).collect();
-        assert_eq!(indices, (0..22).collect::<Vec<usize>>());
+        assert_eq!(indices, (0..23).collect::<Vec<usize>>());
     }
 
     // ── pointer tags (SPEC-004, DEC-005) ─────────────────────────────────────
@@ -2200,6 +2274,292 @@ mod tests {
         assert!(c.issues().len() <= MAX_ISSUES);
         let last = c.issues().last().unwrap();
         assert_eq!(last.error(), &Error::TooManyIfds { limit: MAX_IFDS });
+    }
+
+    // ── the total entry budget (SPEC-017, DEC-001) ──────────────────────────
+
+    /// IFD0 with a `SubIFDs` array of `subs` offsets (plus `extra` IFD0
+    /// entries), the sub-IFDs at offsets two bytes apart so their tables
+    /// overlap. Every sub-IFD declares `c` entries; the bytes under the tables
+    /// are `0xFF` and the next-words are zero. `pad` zero bytes are appended
+    /// (each 12 of them raise the budget by one).
+    fn overlapping(c: u16, subs: usize, extra: &[(u16, u16, u32, u32)], pad: usize) -> Vec<u8> {
+        let array_at = 8 + 2 + 12 * (1 + extra.len()) + 4;
+        let base = array_at + 4 * subs;
+        let mut out = b"II\x2A\x00\x08\x00\x00\x00".to_vec();
+        out.extend_from_slice(&u16::try_from(1 + extra.len()).unwrap().to_le_bytes());
+        let mut entries = vec![(
+            tags::SUB_IFDS,
+            TYPE_LONG,
+            u32::try_from(subs).unwrap(),
+            u32::try_from(array_at).unwrap(),
+        )];
+        entries.extend_from_slice(extra);
+        for (tag, ty, count, value) in entries {
+            out.extend_from_slice(&tag.to_le_bytes());
+            out.extend_from_slice(&ty.to_le_bytes());
+            out.extend_from_slice(&count.to_le_bytes());
+            out.extend_from_slice(&value.to_le_bytes());
+        }
+        out.extend_from_slice(&0u32.to_le_bytes());
+        for k in 0..subs {
+            out.extend_from_slice(&u32::try_from(base + 2 * k).unwrap().to_le_bytes());
+        }
+        let region = 2 * subs.saturating_sub(1) + 2 + 12 * usize::from(c) + 4;
+        out.resize(base + region, 0xFF);
+        // Zero every sub-IFD's next-word (they all lie at or after this).
+        let next_words = base + 2 + 12 * usize::from(c);
+        for b in out.iter_mut().skip(next_words) {
+            *b = 0;
+        }
+        for k in 0..subs {
+            let at = base + 2 * k;
+            out[at..at + 2].copy_from_slice(&c.to_le_bytes());
+        }
+        out.resize(out.len() + pad, 0);
+        out
+    }
+
+    /// The N-sub-IFD shape of the SPEC-012 measurement: every sub-IFD claims
+    /// 65,535 entries inside the same ~786 KB.
+    fn hostile_overlap(n_sub: usize) -> Vec<u8> {
+        const ENTRIES: usize = 0xFFFF;
+        let array_at = 8 + 2 + 12 + 4;
+        let base = array_at + 4 * n_sub;
+        let base = base + (base % 2);
+        let mut out = b"II\x2A\x00\x08\x00\x00\x00".to_vec();
+        out.extend_from_slice(&1u16.to_le_bytes());
+        out.extend_from_slice(&330u16.to_le_bytes());
+        out.extend_from_slice(&4u16.to_le_bytes());
+        out.extend_from_slice(&u32::try_from(n_sub).unwrap().to_le_bytes());
+        out.extend_from_slice(&u32::try_from(array_at).unwrap().to_le_bytes());
+        out.extend_from_slice(&0u32.to_le_bytes());
+        for k in 0..n_sub {
+            out.extend_from_slice(&u32::try_from(base + 2 * k).unwrap().to_le_bytes());
+        }
+        while out.len() < base {
+            out.push(0);
+        }
+        out.resize(
+            base + 2 * n_sub.saturating_sub(1) + 2 + 12 * ENTRIES + 4,
+            0xFF,
+        );
+        for b in out.iter_mut().skip(base + 2 + 12 * ENTRIES) {
+            *b = 0;
+        }
+        out
+    }
+
+    #[test]
+    fn entry_budget_is_input_length_over_twelve() {
+        assert_eq!(entry_budget(0), 0);
+        assert_eq!(entry_budget(11), 0);
+        assert_eq!(entry_budget(12), 1);
+        assert_eq!(entry_budget(13), 1);
+        assert_eq!(entry_budget(24), 2);
+        assert_eq!(entry_budget(usize::MAX), usize::MAX / 12);
+    }
+
+    #[test]
+    fn a_total_exactly_on_the_budget_parses_clean() {
+        // IFD0 (1 entry) + two overlapping sub-IFDs of 2 entries: 5 entries
+        // in a 66-byte file, budget 66 / 12 = 5.
+        let data = overlapping(2, 2, &[], 0);
+        assert_eq!(data.len(), 66);
+        let c = Container::parse(&data).unwrap();
+        assert!(c.is_clean(), "{:?}", c.issues());
+        assert_eq!(c.ifds().len(), 3);
+        assert_eq!(c.entry_count(), 5);
+        assert_eq!(c.entry_count(), entry_budget(data.len()));
+    }
+
+    #[test]
+    fn one_entry_over_the_budget_omits_that_ifd_and_halts() {
+        // 1 + 3 + 3 = 7 entries in a 78-byte file: budget 6.
+        let data = overlapping(3, 2, &[], 0);
+        assert_eq!(data.len(), 78);
+        assert_eq!(entry_budget(data.len()), 6);
+        let c = Container::parse(&data).unwrap();
+        assert_eq!(c.issues().len(), 1, "{:?}", c.issues());
+        let issue = &c.issues()[0];
+        assert_eq!(issue.error(), &Error::TooManyEntries { limit: 6 });
+        assert_eq!(issue.link(), Link::Tag(tags::SUB_IFDS));
+        assert_eq!(issue.from_ifd(), 0);
+        assert_eq!(issue.offset(), Some(36));
+        // Omitted atomically: the second sub-IFD is absent, not truncated.
+        assert_eq!(offsets(&c), vec![8, 34]);
+        assert_eq!(c.entry_count(), 4);
+        assert!(!c.is_clean());
+    }
+
+    #[test]
+    fn the_over_budget_ifd_allocates_no_entries() {
+        // The order inside `follow`/`read_ifd`, pinned (SPEC-017 handoff):
+        // attempts (TooManyIfds), depth, cycle; then in `read_ifd` the count
+        // word, the table's bounds (Truncated), and only then count-vs-budget,
+        // all before the `Vec<Entry>` is allocated or any entry decoded.
+        //
+        // In bounds and over budget: the budget error.
+        let data = overlapping(3, 2, &[], 0);
+        let c = Container::parse(&data).unwrap();
+        assert_eq!(c.issues()[0].error(), &Error::TooManyEntries { limit: 6 });
+        // The same tables with the file cut short so the second table runs
+        // past the end: Truncated wins (a table that is not there holds no
+        // entries to count), the walk is not halted and the budget is intact.
+        let cut = data.get(..data.len() - 12).unwrap();
+        let c = Container::parse(cut).unwrap();
+        assert!(matches!(c.issues()[0].error(), Error::Truncated { .. }));
+        // Direct: the decision is made from the declared count alone.
+        let ok = Container::parse(&data).unwrap();
+        assert_eq!(
+            ok.read_ifd(36, 2).map(|(e, _)| e.len()),
+            Err(Error::TooManyEntries { limit: 6 })
+        );
+        assert_eq!(ok.read_ifd(36, 3).map(|(e, _)| e.len()), Ok(3));
+    }
+
+    #[test]
+    fn entries_before_the_crossing_ifd_are_kept_and_readable() {
+        let data = overlapping(3, 2, &[], 0);
+        let c = Container::parse(&data).unwrap();
+        let ifd0 = c.ifd0().unwrap();
+        assert_eq!(ifd0.entries().len(), 1);
+        assert!(ifd0.has(tags::SUB_IFDS));
+        let first_sub = c.ifds().get(1).unwrap();
+        assert_eq!(first_sub.kind(), IfdKind::Sub);
+        assert_eq!(first_sub.entries().len(), 3);
+        // The count word of the second sub-IFD lies in this entry's tag.
+        assert!(first_sub.has(3));
+    }
+
+    #[test]
+    fn ifd0_is_counted_in_the_budget() {
+        // Without IFD0 the two sub-IFDs total 6, exactly the budget of the
+        // 78-byte file; with IFD0's entry it is 7 and the second is omitted.
+        let data = overlapping(3, 2, &[], 0);
+        assert_eq!(entry_budget(data.len()), 6);
+        let c = Container::parse(&data).unwrap();
+        assert_eq!(c.ifds().len(), 2);
+        assert_eq!(c.entry_count(), 1 + 3);
+        // Two more IFD0 entries in 24 more bytes: budget 8; IFD0's 3 plus
+        // the first sub-IFD's 3 leave 2, so the second (3) is omitted.
+        let more = overlapping(3, 2, &[ptr(0x0100, 0), ptr(0x0101, 0)], 0);
+        assert_eq!(entry_budget(more.len()), 8);
+        let c = Container::parse(&more).unwrap();
+        assert_eq!(c.ifd0().unwrap().entries().len(), 3);
+        assert_eq!(c.entry_count(), 6);
+        assert_eq!(
+            c.issues().last().map(|i| i.error()),
+            Some(&Error::TooManyEntries { limit: 8 })
+        );
+    }
+
+    #[test]
+    fn too_many_entries_is_the_last_issue_and_never_with_too_many_ifds() {
+        // The crossing is followed by a third sub-IFD and a malformed Exif
+        // pointer; none of them may be recorded after the halt.
+        let data = overlapping(4, 3, &[(tags::EXIF_IFD, TYPE_SHORT, 1, 0)], 0);
+        assert_eq!(entry_budget(data.len()), 9);
+        let c = Container::parse(&data).unwrap();
+        let errs: Vec<&Error> = c.issues().iter().map(|i| i.error()).collect();
+        assert_eq!(errs, vec![&Error::TooManyEntries { limit: 9 }]);
+        assert_eq!(c.ifds().len(), 2);
+        // A walk that exhausts the IFD budget retains few entries and so ends
+        // in TooManyIfds alone.
+        let mut b = Build::new(false, 8);
+        for i in 0..600u32 {
+            let at = 8 + i * 20;
+            b = b.ifd(at, &[], at + 20);
+        }
+        let chain = b.done();
+        let c = Container::parse(&chain).unwrap();
+        let halts = c
+            .issues()
+            .iter()
+            .filter(|i| {
+                matches!(
+                    i.error(),
+                    Error::TooManyIfds { .. } | Error::TooManyEntries { .. }
+                )
+            })
+            .count();
+        assert_eq!(halts, 1);
+        assert_eq!(
+            c.issues().last().unwrap().error(),
+            &Error::TooManyIfds { limit: MAX_IFDS }
+        );
+    }
+
+    #[test]
+    fn the_hostile_overlapping_subifds_file_is_bounded() {
+        let data = hostile_overlap(MAX_IFDS - 1);
+        assert_eq!(data.len(), 789_516);
+        let c = Container::parse(&data).unwrap();
+        let budget = entry_budget(data.len());
+        assert_eq!(budget, 65_793);
+        assert!(c.entry_count() <= budget, "{} entries", c.entry_count());
+        // IFD0 (1) + the first sub-IFD (65,535) fit; the second would cross.
+        assert_eq!(c.ifds().len(), 2);
+        assert_eq!(c.entry_count(), 65_536);
+        assert_eq!(c.issues().len(), 1);
+        assert_eq!(
+            c.issues()[0].error(),
+            &Error::TooManyEntries { limit: budget }
+        );
+        assert!(!c
+            .issues()
+            .iter()
+            .any(|i| matches!(i.error(), Error::TooManyIfds { .. })));
+    }
+
+    #[test]
+    fn max_issues_bound_still_holds_with_the_entry_budget() {
+        // 511 chain IFDs, each with three malformed pointer tags (Exif, GPS,
+        // SubIFDs: 3 issues each), then a 512th IFD that crosses the entry
+        // budget: its count word sits in the unused gap of the first chain
+        // IFD's slot, so its table overlaps the whole chain.
+        let n = MAX_IFDS as u32 - 1;
+        let mut b = Build::new(false, 8);
+        let gap_count_at = 8 + 54;
+        for i in 0..n {
+            let at = 8 + i * 60;
+            let next = if i + 1 < n { at + 60 } else { gap_count_at };
+            b = b.ifd(
+                at,
+                &[
+                    (tags::SUB_IFDS, TYPE_SRATIONAL, 1, 0),
+                    (tags::EXIF_IFD, TYPE_SHORT, 1, 0),
+                    (tags::GPS_INFO, TYPE_SHORT, 1, 0),
+                    (tags::INTEROP_IFD, TYPE_SHORT, 1, 0),
+                ],
+                next,
+            );
+        }
+        let mut data = b.done();
+        let at = gap_count_at as usize;
+        let rest = data.len() - at - 6;
+        let c = u16::try_from(rest / 12).unwrap();
+        data[at..at + 2].copy_from_slice(&c.to_le_bytes());
+        let parsed = Container::parse(&data).unwrap();
+        assert_eq!(parsed.ifds().len(), MAX_IFDS - 1);
+        assert_eq!(parsed.issues().len(), 3 * (MAX_IFDS - 1) + 1);
+        assert!(parsed.issues().len() <= MAX_ISSUES);
+        let last = parsed.issues().last().unwrap();
+        assert!(
+            matches!(last.error(), Error::TooManyEntries { .. }),
+            "{last:?}"
+        );
+    }
+
+    #[test]
+    fn parse_strict_reports_too_many_entries() {
+        let data = overlapping(3, 2, &[], 0);
+        assert_eq!(
+            Container::parse_strict(&data).unwrap_err(),
+            Error::TooManyEntries { limit: 6 }
+        );
+        let exact = overlapping(2, 2, &[], 0);
+        assert!(Container::parse_strict(&exact).is_ok());
     }
 
     // ── ASCII, signed and float decoders (SPEC-007) ─────────────────────────
