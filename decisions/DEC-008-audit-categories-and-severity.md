@@ -81,8 +81,11 @@ Severity order is `Low < Medium < High`. A report's severity is the maximum over
 | 0x9C9B, 0x9C9C, 0x9C9E, 0x9C9F | XPTitle, XPComment, XPKeywords, XPSubject | FreeText |
 | 0x9C9D | XPAuthor | Authorship |
 | 0xA436 | ImageTitle | FreeText |
-| 0xA437 | ImageEditor | Authorship |
-| 0xA438, 0xA439 | ImageEditingSoftware, MetadataEditingSoftware | Software |
+| 0xA437 | Photographer | Authorship |
+| 0xA438 | ImageEditor | Authorship |
+| 0xA439 | CameraFirmware | Software |
+| 0xA43A | RAWDevelopingSoftware | Software |
+| 0xA43B, 0xA43C | ImageEditingSoftware, MetadataEditingSoftware | Software |
 | 0x02BC (700) | XMP (TIFF tag) | Xmp |
 | 0x83BB (33723), 0x8649 (34377) | IPTC-NAA, Photoshop resources (TIFF tags) | Iptc |
 | 0x8773 (34675) | InterColorProfile (TIFF tag) | Icc |
@@ -97,6 +100,10 @@ Regions found by the JPEG layer map: `Xmp` and `ExtendedXmp` to `Xmp`, `Iptc` to
 The strip policies (design section 5: `Gps`, `GpsAndDevice`, `AllPii`, `All`, `Everything`) and every report depend on "what is personal". If the table is implied by code in two places (the audit and, later, the writer) they drift and a report promises something a strip does not do. Writing it down once, as a decision with ids, makes the audit, the policy preview (SPEC-014) and the writer (M1c/M1d) all derive from one source. The table follows design section 5's description (GPS; serials and unique IDs; Artist, Copyright, UserComment, DateTimeOriginal, Make and Model) and extends it only where a standard tag plainly belongs (offset times and sub-second times leak the timezone and clock; owner name; XP* Windows tags; the Exif 3.0 title/editor tags).
 
 Honest limits are part of the decision: a `MakerNote` finding says "vendor block present, not parsed" because serial numbers commonly live inside it and are not listed; XMP, IPTC and JUMBF are found, not read. No category claims the file is free of anything it cannot see.
+
+## Amendment (2026-11-05, from the SPEC-012 build)
+
+The Exif 3.0 ids originally written here for `0xA437`-`0xA439` were wrong by one place (I wrote them from memory). The SPEC-012 live check against ExifTool 13.55 measured: `0xA437` Photographer, `0xA438` ImageEditor, `0xA439` CameraFirmware, `0xA43A` RAWDevelopingSoftware, `0xA43B` ImageEditingSoftware, `0xA43C` MetadataEditingSoftware. The table above is corrected; `0xA43A` and the shifted rows are the only change (Photographer joins `Authorship`; firmware and the software tags are `Software`). The check is why the table now carries names measured from the reference tool and not from memory. Nine other rows differ from ExifTool only in the display name (for example `0x0132` is `ModifyDate` there, `DateTime` here); the category is unaffected and the test pins those rows as known naming differences.
 
 ## Alternatives considered
 
