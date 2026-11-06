@@ -13,7 +13,7 @@
 
 #![allow(dead_code)]
 
-const BYTE: u16 = 1;
+pub const BYTE: u16 = 1;
 pub const ASCII: u16 = 2;
 pub const SHORT: u16 = 3;
 pub const LONG: u16 = 4;
@@ -127,6 +127,11 @@ pub fn short(big: bool, tag: u16, v: u16) -> Ent {
 /// `LONG` entry.
 pub fn long(big: bool, tag: u16, v: u32) -> Ent {
     ent(tag, pack(LONG, 1, put(big, v, 4)))
+}
+
+/// `BYTE` entry (one unsigned 8-bit value; the byte order does not matter).
+pub fn byte(tag: u16, v: u8) -> Ent {
+    ent(tag, pack(BYTE, 1, vec![v]))
 }
 
 /// `SSHORT` entry (one signed 16-bit value).

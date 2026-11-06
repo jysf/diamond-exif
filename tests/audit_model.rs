@@ -119,3 +119,167 @@ fn audit_never_panics_on_every_committed_seed() {
     }
     assert_eq!(seen, [32, 37, 76]);
 }
+
+// ── SPEC-013, carried from the SPEC-012 verify (HANDOFF-024 F2/F3/F4) ───────
+
+use exif_core::audit::Category;
+
+/// A JPEG: SOI, the `before_scan` segments, a start-of-scan header with two
+/// scan bytes, the `after_scan` segments, EOI.
+fn jpeg_of(before_scan: &[Vec<u8>], after_scan: &[Vec<u8>]) -> Vec<u8> {
+    let mut d = oracle_jpeg::SOI.to_vec();
+    for s in before_scan {
+        d.extend_from_slice(s);
+    }
+    d.extend_from_slice(&oracle_jpeg::sos_header());
+    d.extend_from_slice(&oracle_jpeg::SCAN);
+    for s in after_scan {
+        d.extend_from_slice(s);
+    }
+    d.extend_from_slice(&oracle_jpeg::EOI);
+    d
+}
+
+fn named_tiff(name: &str) -> Vec<u8> {
+    oracle_tiff::fixtures()
+        .into_iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, b)| b)
+        .unwrap_or_else(|| panic!("no TIFF fixture named {name}"))
+}
+
+/// F2 / M20. `Health::exif_issues` is summed over every readable block. The
+/// fixture `ifd1-corrupt` carries TIFF-layer issues; `exif-basic-le` carries
+/// none. Mutant M20 (`exif_issues` = the last block's count) reads 0 when the
+/// clean block is last.
+#[test]
+fn health_exif_issues_is_the_sum_over_all_blocks() {
+    let bad = named_tiff("ifd1-corrupt");
+    let good = named_tiff("exif-basic-le");
+    let bad_jpeg = jpeg_of(&[oracle_jpeg::exif_app1(&bad)], &[]);
+    let good_jpeg = jpeg_of(&[oracle_jpeg::exif_app1(&good)], &[]);
+    let bad_issues = audit(&bad_jpeg).health().exif_issues;
+    assert!(bad_issues > 0, "ifd1-corrupt must carry TIFF issues");
+    assert_eq!(audit(&good_jpeg).health().exif_issues, 0);
+
+    // The issue-carrying block first and a clean block last (the shape M20
+    // hides), the reverse, the bad block twice, and bad/good alternating.
+    let cases: [(&str, Vec<&Vec<u8>>, usize); 4] = [
+        ("bad then good", vec![&bad, &good], bad_issues),
+        ("good then bad", vec![&good, &bad], bad_issues),
+        ("bad then bad", vec![&bad, &bad], 2 * bad_issues),
+        (
+            "bad, good, bad, good",
+            vec![&bad, &good, &bad, &good],
+            2 * bad_issues,
+        ),
+    ];
+    for (label, blocks, want) in cases {
+        let segs: Vec<Vec<u8>> = blocks.iter().map(|b| oracle_jpeg::exif_app1(b)).collect();
+        let bytes = jpeg_of(&segs, &[]);
+        let a = audit(&bytes);
+        assert_eq!(a.health().exif_issues, want, "{label}: summed over blocks");
+        assert!(!a.health().clean, "{label}: issues mean not clean");
+        assert_eq!(a.health().failed_blocks, 0, "{label}");
+    }
+}
+
+/// F3 / M21. A metadata region after the scan carries `after_scan` on its
+/// inventory item and on its finding; the same region before the scan does
+/// not. Mutant M21 (region `after_scan` always false) fails the first half.
+#[test]
+fn a_region_after_the_scan_has_after_scan_origin_on_item_and_finding() {
+    let xmp = oracle_jpeg::seg(
+        0xE1,
+        &[
+            &b"http://ns.adobe.com/xap/1.0/\0"[..],
+            &oracle_jpeg::xmp_packet(),
+        ]
+        .concat(),
+    );
+    let after_bytes = jpeg_of(&[], std::slice::from_ref(&xmp));
+    let before_bytes = jpeg_of(std::slice::from_ref(&xmp), &[]);
+    let after = audit(&after_bytes);
+    let before = audit(&before_bytes);
+    for (label, a, want) in [("after", &after, true), ("before", &before, false)] {
+        assert_eq!(a.items().len(), 1, "{label}: one region item");
+        assert!(
+            matches!(a.items()[0].kind(), ItemKind::Region { .. }),
+            "{label}"
+        );
+        assert_eq!(a.items()[0].origin().after_scan, want, "{label}: item");
+        let f: Vec<_> = a.findings_in(Category::Xmp).collect();
+        assert_eq!(f.len(), 1, "{label}: one XMP finding");
+        assert_eq!(f[0].at.origin().after_scan, want, "{label}: finding");
+        assert_eq!(f[0].item, Some(0), "{label}");
+    }
+}
+
+/// F4 / M22. The thumbnail pointer needs `SHORT` or `LONG`. `BYTE` and
+/// `SSHORT` values are decodable by the reader (so only the type gate keeps
+/// them out); mutant M22 (gate removed) gives `Some` for them.
+#[test]
+fn thumbnail_pointer_needs_short_or_long_types() {
+    use oracle_tiff as t;
+    // IFD0 chained to an IFD1 holding 0x0201 (offset 0) and 0x0202 (length 8)
+    // of the given encodings; the range lies inside the blob.
+    let build = |offset: t::Ent, length: t::Ent| {
+        t::assemble(
+            false,
+            &[
+                t::ifd_next(vec![t::ascii(t::T_MAKE, b"Thumb\0")], 1),
+                t::ifd(vec![offset, length]),
+            ],
+        )
+    };
+    let range_of = |tiff: &[u8]| {
+        let a = audit(tiff);
+        let f: Vec<_> = a.findings_in(Category::Thumbnail).collect();
+        assert_eq!(f.len(), 1, "exactly the 0x0201 finding");
+        let ItemKind::Tag { tag, .. } = f[0].at.kind() else {
+            panic!("a tag item");
+        };
+        assert_eq!(tag, 0x0201);
+        f[0].thumbnail
+            .expect("a thumbnail finding carries a record")
+            .range
+    };
+    type Case = (&'static str, t::Ent, t::Ent, Option<(u32, u32)>);
+    let cases: [Case; 6] = [
+        (
+            "LONG",
+            t::long(false, 0x0201, 0),
+            t::long(false, 0x0202, 8),
+            Some((0, 8)),
+        ),
+        (
+            "SHORT",
+            t::short(false, 0x0201, 0),
+            t::short(false, 0x0202, 8),
+            Some((0, 8)),
+        ),
+        ("BYTE", t::byte(0x0201, 0), t::byte(0x0202, 8), None),
+        (
+            "SSHORT",
+            t::sshort(false, 0x0201, 0),
+            t::sshort(false, 0x0202, 8),
+            None,
+        ),
+        // One side wrong is enough.
+        (
+            "LONG offset, BYTE length",
+            t::long(false, 0x0201, 0),
+            t::byte(0x0202, 8),
+            None,
+        ),
+        (
+            "SSHORT offset, LONG length",
+            t::sshort(false, 0x0201, 0),
+            t::long(false, 0x0202, 8),
+            None,
+        ),
+    ];
+    for (label, offset, length, want) in cases {
+        assert_eq!(range_of(&build(offset, length)), want, "{label}");
+    }
+}
