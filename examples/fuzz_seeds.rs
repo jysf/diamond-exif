@@ -965,6 +965,161 @@ fn jpeg_seeds() -> Vec<(&'static str, Vec<u8>)> {
     ]
 }
 
+// ── audit seeds (SPEC-012) ───────────────────────────────────────────────────
+
+/// A TIFF with Make, an Exif IFD, a GPS IFD and an IFD1 thumbnail: the thumbnail
+/// pointer and length are real (`FF D8 FF D9` at the end of the blob).
+fn tiff_gps_and_thumbnail(w: &Writer) -> Vec<u8> {
+    let thumb = [0xFF, 0xD8, 0xFF, 0xD9];
+    let ifds = |thumb_at: u32| {
+        vec![
+            Ifd {
+                entries: vec![
+                    entry(271, ASCII, 11, Val::Ext(b"DiamondCam\0".to_vec())),
+                    entry(EXIF_IFD, LONG, 1, Val::Refs(vec![1])),
+                    entry(GPS_INFO, LONG, 1, Val::Refs(vec![2])),
+                ],
+                next: Next::Ifd(3),
+            },
+            Ifd {
+                entries: vec![entry(
+                    36867,
+                    ASCII,
+                    20,
+                    Val::Ext(b"2024:01:02 03:04:05\0".to_vec()),
+                )],
+                next: Next::End,
+            },
+            Ifd {
+                entries: vec![
+                    entry(1, ASCII, 2, inline_bytes(b"N\0")),
+                    entry(3, ASCII, 2, inline_bytes(b"E\0")),
+                ],
+                next: Next::End,
+            },
+            Ifd {
+                entries: vec![
+                    entry(0x0201, LONG, 1, Val::Raw(thumb_at)),
+                    entry(0x0202, LONG, 1, w.long_inline(4)),
+                ],
+                next: Next::End,
+            },
+        ]
+    };
+    // IFD1 is last and has no external payload, so the thumbnail goes right
+    // after the built bytes, and the length does not depend on the pointer.
+    let len = u32::try_from(w.build(&ifds(0)).len()).expect("small");
+    let mut out = w.build(&ifds(len));
+    out.extend_from_slice(&thumb);
+    out
+}
+
+/// A TIFF whose IFD1 is an uncompressed thumbnail: strip offsets and byte counts
+/// and no JPEG pointer (DEC-008: a `Thumbnail` finding on the `0x0111` entry).
+fn tiff_ifd1_strips(w: &Writer) -> Vec<u8> {
+    w.build(&[
+        Ifd {
+            entries: vec![entry(271, ASCII, 11, Val::Ext(b"DiamondCam\0".to_vec()))],
+            next: Next::Ifd(1),
+        },
+        Ifd {
+            entries: vec![
+                entry(0x0111, LONG, 1, w.long_inline(8)),
+                entry(0x0117, LONG, 1, w.long_inline(4)),
+            ],
+            next: Next::End,
+        },
+    ])
+}
+
+/// A classic TIFF whose IFD0 names `n` overlapping SubIFDs two bytes apart, each
+/// declaring 767 entries over the same repeating bytes: the memory-amplification
+/// shape of `tests/audit_oracle.rs` at 1/85 of the entries per IFD (about
+/// 10.8 KB instead of 790 KB), small enough to survive the fuzzer.
+fn many_overlapping_ifds(n: usize) -> Vec<u8> {
+    const COUNT: usize = 0x02FF;
+    let array_at = 8 + 2 + 12 + 4;
+    let base = array_at + 4 * n;
+    let base = base + base % 2;
+    let mut out = b"II\x2A\x00\x08\x00\x00\x00".to_vec();
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&SUB_IFDS.to_le_bytes());
+    out.extend_from_slice(&LONG.to_le_bytes());
+    out.extend_from_slice(&u32::try_from(n).expect("few").to_le_bytes());
+    out.extend_from_slice(&u32::try_from(array_at).expect("small").to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    for k in 0..n {
+        out.extend_from_slice(&u32::try_from(base + 2 * k).expect("small").to_le_bytes());
+    }
+    out.resize(base, 0);
+    // The repeating two bytes `FF 02` put the entry count 0x02FF at every even
+    // offset of the region.
+    let region = 2 * (n - 1) + 2 + 12 * COUNT + 4;
+    for i in 0..region {
+        out.push(if i % 2 == 0 { 0xFF } else { 0x02 });
+    }
+    // Zero the next-IFD words so no IFD chains on.
+    let next_words = base + 2 + 12 * COUNT;
+    for b in out.iter_mut().skip(next_words) {
+        *b = 0;
+    }
+    out
+}
+
+/// The `audit` target's seeds: every TIFF and JPEG seed of the other two
+/// targets (copied under a `tiff-` / `jpeg-` prefix) and the SPEC-012 shapes.
+fn audit_seeds(
+    tiff: &[(&str, Vec<u8>)],
+    jpeg: &[(&'static str, Vec<u8>)],
+) -> Vec<(String, Vec<u8>)> {
+    let le = Writer { big: false };
+    let mut out: Vec<(String, Vec<u8>)> = Vec::new();
+    for (n, b) in tiff {
+        out.push((format!("tiff-{n}"), b.clone()));
+    }
+    for (n, b) in jpeg {
+        out.push((format!("jpeg-{n}"), b.clone()));
+    }
+    let exif = |tiff: &[u8]| japp(0xE1, b"Exif\0\0", tiff);
+    let gps_thumb = tiff_gps_and_thumbnail(&le);
+    let scan: &[u8] = &[0x12, 0x34];
+    let new: Vec<(&str, Vec<u8>)> = vec![
+        (
+            "audit-png-magic",
+            [
+                &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A][..],
+                b"\0\0\0\rIHDR",
+            ]
+            .concat(),
+        ),
+        (
+            "audit-bigtiff-magic",
+            b"II\x2B\x00\x08\x00\x00\x00\x10\0\0\0\0\0\0\0".to_vec(),
+        ),
+        // Zero bytes: libFuzzer accepts an empty seed file.
+        ("audit-empty-marker", Vec::new()),
+        (
+            "audit-exif-gps-and-thumbnail",
+            jcat(&[&JSOI, &exif(&gps_thumb), &jsos(), scan, &JEOI]),
+        ),
+        (
+            "audit-two-blocks-same-tag",
+            jcat(&[
+                &JSOI,
+                &exif(&make_and_gps(&le)),
+                &exif(&make_and_gps(&Writer { big: true })),
+                &jsos(),
+                scan,
+                &JEOI,
+            ]),
+        ),
+        ("audit-ifd1-strips", tiff_ifd1_strips(&le)),
+        ("audit-many-overlapping-ifds", many_overlapping_ifds(255)),
+    ];
+    out.extend(new.into_iter().map(|(n, b)| (n.to_string(), b)));
+    out
+}
+
 fn main() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/tiff_ifd");
     fs::create_dir_all(&dir).expect("create seeds dir");
@@ -1014,4 +1169,12 @@ fn main() {
         fs::write(jdir.join(name), bytes).expect("write seed");
     }
     println!("wrote {} seeds to {}", jseeds.len(), jdir.display());
+
+    let adir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/audit");
+    fs::create_dir_all(&adir).expect("create seeds dir");
+    let aseeds = audit_seeds(&seeds, &jseeds);
+    for (name, bytes) in &aseeds {
+        fs::write(adir.join(name), bytes).expect("write seed");
+    }
+    println!("wrote {} seeds to {}", aseeds.len(), adir.display());
 }

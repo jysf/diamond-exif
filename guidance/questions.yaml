@@ -350,3 +350,136 @@ questions:
       only for inputs where every requested field is '-'. Not investigated: whether
       requesting the Warning tag explicitly (`-Warning`) captures them in all
       cases.
+
+  - id: audit-thumbnail-recursion
+    question: "Should the audit scan inside an embedded thumbnail JPEG (IFD1 JPEGInterchangeFormat), which can carry its own Exif and GPS?"
+    priority: medium
+    status: open
+    raised_by: claude
+    raised_at: 2026-11-05
+    assigned_to: null
+    notes: |
+      Raised at the STAGE-003 framing. A thumbnail can keep metadata the main image
+      had stripped, so "no GPS found" would be wrong if the audit does not look.
+      Not measured yet: whether ExifTool reports the thumbnail's own tags (it does
+      with -ThumbnailImage extraction but not by default). Presence of a thumbnail is
+      a finding from SPEC-012 regardless; recursion is the question. Decide at the
+      design of SPEC-012 or defer to a later spec with a measured case.
+
+  - id: audit-exit-code-contract
+    question: "What exit codes does exif-audit use (clean / findings at or above the threshold / per-file errors / usage error), and does an unsupported file count as a failure?"
+    priority: medium
+    status: open
+    raised_by: claude
+    raised_at: 2026-11-05
+    assigned_to: null
+    notes: |
+      Decided at the design of SPEC-016 and recorded in a DEC (CI jobs depend on it).
+      Principle already fixed in the STAGE-003 frame: an unsupported or unreadable file
+      is a reported outcome, never silently counted as clean.
+
+  - id: audit-makernote-serials
+    question: "How should the audit treat device serial numbers that live inside MakerNotes, which are not parsed?"
+    priority: low
+    status: open
+    raised_by: claude
+    raised_at: 2026-11-05
+    assigned_to: null
+    notes: |
+      The frame decides the honest limit: report "MakerNote present (not parsed)" as a
+      finding, do not claim a clean device-identity category. Whether to parse a few
+      well-known vendor serial tags is a later spec; ExifTool does, so an inventory
+      divergence is expected there and must be recorded, not hidden.
+
+  - id: audit-table-exif3-tag-ids
+    question: "DEC-008 gives 0xA437, 0xA438 and 0xA439 the names ImageEditor, ImageEditingSoftware and MetadataEditingSoftware; ExifTool 13.55 names those ids Photographer, ImageEditor and CameraFirmware. Which ids are right, and which categories do the real tags get?"
+    priority: high
+    status: answered
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-05
+    assigned_to: null
+    notes: |
+      ANSWERED 2026-11-05 by the DEC-008 amendment (commit ad9e3a8, "correct the Exif 3.0
+      ids after the SPEC-012 live check"): 0xA437 Photographer (Authorship), 0xA438
+      ImageEditor (Authorship), 0xA439 CameraFirmware, 0xA43A RAWDevelopingSoftware,
+      0xA43B ImageEditingSoftware, 0xA43C MetadataEditingSoftware (all Software). The
+      SPEC-012 fix round applied it to src/audit/category.rs, the test table, the harness
+      table and the name check; the record now has 41 ids and those six rows match
+      ExifTool name for name. Original finding follows.
+
+      Measured in SPEC-012 (ExifTool 13.55, `exiftool -v3 -G1 -a -s -u <one-entry TIFF>`,
+      record tests/oracle-fixtures/exiftool/audit-tag-names.txt). The three ids are in the
+      DEC-008 table, so the audit currently classifies them by the DEC's names:
+        0xA437  DEC ImageEditor (Authorship)              ExifTool Photographer
+        0xA438  DEC ImageEditingSoftware (Software)       ExifTool ImageEditor
+        0xA439  DEC MetadataEditingSoftware (Software)    ExifTool CameraFirmware
+      Also measured (one-off probe, not in the record): ExifTool names 0xA43A
+      RAWDevelopingSoftware, 0xA43B ImageEditingSoftware, 0xA43C MetadataEditingSoftware.
+      So the DEC's two software names look like they belong at 0xA43B and 0xA43C, and the
+      person-ish names at 0xA437 and 0xA438. The DEC and the table were NOT edited. If the
+      ids move: one DEC amendment, `by_id` in src/audit/category.rs, the three rows in the
+      tests (category.rs table and fuzz/shared/audit_invariants.rs) and the name table in
+      tests/support/audit_tags.rs (DIFFERING in tests/audit_oracle.rs shrinks).
+
+  - id: audit-table-exiftool-names
+    question: "Nine DEC-008 rows name the right tag id but use a different name from ExifTool's. Keep DEC-008's names, or adopt ExifTool's?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-05
+    assigned_to: null
+    notes: |
+      Naming only; the id is the same tag in both. Measured in SPEC-012 (ExifTool 13.55):
+        0x0132  DEC DateTime               ExifTool ModifyDate
+        0x9004  DEC DateTimeDigitized      ExifTool CreateDate
+        0x927C  DEC MakerNote              ExifTool MakerNoteUnknownText (the name depends on
+                                           the content ExifTool recognises; measured with a
+                                           text-like payload)
+        0xA430  DEC CameraOwnerName        ExifTool OwnerName
+        0xA431  DEC BodySerialNumber       ExifTool SerialNumber
+        0x02BC  DEC XMP                    ExifTool ApplicationNotes (the TIFF tag; ExifTool
+                                           prints the packet's own tags, not this name, in a
+                                           normal listing: the name shows in `-v3`)
+        0x8649  DEC Photoshop              ExifTool PhotoshopSettings
+        0x8773  DEC InterColorProfile      ExifTool ICC_Profile
+        0x0201  DEC JPEGInterchangeFormat  ExifTool ThumbnailOffset (in an IFD1)
+      Of the 41 measured ids, 32 match name for name; these 9 are the only differences
+      (after the audit-table-exif3-tag-ids amendment). tests/audit_oracle.rs pins this
+      list (DIFFERING), so adopting either set of names is a visible change.
+
+  - id: audit-category-region-vs-tag-shape
+    question: "SPEC-012's fuzz invariant says region categories appear only on Region items, but DEC-008 also puts TIFF tags 0x02BC, 0x83BB, 0x8649 and 0x8773 in Xmp, Iptc and Icc. Which wins?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-05
+    assigned_to: null
+    notes: |
+      The two statements cannot both hold. SPEC-012 built the DEC-008 table as written (a
+      tag item can be Xmp, Iptc or Icc) and weakened the invariant to what is true: a
+      Region item has exactly its DEC-008 region category, and Jumbf (the only category
+      with no tag row) appears on Region items only. The converse is asserted by the
+      `category_shape` guard of fuzz/shared/audit_invariants.rs, with a plant for each
+      direction. Nothing to decide unless the intent was that tags 700 / 33723 / 34377 /
+      34675 should not be findings.
+
+  - id: tiff-container-memory-amplification
+    question: "Container::parse keeps every entry of every IFD, so a ~790 KB TIFF of 511 overlapping SubIFDs makes 33.5 million entries (about 800 MB). Bound it in a TIFF spec?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-05
+    assigned_to: null
+    notes: |
+      Measured in SPEC-012 (release build, Apple silicon, `/usr/bin/time -l`; the test is
+      `container_amplification_is_measured_and_reported` in tests/audit_oracle.rs, built by
+      `tests/audit_oracle.rs::hostile`). Input 789,516 bytes -> Container::parse reports
+      512 IFDs, 33,488,386 entries, 0 issues (a CLEAN parse), 803,721,264 bytes of Entry
+      data (24 bytes each), about 1,018x the input, 103 ms. Peak resident set size 950 MB
+      (`maximum resident set size` 949,796,864; `peak memory footprint` 949,404,920) over
+      a parse and a second parse inside `audit`. The audit adds at most MAX_INVENTORY_ITEMS
+      items and as many findings on top (their size was not measured separately), and
+      takes 174 ms including its own parse. This exists in Container today, independent of the audit; the audit does
+      not copy the entries. exif-audit will parse untrusted files in bulk (STAGE-003), so
+      a per-file memory bound (entries per container, or lazily read IFDs) wants a TIFF
+      spec before SPEC-016.

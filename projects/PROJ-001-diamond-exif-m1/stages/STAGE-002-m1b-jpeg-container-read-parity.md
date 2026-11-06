@@ -105,7 +105,7 @@ line is carried onto the spec as `task.complexity`.
 - External: ExifTool 13.55 as the oracle (run, never read or linked)
 
 ### Enables
-- STAGE-003 — PNG and WebP readers on the same container pattern
+- A later stage — PNG and WebP readers on the same container pattern
 - The `exif-audit` CLI stage — scanning real JPEGs
 - M1c — the JPEG writer builds on the segment model
 
