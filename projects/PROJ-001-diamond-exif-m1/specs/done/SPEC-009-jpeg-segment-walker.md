@@ -6,14 +6,14 @@
 task:
   id: SPEC-009
   type: story                      # epic | story | task | bug | chore
-  cycle: verify  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
-  complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
+  complexity_actual: M             # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: approved  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
@@ -80,10 +80,19 @@ cost:
       duration_minutes: 14
       recorded_at: 2026-11-05
       notes: "verdict APPROVED at 662aa5e; tokens transcribed by the orchestrator from the sub-agent metered result"
+    - cycle: build
+      agent: claude-sonnet-5-5
+      interface: other
+      tokens_total: 31954
+      estimated_usd: 0.21
+      duration_minutes: 5
+      recorded_at: 2026-11-05
+      notes: "follow-up round closing the verify's test and seed gaps (resumed builder). The harness reported a cumulative 260,910 for the resumed agent; this is the 31,954 above the 228,956 already recorded for the first round."
   totals:
-    tokens_total: 432671
-    estimated_usd: 2.85
-    session_count: 2
+    tokens_total: 464625
+    estimated_usd: 3.06
+    session_count: 3
+shipped_at: 2026-11-05
 ---
 
 # SPEC-009: JPEG segment walker with tolerant issues and the jpeg_segments fuzz target
@@ -279,34 +288,16 @@ Unit tests in `src/jpeg/mod.rs` `mod tests` (with the standard test-module lint 
 
 ## Reflection
 
-*Appended during **ship**. Three questions, short answers.*
-
 1. **What would I do differently next time?**
-   — <answer>
+   — Check my own brief against the code before sending it. I asked the follow-up round for a test that `FF D8` inside entropy data is data, but rules 2.6 and 2.8 make it a real marker that ends the scan (then a stray); the builder pinned the true behaviour and said so. And my spec and DEC-006 over-claimed that after any cap no end-of-walk issue appears; the fuzz run found the issue cap can fire inside the end-of-walk step (`[.., MissingSos, TooManyIssues]`). State cap interactions as a table of cases, not a sentence.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — DEC-006 was reworded twice (the cap-inside-end-of-walk case, and that an issue-cap halt also suppresses the end-of-walk pair). No other decision change. Verify showed the surviving-mutant method keeps finding real gaps (five behaviour mutants and three signature guards unprotected by any seed); the follow-up round killed them. Worth keeping "verifier writes its own mutants" in every verify handoff.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — No new spec. Design candidate for SPEC-010 or SPEC-011: `BadSegmentLength` is always followed by a `StrayBytes` for the two length bytes (every bad length costs two issues of the 1024 cap); skipping four bytes instead of two would report one fault once. A fill run that reaches end of input reports `Truncated` at the last `FF`; rule 2.2 wording should say so. Both are pinned by tests today.
 
-4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
-   the defect-escape distribution is greppable across specs:
-   `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
-   `none` (clean first try).
-   — <one word>
-   *(Runtime/operational defects — the escape-prone class — only exist once the
-   artifact meets its real host. `escaped` here is a signal to strengthen the
-   §12 behavioral pre-flight for that surface.)*
+4. **Where was the worst defect caught?** — build
+   *(the over-strong cap invariant, found by the build's own fuzz run; verify found no code defect, only test and seed gaps, closed in the follow-up round.)*
 
-5. **What can a user do now that they couldn't before?** — one sentence,
-   before → after; quote the confirming number if one exists, name the outcome
-   if not. Write `none` if this spec has no user-visible outcome — that is a
-   real, greppable result, not a blank. This is the line a downstream work-log's
-   `impact` field is transcribed from, and both halves are already written above
-   (## Context is the before, ## Goal is the after): confirm the prediction,
-   don't reconstruct it from memory.
-   — <answer | none>
+5. **What can a user do now that they couldn't before?** — Hand `exif-core` a JPEG, however damaged, and get back the ordered segments, the untouched scan bytes and a typed list of what is wrong, never a panic; before, only bare TIFF could be read.
