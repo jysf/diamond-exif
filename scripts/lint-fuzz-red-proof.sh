@@ -145,6 +145,9 @@ cp "${REPO_ROOT}/Cargo.toml" "${WORK_DIR}/Cargo.toml"
 cp -R "${REPO_ROOT}/src/." "${WORK_DIR}/src/"
 cp "${FUZZ_MANIFEST}" "${WORK_DIR}/fuzz/Cargo.toml"
 cp -R "${REPO_ROOT}/fuzz/fuzz_targets/." "${WORK_DIR}/fuzz/fuzz_targets/"
+# Targets `include!` the shared invariant harness (SPEC-010), so it must travel too.
+mkdir -p "${WORK_DIR}/fuzz/shared"
+cp -R "${REPO_ROOT}/fuzz/shared/." "${WORK_DIR}/fuzz/shared/"
 # Copy a toolchain pin if one ever lands (there is none today). Without this the
 # copy would silently compile on a different toolchain than the repo, which
 # would make the control run answer a question nobody asked.
