@@ -1216,3 +1216,786 @@ fn exercise_jpeg(data: &[u8]) {
         assert_eq!(missing_eoi, !has_eoi, "MissingEoi iff no EOI");
     }
 }
+
+// ── SPEC-012: the `audit` target ─────────────────────────────────────────────
+
+include!("../fuzz/shared/audit_invariants.rs");
+
+use audit_invariants::{Facts, FindingF, ItemF, ThumbF, What, CAP};
+
+/// All 66 seeds that existed before SPEC-012 (29 `tiff_ifd` + 37
+/// `jpeg_segments`): `(target, name, length, FNV-1a 64 of the bytes)`, taken
+/// from the files committed at HEAD before SPEC-012 changed anything.
+/// Regenerating the seeds (which now also writes `fuzz/seeds/audit/`) must
+/// leave every one of them byte-identical.
+const PRE_SPEC_012_SEEDS: [(&str, &str, usize, u64); 66] = [
+    ("tiff_ifd", "ascii-count-past-eof", 79, 0xf9fb168ecf63c873),
+    ("tiff_ifd", "ascii-shapes", 161, 0x40686d2b31db9f20),
+    ("tiff_ifd", "chain", 62, 0x5103cafa5ffe6da1),
+    ("tiff_ifd", "chain-be", 62, 0x0e7a1e63dbe9517d),
+    ("tiff_ifd", "corrupt-subifd", 38, 0x8dad61eefdeaa933),
+    ("tiff_ifd", "count-overflow", 86, 0x0ca614f0bde8ce1c),
+    ("tiff_ifd", "count-overflow-be", 86, 0x46a5d940e364b10e),
+    ("tiff_ifd", "deep-nesting", 356, 0x86bc5a943f3da84d),
+    ("tiff_ifd", "depth-limit-exact", 266, 0x2d1ea0dcff4e5a83),
+    ("tiff_ifd", "entry-count-past-eof", 13, 0x78590c388acc9606),
+    ("tiff_ifd", "exif-gps-interop", 116, 0x662b025c31b0e761),
+    ("tiff_ifd", "exif-points-at-ifd0", 38, 0xbd387c33c1a06741),
+    ("tiff_ifd", "gps-past-eof-exif-ok", 68, 0xc46df5c8bc378c6b),
+    ("tiff_ifd", "ifd0-offset-zero", 8, 0x432d45b4d7c255d5),
+    ("tiff_ifd", "leaf-next-word", 74, 0x85063aa66064a89b),
+    ("tiff_ifd", "malformed-subifds-tag", 56, 0xb547aa14c20643ba),
+    ("tiff_ifd", "next-past-eof", 26, 0x802bbf014b971d79),
+    ("tiff_ifd", "payload-past-eof", 50, 0x24228b3502290f30),
+    ("tiff_ifd", "payload-past-eof-be", 50, 0xb936734a88d49c7a),
+    ("tiff_ifd", "pointer-bad-count", 50, 0x41444d715968b875),
+    ("tiff_ifd", "self-cycle", 26, 0x7e9d0243fc17108b),
+    ("tiff_ifd", "signed-and-float", 226, 0xc64c538111f83ebb),
+    ("tiff_ifd", "subifd", 82, 0x6f3e5be266b40257),
+    ("tiff_ifd", "subifd-be", 82, 0xb367930d24976e8b),
+    ("tiff_ifd", "subifds-count-over-cap", 38, 0x29ca58ae79ebcb95),
+    ("tiff_ifd", "truncated-header", 5, 0x50e0a90335f50b17),
+    ("tiff_ifd", "two-hop-cycle", 68, 0xba54c41e6b2198b3),
+    ("tiff_ifd", "valid-be", 126, 0xd14e46fc095cffa9),
+    ("tiff_ifd", "valid-le", 126, 0x80fe123345fe5215),
+    ("jpeg_segments", "app-after-scan", 39, 0x3c0b74c4ea41965e),
+    ("jpeg_segments", "app1-len-0", 24, 0xa71f9b333b778368),
+    ("jpeg_segments", "app1-len-1", 24, 0xd3cb0a5e7ebf3f1f),
+    ("jpeg_segments", "app1-len-2", 18, 0x03f1c23d02e437f0),
+    ("jpeg_segments", "app1-len-ffff", 65551, 0xc760bd59985fc432),
+    ("jpeg_segments", "app1-past-eof", 16, 0xf7f17c5736b2e083),
+    ("jpeg_segments", "exif-after-scan", 148, 0x10ad14693c9e9c6b),
+    ("jpeg_segments", "exif-and-xmp", 84, 0xadb9ce26dd6e2b38),
+    ("jpeg_segments", "exif-bad-tiff", 32, 0xb11d03c3f7ca9288),
+    (
+        "jpeg_segments",
+        "exif-five-byte-payload",
+        23,
+        0xe5ae7fec035eef93,
+    ),
+    ("jpeg_segments", "exif-in-jpeg", 148, 0x7c21afba5dea8c89),
+    (
+        "jpeg_segments",
+        "exif-sixth-byte-nonzero",
+        148,
+        0x929d86c9b12852c6,
+    ),
+    (
+        "jpeg_segments",
+        "extended-xmp-pair",
+        149,
+        0x8768c0104678fa1d,
+    ),
+    (
+        "jpeg_segments",
+        "extended-xmp-short",
+        171,
+        0xc2fb6f7d331f2226,
+    ),
+    ("jpeg_segments", "ff00-stray", 28, 0x329ecc00b7b39d86),
+    ("jpeg_segments", "fill-bytes", 35, 0x0c6af3c3636b50db),
+    (
+        "jpeg_segments",
+        "icc-chunks-mismatch",
+        77,
+        0xcf9d799ac0d0f1e6,
+    ),
+    ("jpeg_segments", "icc-chunks-ok", 61, 0xd70da14137a10c3a),
+    ("jpeg_segments", "icc-iptc-jumbf", 73, 0xbe84bb0a5f3b3ec3),
+    ("jpeg_segments", "icc-seq-zero", 36, 0x49e811923270b17b),
+    ("jpeg_segments", "iptc-8bim", 68, 0xc12b2f98a1b99274),
+    (
+        "jpeg_segments",
+        "iptc-truncated-resource",
+        61,
+        0xd533a41f8b100bb4,
+    ),
+    ("jpeg_segments", "jumbf-header", 30, 0xbca67c1eeca4ff73),
+    ("jpeg_segments", "jumbf-short", 25, 0xb3cae112b487977c),
+    ("jpeg_segments", "many-ff00", 2202, 0x1a0b709fa81c45f2),
+    ("jpeg_segments", "many-segments", 16414, 0xc675c75e5ea8ad5e),
+    ("jpeg_segments", "minimal", 68, 0x47af3ff740559a4a),
+    ("jpeg_segments", "no-sos", 28, 0x1bdded91eb609b96),
+    (
+        "jpeg_segments",
+        "progressive-two-scans",
+        55,
+        0xd126899024ddea18,
+    ),
+    ("jpeg_segments", "seventeen-exif", 2173, 0x6e50da0b2ab0c175),
+    (
+        "jpeg_segments",
+        "signatures-under-wrong-marker",
+        168,
+        0xe0544e0816d47269,
+    ),
+    ("jpeg_segments", "soi-only", 2, 0x0a99ee07b6f68642),
+    ("jpeg_segments", "sos-no-eoi", 19, 0x0e30d944ac162394),
+    ("jpeg_segments", "stray-bytes", 34, 0xcaad01d80bb242c1),
+    ("jpeg_segments", "trailer-after-eoi", 36, 0x10a1ad72a76b0149),
+    ("jpeg_segments", "two-exif", 277, 0x546b67de32768525),
+    (
+        "jpeg_segments",
+        "xmp-and-extended-xmp",
+        228,
+        0x7cd5037ca5f8982e,
+    ),
+];
+
+#[test]
+fn the_existing_66_seeds_are_byte_identical() {
+    assert_eq!(PRE_SPEC_012_SEEDS.len(), 66);
+    for (target, name, len, hash) in PRE_SPEC_012_SEEDS {
+        let path = root().join("fuzz/seeds").join(target).join(name);
+        let bytes = fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        assert_eq!(bytes.len(), len, "{target}/{name}: length");
+        assert_eq!(fnv1a_64(&bytes), hash, "{target}/{name}: contents changed");
+    }
+    // Nothing was added to or removed from the two older targets.
+    let count = |t: &str| {
+        fs::read_dir(root().join("fuzz/seeds").join(t))
+            .unwrap_or_else(|e| panic!("{t}: {e}"))
+            .count()
+    };
+    assert_eq!(count("tiff_ifd"), 29);
+    assert_eq!(count("jpeg_segments"), 37);
+}
+
+#[test]
+fn audit_target_is_declared_and_runs_in_ci() {
+    let fuzz = read("fuzz/Cargo.toml");
+    assert!(
+        fuzz.contains("name = \"audit\"") && fuzz.contains("fuzz_targets/audit.rs"),
+        "fuzz/Cargo.toml must declare the audit bin"
+    );
+    assert!(root().join("fuzz/fuzz_targets/audit.rs").is_file());
+    assert!(root().join("fuzz/shared/audit_invariants.rs").is_file());
+    let ci = read(".github/workflows/ci.yml");
+    assert!(
+        ci.contains("target: [tiff_ifd, jpeg_segments, audit]"),
+        "the fuzz-smoke matrix must run the audit target"
+    );
+}
+
+fn audit_seed(name: &str) -> Vec<u8> {
+    let path = root().join("fuzz/seeds/audit").join(name);
+    fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+const AUDIT_NEW_SEEDS: [&str; 7] = [
+    "audit-png-magic",
+    "audit-bigtiff-magic",
+    "audit-empty-marker",
+    "audit-exif-gps-and-thumbnail",
+    "audit-two-blocks-same-tag",
+    "audit-ifd1-strips",
+    "audit-many-overlapping-ifds",
+];
+
+#[test]
+fn audit_seeds_are_committed_and_have_the_shapes_they_claim() {
+    use exif_core::audit::{audit, Category};
+
+    // The 66 older seeds are copied byte for byte under a prefix, and the
+    // directory holds exactly those 66 plus the seven new shapes.
+    let dir = root().join("fuzz/seeds/audit");
+    let mut names: Vec<String> = fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("{}: {e}", dir.display()))
+        .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    let mut want: Vec<String> = SEEDS.iter().map(|n| format!("tiff-{n}")).collect();
+    want.extend(JPEG_SEEDS.iter().map(|n| format!("jpeg-{n}")));
+    want.extend(AUDIT_NEW_SEEDS.iter().map(|n| n.to_string()));
+    want.sort();
+    assert_eq!(
+        names, want,
+        "fuzz/seeds/audit holds exactly the expected seeds"
+    );
+    for n in SEEDS {
+        let old = fs::read(root().join("fuzz/seeds/tiff_ifd").join(n)).expect("old seed");
+        assert_eq!(audit_seed(&format!("tiff-{n}")), old, "tiff-{n} is a copy");
+    }
+    for n in JPEG_SEEDS {
+        let old = fs::read(root().join("fuzz/seeds/jpeg_segments").join(n)).expect("old seed");
+        assert_eq!(audit_seed(&format!("jpeg-{n}")), old, "jpeg-{n} is a copy");
+    }
+
+    // Each new shape reaches what its name promises.
+    let kind = |b: &[u8]| format!("{:?}", audit(b).kind());
+    assert_eq!(kind(&audit_seed("audit-png-magic")), "Unsupported(Png)");
+    assert_eq!(
+        kind(&audit_seed("audit-bigtiff-magic")),
+        "Unsupported(BigTiff)"
+    );
+    let empty = audit_seed("audit-empty-marker");
+    assert!(empty.is_empty(), "a zero-byte seed (libFuzzer accepts it)");
+    assert_eq!(kind(&empty), "Unsupported(Empty)");
+
+    let rich = audit_seed("audit-exif-gps-and-thumbnail");
+    let a = audit(&rich);
+    assert_eq!(kind(&rich), "Jpeg");
+    assert!(a.health().clean, "{:?}", a.health());
+    assert_eq!(a.findings_in(Category::Gps).count(), 2);
+    assert_eq!(a.findings_in(Category::Thumbnail).count(), 1);
+    let thumb = a
+        .findings_in(Category::Thumbnail)
+        .next()
+        .expect("thumbnail");
+    let range = thumb.thumbnail.expect("range");
+    assert!(range.range.is_some() && range.starts_with_ffd8, "{range:?}");
+    assert_eq!(a.findings_in(Category::Timestamps).count(), 1);
+    assert_eq!(a.findings_in(Category::CameraModel).count(), 1);
+
+    let two = audit_seed("audit-two-blocks-same-tag");
+    let a = audit(&two);
+    assert_eq!(a.findings_in(Category::CameraModel).count(), 2);
+    let blocks: Vec<Option<usize>> = a
+        .findings_in(Category::CameraModel)
+        .map(|f| f.at.origin().block)
+        .collect();
+    assert_eq!(blocks, vec![Some(0), Some(1)]);
+
+    // The amplification shape at survivable size: 255 overlapping IFDs of 767
+    // entries from a file of about 11 KB, over the inventory cap.
+    // An IFD1 of strips with no JPEG pointer: a Thumbnail finding on 0x0111,
+    // with no range (the shape the real-target plant needed; see the handback).
+    let strips = audit_seed("audit-ifd1-strips");
+    let a = audit(&strips);
+    assert!(a.health().clean, "{:?}", a.health());
+    let t: Vec<_> = a.findings_in(Category::Thumbnail).collect();
+    assert_eq!(t.len(), 1);
+    assert_eq!(t[0].thumbnail.expect("range").range, None);
+
+    let many = audit_seed("audit-many-overlapping-ifds");
+    assert!(many.len() < 12 * 1024, "{} bytes", many.len());
+    let c = Container::parse(&many).expect("parses");
+    assert_eq!(c.ifds().len(), 256);
+    let entries: usize = c.ifds().iter().map(|i| i.entries().len()).sum();
+    assert_eq!(entries, 1 + 255 * 767);
+    assert!(entries > many.len() * 15, "amplification of the entries");
+    let a = audit(&many);
+    assert_eq!(a.items().len(), CAP);
+    assert!(a.health().inventory_truncated);
+}
+
+fn audit_degenerate_inputs() -> Vec<Vec<u8>> {
+    let mut v: Vec<Vec<u8>> = vec![
+        vec![],
+        vec![0],
+        vec![0xFF],
+        vec![0xFF, 0xD8],
+        vec![0xFF, 0xD8, 0xFF],
+        b"II*\0".to_vec(),
+        b"MM\0*".to_vec(),
+        b"II*\0\x08\0\0\0".to_vec(),
+        b"II+\0".to_vec(),
+        b"RIFF\0\0\0\0WEBP".to_vec(),
+        b"RIFF\0\0\0\0WEB".to_vec(),
+        b"\0\0\0\x18ftyp".to_vec(),
+        b"GIF89a".to_vec(),
+        vec![0; 12],
+        vec![0xFF; 64],
+        vec![0xFF; 70_000],
+    ];
+    // Every prefix of the rich seed, to hit every truncation point.
+    let rich = audit_seed("audit-exif-gps-and-thumbnail");
+    for n in 0..rich.len() {
+        v.push(rich[..n].to_vec());
+    }
+    v
+}
+
+#[test]
+fn audit_harness_holds_on_every_seed_and_degenerate_inputs() {
+    let dir = root().join("fuzz/seeds/audit");
+    let mut seen = 0usize;
+    for entry in fs::read_dir(&dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display())) {
+        let path = entry.expect("entry").path();
+        let data = fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        audit_invariants::check(&data);
+        seen += 1;
+    }
+    assert_eq!(seen, 73, "29 TIFF + 37 JPEG + 7 new");
+    for data in audit_degenerate_inputs() {
+        audit_invariants::check(&data);
+    }
+}
+
+/// One planted bug: a wrong answer put into the library's flattened answer for
+/// `input`, which the named guard, run ALONE, must reject.
+struct Plant {
+    name: &'static str,
+    input: &'static str,
+    guard: &'static str,
+    apply: fn(&mut Facts),
+}
+
+fn first_tag_finding(f: &Facts) -> usize {
+    f.findings
+        .iter()
+        .position(|x| matches!(x.at.what, What::Tag { .. }) && x.category != "Gps")
+        .expect("a non-GPS tag finding")
+}
+
+fn first_region_finding(f: &Facts) -> usize {
+    f.findings
+        .iter()
+        .position(|x| matches!(x.at.what, What::Region { .. }))
+        .expect("a region finding")
+}
+
+fn first_gps_finding(f: &Facts) -> usize {
+    f.findings
+        .iter()
+        .position(|x| x.category == "Gps")
+        .expect("a Gps finding")
+}
+
+fn thumb_finding(f: &Facts) -> usize {
+    f.findings
+        .iter()
+        .position(|x| x.category == "Thumbnail")
+        .expect("a Thumbnail finding")
+}
+
+fn dummy_item() -> ItemF {
+    ItemF {
+        block: None,
+        segment: None,
+        after_scan: false,
+        what: What::Tag {
+            ifd: "Ifd0".into(),
+            ifd_index: 0,
+            tag: 0x010F,
+            field_type: 2,
+            count: 1,
+        },
+    }
+}
+
+fn plants() -> Vec<Plant> {
+    vec![
+        // kind: both directions (a supported container called another, an
+        // unsupported one called a supported one).
+        Plant {
+            name: "a TIFF called a JPEG",
+            input: "tiff-valid-le",
+            guard: "kind",
+            apply: |f| f.kind = "Jpeg".into(),
+        },
+        Plant {
+            name: "a PNG called a TIFF",
+            input: "audit-png-magic",
+            guard: "kind",
+            apply: |f| f.kind = "Tiff".into(),
+        },
+        // unsupported => nothing, never clean.
+        Plant {
+            name: "an unsupported file reported clean",
+            input: "audit-png-magic",
+            guard: "unsupported",
+            apply: |f| f.health.clean = true,
+        },
+        Plant {
+            name: "an unsupported file with an item",
+            input: "audit-png-magic",
+            guard: "unsupported",
+            apply: |f| f.items.push(dummy_item()),
+        },
+        Plant {
+            name: "an unsupported file with a severity",
+            input: "audit-bigtiff-magic",
+            guard: "unsupported",
+            apply: |f| f.max = Some("Low".into()),
+        },
+        Plant {
+            name: "an unsupported file with a finding",
+            input: "audit-bigtiff-magic",
+            guard: "unsupported",
+            apply: |f| {
+                f.findings.push(FindingF {
+                    category: "Gps".into(),
+                    item: None,
+                    at: dummy_item(),
+                    thumb: None,
+                })
+            },
+        },
+        // caps.
+        Plant {
+            name: "items over the cap",
+            input: "audit-exif-gps-and-thumbnail",
+            guard: "caps",
+            apply: |f| {
+                let it = f.items[0].clone();
+                f.items = vec![it; CAP + 1];
+            },
+        },
+        Plant {
+            name: "findings over the cap",
+            input: "audit-exif-gps-and-thumbnail",
+            guard: "caps",
+            apply: |f| {
+                let x = f.findings[0].clone();
+                f.findings = vec![x; CAP + 1];
+            },
+        },
+        Plant {
+            name: "an unlisted finding with room in the inventory",
+            input: "audit-exif-gps-and-thumbnail",
+            guard: "caps",
+            apply: |f| f.findings[0].item = None,
+        },
+        // indices.
+        Plant {
+            name: "a finding index out of range",
+            input: "audit-exif-gps-and-thumbnail",
+            guard: "indices",
+            apply: |f| {
+                let n = f.items.len();
+                f.findings[0].item = Some(n + 5);
+            },
+        },
+        Plant {
+            name: "a finding pointing at another item",
+            input: "audit-exif-gps-and-thumbnail",
+            guard: "indices",
+            apply: |f| {
+                let i = f.findings[0].item.expect("listed");
+                f.findings[0].item = Some(i + 1);
+            },
+        },
+        Plant {
+            name: "an unlisted finding without truncation",
+            input: "audit-exif-gps-and-thumbnail",
+            guard: "indices",
+            apply: |f| f.findings[0].item = None,
+        },
+        Plant {
+            name: "findings out of item order",
+            input: "audit-exif-gps-and-thumbnail",
+            guard: "indices",
+            apply: |f| f.findings.swap(0, 1),
+        },
+        // category shape, both directions.
+        Plant {
+            name: "Jumbf on a tag item",
+            input: "audit-exif-gps-and-thumbnail",
+            guard: "category_shape",
+            apply: |f| {
+                let i = first_tag_finding(f);
+                f.findings[i].category = "Jumbf".into();
+            },
+        },
+        Plant {
+            name: "a tag category on a region item",
+            input: "jpeg-exif-and-xmp",
+            guard: "category_shape",
+            apply: |f| {
+                let i = first_region_finding(f);
+                f.findings[i].category = "Software".into();
+            },
+        },
+        Plant {
+            name: "an XMP region called another region category",
+            input: "jpeg-exif-and-xmp",
+            guard: "category_shape",
+            apply: |f| {
+                let i = first_region_finding(f);
+                f.findings[i].category = "Icc".into();
+            },
+        },
+        Plant {
+            name: "Gps on a non-GPS tag",
+            input: "audit-exif-gps-and-thumbnail",
+            guard: "category_shape",
+            apply: |f| {
+                let i = first_tag_finding(f);
+                f.findings[i].category = "Gps".into();
+            },
+        },
+        Plant {
+            name: "a GPS-IFD tag not called Gps",
+            input: "audit-exif-gps-and-thumbnail",
+            guard: "category_shape",
+            apply: |f| {
+                let i = first_gps_finding(f);
+                f.findings[i].category = "Software".into();
+            },
+        },
+        Plant {
+            name: "a thumbnail range on another category",
+            input: "audit-exif-gps-and-thumbnail",
+            guard: "category_shape",
+            apply: |f| {
+                let i = first_tag_finding(f);
+                f.findings[i].thumb = Some(ThumbF {
+                    range: None,
+                    ffd8: false,
+                });
+            },
+        },
+        Plant {
+            name: "a Thumbnail finding without a range",
+            input: "audit-exif-gps-and-thumbnail",
+            guard: "category_shape",
+            apply: |f| {
+                let i = thumb_finding(f);
+                f.findings[i].thumb = None;
+            },
+        },
+        Plant {
+            name: "a region item with no finding",
+            input: "jpeg-exif-and-xmp",
+            guard: "category_shape",
+            apply: |f| {
+                let i = first_region_finding(f);
+                f.findings.remove(i);
+            },
+        },
+        // inventory and findings equal the re-derivation, both directions.
+        Plant {
+            name: "a dropped item",
+            input: "audit-exif-gps-and-thumbnail",
+            guard: "inventory",
+            apply: |f| {
+                f.items.remove(0);
+            },
+        },
+        Plant {
+            name: "an extra item",
+            input: "audit-exif-gps-and-thumbnail",
+            guard: "inventory",
+            apply: |f| f.items.push(dummy_item()),
+        },
+        Plant {
+            name: "an after-scan flag flipped",
+            input: "jpeg-exif-after-scan",
+            guard: "inventory",
+            apply: |f| f.items[0].after_scan = !f.items[0].after_scan,
+        },
+        Plant {
+            name: "a count changed",
+            input: "tiff-valid-le",
+            guard: "inventory",
+            apply: |f| {
+                if let What::Tag { count, .. } = &mut f.items[0].what {
+                    *count += 1;
+                }
+            },
+        },
+        Plant {
+            name: "the second block's finding deduplicated away",
+            input: "audit-two-blocks-same-tag",
+            guard: "findings",
+            apply: |f| {
+                f.findings.pop();
+            },
+        },
+        Plant {
+            name: "an extra finding",
+            input: "tiff-valid-le",
+            guard: "findings",
+            apply: |f| {
+                f.findings.push(FindingF {
+                    category: "Software".into(),
+                    item: Some(0),
+                    at: f.items[0].clone(),
+                    thumb: None,
+                })
+            },
+        },
+        Plant {
+            name: "a finding in the wrong category",
+            input: "tiff-valid-le",
+            guard: "findings",
+            apply: |f| f.findings[0].category = "DeviceId".into(),
+        },
+        // gps iff.
+        Plant {
+            name: "every Gps finding lost",
+            input: "audit-exif-gps-and-thumbnail",
+            guard: "gps_iff",
+            apply: |f| f.findings.retain(|x| x.category != "Gps"),
+        },
+        Plant {
+            name: "a Gps finding with no GPS tag",
+            input: "tiff-valid-le",
+            guard: "gps_iff",
+            apply: |f| {
+                f.findings.push(FindingF {
+                    category: "Gps".into(),
+                    item: Some(0),
+                    at: f.items[0].clone(),
+                    thumb: None,
+                })
+            },
+        },
+        // thumbnail range.
+        Plant {
+            name: "a thumbnail range outside the blob",
+            input: "audit-exif-gps-and-thumbnail",
+            guard: "thumbnail",
+            apply: |f| {
+                let i = thumb_finding(f);
+                f.findings[i].thumb = Some(ThumbF {
+                    range: Some((u32::MAX - 1, 8)),
+                    ffd8: false,
+                });
+            },
+        },
+        Plant {
+            name: "an FF D8 flag true over bytes that do not start FF D8",
+            input: "audit-exif-gps-and-thumbnail",
+            guard: "thumbnail",
+            apply: |f| {
+                let i = thumb_finding(f);
+                let t = f.findings[i].thumb.as_mut().expect("range");
+                t.range = Some((0, 4));
+                t.ffd8 = true;
+            },
+        },
+        Plant {
+            name: "an FF D8 flag false over a JPEG start",
+            input: "audit-exif-gps-and-thumbnail",
+            guard: "thumbnail",
+            apply: |f| {
+                let i = thumb_finding(f);
+                f.findings[i].thumb.as_mut().expect("range").ffd8 = false;
+            },
+        },
+        Plant {
+            name: "an FF D8 flag without a range",
+            input: "audit-exif-gps-and-thumbnail",
+            guard: "thumbnail",
+            apply: |f| {
+                let i = thumb_finding(f);
+                f.findings[i].thumb = Some(ThumbF {
+                    range: None,
+                    ffd8: true,
+                });
+            },
+        },
+        // health, both directions of `clean`.
+        Plant {
+            name: "clean constant-false on a clean file",
+            input: "audit-exif-gps-and-thumbnail",
+            guard: "health",
+            apply: |f| f.health.clean = false,
+        },
+        Plant {
+            name: "clean constant-true on an unreadable block",
+            input: "jpeg-exif-bad-tiff",
+            guard: "health",
+            apply: |f| f.health.clean = true,
+        },
+        Plant {
+            name: "a failed block not counted",
+            input: "jpeg-exif-bad-tiff",
+            guard: "health",
+            apply: |f| f.health.failed_blocks = 0,
+        },
+        Plant {
+            name: "truncation not flagged",
+            input: "audit-many-overlapping-ifds",
+            guard: "health",
+            apply: |f| f.health.truncated = false,
+        },
+        Plant {
+            name: "an issue not counted",
+            input: "jpeg-exif-after-scan",
+            guard: "health",
+            apply: |f| f.health.jpeg_issues += 1,
+        },
+        // max severity.
+        Plant {
+            name: "no severity although findings exist",
+            input: "audit-exif-gps-and-thumbnail",
+            guard: "max_severity",
+            apply: |f| f.max = None,
+        },
+        Plant {
+            name: "a severity below a listed finding",
+            input: "audit-exif-gps-and-thumbnail",
+            guard: "max_severity",
+            apply: |f| f.max = Some("Low".into()),
+        },
+        Plant {
+            name: "a severity above every finding",
+            input: "tiff-valid-le",
+            guard: "max_severity",
+            apply: |f| f.max = Some("High".into()),
+        },
+        // The IFD1-strips rule, both directions.
+        Plant {
+            name: "an IFD1 strips entry with no thumbnail finding",
+            input: "audit-ifd1-strips",
+            guard: "findings",
+            apply: |f| f.findings.retain(|x| x.category != "Thumbnail"),
+        },
+        Plant {
+            name: "a thumbnail finding on the wrong IFD1 entry",
+            input: "audit-ifd1-strips",
+            guard: "findings",
+            apply: |f| {
+                let i = thumb_finding(f);
+                let other = f
+                    .items
+                    .iter()
+                    .position(|x| {
+                        *x != f.findings[i].at
+                            && matches!(&x.what, What::Tag { ifd, .. } if ifd == "Ifd1")
+                    })
+                    .expect("another IFD1 entry");
+                f.findings[i].at = f.items[other].clone();
+                f.findings[i].item = Some(other);
+            },
+        },
+    ]
+}
+
+#[test]
+fn audit_harness_each_iff_invariant_goes_red_when_planted() {
+    use exif_core::audit::audit;
+    let plants = plants();
+    // Every guard has at least one plant (so none is untested), and the
+    // two-directional ones have more than one.
+    for (name, _) in audit_invariants::GUARDS {
+        assert!(
+            plants.iter().any(|p| p.guard == name),
+            "no plant for guard {name}"
+        );
+    }
+    for p in &plants {
+        let data = audit_seed(p.input);
+        let got = audit_invariants::facts(&audit(&data));
+        let want = audit_invariants::rederive(&data);
+        // CONTROL: the unplanted answer satisfies every guard.
+        let control = audit_invariants::violations(&data, &got, &want);
+        assert!(
+            control.is_empty(),
+            "{}: control on {}: {control:?}",
+            p.name,
+            p.input
+        );
+        // MUTATION: the planted answer is rejected by the named guard ALONE
+        // (the other guards do not run), so an overlap between guards cannot
+        // hide an untested one.
+        let mut bad = got.clone();
+        (p.apply)(&mut bad);
+        assert_ne!(bad, got, "{}: the plant changed nothing", p.name);
+        let alone = audit_invariants::run_guard(p.guard, &data, &bad, &want);
+        assert!(
+            alone.is_err(),
+            "{}: guard {} did not reject the planted bug on {}",
+            p.name,
+            p.guard,
+            p.input
+        );
+    }
+    println!(
+        "{} plants, each rejected by its own guard alone",
+        plants.len()
+    );
+}

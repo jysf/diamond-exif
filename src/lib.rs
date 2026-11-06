@@ -12,6 +12,7 @@
     clippy::arithmetic_side_effects
 )]
 
+pub mod audit;
 pub mod error;
 pub mod jpeg;
 pub mod reader;

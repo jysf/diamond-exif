@@ -16,6 +16,8 @@
 //! `oracle-records` re-records and diffs them, and the TIFF records must not
 //! move).
 
+#[path = "../tests/support/audit_tags.rs"]
+mod audit_tags;
 #[path = "../tests/support/oracle.rs"]
 mod oracle;
 #[path = "../tests/support/oracle_jpeg.rs"]
@@ -130,5 +132,20 @@ fn main() {
         "oracle-record: wrote {jpeg_written} JPEG records; {} files in {}",
         written + jpeg_written,
         out_dir.display()
+    );
+
+    // SPEC-012: the names ExifTool gives the DEC-008 tag ids (one record, one
+    // line per named tag). Run on tiny valid one-entry TIFFs, each alone under
+    // the time limit.
+    let mut measured = Vec::new();
+    for row in audit_tags::rows() {
+        let names = audit_tags::measure(&row).expect("run exiftool");
+        measured.push((row.id, names));
+    }
+    let text = audit_tags::record_text(&version, &measured);
+    fs::write(root.join(audit_tags::RECORD), text).expect("write audit tag-name record");
+    println!(
+        "oracle-record: wrote the audit tag-name record ({} ids)",
+        measured.len()
     );
 }
