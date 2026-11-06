@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: null
+  tokens_total: 475405             # orchestrator-recorded from the metered sub-agent result (subagent_tokens)
+  estimated_usd: 3.14
+  duration_minutes: 43
   branch: worktree-agent-a0ecfa0e072d2a8a1
   pr: null
   completed_at: 2026-11-06         # YYYY-MM-DD
-  notes: "tokens_total, estimated_usd and duration_minutes are null: the implementer cannot see its own meter; the orchestrator transcribes the metered figure. No push, no PR, no cycle advanced."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "tokens transcribed by the orchestrator from the sub-agent metered result (subagent_tokens 475,405; 2,603,306 ms wall-clock including idle time)"
+  synced_at: 2026-11-06
 ---
 
 # HANDOFF-027: Inventory parity against ExifTool: group + tag-id sets on fixtures, comparator red-proofed
@@ -157,10 +157,10 @@ Mirror what you put in the `handback:` front-matter, and say where the number
 came from. **This is the number that lands in the spec** — the orchestrator
 transcribes it via `just handback-sync`, it does not estimate it.
 
-- **Tokens (total):** null: this subagent has no view of its own token meter; the orchestrator transcribes the metered figure from the `Agent` result.
-- **Estimated USD:** null
-- **Duration (minutes):** null (not measured)
-- **Source of the number:** none available to the implementer (harness report, read by the orchestrator)
+- **Tokens (total):** 475,405 (transcribed by the orchestrator from the metered sub-agent result)
+- **Estimated USD:** 3.14 (475,405 x 6.60 USD per Mtok)
+- **Duration (minutes):** 43 (2,603,306 ms, includes idle time)
+- **Source of the number:** harness `subagent_tokens`, read by the orchestrator
 
 ### Drift and new artifacts
 
