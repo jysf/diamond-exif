@@ -6,14 +6,14 @@
 task:
   id: SPEC-010
   type: story                      # epic | story | task | bug | chore
-  cycle: verify  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
-  complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
+  complexity_actual: M             # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: approved  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
@@ -72,10 +72,19 @@ cost:
       duration_minutes: 19
       recorded_at: 2026-11-05
       notes: "tokens transcribed by the orchestrator from the sub-agent metered result"
+    - cycle: verify
+      agent: claude-opus-5-5
+      interface: other
+      tokens_total: 208056
+      estimated_usd: 1.37
+      duration_minutes: 12
+      recorded_at: 2026-11-05
+      notes: "verify sub-agent has no /cost; the orchestrator transcribes the metered figure from the sub-agent result. Verdict APPROVED at f4d67db (code 9239b87)."
   totals:
-    tokens_total: 285743
-    estimated_usd: 1.89
-    session_count: 1
+    tokens_total: 493799
+    estimated_usd: 3.26
+    session_count: 2
+shipped_at: 2026-11-05
 ---
 
 # SPEC-010: Exif and located metadata regions from JPEG
@@ -252,31 +261,15 @@ Unit tests in `src/jpeg/metadata.rs` `mod tests` (and the one updated walker tes
 *Appended during **ship**. Three questions, short answers.*
 
 1. **What would I do differently next time?**
-   — <answer>
+   — Specify the places the spec left open before build: the ICC offset when chunks are individually consistent but their number is wrong, and the `at`/`need`/`have` reference points for `RegionTooShort`, were decided by the builder (both judged defensible by verify). Next time the design lists every `at` as "relative to what" in one table. Also name the shared-harness shape (one included file) in the spec rather than leaving mirrored copies implied.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — No decision change beyond the DEC-006 clarifications written at design. Verify's mutant method again found only low gaps (41 mutants, 37 caught, 4 survived, two equivalent). Keeping "verifier writes its own mutants" in every verify handoff is working.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — No new spec; fold verify's low findings into SPEC-011: L1 the issue-total test never builds the real worst case (4096 short segments, no SOS, no halt); L3 no deterministic test for an APP1 payload `Exif\0` followed by a non-zero byte (the 5-byte signature mutant survives `cargo test`, only the fuzz target catches it); I1 add an ICC seq-0 seed; L2 document that `AnyIssue::Exif` offsets are relative to the TIFF blob (file offset = segment offset + 10) and that `RegionTooShort` mixes reference points.
 
-4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
-   the defect-escape distribution is greppable across specs:
-   `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
-   `none` (clean first try).
-   — <one word>
-   *(Runtime/operational defects — the escape-prone class — only exist once the
-   artifact meets its real host. `escaped` here is a signal to strengthen the
-   §12 behavioral pre-flight for that surface.)*
+4. **Where was the worst defect caught?** — none
+   *(no code defect in build or verify; only test, seed and doc gaps, all low.)*
 
-5. **What can a user do now that they couldn't before?** — one sentence,
-   before → after; quote the confirming number if one exists, name the outcome
-   if not. Write `none` if this spec has no user-visible outcome — that is a
-   real, greppable result, not a blank. This is the line a downstream work-log's
-   `impact` field is transcribed from, and both halves are already written above
-   (## Context is the before, ## Goal is the after): confirm the prediction,
-   don't reconstruct it from memory.
-   — <answer | none>
+5. **What can a user do now that they couldn't before?** — Hand `exif-core` a JPEG and get its Exif parsed by the existing tolerant TIFF engine (identical to a bare TIFF, damage staying on its block) plus XMP, extended XMP, ICC, IPTC and JUMBF regions located, with each layer's issues reported separately; before, a JPEG gave only segments. Confirming number: 143 unit tests, 41 verify mutants with 37 caught.

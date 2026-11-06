@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                     # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: 45
+  tokens_total: 208056             # orchestrator-recorded from the metered sub-agent result (subagent_tokens)
+  estimated_usd: 1.37
+  duration_minutes: 12
   branch: worktree-agent-aa9d68de47bb5e32e
   pr: null
   completed_at: 2026-11-05               # YYYY-MM-DD
   notes: "verify sub-agent has no /cost; the orchestrator transcribes the metered figure from the sub-agent result. Verdict APPROVED at f4d67db (code 9239b87)."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-05
 ---
 
 # HANDOFF-020: Verify Exif and located metadata regions from JPEG
