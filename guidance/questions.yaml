@@ -616,3 +616,31 @@ questions:
       0x0404 resource holds no IPTC dataset); their lines are dropped by
       name. Any other group in a listing is a ParseError, so a new group on a new
       input is a decision. Nothing else was measured over the 178 distinct inputs.
+
+  - id: preview-unclassified-entries
+    question: "Should the policy preview say what `All` and `Everything` do to inventory-only entries (tags with no DEC-008 category)?"
+    priority: low
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-06
+    assigned_to: null
+    notes: |
+      DEC-009 and SPEC-014 keep the preview to findings. An unclassified tag has no
+      category, so a category-set policy cannot speak about it. Whether `All` removes it
+      depends on the container (a JPEG's Exif segment goes whole; structural tags of a bare
+      TIFF must stay) and on the writer. Decide in the first writer spec; the preview then
+      gains a count or a disposition for them.
+
+  - id: gps-preset-leaves-unread-blocks
+    question: "Should `Gps` and `GpsAndDevice` remove a thumbnail or MakerNote whole when they cannot read inside it?"
+    priority: medium
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-06
+    assigned_to: null
+    notes: |
+      DEC-009 follows design section 5 ("GPS block only"): both presets keep the thumbnail,
+      MakerNote, XMP and JUMBF, and the preview reports them `KeptUnread` so nothing is
+      called safe. A user may expect a GPS strip to leave no GPS anywhere. The alternative
+      (widen the presets) is recorded as rejected in DEC-009. Revisit with the writer, or
+      earlier if SPEC-016's exit codes make `KeptUnread` too noisy to use.

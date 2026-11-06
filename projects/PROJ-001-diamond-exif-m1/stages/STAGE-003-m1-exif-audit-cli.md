@@ -94,7 +94,7 @@ Format: `- [status] SPEC-ID (cycle) — one-line summary`
 
 - [x] SPEC-012 (shipped on 2026-11-05) — [M] Audit model: container sniff, inventory, PII categories and findings (pure library); DEC for the category table
 - [x] SPEC-013 (shipped on 2026-11-06) — [L] Inventory parity against ExifTool: group + tag-id sets on fixtures, comparator red-proofed
-- [ ] SPEC-014 (frame) — [M] StripPolicy presets as data and the policy preview; DEC for preset semantics
+- [ ] SPEC-014 (design) — [M] StripPolicy presets as data and the policy preview; DEC for preset semantics
 - [ ] SPEC-015 (frame) — [M] Text, JSON and CSV renderers and the `audit_render` fuzz target (well-formed on hostile input)
 - [x] SPEC-017 (shipped on 2026-11-06) — [M] Bound Container memory: a total entry budget for the tolerant walk (found by the SPEC-012 build: a 789 KB TIFF parses cleanly to 33M entries, ~950 MB)
 - [ ] SPEC-016 (frame) — [L] The `exif-audit` binary: arguments, directory walk, per-file isolation, exit codes, CLI integration tests, CI build job
