@@ -170,9 +170,7 @@ pub fn preview(audit: &FileAudit<'_>, policy: StripPolicy) -> Preview {
 )]
 mod tests {
     use super::*;
-    use crate::audit::{
-        audit, ContainerKind, Finding, Health, Item, ItemKind, Origin, Sniffed,
-    };
+    use crate::audit::{audit, ContainerKind, Finding, Health, Item, ItemKind, Origin, Sniffed};
     use crate::tiff::IfdKind;
     use Category::*;
     use Disposition::{Kept, KeptUnread, Removed};
@@ -190,7 +188,10 @@ mod tests {
         ),
         (Xmp, [KeptUnread, KeptUnread, KeptUnread, Removed, Removed]),
         (Iptc, [Kept, Kept, KeptUnread, Removed, Removed]),
-        (Jumbf, [KeptUnread, KeptUnread, KeptUnread, KeptUnread, Removed]),
+        (
+            Jumbf,
+            [KeptUnread, KeptUnread, KeptUnread, KeptUnread, Removed],
+        ),
         (Icc, [Kept, Kept, Kept, Kept, Removed]),
     ];
 
@@ -255,7 +256,15 @@ mod tests {
 
     #[test]
     fn tag_categories_are_never_kept_unread() {
-        for c in [Gps, DeviceId, Authorship, FreeText, Timestamps, CameraModel, Software] {
+        for c in [
+            Gps,
+            DeviceId,
+            Authorship,
+            FreeText,
+            Timestamps,
+            CameraModel,
+            Software,
+        ] {
             let a = synthetic(&[c], true, false);
             for preset in StripPolicy::PRESETS {
                 assert_ne!(preview(&a, preset).dispositions()[0], KeptUnread, "{c:?}");
@@ -314,7 +323,12 @@ mod tests {
         for (preset, (r, k, u)) in StripPolicy::PRESETS.iter().zip(want) {
             let p = preview(&a, *preset);
             let c = p.counts();
-            assert_eq!((c.removed, c.kept, c.kept_unread), (r, k, u), "{}", preset.name());
+            assert_eq!(
+                (c.removed, c.kept, c.kept_unread),
+                (r, k, u),
+                "{}",
+                preset.name()
+            );
             assert_eq!(c.removed + c.kept + c.kept_unread, a.findings().len());
             assert_eq!(p.residual_findings(), k + u);
             assert_eq!(p.dispositions().len(), a.findings().len());
@@ -345,7 +359,10 @@ mod tests {
             preview(&b, StripPolicy::All).residual_severity(),
             Some(Severity::Medium)
         );
-        assert_eq!(preview(&b, StripPolicy::Everything).residual_severity(), None);
+        assert_eq!(
+            preview(&b, StripPolicy::Everything).residual_severity(),
+            None
+        );
         // A High finding that is kept.
         let c = synthetic(&[Gps, Software], true, false);
         assert_eq!(
@@ -375,7 +392,10 @@ mod tests {
             Some(Severity::High)
         );
         // The all() exception: a spec removing every category leaves None.
-        assert_eq!(preview(&a, StripPolicy::Everything).residual_severity(), None);
+        assert_eq!(
+            preview(&a, StripPolicy::Everything).residual_severity(),
+            None
+        );
         assert_eq!(
             preview(&a, StripPolicy::Custom(StripSpec::all())).residual_severity(),
             None

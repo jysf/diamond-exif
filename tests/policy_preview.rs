@@ -80,11 +80,11 @@ fn full_house_tiff() -> Vec<u8> {
             // 0: IFD0 (chains to IFD1 at index 3)
             t::ifd_next(
                 vec![
-                    t::ascii(0x010E, b"a description\0"), // FreeText
-                    t::ascii(t::T_MAKE, b"MakeCo\0"),     // CameraModel
-                    t::ascii(t::T_SOFTWARE, b"Editor 1.0\0"), // Software
+                    t::ascii(0x010E, b"a description\0"),               // FreeText
+                    t::ascii(t::T_MAKE, b"MakeCo\0"),                   // CameraModel
+                    t::ascii(t::T_SOFTWARE, b"Editor 1.0\0"),           // Software
                     t::ascii(t::T_DATE_TIME, b"2024:05:06 07:08:09\0"), // Timestamps
-                    t::ascii(t::T_ARTIST, b"A. Person\0"), // Authorship
+                    t::ascii(t::T_ARTIST, b"A. Person\0"),              // Authorship
                     t::ptr(t::T_EXIF_IFD, 1),
                     t::ptr(t::T_GPS_IFD, 2),
                 ],
@@ -94,15 +94,12 @@ fn full_house_tiff() -> Vec<u8> {
             t::ifd(vec![
                 t::ascii(t::T_DATE_TIME_ORIGINAL, b"2024:05:06 07:08:09\0"),
                 t::ascii(0xA431, b"SERIAL0001\0"), // DeviceId (BodySerialNumber)
-                t::ascii(0x927C, b"VendorXY"), // MakerNote (decided by id)
+                t::ascii(0x927C, b"VendorXY"),     // MakerNote (decided by id)
             ]),
             // 2: GPS
             t::ifd(vec![t::ascii(t::T_GPS_LAT_REF, b"N\0")]),
             // 3: IFD1 with a thumbnail pointer (the range need not be valid)
-            t::ifd(vec![
-                t::long(false, 0x0201, 0),
-                t::long(false, 0x0202, 0),
-            ]),
+            t::ifd(vec![t::long(false, 0x0201, 0), t::long(false, 0x0202, 0)]),
         ],
     )
 }
@@ -219,7 +216,14 @@ fn full_house_tiff_matches_dec_009_for_every_preset() {
     // Premise: seven tag categories + MakerNote + Thumbnail, and no regions.
     let present = categories_of(&a);
     for c in [
-        Gps, DeviceId, Authorship, FreeText, Timestamps, CameraModel, Software, MakerNote,
+        Gps,
+        DeviceId,
+        Authorship,
+        FreeText,
+        Timestamps,
+        CameraModel,
+        Software,
+        MakerNote,
         Thumbnail,
     ] {
         assert!(present.contains(&c), "tiff lacks {c:?}");
@@ -322,17 +326,17 @@ fn everything_leaves_no_residual_findings_on_any_reliable_fixture() {
             reliable_seen += 1;
         }
     }
-    assert!(reliable_seen >= 20, "enough reliable fixtures: {reliable_seen}");
+    assert!(
+        reliable_seen >= 20,
+        "enough reliable fixtures: {reliable_seen}"
+    );
 }
 
 #[test]
 fn two_exif_blocks_give_the_same_disposition_per_copy() {
     let tiff = full_house_tiff();
     let bytes = jpeg_of(
-        &[
-            oracle_jpeg::exif_app1(&tiff),
-            oracle_jpeg::exif_app1(&tiff),
-        ],
+        &[oracle_jpeg::exif_app1(&tiff), oracle_jpeg::exif_app1(&tiff)],
         &[],
     );
     let one = full_house_tiff();
@@ -465,7 +469,10 @@ fn unsupported_empty_and_unreadable_inputs_preview_to_nothing_and_unreliable() {
     let inputs: [(&str, Vec<u8>); 3] = [
         ("png", b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec()),
         ("empty", Vec::new()),
-        ("tiff with unreadable IFD0", b"II*\0\x08\0\0\0\xFF\xFF".to_vec()),
+        (
+            "tiff with unreadable IFD0",
+            b"II*\0\x08\0\0\0\xFF\xFF".to_vec(),
+        ),
     ];
     for (label, bytes) in inputs {
         let a = audit(&bytes);

@@ -259,7 +259,13 @@ mod tests {
             (
                 Thumbnail,
                 vec![
-                    Gps, DeviceId, Authorship, FreeText, Timestamps, CameraModel, Software,
+                    Gps,
+                    DeviceId,
+                    Authorship,
+                    FreeText,
+                    Timestamps,
+                    CameraModel,
+                    Software,
                 ],
             ),
             (
@@ -269,14 +275,26 @@ mod tests {
             (
                 Xmp,
                 vec![
-                    Gps, DeviceId, Authorship, FreeText, Timestamps, CameraModel, Software,
+                    Gps,
+                    DeviceId,
+                    Authorship,
+                    FreeText,
+                    Timestamps,
+                    CameraModel,
+                    Software,
                 ],
             ),
             (Iptc, vec![Authorship, FreeText, Timestamps]),
             (
                 Jumbf,
                 vec![
-                    Gps, DeviceId, Authorship, FreeText, Timestamps, CameraModel, Software,
+                    Gps,
+                    DeviceId,
+                    Authorship,
+                    FreeText,
+                    Timestamps,
+                    CameraModel,
+                    Software,
                 ],
             ),
             (Icc, vec![]),
@@ -446,7 +464,15 @@ mod tests {
             }
         }
         // Every tag category holds nothing.
-        for c in [Gps, DeviceId, Authorship, FreeText, Timestamps, CameraModel, Software] {
+        for c in [
+            Gps,
+            DeviceId,
+            Authorship,
+            FreeText,
+            Timestamps,
+            CameraModel,
+            Software,
+        ] {
             assert!(may_hold(c).is_empty(), "{c:?}");
         }
         // The six block rows above are exactly the block categories.

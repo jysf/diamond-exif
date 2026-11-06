@@ -382,7 +382,10 @@ mod tests {
             assert!(!c.is_block(), "{c:?}");
         }
         for c in Category::ALL {
-            assert!(blocks.contains(&c) != tags.contains(&c), "{c:?} in one list");
+            assert!(
+                blocks.contains(&c) != tags.contains(&c),
+                "{c:?} in one list"
+            );
         }
     }
 

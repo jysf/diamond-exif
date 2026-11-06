@@ -2373,3 +2373,283 @@ fn audit_harness_guards_are_linear_in_the_input() {
         );
     }
 }
+
+// ── SPEC-014: the strip-policy preview guards ────────────────────────────────
+
+use audit_invariants::PreviewInput;
+
+fn preview_input_of(data: &[u8]) -> PreviewInput {
+    let a = exif_core::audit::audit(data);
+    let f = audit_invariants::facts(&a);
+    audit_invariants::preview_input(data, &a, &f)
+}
+
+#[test]
+fn preview_guards_hold_on_every_seed_and_degenerate_inputs() {
+    let mut inputs: Vec<(String, Vec<u8>)> = Vec::new();
+    for target in ["tiff_ifd", "jpeg_segments", "audit"] {
+        let dir = root().join("fuzz/seeds").join(target);
+        for entry in fs::read_dir(&dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display())) {
+            let path = entry.expect("entry").path();
+            let data = fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+            inputs.push((path.display().to_string(), data));
+        }
+    }
+    assert_eq!(inputs.len(), 32 + 37 + 76);
+    for (i, d) in audit_degenerate_inputs().into_iter().enumerate() {
+        inputs.push((format!("degenerate {i}"), d));
+    }
+    // A truncated audit (the inventory cap is overflowed) exercises rule 4's
+    // conservative branch.
+    inputs.push((GENERATED_BIG_INVENTORY.to_string(), big_inventory()));
+    let mut with_findings = 0usize;
+    let mut truncated = 0usize;
+    for (name, data) in &inputs {
+        let pin = preview_input_of(data);
+        let bad = audit_invariants::preview_violations(&pin);
+        assert!(bad.is_empty(), "{name}: {bad:?}");
+        assert_eq!(pin.cases.len(), 6, "five presets and one custom");
+        if !pin.findings.is_empty() {
+            with_findings += 1;
+        }
+        if pin.truncated {
+            truncated += 1;
+        }
+    }
+    assert!(with_findings > 20, "inputs with findings: {with_findings}");
+    assert_eq!(truncated, 1, "exactly the generated big inventory");
+}
+
+/// One planted bug in the flattened preview of `input`, which the named guard,
+/// run ALONE, must reject.
+struct PreviewPlant {
+    name: &'static str,
+    input: &'static str,
+    guard: &'static str,
+    apply: fn(&mut PreviewInput),
+}
+
+/// The index of the first disposition equal to `what` in case `case`.
+fn disp_at(p: &PreviewInput, case: usize, what: &str) -> usize {
+    p.cases[case]
+        .got
+        .dispositions
+        .iter()
+        .position(|d| d == what)
+        .unwrap_or_else(|| panic!("no {what} disposition in case {case}"))
+}
+
+fn preview_plants() -> Vec<PreviewPlant> {
+    const RICH: &str = "audit-exif-gps-and-thumbnail";
+    vec![
+        // preview_shape
+        PreviewPlant {
+            name: "a disposition is missing",
+            input: RICH,
+            guard: "preview_shape",
+            apply: |p| {
+                p.cases[0].got.dispositions.pop();
+            },
+        },
+        PreviewPlant {
+            name: "a count disagrees with the tally of the dispositions",
+            input: RICH,
+            guard: "preview_shape",
+            apply: |p| p.cases[0].got.kept += 1,
+        },
+        PreviewPlant {
+            name: "residual is not kept plus kept-unread",
+            input: RICH,
+            guard: "preview_shape",
+            apply: |p| p.cases[0].got.residual += 1,
+        },
+        PreviewPlant {
+            name: "a kept disposition becomes removed with the counts untouched",
+            input: RICH,
+            guard: "preview_shape",
+            apply: |p| {
+                let i = disp_at(p, 0, "kept");
+                p.cases[0].got.dispositions[i] = "removed".into();
+            },
+        },
+        // preview_dispositions: removed and kept_unread, each direction.
+        PreviewPlant {
+            name: "an expected removed is missing",
+            input: RICH,
+            guard: "preview_dispositions",
+            apply: |p| {
+                let i = disp_at(p, 0, "removed");
+                p.cases[0].got.dispositions[i] = "kept".into();
+            },
+        },
+        PreviewPlant {
+            name: "an unexpected removed appears",
+            input: RICH,
+            guard: "preview_dispositions",
+            apply: |p| {
+                let i = disp_at(p, 0, "kept");
+                p.cases[0].got.dispositions[i] = "removed".into();
+            },
+        },
+        PreviewPlant {
+            name: "an expected kept_unread is missing",
+            input: RICH,
+            guard: "preview_dispositions",
+            apply: |p| {
+                let i = disp_at(p, 0, "kept_unread");
+                p.cases[0].got.dispositions[i] = "kept".into();
+            },
+        },
+        PreviewPlant {
+            name: "an unexpected kept_unread appears",
+            input: RICH,
+            guard: "preview_dispositions",
+            apply: |p| {
+                let i = disp_at(p, 0, "kept");
+                p.cases[0].got.dispositions[i] = "kept_unread".into();
+            },
+        },
+        PreviewPlant {
+            name: "dispositions in reverse order",
+            input: RICH,
+            guard: "preview_dispositions",
+            apply: |p| p.cases[0].got.dispositions.reverse(),
+        },
+        // preview_nesting
+        PreviewPlant {
+            name: "removed shrinks along the presets",
+            input: RICH,
+            guard: "preview_nesting",
+            apply: |p| p.cases[0].got.removed += 100,
+        },
+        PreviewPlant {
+            name: "residual grows along the presets",
+            input: RICH,
+            guard: "preview_nesting",
+            apply: |p| p.cases[1].got.residual += 100,
+        },
+        PreviewPlant {
+            name: "everything leaves a residual finding",
+            input: RICH,
+            guard: "preview_nesting",
+            apply: |p| p.cases[4].got.residual = 1,
+        },
+        PreviewPlant {
+            name: "everything leaves a residual severity",
+            input: RICH,
+            guard: "preview_nesting",
+            apply: |p| p.cases[4].got.residual_sev = Some("Low".into()),
+        },
+        // preview_residual_and_reliable
+        PreviewPlant {
+            name: "residual severity ignores the kept findings",
+            input: RICH,
+            guard: "preview_residual_and_reliable",
+            apply: |p| {
+                assert!(p.cases[0].want.residual_sev.is_some(), "premise");
+                p.cases[0].got.residual_sev = None;
+            },
+        },
+        PreviewPlant {
+            name: "a residual severity appears where none remains",
+            input: RICH,
+            guard: "preview_residual_and_reliable",
+            apply: |p| {
+                assert!(p.cases[4].want.residual_sev.is_none(), "premise");
+                p.cases[4].got.residual_sev = Some("High".into());
+            },
+        },
+        PreviewPlant {
+            name: "an unsupported file is reported reliable",
+            input: "audit-png-magic",
+            guard: "preview_residual_and_reliable",
+            apply: |p| p.cases[0].got.reliable = true,
+        },
+        PreviewPlant {
+            name: "a clean file is reported unreliable",
+            input: "tiff-valid-le",
+            guard: "preview_residual_and_reliable",
+            apply: |p| p.cases[2].got.reliable = false,
+        },
+    ]
+}
+
+#[test]
+fn each_preview_guard_goes_red_alone_when_planted() {
+    let plants = preview_plants();
+    for (name, _) in audit_invariants::PREVIEW_GUARDS {
+        let n = plants.iter().filter(|p| p.guard == name).count();
+        // Every preview guard is an iff or a two-sided bound: a plant for each
+        // direction.
+        assert!(n >= 2, "guard {name} has {n} plant(s), want at least two");
+    }
+    for p in &plants {
+        let data = plant_input(p.input);
+        let good = preview_input_of(&data);
+        // CONTROL: the unplanted answer satisfies every preview guard.
+        let control = audit_invariants::preview_violations(&good);
+        assert!(
+            control.is_empty(),
+            "{}: control on {}: {control:?}",
+            p.name,
+            p.input
+        );
+        // MUTATION: rejected by the named guard ALONE.
+        let mut bad = good.clone();
+        (p.apply)(&mut bad);
+        assert_ne!(
+            format!("{bad:?}"),
+            format!("{good:?}"),
+            "{}: the plant changed nothing",
+            p.name
+        );
+        let alone = audit_invariants::run_preview_guard(p.guard, &bad);
+        assert!(
+            alone.is_err(),
+            "{}: guard {} did not reject the planted bug on {}",
+            p.name,
+            p.guard,
+            p.input
+        );
+    }
+    println!(
+        "{} preview plants, each rejected by its own guard alone",
+        plants.len()
+    );
+}
+
+/// The work the preview guards do on `data`, counted not timed.
+fn preview_guard_steps(data: &[u8]) -> (u64, usize) {
+    let pin = preview_input_of(data);
+    audit_invariants::reset_steps();
+    let bad = audit_invariants::preview_violations(&pin);
+    assert!(
+        bad.is_empty(),
+        "preview guards fail on the linearity input: {bad:?}"
+    );
+    (audit_invariants::steps(), pin.findings.len())
+}
+
+#[test]
+fn preview_guards_are_linear() {
+    for (name, big, small) in [
+        ("thumbnails", many_thumbnails(5_000), many_thumbnails(2_500)),
+        ("regions", many_regions(3_000), many_regions(1_500)),
+    ] {
+        let (steps, findings) = preview_guard_steps(&big);
+        assert!(findings >= 2_900, "{name}: {findings} findings");
+        // Six cases, three guards that touch every disposition: about 18 steps
+        // per finding; a rescan per finding would be quadratic.
+        let bound = 24 * findings as u64 + 64;
+        assert!(
+            steps <= bound,
+            "{name}: {steps} steps for {findings} findings (bound {bound}): not linear"
+        );
+        let (half, _) = preview_guard_steps(&small);
+        println!("{name}: {half} steps at half size, {steps} at full ({bound} allowed)");
+        assert!(
+            steps <= 3 * half,
+            "{name}: {half} steps at half the size, {steps} at full: not linear"
+        );
+    }
+}
