@@ -1,6 +1,8 @@
-//! Deterministic writer for the `tiff_ifd` fuzz seeds (SPEC-006).
+//! Deterministic writer for the fuzz seeds (SPEC-006 `tiff_ifd`, SPEC-009
+//! `jpeg_segments`).
 //!
-//! `cargo run --example fuzz_seeds` rewrites `fuzz/seeds/tiff_ifd/`. Output is a
+//! `cargo run --example fuzz_seeds` rewrites `fuzz/seeds/tiff_ifd/` and
+//! `fuzz/seeds/jpeg_segments/`. Output is a
 //! pure function of this file (no clock, no randomness, no environment), so two
 //! runs produce byte-identical seeds. The seeds are hand-built, a few hundred
 //! bytes each, and are this repository's own work: the shapes follow TIFF 6.0
@@ -572,6 +574,188 @@ fn ascii_count_past_eof(w: &Writer) -> Vec<u8> {
     }])
 }
 
+// ── JPEG seeds (SPEC-009) ────────────────────────────────────────────────────
+// Hand-built from ITU-T T.81 Annex B marker syntax; this repository's own work.
+
+fn jseg(marker: u8, payload: &[u8]) -> Vec<u8> {
+    let len = u16::try_from(payload.len() + 2).expect("segment fits 16 bits");
+    let mut v = vec![0xFF, marker];
+    v.extend_from_slice(&len.to_be_bytes());
+    v.extend_from_slice(payload);
+    v
+}
+
+const JSOI: [u8; 2] = [0xFF, 0xD8];
+const JEOI: [u8; 2] = [0xFF, 0xD9];
+
+fn jsos() -> Vec<u8> {
+    jseg(0xDA, &[1, 1, 0, 0, 0x3F, 0])
+}
+
+fn jcat(parts: &[&[u8]]) -> Vec<u8> {
+    parts.concat()
+}
+
+fn jpeg_seeds() -> Vec<(&'static str, Vec<u8>)> {
+    let mut app0 = b"JFIF\0".to_vec();
+    app0.extend_from_slice(&[1, 1, 0, 0, 1, 0, 1, 0, 0]);
+    let exif = jseg(0xE1, b"Exif\0\0II*\0\x08\0\0\0");
+    let xmp = jseg(0xE1, b"http://ns.adobe.com/xap/1.0/\0<x:xmpmeta/>");
+    let ext = |tag: &[u8]| {
+        let mut p = b"http://ns.adobe.com/xmp/extension/\0".to_vec();
+        p.extend_from_slice(tag);
+        jseg(0xE1, &p)
+    };
+    let com = jseg(0xFE, b"hi");
+    let scan: &[u8] = &[0x12, 0xFF, 0x00, 0x34, 0xFF, 0xD0, 0x56];
+
+    let minimal = jcat(&[
+        &JSOI,
+        &jseg(0xE0, &app0),
+        &jseg(0xDB, &[0, 1, 2, 3]),
+        &jseg(0xC0, &[8, 0, 1, 0, 1, 1, 1, 0x11, 0]),
+        &jseg(0xC4, &[0, 1, 2, 3]),
+        &jsos(),
+        scan,
+        &JEOI,
+    ]);
+
+    let mut many_segments = JSOI.to_vec();
+    for _ in 0..4100 {
+        many_segments.extend_from_slice(&jseg(0xFE, b""));
+    }
+    many_segments.extend_from_slice(&jsos());
+    many_segments.extend_from_slice(&JEOI);
+
+    let mut many_ff00 = JSOI.to_vec();
+    for _ in 0..1100 {
+        many_ff00.extend_from_slice(&[0xFF, 0x00]);
+    }
+
+    let mut ffff = JSOI.to_vec();
+    ffff.extend_from_slice(&[0xFF, 0xE1, 0xFF, 0xFF]);
+    ffff.extend_from_slice(&vec![0x5A; 65_533]);
+    ffff.extend_from_slice(&jsos());
+    ffff.extend_from_slice(&JEOI);
+
+    vec![
+        ("minimal", minimal),
+        ("soi-only", JSOI.to_vec()),
+        (
+            "fill-bytes",
+            jcat(&[
+                &JSOI,
+                &[0xFF, 0xFF, 0xFF],
+                &jseg(0xE0, &app0),
+                &jsos(),
+                &JEOI,
+            ]),
+        ),
+        (
+            "app1-len-0",
+            jcat(&[&JSOI, &[0xFF, 0xE1, 0, 0], &com, &jsos(), &JEOI]),
+        ),
+        (
+            "app1-len-1",
+            jcat(&[&JSOI, &[0xFF, 0xE1, 0, 1], &com, &jsos(), &JEOI]),
+        ),
+        (
+            "app1-len-2",
+            jcat(&[&JSOI, &jseg(0xE1, b""), &jsos(), &JEOI]),
+        ),
+        ("app1-len-ffff", ffff),
+        (
+            "app1-past-eof",
+            jcat(&[&JSOI, &[0xFF, 0xE1, 0x01, 0x00], &[0; 10]]),
+        ),
+        (
+            "exif-and-xmp",
+            jcat(&[&JSOI, &exif, &xmp, &jsos(), scan, &JEOI]),
+        ),
+        (
+            "extended-xmp-pair",
+            jcat(&[
+                &JSOI,
+                &xmp,
+                &ext(b"guid-a"),
+                &ext(b"guid-b"),
+                &jsos(),
+                &JEOI,
+            ]),
+        ),
+        (
+            "stray-bytes",
+            jcat(&[&JSOI, &com, &[1, 2, 3], &com, &[9; 5], &jsos(), &JEOI]),
+        ),
+        (
+            "ff00-stray",
+            jcat(&[
+                &JSOI,
+                &[0xFF, 0x00],
+                &[0xFF, 0xD8],
+                &[0xFF, 0xD3],
+                &[0xFF, 0x01],
+                &com,
+                &jsos(),
+                &JEOI,
+            ]),
+        ),
+        ("no-sos", jcat(&[&JSOI, &jseg(0xE0, &app0), &com, &JEOI])),
+        ("sos-no-eoi", jcat(&[&JSOI, &jsos(), scan])),
+        (
+            "progressive-two-scans",
+            jcat(&[
+                &JSOI,
+                &jseg(0xC2, &[8, 0, 1, 0, 1, 1, 1, 0x11, 0]),
+                &jsos(),
+                scan,
+                &jseg(0xC4, &[0, 1, 2]),
+                &jsos(),
+                &[0xFF, 0xFF, 0xD3, 7],
+                &JEOI,
+            ]),
+        ),
+        (
+            "trailer-after-eoi",
+            jcat(&[&JSOI, &jsos(), scan, &JEOI, b"TRAILER", &JEOI, &com]),
+        ),
+        (
+            "app-after-scan",
+            jcat(&[&JSOI, &jsos(), scan, &exif, &JEOI]),
+        ),
+        ("many-segments", many_segments),
+        ("many-ff00", many_ff00),
+        (
+            "icc-iptc-jumbf",
+            jcat(&[
+                &JSOI,
+                &jseg(0xE2, b"ICC_PROFILE\0\x01\x01profile"),
+                &jseg(0xED, b"Photoshop 3.0\08BIM"),
+                &jseg(0xEB, b"JP\0\0jumb"),
+                &jsos(),
+                &JEOI,
+            ]),
+        ),
+        (
+            "signatures-under-wrong-marker",
+            jcat(&[
+                &JSOI,
+                &jseg(0xE2, b"Exif\0\0II"),
+                &jseg(0xE1, b"ICC_PROFILE\0\x01\x01"),
+                &jseg(0xEC, b"Photoshop 3.0\08BIM"),
+                &jseg(0xEA, b"JP\0\0jumb"),
+                &jseg(0xEB, b"XX\0\0nojp"),
+                &jseg(0xE1, b"JFIF\0xx"),
+                &jseg(0xE2, b"http://ns.adobe.com/xap/1.0/\0<x/>"),
+                &jseg(0xE0, b"Exif\0\0II"),
+                &jseg(0xED, b"Photoshop 2.5\0"),
+                &jsos(),
+                &JEOI,
+            ]),
+        ),
+    ]
+}
+
 fn main() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/tiff_ifd");
     fs::create_dir_all(&dir).expect("create seeds dir");
@@ -613,4 +797,12 @@ fn main() {
         fs::write(dir.join(name), bytes).expect("write seed");
     }
     println!("wrote {} seeds to {}", seeds.len(), dir.display());
+
+    let jdir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/jpeg_segments");
+    fs::create_dir_all(&jdir).expect("create seeds dir");
+    let jseeds = jpeg_seeds();
+    for (name, bytes) in &jseeds {
+        fs::write(jdir.join(name), bytes).expect("write seed");
+    }
+    println!("wrote {} seeds to {}", jseeds.len(), jdir.display());
 }

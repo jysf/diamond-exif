@@ -110,6 +110,50 @@ pub enum Error {
         /// The count the file declared.
         count: u32,
     },
+
+    /// The first two bytes were not `FF D8` (SOI), so this is not a JPEG
+    /// (ITU-T T.81 Annex B). Fatal (DEC-006).
+    NotJpeg {
+        /// The two bytes actually found.
+        mark: [u8; 2],
+    },
+
+    /// A run of bytes between segments that belongs to no marker, or a
+    /// marker that is not allowed outside entropy data (`FF 00`, a stray
+    /// `SOI`, `RSTn`, `TEM`). One issue per maximal run.
+    StrayBytes {
+        /// Offset of the first stray byte.
+        at: usize,
+        /// Length of the run in bytes.
+        len: usize,
+    },
+
+    /// A segment declared a length below 2, which cannot even cover its own
+    /// length field.
+    BadSegmentLength {
+        /// The marker code of the segment.
+        marker: u8,
+        /// The length the file declared.
+        length: u16,
+    },
+
+    /// The walk ended without finding a start-of-scan marker.
+    MissingSos,
+
+    /// The walk ended without finding an end-of-image marker.
+    MissingEoi,
+
+    /// The walk reached [`crate::jpeg::MAX_JPEG_SEGMENTS`] segments.
+    TooManySegments {
+        /// The segment-count limit that was reached.
+        limit: usize,
+    },
+
+    /// The walk reached [`crate::jpeg::MAX_JPEG_ISSUES`] issues.
+    TooManyIssues {
+        /// The issue-count limit that was reached.
+        limit: usize,
+    },
 }
 
 impl fmt::Display for Error {
@@ -160,6 +204,33 @@ impl fmt::Display for Error {
                     f,
                     "pointer tag {tag:#06x} carries {count} value(s), expected exactly 1"
                 )
+            }
+            Error::NotJpeg { mark } => {
+                let [a, b] = *mark;
+                write!(
+                    f,
+                    "not a JPEG: first bytes are {a:#04x}{b:02x}, expected 0xffd8"
+                )
+            }
+            Error::StrayBytes { at, len } => {
+                write!(
+                    f,
+                    "stray bytes: {len} byte(s) at offset {at} belong to no segment"
+                )
+            }
+            Error::BadSegmentLength { marker, length } => {
+                write!(
+                    f,
+                    "segment marker {marker:#04x} declares length {length}, below the minimum of 2"
+                )
+            }
+            Error::MissingSos => write!(f, "no start-of-scan marker found"),
+            Error::MissingEoi => write!(f, "no end-of-image marker found"),
+            Error::TooManySegments { limit } => {
+                write!(f, "JPEG walk reached the limit of {limit} segments")
+            }
+            Error::TooManyIssues { limit } => {
+                write!(f, "JPEG walk reached the limit of {limit} issues")
             }
         }
     }

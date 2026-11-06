@@ -1656,6 +1656,16 @@ mod tests {
                 tag: 0x8769,
                 count: 2,
             },
+            Error::NotJpeg { mark: [1, 2] },
+            Error::StrayBytes { at: 3, len: 4 },
+            Error::BadSegmentLength {
+                marker: 0xE1,
+                length: 1,
+            },
+            Error::MissingSos,
+            Error::MissingEoi,
+            Error::TooManySegments { limit: 4096 },
+            Error::TooManyIssues { limit: 1024 },
         ];
         for e in &errors {
             assert!(!e.to_string().is_empty(), "{e:?} has an empty Display");
@@ -1679,10 +1689,17 @@ mod tests {
                 Error::MissingTag { .. } => 9,
                 Error::OffsetOutOfRange { .. } => 10,
                 Error::BadPointerCount { .. } => 11,
+                Error::NotJpeg { .. } => 12,
+                Error::StrayBytes { .. } => 13,
+                Error::BadSegmentLength { .. } => 14,
+                Error::MissingSos => 15,
+                Error::MissingEoi => 16,
+                Error::TooManySegments { .. } => 17,
+                Error::TooManyIssues { .. } => 18,
             }
         }
         let indices: Vec<usize> = errors.iter().map(index).collect();
-        assert_eq!(indices, (0..12).collect::<Vec<usize>>());
+        assert_eq!(indices, (0..19).collect::<Vec<usize>>());
     }
 
     // ── pointer tags (SPEC-004, DEC-005) ─────────────────────────────────────

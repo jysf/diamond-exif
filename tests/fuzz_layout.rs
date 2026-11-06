@@ -7,6 +7,7 @@
 use std::fs;
 use std::path::PathBuf;
 
+use exif_core::jpeg::{Jpeg, SegmentKind, MAX_JPEG_ISSUES, MAX_JPEG_SEGMENTS};
 use exif_core::tiff::{Container, Entry, IfdKind, MAX_IFDS, MAX_ISSUES, MAX_TAG_VALUES};
 use exif_core::Error;
 
@@ -62,6 +63,31 @@ const SEEDS: [&str; 29] = [
     "subifd-be",
 ];
 
+/// JPEG seed names are fixed by `examples/fuzz_seeds.rs`.
+const JPEG_SEEDS: [&str; 21] = [
+    "minimal",
+    "soi-only",
+    "fill-bytes",
+    "app1-len-0",
+    "app1-len-1",
+    "app1-len-2",
+    "app1-len-ffff",
+    "app1-past-eof",
+    "exif-and-xmp",
+    "extended-xmp-pair",
+    "stray-bytes",
+    "ff00-stray",
+    "no-sos",
+    "sos-no-eoi",
+    "progressive-two-scans",
+    "trailer-after-eoi",
+    "app-after-scan",
+    "many-segments",
+    "many-ff00",
+    "icc-iptc-jumbf",
+    "signatures-under-wrong-marker",
+];
+
 #[test]
 fn fuzz_crate_is_separate_and_licensed() {
     let fuzz = read("fuzz/Cargo.toml");
@@ -72,6 +98,14 @@ fn fuzz_crate_is_separate_and_licensed() {
     assert!(
         fuzz.contains("name = \"tiff_ifd\""),
         "fuzz/Cargo.toml must declare the tiff_ifd bin"
+    );
+    assert!(
+        fuzz.contains("name = \"jpeg_segments\""),
+        "fuzz/Cargo.toml must declare the jpeg_segments bin"
+    );
+    assert!(
+        root().join("fuzz/fuzz_targets/jpeg_segments.rs").is_file(),
+        "the jpeg_segments target source is missing"
     );
     assert!(
         fuzz.contains("libfuzzer-sys"),
@@ -372,4 +406,276 @@ fn every_seed_parses_or_errors_without_panicking() {
         "expected at least {} seeds, saw {seen}",
         SEEDS.len()
     );
+}
+
+#[test]
+fn jpeg_seeds_are_committed() {
+    let dir = root().join("fuzz/seeds/jpeg_segments");
+    for name in JPEG_SEEDS {
+        let path = dir.join(name);
+        assert!(path.is_file(), "missing seed {}", path.display());
+    }
+}
+
+#[test]
+fn every_jpeg_seed_walks_without_panicking() {
+    let dir = root().join("fuzz/seeds/jpeg_segments");
+    let mut seen = 0;
+    for entry in fs::read_dir(&dir).unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()))
+    {
+        let path = entry.expect("dir entry").path();
+        let data =
+            fs::read(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+        exercise_jpeg(&data);
+        seen += 1;
+    }
+    assert!(
+        seen >= JPEG_SEEDS.len(),
+        "expected at least {} seeds, saw {seen}",
+        JPEG_SEEDS.len()
+    );
+}
+
+/// The `jpeg_segments` harness contract on a few extra shapes the seeds do not
+/// cover: fatal inputs and an all-`FF` run.
+#[test]
+fn jpeg_harness_holds_on_fatal_and_degenerate_inputs() {
+    for data in [
+        &[][..],
+        &[0xFF][..],
+        &[0x89, 0x50][..],
+        &[0xFF, 0xD8, 0xFF][..],
+    ] {
+        exercise_jpeg(data);
+    }
+    exercise_jpeg(&[0xFF; 4096]);
+    // A signature under the wrong marker is not that kind (the marker guard of
+    // the iff), and a plain APP1 without the signature is not Exif (the
+    // signature guard).
+    exercise_jpeg(&[
+        0xFF, 0xD8, 0xFF, 0xE2, 0x00, 0x08, b'E', b'x', b'i', b'f', 0, 0, 0xFF, 0xD9,
+    ]);
+    exercise_jpeg(&[0xFF, 0xD8, 0xFF, 0xE1, 0x00, 0x04, 1, 2, 0xFF, 0xD9]);
+}
+
+// ── the jpeg_segments harness body, mirrored from the fuzz target ───────────
+
+/// The kind a segment must have, written out independently of the library.
+fn expected_kind(marker: u8, payload: &[u8]) -> SegmentKind {
+    match marker {
+        0xE0 if payload.starts_with(b"JFIF\0") => SegmentKind::Jfif,
+        0xE1 if payload.starts_with(b"Exif\0\0") => SegmentKind::Exif,
+        0xE1 if payload.starts_with(b"http://ns.adobe.com/xap/1.0/\0") => SegmentKind::Xmp,
+        0xE1 if payload.starts_with(b"http://ns.adobe.com/xmp/extension/\0") => {
+            SegmentKind::ExtendedXmp
+        }
+        0xE2 if payload.starts_with(b"ICC_PROFILE\0") => SegmentKind::Icc,
+        0xED if payload.starts_with(b"Photoshop 3.0\0") => SegmentKind::Iptc,
+        0xEB if payload.starts_with(b"JP") => SegmentKind::Jumbf,
+        0xE0..=0xEF => SegmentKind::App(marker - 0xE0),
+        0xC4 => SegmentKind::Dht,
+        0xC8 | 0xCC => SegmentKind::Other(marker),
+        0xC0..=0xCF => SegmentKind::Sof(marker),
+        0xDB => SegmentKind::Dqt,
+        0xDD => SegmentKind::Dri,
+        0xFE => SegmentKind::Com,
+        0xDA => SegmentKind::Sos,
+        _ => SegmentKind::Other(marker),
+    }
+}
+
+fn exercise_jpeg(data: &[u8]) {
+    let strict = Jpeg::parse_strict(data);
+    let jpeg = match Jpeg::parse(data) {
+        Ok(jpeg) => jpeg,
+        Err(error) => {
+            // A rejected input is a SUCCESS: both entry points say the same.
+            assert_eq!(
+                strict.err(),
+                Some(error),
+                "parse_strict disagrees on a fatal input"
+            );
+            return;
+        }
+    };
+
+    // Differential, both directions.
+    assert_eq!(
+        strict.is_ok(),
+        jpeg.is_clean(),
+        "parse_strict Ok iff is_clean"
+    );
+    assert_eq!(jpeg.is_clean(), jpeg.issues().is_empty());
+    if let Err(error) = strict {
+        let first = jpeg
+            .issues()
+            .first()
+            .expect("parse_strict Err on a jpeg with no issues");
+        assert_eq!(&error, first.error(), "strict error is not the first issue");
+    }
+
+    let len = data.len();
+
+    // Segments: framing, containment, order, zero-copy.
+    let mut prev_end = 2usize;
+    for seg in jpeg.segments() {
+        let off = seg.offset();
+        let payload = seg.payload();
+        assert!(off >= prev_end, "segment overlaps the previous one");
+        assert_eq!(data.get(off), Some(&0xFF), "segment does not start at FF");
+        assert_eq!(data.get(off + 1), Some(&seg.marker()), "marker mismatch");
+        let declared = data
+            .get(off + 2..off + 4)
+            .map(|b| usize::from(u16::from_be_bytes([b[0], b[1]])));
+        assert_eq!(declared, Some(payload.len() + 2), "length field mismatch");
+        let end = off + 4 + payload.len();
+        assert!(end <= len, "segment escapes the input");
+        assert_eq!(
+            payload.as_ptr(),
+            data[off + 4..].as_ptr(),
+            "payload is not at offset + 4"
+        );
+        assert!(lies_inside(data, payload), "payload escapes the input");
+        prev_end = end;
+
+        // Kind: each signature kind holds iff marker and signature match.
+        let want = expected_kind(seg.marker(), payload);
+        assert_eq!(seg.kind(), want, "kind");
+        let k = seg.kind();
+        let m = seg.marker();
+        assert_eq!(
+            k == SegmentKind::Exif,
+            m == 0xE1 && payload.starts_with(b"Exif\0\0")
+        );
+        assert_eq!(
+            k == SegmentKind::Xmp,
+            m == 0xE1 && payload.starts_with(b"http://ns.adobe.com/xap/1.0/\0")
+        );
+        assert_eq!(
+            k == SegmentKind::ExtendedXmp,
+            m == 0xE1 && payload.starts_with(b"http://ns.adobe.com/xmp/extension/\0")
+        );
+        assert_eq!(
+            k == SegmentKind::Icc,
+            m == 0xE2 && payload.starts_with(b"ICC_PROFILE\0")
+        );
+        assert_eq!(
+            k == SegmentKind::Iptc,
+            m == 0xED && payload.starts_with(b"Photoshop 3.0\0")
+        );
+        assert_eq!(
+            k == SegmentKind::Jumbf,
+            m == 0xEB && payload.starts_with(b"JP")
+        );
+        assert_eq!(
+            k == SegmentKind::Jfif,
+            m == 0xE0 && payload.starts_with(b"JFIF\0")
+        );
+        assert_eq!(k == SegmentKind::Sos, m == 0xDA);
+        let _ = (format!("{k}"), format!("{k:?}"));
+    }
+    assert!(jpeg.segments().len() <= MAX_JPEG_SEGMENTS);
+
+    // Scan region, EOI and trailer.
+    let first_sos = jpeg
+        .segments()
+        .iter()
+        .find(|s| s.kind() == SegmentKind::Sos);
+    assert_eq!(jpeg.scan_region().is_some(), first_sos.is_some());
+    if let (Some(region), Some(sos)) = (jpeg.scan_region(), first_sos) {
+        assert_eq!(region.get(..2), Some(&[0xFF, 0xDA][..]), "region start");
+        assert_eq!(
+            region.as_ptr(),
+            data[sos.offset()..].as_ptr(),
+            "region is not at the first SOS"
+        );
+        let end = jpeg.eoi_offset().map_or(len, |e| e + 2);
+        assert_eq!(sos.offset() + region.len(), end, "region end");
+    }
+    match jpeg.eoi_offset() {
+        None => assert!(jpeg.trailer().is_empty(), "trailer without EOI"),
+        Some(eoi) => {
+            assert_eq!(data.get(eoi..eoi + 2), Some(&[0xFF, 0xD9][..]), "EOI bytes");
+            assert_eq!(jpeg.trailer(), &data[eoi + 2..], "trailer");
+            assert!(
+                jpeg.segments().iter().all(|s| s.offset() < eoi),
+                "a segment after EOI"
+            );
+        }
+    }
+    assert!(lies_inside(data, jpeg.trailer()));
+
+    // after_scan iff the segment is after the first SOS segment.
+    for seg in jpeg.segments() {
+        let expect = first_sos.is_some_and(|sos| seg.offset() > sos.offset());
+        assert_eq!(seg.after_scan(), expect, "after_scan iff after first SOS");
+    }
+
+    // Issues: bounds, halts, and the end-of-walk pair.
+    let errors: Vec<&Error> = jpeg.issues().iter().map(|i| i.error()).collect();
+    assert!(errors.len() <= MAX_JPEG_ISSUES + 1);
+    for issue in jpeg.issues() {
+        assert!(issue.offset() <= len, "issue offset past the input");
+        assert!(!issue.to_string().is_empty());
+        let _ = format!("{issue:?}");
+    }
+    let halt = errors.iter().position(|e| {
+        matches!(
+            e,
+            Error::TooManySegments { .. } | Error::TooManyIssues { .. }
+        )
+    });
+    if let Some(idx) = halt {
+        assert_eq!(idx + 1, errors.len(), "issue recorded after a halt");
+    }
+    assert_eq!(
+        errors
+            .iter()
+            .any(|e| matches!(e, Error::TooManyIssues { .. })),
+        errors.len() == MAX_JPEG_ISSUES + 1,
+        "TooManyIssues iff the list is one over the cap"
+    );
+    // The segment cap halts only a full list.
+    if errors
+        .iter()
+        .any(|e| matches!(e, Error::TooManySegments { .. }))
+    {
+        assert_eq!(
+            jpeg.segments().len(),
+            MAX_JPEG_SEGMENTS,
+            "cap on a short list"
+        );
+    }
+    let has_sos = first_sos.is_some();
+    let has_eoi = jpeg.eoi_offset().is_some();
+    let missing_sos = errors.iter().any(|e| matches!(e, Error::MissingSos));
+    let missing_eoi = errors.iter().any(|e| matches!(e, Error::MissingEoi));
+    if let Some(idx) = halt {
+        // A halt inside the walk suppresses the end-of-walk pair. The one
+        // exception is the issue cap firing INSIDE the end-of-walk step
+        // (1023 ordinary issues, then MissingSos is the 1024th and MissingEoi
+        // becomes TooManyIssues): the pair is then a contiguous run directly
+        // before the halting issue, and each member is still true.
+        let tail = errors.get(..idx).unwrap_or(&[]);
+        let pair = tail
+            .iter()
+            .filter(|e| matches!(e, Error::MissingSos | Error::MissingEoi))
+            .count();
+        if matches!(errors.get(idx), Some(Error::TooManySegments { .. })) {
+            assert_eq!(pair, 0, "end-of-walk issue after the segment cap");
+        } else {
+            assert!(
+                tail.iter()
+                    .rev()
+                    .take(pair)
+                    .all(|e| matches!(e, Error::MissingSos | Error::MissingEoi)),
+                "end-of-walk issues are not directly before the cap"
+            );
+            assert!(!missing_sos || !has_sos, "MissingSos but there is an SOS");
+            assert!(!missing_eoi || !has_eoi, "MissingEoi but there is an EOI");
+        }
+    } else {
+        assert_eq!(missing_sos, !has_sos, "MissingSos iff no SOS segment");
+        assert_eq!(missing_eoi, !has_eoi, "MissingEoi iff no EOI");
+    }
 }
