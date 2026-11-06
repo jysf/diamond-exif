@@ -167,11 +167,15 @@ pub enum Error {
     RegionTooShort {
         /// Which header or resource was short.
         what: &'static str,
-        /// Input offset of the segment (or of the resource inside it).
+        /// Input offset of the segment's own `FF` marker byte for a segment
+        /// header (extended XMP, ICC, JUMBF), or of the resource itself for an
+        /// `8BIM` resource inside an IPTC segment.
         at: usize,
-        /// Bytes the header or resource needed, counted from its start.
+        /// Bytes the header or resource needed. For a segment header this is
+        /// counted from after the segment's signature (not from `at`); for an
+        /// `8BIM` resource it is counted from the resource's start.
         need: usize,
-        /// Bytes that were available from its start.
+        /// Bytes that were available, counted from the same point as `need`.
         have: usize,
     },
 

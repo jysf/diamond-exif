@@ -19,14 +19,112 @@
 //! target directory, and the probe prints oracle readings. See
 //! `docs/provenance-ledger.md`.
 //!
+//! SPEC-011 adds a JPEG mode (a file that starts `FF D8` is read through
+//! `exif_core::jpeg::read` and `oracle::read_jpeg_all`: the 20 Exif selectors
+//! through the harness's several-Exif model, then the two region presences) and
+//! a wall-clock limit on the build and on the run (a faulty library may loop; a
+//! timeout is a typed error and a test failure, never a hang).
+//!
 //! Test support only (`#[path]`-included by `tests/mutation_oracle.rs`, which
 //! also includes `oracle.rs`). std only.
 
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
+
+/// Environment variable that overrides the wall-clock limit of a probe BUILD.
+pub const BUILD_LIMIT_VAR: &str = "DIAMOND_EXIF_PROBE_BUILD_SECS";
+/// Environment variable that overrides the wall-clock limit of a probe RUN.
+pub const RUN_LIMIT_VAR: &str = "DIAMOND_EXIF_PROBE_RUN_SECS";
+/// Default limit for a probe build (a cold debug build of the dependency-free
+/// crate is about 1 s; this is generous for a loaded CI host).
+pub const DEFAULT_BUILD_SECS: u64 = 600;
+/// Default limit for one probe run on one file.
+pub const DEFAULT_RUN_SECS: u64 = 30;
+
+/// The limit in seconds for a raw environment value: a positive integer
+/// overrides `default`; anything else (unset, empty, zero, not a number) is the
+/// default, so a bad value can never disable the limit. Pure, so the override is
+/// testable without touching the process environment.
+pub fn parse_limit_secs(raw: Option<&str>, default: u64) -> u64 {
+    match raw.map(str::trim).map(str::parse::<u64>) {
+        Some(Ok(n)) if n > 0 => n,
+        _ => default,
+    }
+}
+
+fn build_limit() -> Duration {
+    Duration::from_secs(parse_limit_secs(
+        std::env::var(BUILD_LIMIT_VAR).ok().as_deref(),
+        DEFAULT_BUILD_SECS,
+    ))
+}
+
+fn run_limit() -> Duration {
+    Duration::from_secs(parse_limit_secs(
+        std::env::var(RUN_LIMIT_VAR).ok().as_deref(),
+        DEFAULT_RUN_SECS,
+    ))
+}
+
+/// Run `cmd` (stdin closed, stdout and stderr captured) and wait at most
+/// `limit`. The same kill-and-reap shape as `tools::run_tool_with_limit`: both
+/// pipes are drained on their own threads (a child that fills a pipe cannot
+/// deadlock the poll), a child still running at the limit is killed and then
+/// reaped, and the reader threads are not joined on that path (a grandchild that
+/// kept a pipe open cannot make the timeout itself hang). A timeout is
+/// `Err(.. "killed" ..)`.
+fn run_with_limit(mut cmd: Command, what: &str, limit: Duration) -> Result<Output, String> {
+    let mut child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("spawn {what}: {e}"))?;
+    let out = drain(child.stdout.take());
+    let err = drain(child.stderr.take());
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {}
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("wait for {what}: {e}"));
+            }
+        }
+        if started.elapsed() >= limit {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!(
+                "{what}: still running after {} ms and killed (limits: {BUILD_LIMIT_VAR} \
+                 default {DEFAULT_BUILD_SECS} s, {RUN_LIMIT_VAR} default {DEFAULT_RUN_SECS} s); \
+                 this is a failure, not a hang",
+                limit.as_millis()
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    Ok(Output {
+        status,
+        stdout: out.join().unwrap_or_default(),
+        stderr: err.join().unwrap_or_default(),
+    })
+}
+
+fn drain<R: std::io::Read + Send + 'static>(pipe: Option<R>) -> std::thread::JoinHandle<Vec<u8>> {
+    std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(mut pipe) = pipe {
+            let _ = pipe.read_to_end(&mut buf);
+        }
+        buf
+    })
+}
 
 /// Every injected replacement carries this, so a leaked injection is
 /// greppable. `inject_replace` refuses a replacement without it.
@@ -110,9 +208,11 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-/// The generated probe binary. It parses its argument with
-/// `exif_core::tiff::Container` and prints `oracle::read_ours` over
-/// `oracle::SELECTORS` as one tab-separated line, `-` for `None`. A value
+/// The generated probe binary. A file that starts `FF D8` is a JPEG: it is read
+/// with `exif_core::jpeg::read` and `oracle::read_jpeg_all` (the Exif selectors,
+/// then the two region presences). Anything else is parsed with
+/// `exif_core::tiff::Container` and `oracle::read_ours` over `oracle::SELECTORS`.
+/// Either way the answer is one tab-separated line, `-` for `None`. A value
 /// that would break the line (backslash, tab, newline, CR) or collide with the
 /// `-` marker is backslash-escaped; [`unescape`] undoes it. A parse error is
 /// reported on stderr with exit status 3 (a faulty library may well fail to
@@ -153,14 +253,23 @@ fn main() {
             std::process::exit(2);
         }
     };
-    let container = match Container::parse(&data) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("PARSE-ERROR {e:?}");
-            std::process::exit(3);
+    let ours = if data.starts_with(&[0xFF, 0xD8]) {
+        match exif_core::jpeg::read(&data) {
+            Ok(meta) => oracle::read_jpeg_all(&meta),
+            Err(e) => {
+                eprintln!("PARSE-ERROR {e:?}");
+                std::process::exit(3);
+            }
+        }
+    } else {
+        match Container::parse(&data) {
+            Ok(c) => oracle::read_ours(&c, oracle::SELECTORS),
+            Err(e) => {
+                eprintln!("PARSE-ERROR {e:?}");
+                std::process::exit(3);
+            }
         }
     };
-    let ours = oracle::read_ours(&container, oracle::SELECTORS);
     let line: Vec<String> = ours
         .iter()
         .map(|o| match o {
@@ -247,14 +356,19 @@ fn cargo() -> String {
 /// `CARGO_TARGET_DIR` in the environment cannot redirect the build into the
 /// repo's `target/`, because the variable is set explicitly on the child.
 pub fn build_probe(dir: &Path) -> Result<PathBuf, String> {
+    build_probe_with_limit(dir, build_limit())
+}
+
+/// [`build_probe`] with an explicit wall-clock limit; [`build_probe`] is this
+/// with the environment's ([`BUILD_LIMIT_VAR`]).
+pub fn build_probe_with_limit(dir: &Path, limit: Duration) -> Result<PathBuf, String> {
     let target = dir.join("target");
-    let build = Command::new(cargo())
-        .args(["build", "--offline", "--quiet", "--bin", "probe"])
+    let mut cmd = Command::new(cargo());
+    cmd.args(["build", "--offline", "--quiet", "--bin", "probe"])
         .current_dir(dir)
         .env("CARGO_TARGET_DIR", &target)
-        .env_remove("CARGO_BUILD_TARGET_DIR")
-        .output()
-        .map_err(|e| format!("spawn `{} build`: {e}", cargo()))?;
+        .env_remove("CARGO_BUILD_TARGET_DIR");
+    let build = run_with_limit(cmd, &format!("`{} build` of the probe", cargo()), limit)?;
     if !build.status.success() {
         return Err(format!(
             "cargo build failed ({}) in {}:\n{}",
@@ -266,13 +380,22 @@ pub fn build_probe(dir: &Path) -> Result<PathBuf, String> {
     Ok(target.join("debug/probe"))
 }
 
-/// Run a built probe on `file`: one entry per `oracle::SELECTORS` selector.
-/// Every failure is a `String` that includes the captured stderr.
+/// Run a built probe on `file`: one entry per `oracle::SELECTORS` selector for a
+/// TIFF, per `oracle::jpeg_names()` selector for a JPEG. Every failure is a
+/// `String` that includes the captured stderr. Bounded by [`RUN_LIMIT_VAR`].
 pub fn run_probe(bin: &Path, file: &Path) -> Result<Vec<Option<String>>, String> {
-    let run = Command::new(bin)
-        .arg(file)
-        .output()
-        .map_err(|e| format!("spawn {}: {e}", bin.display()))?;
+    run_probe_with_limit(bin, file, run_limit())
+}
+
+/// [`run_probe`] with an explicit wall-clock limit.
+pub fn run_probe_with_limit(
+    bin: &Path,
+    file: &Path,
+    limit: Duration,
+) -> Result<Vec<Option<String>>, String> {
+    let mut cmd = Command::new(bin);
+    cmd.arg(file);
+    let run = run_with_limit(cmd, &format!("probe {}", bin.display()), limit)?;
     if !run.status.success() {
         return Err(format!(
             "probe failed ({}) on {}:\n{}",
@@ -296,6 +419,17 @@ pub fn build_and_run_probe(dir: &Path, file: &Path) -> Result<Vec<Option<String>
 mod tests {
     use super::*;
     use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    #[test]
+    fn limit_override_is_a_positive_integer_or_the_default() {
+        assert_eq!(parse_limit_secs(None, 30), 30);
+        assert_eq!(parse_limit_secs(Some("2"), 30), 2);
+        assert_eq!(parse_limit_secs(Some(" 7\n"), 600), 7);
+        for bad in ["", "0", "-3", "abc", "1.5", "99999999999999999999999"] {
+            assert_eq!(parse_limit_secs(Some(bad), 30), 30, "{bad:?}");
+        }
+        assert_eq!((DEFAULT_BUILD_SECS, DEFAULT_RUN_SECS), (600, 30));
+    }
 
     #[test]
     fn tempdir_is_removed_on_drop_and_on_panic() {

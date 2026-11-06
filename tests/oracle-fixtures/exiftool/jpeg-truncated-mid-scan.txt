@@ -1,0 +1,4 @@
+# command: exiftool -T -n -s3 -IFD0:ImageWidth -IFD0:ImageHeight -IFD0:Make -IFD0:Model -IFD0:Orientation -IFD0:XResolution -IFD0:Software -IFD0:ModifyDate -IFD0:Artist -IFD0:Copyright -ExifIFD:FNumber -ExifIFD:ISO -ExifIFD:DateTimeOriginal -ExifIFD:ExposureCompensation -ExifIFD:ExposureTime -ExifIFD:ExposureProgram -ExifIFD:FocalLength -ExifIFD:ExifImageWidth -Composite:GPSLatitude -Composite:GPSLongitude -XMP-xmp:CreatorTool -IPTC:ObjectName <file>
+# exiftool-version: 13.55
+# source: fixture jpeg-truncated-mid-scan
+4000	3000	DiamondCam	Model One	6	72	oracle-fixtures 1.0	2024:05:06 07:08:09	A. Photographer	(c) nobody	2.8	400	2024:05:06 07:08:08	-0.3333333333	-	-	-	-	-	-	-	-

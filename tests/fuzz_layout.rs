@@ -64,7 +64,7 @@ const SEEDS: [&str; 29] = [
 ];
 
 /// JPEG seed names are fixed by `examples/fuzz_seeds.rs`.
-const JPEG_SEEDS: [&str; 34] = [
+const JPEG_SEEDS: [&str; 37] = [
     "minimal",
     "soi-only",
     "fill-bytes",
@@ -100,7 +100,145 @@ const JPEG_SEEDS: [&str; 34] = [
     "jumbf-header",
     "jumbf-short",
     "seventeen-exif",
+    // SPEC-011: DEC-007 and the SPEC-010 verify gap I1.
+    "exif-sixth-byte-nonzero",
+    "exif-five-byte-payload",
+    "icc-seq-zero",
 ];
+
+/// The 63 seeds that existed before SPEC-011 (29 `tiff_ifd` + 34
+/// `jpeg_segments`): `(target, name, length, FNV-1a 64 of the bytes)`, taken
+/// from the committed files before SPEC-011 changed anything. Regenerating the
+/// seeds must leave every one of them byte-identical (std has no stable hash
+/// API with fixed output, so FNV-1a is computed by hand below).
+const PRE_SPEC_011_SEEDS: [(&str, &str, usize, u64); 63] = [
+    ("tiff_ifd", "ascii-count-past-eof", 79, 0xf9fb168ecf63c873),
+    ("tiff_ifd", "ascii-shapes", 161, 0x40686d2b31db9f20),
+    ("tiff_ifd", "chain", 62, 0x5103cafa5ffe6da1),
+    ("tiff_ifd", "chain-be", 62, 0x0e7a1e63dbe9517d),
+    ("tiff_ifd", "corrupt-subifd", 38, 0x8dad61eefdeaa933),
+    ("tiff_ifd", "count-overflow", 86, 0x0ca614f0bde8ce1c),
+    ("tiff_ifd", "count-overflow-be", 86, 0x46a5d940e364b10e),
+    ("tiff_ifd", "deep-nesting", 356, 0x86bc5a943f3da84d),
+    ("tiff_ifd", "depth-limit-exact", 266, 0x2d1ea0dcff4e5a83),
+    ("tiff_ifd", "entry-count-past-eof", 13, 0x78590c388acc9606),
+    ("tiff_ifd", "exif-gps-interop", 116, 0x662b025c31b0e761),
+    ("tiff_ifd", "exif-points-at-ifd0", 38, 0xbd387c33c1a06741),
+    ("tiff_ifd", "gps-past-eof-exif-ok", 68, 0xc46df5c8bc378c6b),
+    ("tiff_ifd", "ifd0-offset-zero", 8, 0x432d45b4d7c255d5),
+    ("tiff_ifd", "leaf-next-word", 74, 0x85063aa66064a89b),
+    ("tiff_ifd", "malformed-subifds-tag", 56, 0xb547aa14c20643ba),
+    ("tiff_ifd", "next-past-eof", 26, 0x802bbf014b971d79),
+    ("tiff_ifd", "payload-past-eof", 50, 0x24228b3502290f30),
+    ("tiff_ifd", "payload-past-eof-be", 50, 0xb936734a88d49c7a),
+    ("tiff_ifd", "pointer-bad-count", 50, 0x41444d715968b875),
+    ("tiff_ifd", "self-cycle", 26, 0x7e9d0243fc17108b),
+    ("tiff_ifd", "signed-and-float", 226, 0xc64c538111f83ebb),
+    ("tiff_ifd", "subifd", 82, 0x6f3e5be266b40257),
+    ("tiff_ifd", "subifd-be", 82, 0xb367930d24976e8b),
+    ("tiff_ifd", "subifds-count-over-cap", 38, 0x29ca58ae79ebcb95),
+    ("tiff_ifd", "truncated-header", 5, 0x50e0a90335f50b17),
+    ("tiff_ifd", "two-hop-cycle", 68, 0xba54c41e6b2198b3),
+    ("tiff_ifd", "valid-be", 126, 0xd14e46fc095cffa9),
+    ("tiff_ifd", "valid-le", 126, 0x80fe123345fe5215),
+    ("jpeg_segments", "app-after-scan", 39, 0x3c0b74c4ea41965e),
+    ("jpeg_segments", "app1-len-0", 24, 0xa71f9b333b778368),
+    ("jpeg_segments", "app1-len-1", 24, 0xd3cb0a5e7ebf3f1f),
+    ("jpeg_segments", "app1-len-2", 18, 0x03f1c23d02e437f0),
+    ("jpeg_segments", "app1-len-ffff", 65551, 0xc760bd59985fc432),
+    ("jpeg_segments", "app1-past-eof", 16, 0xf7f17c5736b2e083),
+    ("jpeg_segments", "exif-after-scan", 148, 0x10ad14693c9e9c6b),
+    ("jpeg_segments", "exif-and-xmp", 84, 0xadb9ce26dd6e2b38),
+    ("jpeg_segments", "exif-bad-tiff", 32, 0xb11d03c3f7ca9288),
+    ("jpeg_segments", "exif-in-jpeg", 148, 0x7c21afba5dea8c89),
+    (
+        "jpeg_segments",
+        "extended-xmp-pair",
+        149,
+        0x8768c0104678fa1d,
+    ),
+    (
+        "jpeg_segments",
+        "extended-xmp-short",
+        171,
+        0xc2fb6f7d331f2226,
+    ),
+    ("jpeg_segments", "ff00-stray", 28, 0x329ecc00b7b39d86),
+    ("jpeg_segments", "fill-bytes", 35, 0x0c6af3c3636b50db),
+    (
+        "jpeg_segments",
+        "icc-chunks-mismatch",
+        77,
+        0xcf9d799ac0d0f1e6,
+    ),
+    ("jpeg_segments", "icc-chunks-ok", 61, 0xd70da14137a10c3a),
+    ("jpeg_segments", "icc-iptc-jumbf", 73, 0xbe84bb0a5f3b3ec3),
+    ("jpeg_segments", "iptc-8bim", 68, 0xc12b2f98a1b99274),
+    (
+        "jpeg_segments",
+        "iptc-truncated-resource",
+        61,
+        0xd533a41f8b100bb4,
+    ),
+    ("jpeg_segments", "jumbf-header", 30, 0xbca67c1eeca4ff73),
+    ("jpeg_segments", "jumbf-short", 25, 0xb3cae112b487977c),
+    ("jpeg_segments", "many-ff00", 2202, 0x1a0b709fa81c45f2),
+    ("jpeg_segments", "many-segments", 16414, 0xc675c75e5ea8ad5e),
+    ("jpeg_segments", "minimal", 68, 0x47af3ff740559a4a),
+    ("jpeg_segments", "no-sos", 28, 0x1bdded91eb609b96),
+    (
+        "jpeg_segments",
+        "progressive-two-scans",
+        55,
+        0xd126899024ddea18,
+    ),
+    ("jpeg_segments", "seventeen-exif", 2173, 0x6e50da0b2ab0c175),
+    (
+        "jpeg_segments",
+        "signatures-under-wrong-marker",
+        168,
+        0xe0544e0816d47269,
+    ),
+    ("jpeg_segments", "soi-only", 2, 0x0a99ee07b6f68642),
+    ("jpeg_segments", "sos-no-eoi", 19, 0x0e30d944ac162394),
+    ("jpeg_segments", "stray-bytes", 34, 0xcaad01d80bb242c1),
+    ("jpeg_segments", "trailer-after-eoi", 36, 0x10a1ad72a76b0149),
+    ("jpeg_segments", "two-exif", 277, 0x546b67de32768525),
+    (
+        "jpeg_segments",
+        "xmp-and-extended-xmp",
+        228,
+        0x7cd5037ca5f8982e,
+    ),
+];
+
+fn fnv1a_64(bytes: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for &b in bytes {
+        h ^= u64::from(b);
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h
+}
+
+#[test]
+fn the_existing_63_seeds_are_byte_identical() {
+    assert_eq!(PRE_SPEC_011_SEEDS.len(), 63);
+    for (target, name, len, hash) in PRE_SPEC_011_SEEDS {
+        let path = root().join("fuzz/seeds").join(target).join(name);
+        let bytes = fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        assert_eq!(bytes.len(), len, "{target}/{name}: length");
+        assert_eq!(fnv1a_64(&bytes), hash, "{target}/{name}: contents changed");
+    }
+    // And nothing but the three SPEC-011 seeds was added.
+    let count = |t: &str| {
+        fs::read_dir(root().join("fuzz/seeds").join(t))
+            .unwrap_or_else(|e| panic!("{t}: {e}"))
+            .count()
+    };
+    assert_eq!(count("tiff_ifd"), 29);
+    assert_eq!(count("jpeg_segments"), 37);
+}
 
 #[test]
 fn fuzz_crate_is_separate_and_licensed() {
@@ -580,6 +718,114 @@ fn jpeg_harness_holds_on_fatal_and_degenerate_inputs() {
     exercise_jpeg(&[0xFF, 0xD8, 0xFF, 0xE1, 0x00, 0x04, 1, 2, 0xFF, 0xD9]);
 }
 
+/// DEC-007, both directions of the iff, on the harness itself: the shared
+/// `exif_by_signature` and the mirrored `expected_kind` agree with the library
+/// on every case, and each case is one a six-byte rule would get wrong or one a
+/// "first four bytes" rule would get wrong. A harness that only checked the
+/// canonical signature would fail the first group; one that accepted any
+/// `Exif` prefix would fail the second.
+#[test]
+fn jpeg_harness_five_byte_iff_both_directions() {
+    fn jpeg_with(marker: u8, payload: &[u8]) -> Vec<u8> {
+        let l = u16::try_from(payload.len() + 2).expect("short");
+        let mut d = vec![0xFF, 0xD8, 0xFF, marker, (l >> 8) as u8, l as u8];
+        d.extend_from_slice(payload);
+        d.extend_from_slice(&[0xFF, 0xDA, 0, 8, 1, 1, 0, 0, 0x3F, 0, 0xFF, 0xD9]);
+        d
+    }
+    let is_exif: [(&[u8], bool); 12] = [
+        (b"Exif\0\0II*\0", true),
+        (b"Exif\0\x01II*\0", true),
+        (b"Exif\0\xFF", true),
+        (b"Exif\0\0", true),
+        (b"Exif\0", false),
+        (b"Exif", false),
+        (b"Exi", false),
+        (b"", false),
+        (b"Exif\x01\0II*\0", false),
+        (b"Exif \0II*\0", false),
+        (b"exif\0\0II*\0", false),
+        (b"xExif\0\0II*\0", false),
+    ];
+    for (payload, expect) in is_exif {
+        assert_eq!(
+            metadata_invariants::exif_by_signature(0xE1, payload),
+            expect,
+            "{payload:?}"
+        );
+        let d = jpeg_with(0xE1, payload);
+        let jpeg = Jpeg::parse(&d).expect("walks");
+        assert_eq!(
+            jpeg.segments()[0].kind() == SegmentKind::Exif,
+            expect,
+            "library kind of {payload:?}"
+        );
+        assert_eq!(
+            expected_kind(0xE1, payload) == SegmentKind::Exif,
+            expect,
+            "harness kind of {payload:?}"
+        );
+        exercise_jpeg(&d);
+        // The marker half of the iff: the same payload under APP2 is never Exif.
+        assert!(!metadata_invariants::exif_by_signature(0xE2, payload));
+        exercise_jpeg(&jpeg_with(0xE2, payload));
+    }
+    // A six-byte rule and a five-byte rule differ exactly on a non-zero sixth
+    // byte: the case this test exists to keep.
+    let six = |p: &[u8]| p.starts_with(b"Exif\0\0");
+    assert!(metadata_invariants::exif_by_signature(0xE1, b"Exif\0\x01II") && !six(b"Exif\0\x01II"));
+}
+
+/// The three SPEC-011 seeds have the shapes they claim.
+#[test]
+fn new_seeds_have_the_shapes_they_claim() {
+    use exif_core::jpeg;
+    let dir = root().join("fuzz/seeds/jpeg_segments");
+    let load = |name: &str| fs::read(dir.join(name)).unwrap_or_else(|e| panic!("{name}: {e}"));
+
+    // DEC-007: `Exif\0` + a non-zero sixth byte + a valid TIFF is an Exif block.
+    let d = load("exif-sixth-byte-nonzero");
+    let m = jpeg::read(&d).unwrap();
+    let seg = m.jpeg().segments()[0];
+    assert_eq!(seg.kind(), SegmentKind::Exif);
+    assert_eq!(&seg.payload()[..6], b"Exif\0\x01");
+    assert_eq!(m.exif_blocks().len(), 1);
+    assert!(m.is_clean() && m.exif().is_some());
+
+    // DEC-007: a payload of exactly `Exif\0` is not Exif.
+    let d = load("exif-five-byte-payload");
+    let m = jpeg::read(&d).unwrap();
+    let seg = m.jpeg().segments()[0];
+    assert_eq!(seg.payload(), b"Exif\0");
+    assert_eq!(seg.kind(), SegmentKind::App(1));
+    assert!(m.exif_blocks().is_empty() && m.is_clean());
+}
+
+/// SPEC-010 verify I1: an ICC chunk with sequence number 0 is one
+/// inconsistent-set issue, naming that chunk, and nothing else.
+#[test]
+fn icc_seq_zero_seed_yields_one_mismatch_issue() {
+    use exif_core::jpeg;
+    let d = fs::read(root().join("fuzz/seeds/jpeg_segments/icc-seq-zero")).expect("seed");
+    let m = jpeg::read(&d).unwrap();
+    assert_eq!(m.regions().len(), 1);
+    assert!(matches!(
+        m.regions()[0],
+        jpeg::Region::Icc {
+            seq: 0,
+            count: 1,
+            ..
+        }
+    ));
+    let issues: Vec<(Error, usize)> = m
+        .jpeg_issues()
+        .iter()
+        .map(|i| (i.error().clone(), i.offset()))
+        .collect();
+    let at = m.jpeg().segments()[0].offset();
+    assert_eq!(issues, vec![(Error::IccChunkMismatch { at }, at)]);
+}
+
 /// Every TIFF seed, wrapped as the Exif of a JPEG, satisfies the shared
 /// invariants. This is where a TIFF-layer issue meets a clean JPEG layer (the
 /// layered view and `is_clean`), and where a JPEG-layer issue (no EOI) meets a
@@ -749,7 +995,8 @@ fn jpeg_harness_holds_on_each_extraction_guard_alone() {
 fn expected_kind(marker: u8, payload: &[u8]) -> SegmentKind {
     match marker {
         0xE0 if payload.starts_with(b"JFIF\0") => SegmentKind::Jfif,
-        0xE1 if payload.starts_with(b"Exif\0\0") => SegmentKind::Exif,
+        // DEC-007: five signature bytes and at least six bytes of payload.
+        0xE1 if payload.len() >= 6 && payload.starts_with(b"Exif\0") => SegmentKind::Exif,
         0xE1 if payload.starts_with(b"http://ns.adobe.com/xap/1.0/\0") => SegmentKind::Xmp,
         0xE1 if payload.starts_with(b"http://ns.adobe.com/xmp/extension/\0") => {
             SegmentKind::ExtendedXmp
@@ -834,7 +1081,8 @@ fn exercise_jpeg(data: &[u8]) {
         let m = seg.marker();
         assert_eq!(
             k == SegmentKind::Exif,
-            m == 0xE1 && payload.starts_with(b"Exif\0\0")
+            m == 0xE1 && payload.len() >= 6 && payload.starts_with(b"Exif\0"),
+            "Exif iff APP1, at least 6 bytes and the first five are Exif\\0 (DEC-007)"
         );
         assert_eq!(
             k == SegmentKind::Xmp,

@@ -220,6 +220,67 @@ pub fn record_text(selectors: &[&str], version: &str, source: &str, stdout: &str
     )
 }
 
+/// ExifTool's stdout and stderr, verbatim (lossy UTF-8), for one run. SPEC-011:
+/// for JPEG the warning is part of the signal, so the recorder keeps it. Only
+/// stdout is parsed for values; stderr is characterisation. The exit status is
+/// still not looked at.
+pub fn run_exiftool_full(path: &Path, selectors: &[&str]) -> Result<(String, String), ToolError> {
+    let output = run_tool("exiftool", &exiftool_args(selectors), path)?;
+    Ok((
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    ))
+}
+
+/// The placeholder that replaces the file path in recorded warnings.
+pub const FILE_PLACEHOLDER: &str = "<file>";
+
+/// ExifTool's stderr as recorded lines: one per non-empty line, with every
+/// occurrence of the input path replaced by [`FILE_PLACEHOLDER`] (so a record
+/// does not depend on where the temporary file lived).
+pub fn warning_lines(stderr: &str, path: &Path) -> Vec<String> {
+    let path_text = path.to_string_lossy();
+    stderr
+        .lines()
+        .map(|l| l.trim_end_matches('\r'))
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.replace(path_text.as_ref(), FILE_PLACEHOLDER))
+        .collect()
+}
+
+/// A JPEG record (SPEC-011): the same header as [`record_text`], then one
+/// `# stderr:` line per ExifTool warning, then stdout verbatim. The TIFF
+/// records are written by [`record_text`] and carry no stderr lines.
+pub fn record_text_jpeg(
+    selectors: &[&str],
+    version: &str,
+    source: &str,
+    warnings: &[String],
+    stdout: &str,
+) -> String {
+    let mut head = format!(
+        "# command: {}\n# exiftool-version: {version}\n# source: {source}\n",
+        exiftool_command_line(selectors)
+    );
+    for w in warnings {
+        head.push_str("# stderr: ");
+        head.push_str(w);
+        head.push('\n');
+    }
+    head.push_str(stdout);
+    head
+}
+
+/// A JPEG record for an input ExifTool is deliberately NOT run on.
+pub fn record_text_jpeg_not_run(
+    selectors: &[&str],
+    version: &str,
+    source: &str,
+    outcome: &str,
+) -> String {
+    record_text_not_run(selectors, version, source, outcome)
+}
+
 /// A record for an input ExifTool is deliberately NOT run on (it does not
 /// return; see `KNOWN_DIVERGENCES`): same header plus an `# outcome:` line
 /// stating what was measured, and no output line.
@@ -243,6 +304,9 @@ pub struct Record {
     pub source: String,
     /// Set only for an input ExifTool is not run on: what was measured.
     pub outcome: Option<String>,
+    /// ExifTool's warnings, one per `# stderr:` line (JPEG records only; the
+    /// TIFF records have none).
+    pub stderr: Vec<String>,
     /// ExifTool's stdout as recorded (everything after the `#` header).
     pub stdout: String,
 }
@@ -254,6 +318,7 @@ pub fn parse_record(text: &str) -> Option<Record> {
     let mut version = None;
     let mut source = None;
     let mut outcome = None;
+    let mut stderr = Vec::new();
     let mut rest = text;
     while let Some(after) = rest.strip_prefix("# ") {
         let (line, tail) = after.split_once('\n')?;
@@ -265,6 +330,8 @@ pub fn parse_record(text: &str) -> Option<Record> {
             source = Some(v.to_string());
         } else if let Some(v) = line.strip_prefix("outcome: ") {
             outcome = Some(v.to_string());
+        } else if let Some(v) = line.strip_prefix("stderr: ") {
+            stderr.push(v.to_string());
         }
         rest = tail;
     }
@@ -273,6 +340,7 @@ pub fn parse_record(text: &str) -> Option<Record> {
         version: version?,
         source: source?,
         outcome,
+        stderr,
         stdout: rest.to_string(),
     })
 }
@@ -305,9 +373,18 @@ pub fn parse_fields(selectors: &[&str], stdout: &str) -> Result<Vec<Option<Strin
 /// Write `bytes` to a per-process temp file named after `name` and return its
 /// path (ExifTool reads files, not stdin buffers, here). Callers remove it.
 pub fn temp_file_for(name: &str, bytes: &[u8]) -> std::io::Result<PathBuf> {
+    temp_file_with_ext(name, "tif", bytes)
+}
+
+/// [`temp_file_for`] with an explicit extension (`jpg` for the JPEG fixtures).
+pub fn temp_file_with_ext(name: &str, ext: &str, bytes: &[u8]) -> std::io::Result<PathBuf> {
+    // A per-process counter keeps two tests that run the same fixture at the
+    // same time (the live tests run in parallel) off each other's file.
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let mut path = std::env::temp_dir();
     path.push(format!(
-        "diamond-exif-oracle-{}-{name}.tif",
+        "diamond-exif-oracle-{}-{n}-{name}.{ext}",
         std::process::id()
     ));
     std::fs::write(&path, bytes)?;
@@ -322,6 +399,43 @@ mod tests {
     fn parse_fields_maps_dash_to_none_and_keeps_order() {
         let got = parse_fields(&["a", "b", "c"], "x\t-\tz\n").expect("parses");
         assert_eq!(got, vec![Some("x".into()), None, Some("z".into())]);
+    }
+
+    #[test]
+    fn jpeg_records_round_trip_their_stderr_lines() {
+        let warnings = vec![
+            "Warning: JPEG format error - <file>".to_string(),
+            "Warning: second".to_string(),
+        ];
+        let text = record_text_jpeg(&["A:b", "C:d"], "13.55", "fixture x", &warnings, "1\t-\n");
+        let rec = parse_record(&text).expect("parses");
+        assert_eq!(rec.stderr, warnings);
+        assert_eq!(rec.stdout, "1\t-\n");
+        assert_eq!(rec.source, "fixture x");
+        // A TIFF record has no stderr lines and is unchanged by this feature.
+        let tiff = record_text(&["A:b"], "13.55", "fixture y", "1\n");
+        assert_eq!(
+            tiff,
+            "# command: exiftool -T -n -s3 -A:b <file>\n# exiftool-version: 13.55\n# source: \
+             fixture y\n1\n"
+        );
+        assert!(parse_record(&tiff).expect("parses").stderr.is_empty());
+    }
+
+    #[test]
+    fn warning_lines_replace_the_path_and_drop_blank_lines() {
+        let p = Path::new("/tmp/x/y.jpg");
+        let got = warning_lines(
+            "Warning: bad - /tmp/x/y.jpg\n\n  \nError: z /tmp/x/y.jpg q\n",
+            p,
+        );
+        assert_eq!(
+            got,
+            vec![
+                "Warning: bad - <file>".to_string(),
+                "Error: z <file> q".to_string()
+            ]
+        );
     }
 
     #[test]

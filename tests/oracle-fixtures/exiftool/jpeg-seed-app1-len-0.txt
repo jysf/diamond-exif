@@ -1,0 +1,5 @@
+# command: exiftool -T -n -s3 -IFD0:ImageWidth -IFD0:ImageHeight -IFD0:Make -IFD0:Model -IFD0:Orientation -IFD0:XResolution -IFD0:Software -IFD0:ModifyDate -IFD0:Artist -IFD0:Copyright -ExifIFD:FNumber -ExifIFD:ISO -ExifIFD:DateTimeOriginal -ExifIFD:ExposureCompensation -ExifIFD:ExposureTime -ExifIFD:ExposureProgram -ExifIFD:FocalLength -ExifIFD:ExifImageWidth -Composite:GPSLatitude -Composite:GPSLongitude <file>
+# exiftool-version: 13.55
+# source: seed jpeg_segments/app1-len-0
+# stderr: Warning: JPEG format error - <file>
+-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-	-

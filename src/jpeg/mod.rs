@@ -57,7 +57,12 @@ pub const MAX_JPEG_SEGMENTS: usize = 4096;
 pub const MAX_JPEG_ISSUES: usize = 1024;
 
 const SIG_JFIF: &[u8] = b"JFIF\0";
-const SIG_EXIF: &[u8] = b"Exif\0\0";
+/// The five bytes that identify an Exif APP1 (DEC-007). The canonical sixth
+/// byte (`\0`) is not checked: ExifTool 13.55 reads such a block too.
+const SIG_EXIF: &[u8] = b"Exif\0";
+/// Bytes before the TIFF data in an Exif APP1: the signature plus the sixth
+/// (unchecked) byte. A payload shorter than this is not Exif.
+const EXIF_HEADER_LEN: usize = 6;
 const SIG_XMP: &[u8] = b"http://ns.adobe.com/xap/1.0/\0";
 const SIG_EXTENDED_XMP: &[u8] = b"http://ns.adobe.com/xmp/extension/\0";
 const SIG_ICC: &[u8] = b"ICC_PROFILE\0";
@@ -71,7 +76,8 @@ const SIG_JUMBF: &[u8] = b"JP";
 pub enum SegmentKind {
     /// APP0 `JFIF\0`.
     Jfif,
-    /// APP1 `Exif\0\0`.
+    /// APP1 whose payload is at least six bytes long and starts `Exif\0`
+    /// (DEC-007: the sixth byte, canonically `\0`, is not checked).
     Exif,
     /// APP1 `http://ns.adobe.com/xap/1.0/\0`.
     Xmp,
@@ -165,7 +171,9 @@ impl<'a> Segment<'a> {
 fn classify(m: u8, payload: &[u8]) -> SegmentKind {
     match m {
         0xE0 if payload.starts_with(SIG_JFIF) => SegmentKind::Jfif,
-        0xE1 if payload.starts_with(SIG_EXIF) => SegmentKind::Exif,
+        0xE1 if payload.len() >= EXIF_HEADER_LEN && payload.starts_with(SIG_EXIF) => {
+            SegmentKind::Exif
+        }
         0xE1 if payload.starts_with(SIG_XMP) => SegmentKind::Xmp,
         0xE1 if payload.starts_with(SIG_EXTENDED_XMP) => SegmentKind::ExtendedXmp,
         0xE2 if payload.starts_with(SIG_ICC) => SegmentKind::Icc,
@@ -586,6 +594,13 @@ mod tests {
         let cases: Vec<(u8, Vec<u8>, SegmentKind)> = vec![
             (0xE0, b"JFIF\0xx".to_vec(), SegmentKind::Jfif),
             (0xE1, b"Exif\0\0II".to_vec(), SegmentKind::Exif),
+            // DEC-007: five signature bytes; the sixth is not checked.
+            (0xE1, b"Exif\0\x01II".to_vec(), SegmentKind::Exif),
+            (0xE1, b"Exif\0\xFF".to_vec(), SegmentKind::Exif),
+            (0xE1, b"Exif\0\0".to_vec(), SegmentKind::Exif),
+            (0xE1, b"Exif\0".to_vec(), SegmentKind::App(1)),
+            (0xE1, b"Exif\x01\0II".to_vec(), SegmentKind::App(1)),
+            (0xE2, b"Exif\0\x01II".to_vec(), SegmentKind::App(2)),
             (
                 0xE1,
                 b"http://ns.adobe.com/xap/1.0/\0<x/>".to_vec(),
