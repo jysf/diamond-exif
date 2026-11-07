@@ -340,18 +340,29 @@ mod render_invariants {
         pub summary: SummaryF,
     }
 
+    /// The options of one case.
+    #[derive(Clone, Copy, Debug)]
+    pub struct CaseOpts {
+        /// `None`, or 0..=4 for the five presets and 5 for a custom set.
+        pub policy: Option<usize>,
+        /// The byte a custom category set comes from.
+        pub custom_byte: u8,
+        pub inventory: bool,
+        pub values: bool,
+        /// 0..=3, an index into `REASONS`.
+        pub reason: usize,
+    }
+
     /// Build a case: render `file` under the options with the library, and
     /// re-derive what the report must say.
-    pub fn build_case(
-        file: &[u8],
-        label: &[u8],
-        detail: &[u8],
-        policy: Option<usize>,
-        custom_byte: u8,
-        inventory: bool,
-        values: bool,
-        reason: usize,
-    ) -> Ctx {
+    pub fn build_case(file: &[u8], label: &[u8], detail: &[u8], o: CaseOpts) -> Ctx {
+        let CaseOpts {
+            policy,
+            custom_byte,
+            inventory,
+            values,
+            reason,
+        } = o;
         let mask = custom_mask(custom_byte);
         let opts = RenderOptions {
             policy: policy_of(policy, mask),
@@ -436,11 +447,13 @@ mod render_invariants {
             file,
             label,
             &file[..file.len().min(64)],
-            policy,
-            l_byte,
-            opt & 8 != 0,
-            opt & 16 != 0,
-            usize::from((opt >> 5) & 3),
+            CaseOpts {
+                policy,
+                custom_byte: l_byte,
+                inventory: opt & 8 != 0,
+                values: opt & 16 != 0,
+                reason: usize::from((opt >> 5) & 3),
+            },
         )
     }
 

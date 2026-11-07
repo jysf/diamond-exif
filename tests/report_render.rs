@@ -24,7 +24,7 @@ use exif_core::report::{
 };
 use exif_core::StripPolicy;
 use render_check::{parse_csv, parse_json, J};
-use render_invariants::build_case;
+use render_invariants::{build_case, CaseOpts};
 
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -128,7 +128,16 @@ fn every_seed_every_policy_every_option_renders_well_formed_output() {
             {
                 let reason = (n + cases) % 4;
                 let c = build_case(
-                    data, label, detail, policy, n as u8, inventory, values, reason,
+                    data,
+                    label,
+                    detail,
+                    CaseOpts {
+                        policy,
+                        custom_byte: n as u8,
+                        inventory,
+                        values,
+                        reason,
+                    },
                 );
                 // The checkers accept all three formats.
                 parse_json(c.json.as_bytes()).unwrap_or_else(|e| panic!("{name}: {e}"));
@@ -260,7 +269,18 @@ fn a_truncated_audit_previews_conservatively_end_to_end() {
         .collect();
     assert_eq!(tail, ["camera_model", "device_id"]);
     // The facts guards agree.
-    let c = build_case(&bytes, b"huge.tif", b"x", Some(1), 0, true, false, 0);
+    let c = build_case(
+        &bytes,
+        b"huge.tif",
+        b"x",
+        CaseOpts {
+            policy: Some(1),
+            custom_byte: 0,
+            inventory: true,
+            values: false,
+            reason: 0,
+        },
+    );
     assert!(render_invariants::violations(&c).is_empty());
 }
 

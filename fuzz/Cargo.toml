@@ -37,3 +37,10 @@ path = "fuzz_targets/audit.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "audit_render"
+path = "fuzz_targets/audit_render.rs"
+test = false
+doc = false
+bench = false
