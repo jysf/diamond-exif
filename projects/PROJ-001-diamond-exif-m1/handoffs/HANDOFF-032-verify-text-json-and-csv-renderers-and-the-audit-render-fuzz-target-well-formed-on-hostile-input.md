@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: verifier             # implementer | verifier
   created_at: 2026-11-06
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-015
@@ -42,14 +42,14 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
+  status: completed                # completed | blocked | rejected
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: null
-  branch: null
+  duration_minutes: 75
+  branch: worktree-agent-ae1f46310ab6829e9
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # one line if unusual (rework, no meter, etc.)
+  completed_at: 2026-11-06               # YYYY-MM-DD
+  notes: "verify APPROVED at 6723aad; tokens_total null: this sub-agent has no token meter, the orchestrator transcribes the harness's metered figure" # one line if unusual (rework, no meter, etc.)
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -107,43 +107,205 @@ If you cannot complete the task:
 
 ## Handback
 
-*Filled in by the receiving agent. The orchestrator does not reconstruct any of
-this — it transcribes it. The reflection questions are part of completion.*
+*Filled in by the cold verifier (claude-opus-5-5) of SPEC-015.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** branch `worktree-agent-ae1f46310ab6829e9`, fast-forwarded with `git merge --ff-only claude/rust-exif-metadata-6351d5` to `6723aad` (it succeeded; no merge commit). No PR, not pushed, cycle not advanced. The only change on the branch is this handback.
+- **Completed at:** 2026-11-06
+- **All acceptance criteria met?** yes. Every gate is green when I run it myself, every named test exists, the builder's mutants that I re-ran are all caught, and the deviations hold up. The findings below are gaps in DEC-010 and in the tests. None of them breaks the spec.
+- **For `verify`:** ✅ **APPROVED at `6723aad`** (code as of `61817f2`; `dc0362b` and `6723aad` change only docs). The findings are carried forward; none of them blocks.
+
+### Gates (run by me at `6723aad`, each exit status recorded directly, no pipes)
+
+All of these exited 0: `cargo fmt --all -- --check`, the fuzz graph, `rustfmt --edition 2021 --check` on the three harness files, `just lint`, `lint-fuzz`, `lint-no-allow`, `lint-red-proof`, `lint-fuzz-red-proof`, `DIAMOND_EXIF_REQUIRE_ORACLE=1 cargo test` on Homebrew stable (520 passed, 0 failed, 7 ignored) and on `~/.cargo/bin/cargo +1.90.0` (520 / 0 / 7), `RUSTFLAGS="-F unsafe_code" cargo +1.90.0 check --all-targets`, `just deny`, `deny-fuzz`, `validate`, `decisions-audit`, `cost-audit`, `just oracle-record` (`git status --porcelain` was empty afterwards).
+
+Other checks:
+- `cargo run --example fuzz_seeds` reproduces every committed seed byte for byte (clean `git status`).
+- Fuzz smoke, 60 s each, from the committed seeds:
+  - `audit`: 178,517 runs, `INITED cov: 1781 ft: 4215 corp: 73`, `DONE cov: 2021 ft: 7926 corp: 908/6188Kb`, clean.
+  - `audit_render`: 78,793 runs, `INITED cov: 3630 ft: 7579 corp: 17/3835b`, `DONE cov: 4449 ft: 14373 corp: 1031/257Kb exec/s: 1291`, clean.
+- Plants against the real libFuzzer targets, each in a scratch copy with a fresh corpus:
+  - JSON residuals printed when the preview is not reliable (`audit_render`): found while loading the seeds, by `json_facts` ("residuals printed for an unreliable preview").
+  - SPEC-014 mutant 9, `may_hold(MakerNote)` without `Gps` (`audit`): found while loading the seeds, by `preview_dispositions` ("gps: finding 8: expected kept_unread, got kept"). This confirms carried F1 is closed.
+- `git diff 105a723..HEAD`:
+  - `decisions/` changed only in `dc0362b` (the architect's DEC-010 amendment).
+  - `scripts/` is untouched.
+  - No dependency added (`Cargo.toml`, `Cargo.lock` and the fuzz lock are unchanged apart from the new `[[bin]]`).
+  - `src/audit` changes only by adding `Item::value` (but see F5).
+
+### Hand review against DEC-010 and the spec
+
+- **JSON.** Every level matches rule 5 in key order and key set: top level, `options`, `summary`, `FILE` (audited and failed), `FINDING`, `ITEM`, both `WHERE` forms, `PREVIEW`. Numbers come only from `usize::to_string`. A failed file has `container` null, `inventory_items` 0 and every other field null or empty.
+- **Status.** I rebuilt the five-status table from DEC-010 part 5 and compared it with `status_of`: they match. `unsupported` is decided first and is never clean (`src/audit/mod.rs:281`). `ok` is exactly `health().clean`.
+- **CSV.** The header and all 19 fields are correct. Rows follow rule 6, including `inventory` mode (an item row carries its finding's category and disposition; a finding past the item cap gets its own row) and the single row for a file with no row otherwise. The formula guard applies only to `label` and `value`, and checks the escaped text.
+- **Value-free default.** I planted my own payload (`PLANT-7731-XYZ`, in an ASCII Make, a 114-byte Artist, a type-7 tag and a 64-byte Software) and checked 8 combinations: policy none or `all_pii`, `inventory` and `values` each on and off. With `values` off the payload is absent from all three formats; with it on it is present in all three.
+- **Excerpts.** An ASCII tag is cut at the first NUL. A type-7 tag keeps its NUL as `\x00`. A 64-byte payload is not marked `truncated`; a 114-byte one is cut to 64 bytes and marked `truncated`.
+- **Preview and summary.** Preview residuals are null unless the preview is reliable. `summarize` follows the amendment: `None` when no file is reliable, otherwise the sum over reliable files only.
+- **Text.** The required content is present, `0 findings` is printed for a file with none, and the DEC-009 wording is used. None of the forbidden phrases appears in the text outside labels, details and excerpts.
+
+### Security review of `safe_text` and the escaping (inputs fed through all three renderers)
+
+- **Escaped correctly:**
+  - Terminal escapes: OSC title `\x1b]0;..\x07`, CSI, 8-bit CSI U+009B, and a raw 0x9B byte (written `\x9b`).
+  - All the bidi controls DEC-010 lists (U+202E, U+2067, ...), plus U+2028 and U+2029.
+  - NUL.
+  - Invalid and overlong UTF-8: `C0 80`, `C0 AF`, `E0 80 AF`, the surrogate `ED A0 80`, `F4 90 80 80` (above U+10FFFF), and `F8 ...`.
+  - Labels that try to break out: `"` and `,` quoting, `</script>`, a literal `\u0000`.
+  - A 100,000-byte label: output is linear in it.
+- **`safe_text` is total and injective.** The output can be decoded back to the input bytes:
+  - `\xNN` below 0x80 can only come from a C0 control or DEL.
+  - `\xNN` at 0x80 or above can only come from an invalid byte (every byte below 0x80 is valid UTF-8 and never part of an invalid sequence).
+  - C1 characters and the listed controls have their own `\u{..}` form.
+  - `\` and `"` are always escaped.
+  - Each byte is scanned at most twice, and the output is at most four times the input.
+- **What it lets through** (allowed by DEC-010, but the DEC's own revisit trigger covers it): see F1 and F2.
+
+### Checkers
+
+- I ran 41 extra JSON cases and 21 extra CSV cases beyond the builder's table (`scratchpad/chk`). The table:
+
+  | Checker | Accepts (valid) | Rejects (invalid) |
+  |---|---|---|
+  | JSON | `-0`; exponents; a valid surrogate pair; `\/`; raw DEL; raw U+2028; depth exactly 32 | depth 33; `+1`; `.5`; `1.`; `1e`; `NaN`; `[1,,2]`; `{"a"}`; missing comma; reversed or repeated surrogates; `\x41`; short `\u`; a BOM; a leading form feed; two documents; overlong or surrogate UTF-8 in a string; a duplicate key after unescaping; whitespace only |
+  | CSV | `a,b,`; an empty quoted field; doubled quotes; a CR or CRLF inside a quoted field | a space before a quote; junk after a closing quote; a bare CR or LF in an unquoted field; a ragged row; a missing final CRLF; an unterminated quote; non-UTF-8 |
+
+  **0 mismatches.**
+- `csv_rows` checks the formula characters on the unquoted value, so it also covers quoted fields, which is stricter than the spec asks.
+
+### Mutants
+
+Each mutant was applied in a scratch copy as an exact text replacement. I ran the lib tests plus `report_render`, `report_formats`, `render_check`, `fuzz_layout` and `policy_preview`, then restored the copy and checked it by hash. The control run was green.
+
+**Builder's mutants re-run, all caught:**
+
+| Mutant | Caught by |
+|---|---|
+| 1 | `safe_text_escapes_...`, `excerpt_of_a_non_ascii_type...`, `values_are_absent_unless_asked`, `csv_quotes_..._end_to_end`, harness, cross product |
+| 5 | the three `safe_text_*` unit tests, plants, harness, cross product, `render_guards_are_linear` |
+| 8 | `json_enumerations_are_pinned`, `a_truncated_audit...`, cross product |
+| 9 | `json_preview_residuals_are_null_unless_reliable`, golden, plants, harness, cross product, `a_truncated_audit...` |
+| 15 | both `csv_formula_guard_*` tests, harness, cross product |
+| 16 | only the unit test `csv_formula_guard_prefixes_each_trigger_character_on_hostile_fields_only` |
+| 17 | `csv_has_a_row_for_every_file_without_findings`, golden, plants, harness, cross product |
+| 22 | `audit_render_seeds_are_committed...`, plants, harness, cross product |
+| 25 | `status_of_follows_dec_010`, `summarize_counts...`, golden, plants, harness, cross product, and 4 more |
+| 26 | `json_checker_...`, plants |
+| 27 | `json_checker_...` only |
+| 28 | `json_checker_...`, plants |
+| 29 | `csv_checker_...`, plants |
+| 30 | `csv_checker_...`, plants |
+| 31 | `summarize_counts...`, `summary_residual_is_none_when_no_file_is_reliable`, plants, harness, cross product, `a_truncated_audit...` |
+| SPEC-013 rescan without tick | `audit_harness_guards_are_linear_in_the_input` (wall-clock bound) |
+
+**My own mutants:**
+
+| # | Mutant | Result |
+|---|---|---|
+| V1 | `safe_text` leaves U+2028 raw | caught: `safe_text_escapes_...`, `text_has_no_forbidden_character_or_phrase`, harness, cross product |
+| V2 | JSON label skips `safe_text` (lossy UTF-8) | caught: `json_escapes_..._end_to_end`, harness, cross product |
+| V3 | JSON number `0` written `-0` | caught: golden, `json_summary_matches_summarize`, `json_preview_residuals...`, plants, harness, cross product, linear |
+| V4 | JSON number written with an exponent (`2e1`) | caught: golden, plants, harness, cross product, linear |
+| V5 | `container` null for a JPEG | caught: `json_enumerations_are_pinned`, golden, plants, harness, cross product |
+| V6 | CSV guard also applied to the `kind` column | caught only by the unit test `csv_formula_guard_prefixes_...` (no real kind starts with a trigger character) |
+| V7 | `inventory` ignored in text only | caught: plants control, harness, cross product, `render_guards_are_linear` |
+| V8 | text excerpt cut to 64 characters **after** escaping (text only) | **SURVIVED** (F4) |
+| V9 | status computed from findings instead of health | caught: `status_of_follows_dec_010`, `summarize_counts...`, golden, and 7 more |
+| V10 | `summarize` skips Failed files | caught: `summarize_counts...`, `json_summary_matches_summarize`, golden, plants, harness, cross product |
+| V11 | text "kept" reworded and the golden file edited to match | caught: `text_words_kept_and_kept_unread_as_dec_009_requires` |
+| V12 | JSON key `after_scan` renamed and the golden file edited to match | caught: `json_has_the_pinned_key_order_at_every_level`, plants, harness, cross product |
+| V13 | harness `values_gate` loses its values-off branch | **SURVIVED** (F8) |
+| V14 | harness `json_facts` checks residual-null in one direction only | caught: `each_render_guard_goes_red_alone_when_planted` |
+| V15 | wall-clock bound made vacuous (3,600 s) plus the rescan mutant | **SURVIVED**, as expected: nothing pins the bound constant itself (F6) |
+| V16 | rescan without tick alone | caught: `audit_harness_guards_are_linear_in_the_input` |
+| V17 | JSON `residual_severity` printed when unreliable (severity only) | caught: `a_truncated_audit...`, cross product |
+| V18 | text residual line printed when unreliable | caught: `text_preview_not_reliable_line`, `summary_residual_is_none...`, golden, `a_truncated_audit...` |
+| V19 | `safe_text` leaves U+061C | caught: the unit test only |
+| V20 | JSON inventory item `category` always null | caught: plants, harness, cross product, linear |
+| V21 | ASCII NUL cut not applied | caught: both excerpt unit tests, `values_are_absent_unless_asked`, golden, plants, harness, cross product |
+| V22 | text failure detail printed raw (lossy) | caught: `audit_render_seeds...`, plants, harness, cross product, linear |
+| V23 | CSV failed row gets a container value | caught: `csv_has_a_row_for_every_file_without_findings`, golden, plants, harness, cross product |
+| V24 | summary residual also sums **unreliable** files | **SURVIVED** (F3) |
+| V25 | CSV inventory mode drops the disposition on item rows | caught: `csv_inventory_mode_rows`, plants, harness, cross product |
+| V26 | text per-file max severity always `none` | caught: golden only |
+
+### Deviations judged
+
+1. **Format tests in `tests/report_formats.rs`.** Accepted. `lint-red-proof` copies only `src/`, and every named test exists; I checked the 40 names one by one.
+2. **Class R pin for `seed-audit/audit-full-house-jpeg`.** Exact and on the right side. I ran ExifTool 13.55 myself (`-a -u -G1 -H -s`). It lists the same 14 tags as the new record, warns "Bad length ICC_Profile" and "Unknown APP11 'JP' segment", and lists no ICC or JUMBF group.
+   - `region_only(.., [Icc, Jumbf])` is ours-only, the same as the other stub Class R rows.
+   - The record diff only adds lines; no existing pin or record changed.
+   - Live parity passes with `REQUIRE_ORACLE=1`.
+   - Nit: the comment above the R-count assertion still says "eleven seed payloads".
+3. **`FailReason` from bits 5 to 6.** Accepted.
+4. **`other` IFD name unreachable.** Accepted.
+5. **Wall-clock bound and `pub` grid.** The bound catches the quadratic mutant (V16), but see F6 on flakiness. Making `H_PRESETS` etc. `pub` changes no behaviour.
+6. **`reliable_files + unreliable_files` counts audited files.** Accepted.
+7. **Excerpts past the 65,536 item cap.** Accepted; for those findings `json_facts` checks only the shape and the values-off rule.
+8. **Byte 1 serves as both label length and custom mask.** Accepted. It ties a custom set to a label length; coverage is still adequate.
+
+### Findings (severity)
+
+- **F1 (Medium, DEC-010 gap, not a code defect): formula guard bypass through a `;` separator.**
+  - What gets through: `a;=1+cmd|' /C calc'!A0` as a label, or `x;=HYPERLINK(A1)` as an excerpt, is written unquoted because it holds no comma.
+  - Why it matters: a spreadsheet in a locale that uses `;` as the separator (Excel in many European locales) splits it into a cell that starts with `=`. This is a known CSV-injection bypass.
+  - Possible fixes: quote fields that contain `;`, or apply the guard after any `;`, `,` or TAB inside hostile fields. Either changes DEC-010's "quoted iff" rule, so it is the architect's call.
+  - Related, lower: a leading space before a trigger (` =1+1`) and a full-width `＝` are not guarded; whether they evaluate depends on the spreadsheet's import options.
+- **F2 (Low, DEC-010 gap): invisible and format characters pass `safe_text`.**
+  - The characters: U+200B, U+200C, U+200D, U+2060, U+FEFF, U+00AD, U+206A to U+206F, U+FFF9 to U+FFFB, the tag characters U+E0000 to U+E007F, and variation selectors.
+  - Why it matters: `photo\u{200B}.jpg` looks the same as `photo.jpg` in the terminal and spreadsheet. None of these is a control, so text stays well-formed; the risk is a spoofed path in a report.
+  - DEC-010's Validation section names exactly this trigger for revisiting the decision.
+- **F3 (Low, test gap): the amendment's "reliable files only" sum is not pinned (V24 survives).**
+  - Every unreliable file in `summarize_counts...` and `summary_residual_is_none...` has zero findings.
+  - The harness has a single audited file, so a reliable and an unreliable file never appear together.
+  - Fix: add a test with an unreliable file that has findings beside a reliable one.
+- **F4 (Low, test gap): text excerpt content is never compared with the re-derivation (V8 survives).**
+  - `values_gate` counts text excerpts but does not compare their content.
+  - The golden payloads are 1 to 4 bytes long.
+  - Fix: a text excerpt check in `values_gate`, or a golden or unit case whose excerpt escapes to more than 64 characters.
+- **F5 (Low): `Item::value` leaks through the derived `Debug`, `PartialEq` and `Eq`.**
+  - `{:?}` of a `FileAudit`, `Item` or `Finding` now prints the whole raw payload, whatever `RenderOptions` says (a MakerNote can be 64 KB).
+  - `Item` equality now compares payload bytes as well.
+  - The doc comment on `Item` (`src/audit/mod.rs` around line 133) still says "Holds no value bytes".
+  - Fix: either a manual `Debug` that elides the value and a documented equality rule, or correct the doc comment.
+- **F6 (Low): the wall-clock bound may flake on CI.**
+  - Measured three times on this host while my mutant builds were loading the CPU: the slowest guard took about 13 ms against the 55 ms bound, so only 4.2 times headroom.
+  - The test runs in two CI jobs (ubuntu, debug build, parallel test threads), and its CI behaviour is unmeasured.
+  - Suggestion: a relative bound (the quadratic suspect against the fastest linear guard measured in the same run), or record the CI timing once.
+  - V15 shows that nothing pins the constant itself; that is inherent.
+- **F7 (Low): the largest-output measurement uses a shape that is not the CSV worst case.**
+  - The builder's shape gives every item its own finding.
+  - With `inventory` on, 65,536 items without findings plus 65,536 findings past the item cap give 131,072 CSV rows. That is about 2 times the reported 22 MB, roughly 44 MB by estimate (not measured).
+  - JSON and text are of the same order as reported, about 72 MB.
+  - Carry to SPEC-016 together with streaming.
+- **F8 (Info): the `values_gate` values-off plants do not target that direction (V13 survives).**
+  - The three values-off plants each change one format. The values-on branch's cross-format count checks reject them anyway, so the values-off branch is never what catches them.
+  - On the library side, `json_facts` still enforces JSON values-off.
+  - Fix: add a plant that adds a matching excerpt to all three formats.
+- **F9 (Info).**
+  - A text region line prints `segment=` twice (the region's segment and the origin's).
+  - The spec says `csv_rows` checks unquoted fields; the code checks all fields, which is stricter.
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null. This verifier sub-agent has no token meter in its interface; the orchestrator transcribes the harness's metered figure.
+- **Estimated USD:** null
+- **Duration (minutes):** about 75 (estimate)
+- **Source of the number:** none available to the agent (harness report via the orchestrator)
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
-- **Deviations from spec:**
-  - [list]
-- **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+- **New decisions emitted:** none (`decisions/` untouched).
+- **Deviations from spec:** none by the verifier.
+- **Follow-up work identified:** F1 and F2 as DEC-010 questions (revisit trigger). F3, F4 and F8 as test additions, which could ride with SPEC-016. F5 as a small `Item` `Debug`/doc fix. F6 as a CI timing check. F7 carried to SPEC-016 (streaming or an output cap).
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — Very little. The brief's list of own-mutant ideas was concrete. The only friction was that a worktree-isolated agent cannot run git in a scratch copy, so mutants were restored by hash instead.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — DEC-010's injection model assumes a comma separator and a "controls only" escape list. Locale separators and invisible characters belong in its threat list.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Start the mutant batch in a scratch copy first (it takes about 40 minutes) and do the hand review while it runs, which is what worked here. I would also write the semicolon and zero-width probes before reading the code, not after.
