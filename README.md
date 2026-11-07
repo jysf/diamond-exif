@@ -13,7 +13,7 @@ What works today:
 - **Reader:** strict TIFF/IFD parsing with a tolerant walk (a corrupt sub-IFD becomes a reported issue, not a failure). It reaches the Exif, GPS and Interop IFDs, labels each IFD by how it was reached, and decodes ASCII (borrowed from the input), signed-integer and float values. A total entry budget bounds memory on overlapping IFDs.
 - **JPEG:** a panic-free segment walker (markers, APPn kinds by signature, scan region, trailer; damage becomes per-segment issues). `jpeg::read` hands each Exif segment to the same TIFF engine and locates, without decoding, the XMP, extended XMP, ICC, IPTC and JUMBF regions.
 - **Audit model:** `exif_core::audit` does container sniffing, a tag and region inventory, PII findings by category and strip-policy previews. Text, JSON and CSV renderers and an incremental `ReportBuilder` produce the reports.
-- **Verification:** four fuzz targets and an ExifTool read-parity oracle (live and replayed), shown able to fail by mutated-copy red-proofs. Inventory parity against ExifTool covers 178 distinct inputs.
+- **Verification:** five fuzz targets and an ExifTool read-parity oracle (live and replayed), shown able to fail by mutated-copy red-proofs. Inventory parity against ExifTool covers 178 distinct inputs.
 - **CLI:** `exif-audit`, a read-only privacy scan with exit codes a CI job can act on (below).
 
 See `CLAUDE.md` and `AGENTS.md`. First decision: DEC-001 (tolerant-walk policy).
@@ -103,7 +103,7 @@ just test               # cargo test (oracle tests skip LOUDLY without exiftool)
 just lint               # fmt check + clippy
 just deny               # license policy (permissive-only dependencies)
 just forbid-unsafe      # re-check that no unsafe code exists
-just fuzz-smoke [TARGET]  # 60 s smoke per fuzz target (tiff_ifd, jpeg_segments, audit, audit_render)
+just fuzz-smoke [TARGET]  # 60 s smoke per fuzz target (tiff_ifd, jpeg_segments, audit, audit_render, cli_args)
 just oracle-record      # re-record ExifTool output for the parity fixtures
 just mutation-oracle    # mutated-copy red-proofs against the committed ExifTool records
 ```
