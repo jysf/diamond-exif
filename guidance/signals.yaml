@@ -194,3 +194,15 @@ signals:
     last_touched: 2026-11-06
     raised_by: claude
     notes: "At N=2. Third occurrence codifies 'every classification guard lists its classes and the harness test asserts a seed reaches each' into the spec design checklist."
+
+  - id: equality-guard-plants-must-vary-in-kind
+    type: lesson
+    summary: "Plants for an equality guard must vary in kind (length, content at the start, middle and end, order), not in one dimension, or a weaker guard passes every plant."
+    evidence: "SPEC-018 verify F1/D1 (all 8 builder-equals-oneshot plants changed the length; a length-only guard passed the suite) and D2 (High/Low alone left a swapped Low/Medium ranking alive). N=1; pairs with fuzz-guard-needs-seeds-for-every-class."
+    bar: "N=3 same-outcome"
+    status: watch
+    disposition_at: stage-close
+    first_flagged: 2026-11-07
+    last_touched: 2026-11-07
+    raised_by: claude
+    notes: "At N=1. Walk at STAGE-003 close alongside the SPEC-014/015 guard lesson."

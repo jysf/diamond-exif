@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # the verifier cannot see its own meter; the orchestrator transcribes the metered sub-agent figure
-  estimated_usd: null
-  duration_minutes: 50             # verifier's estimate; the harness wall-clock supersedes it
+  tokens_total: 212770             # orchestrator-recorded from the metered sub-agent results (subagent_tokens)
+  estimated_usd: 1.40
+  duration_minutes: 24
   branch: worktree-agent-a4b5a3aaf3af38bfd
   pr: null                         # verify cycle: verdict only, no PR
   completed_at: 2026-11-06         # YYYY-MM-DD
-  notes: "verdict PUNCH LIST at f18bbda, then APPROVED at 8d4778c after the delta verify; tokens_total null because the sub-agent cannot read its own meter, orchestrator to transcribe subagent_tokens"
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "verify PUNCH LIST at f18bbda, delta verify APPROVED at 8d4778c (final). Tokens transcribed by the orchestrator from the sub-agent metered results; the agent was resumed once and each completion reported a cumulative figure: 192,339, 212,770 (final, used); wall-clock 911,092 + 543,262 = 1,454,354 ms = 24 minutes; the verifier's own time estimates are not used"
+  synced_at: 2026-11-06
 ---
 
 # HANDOFF-034: Verify the incremental ReportBuilder
@@ -211,10 +211,10 @@ The step counter counts the guard's own comparisons. The 21 renders `build_case`
 
 ### Cost self-report
 
-- **Tokens (total):** null. The sub-agent cannot read its own meter; the orchestrator transcribes the metered `subagent_tokens` figure.
-- **Estimated USD:** null (follows the tokens)
-- **Duration (minutes):** about 50 (an estimate; the harness wall-clock supersedes it)
-- **Source of the number:** none available to the agent; the harness report, via the orchestrator
+- **Tokens (total):** 212,770 (orchestrator-transcribed; final cumulative figure after one resume)
+- **Estimated USD:** 1.40 (212,770 tokens at 6.60 USD per Mtok)
+- **Duration (minutes):** 24 (harness wall-clock, first review plus delta verify)
+- **Source of the number:** harness report (subagent_tokens)
 
 ### Drift and new artifacts
 

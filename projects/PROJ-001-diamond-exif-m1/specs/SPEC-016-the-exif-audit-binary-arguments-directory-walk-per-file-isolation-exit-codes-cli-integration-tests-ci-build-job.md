@@ -190,6 +190,13 @@ Named tests (a rename, fold or missing test is a deviation to report):
 
 Args: 1. default `--format` becomes json. 2. default `--fail-on` becomes medium. 3. default `--policy` becomes none. 4. `--json` and `--csv` accepted together. 5. repeated option accepted (last wins). 6. `--` not honoured. 7. lone `-` accepted as a path. 8. `--max-size` default 255 MiB. 9. size suffix `K` read as 1000. 10. `--help` after an invalid option gives a usage error. Exit: 11. codes 1 and 3 swapped. 12. incomplete and findings precedence swapped. 13. threshold exclusive (`>` for `>=`). 14. `--strict` ignored. 15. usage error exits 1. 16. write failure exits 0. Walk and read: 17. symlinks followed in a walk. 18. a FIFO opened. 19. directory entries not sorted. 20. depth limit 65 instead of 64. 21. size cap off by one (cap bytes rejected). 22. unsupported files read whole before sniffing. 23. `detail` uses the OS error message. 24. a missing path aborts the run. 25. hidden files skipped. 26. labels canonicalised to absolute paths. 27. all file bytes retained until the end (builder bypassed). Output: 28. stdout written per file instead of once (the run is partial on a mid-run failure); 29. a trailing newline added to JSON output.
 
+## Carried from SPEC-018 verify (Low, non-blocking)
+
+From HANDOFF-034's delta verify; SPEC-016 extends the same `audit_render` harness and `tests/fuzz_layout.rs`:
+
+- **D1.** Every `builder_equals_oneshot` same-length plant corrupts the first letter, so a guard that compares lengths plus the first 16 bytes still passes. Add a same-length plant that corrupts a letter near the END of the output (and one in the middle), on a non-forward pair; the verifier's mutant d03 (length plus first 16 bytes) must go red.
+- **D2.** `builder_summary_max_severity_is_the_maximum_in_both_add_orders` pairs High with Low only. Add a Medium file (for example an Artist) so a swapped Low/Medium ranking (mutant d06) goes red.
+
 ## Non-Goals
 
 - Any write or strip; stdin input; `--follow-symlinks`; a config file; colour or a TUI; parallel scanning; a streaming or size-bounded report; `--fail-on-residual`; `exif-pro`, licence gates, telemetry, network. Each open item is a question in `guidance/questions.yaml` (added at this design).

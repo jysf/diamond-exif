@@ -6,14 +6,14 @@
 task:
   id: SPEC-018
   type: story                      # epic | story | task | bug | chore
-  cycle: verify  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
-  complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
+  complexity_actual: M             # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: approved  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
@@ -67,15 +67,24 @@ cost:
     - cycle: build
       agent: claude-sonnet-5-5
       interface: other
-      tokens_total: 240918
-      estimated_usd: 1.59
-      duration_minutes: 25
+      tokens_total: 258098
+      estimated_usd: 1.70
+      duration_minutes: 31
       recorded_at: 2026-11-06
       notes: "tokens transcribed by the orchestrator from the sub-agent metered result (subagent_tokens 240,918; 1,528,917 ms wall-clock); the agent's own 95-minute estimate is not used"                      # one line if unusual (rework, no meter, etc.)
+    - cycle: verify
+      agent: claude-opus-5-5
+      interface: other
+      tokens_total: 212770
+      estimated_usd: 1.40
+      duration_minutes: 24
+      recorded_at: 2026-11-06
+      notes: "verify PUNCH LIST at f18bbda, delta verify APPROVED at 8d4778c (final). Tokens transcribed by the orchestrator from the sub-agent metered results; the agent was resumed once and each completion reported a cumulative figure: 192,339, 212,770 (final, used); wall-clock 911,092 + 543,262 = 1,454,354 ms = 24 minutes; the verifier's own time estimates are not used"
   totals:
-    tokens_total: 240918
-    estimated_usd: 1.59
-    session_count: 1
+    tokens_total: 470868
+    estimated_usd: 3.10
+    session_count: 2
+shipped_at: 2026-11-06
 ---
 
 # SPEC-018: Incremental report assembly: ReportBuilder with output equal to the one-shot renderers
@@ -189,25 +198,20 @@ Named tests (a rename, fold or missing test is a deviation to report):
 *Appended during **ship**. Three questions, short answers.*
 
 1. **What would I do differently next time?**
-   — <answer>
+   — Say in the design that plants for an equality guard must include same-length corruptions (every plant here changed the length, so a length-only guard passed), and that a test of a running maximum needs at least three distinct values in both orders (High and Low alone left a swapped Low/Medium ranking alive). Both were found only by the cold verifier's own mutants.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — No DEC change. Lesson, N=1: an equivalence guard's plants must vary in kind (length, content, order, position), not only in one dimension. Added to `guidance/signals.yaml` as a watch lesson; it pairs with `fuzz-guard-needs-seeds-for-every-class` (a guard is only as strong as what its inputs vary).
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — No new spec. Two Low test gaps (a same-length plant near the end of the output; a Medium file in the severity test) are carried into SPEC-016, which extends the same harness.
 
 4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
    the defect-escape distribution is greppable across specs:
    `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
    `none` (clean first try).
-   — <one word>
-   *(Runtime/operational defects — the escape-prone class — only exist once the
-   artifact meets its real host. `escaped` here is a signal to strengthen the
-   §12 behavioral pre-flight for that surface.)*
+   — verify
+   *(Two test-strength gaps, found by the verifier's own mutants; the library code itself was right first time.)*
 
 5. **What can a user do now that they couldn't before?** — one sentence,
    before → after; quote the confirming number if one exists, name the outcome
@@ -216,4 +220,4 @@ Named tests (a rename, fold or missing test is a deviation to report):
    `impact` field is transcribed from, and both halves are already written above
    (## Context is the before, ## Goal is the after): confirm the prediction,
    don't reconstruct it from memory.
-   — <answer | none>
+   — A report over many files can be assembled one file at a time with identical output to the one-shot renderers, so a binary can scan a large directory holding one input file in memory (before: every file's bytes had to stay alive until rendering; after: only the rendered fragments are kept, proved by an equivalence guard over every seed, all formats and all options).

@@ -43,13 +43,13 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: 240918             # orchestrator-recorded from the metered sub-agent result (subagent_tokens)
-  estimated_usd: 1.59
-  duration_minutes: 25
+  tokens_total: 258098             # orchestrator-recorded from the metered sub-agent results (subagent_tokens)
+  estimated_usd: 1.70
+  duration_minutes: 31
   branch: worktree-agent-ac688c9a11a7dbe7c
   pr: null                         # not opened, per the brief
   completed_at: 2026-11-06         # YYYY-MM-DD
-  notes: "tokens transcribed by the orchestrator from the sub-agent metered result (subagent_tokens 240,918; 1,528,917 ms wall-clock); the agent's own 95-minute estimate is not used"                      # one line if unusual (rework, no meter, etc.)
+  notes: "tokens transcribed by the orchestrator from the sub-agent metered results; the agent was resumed once and each completion reported a cumulative figure: 240,918, 258,098 (final, used); wall-clock 1,528,917 + 333,357 = 1,862,274 ms = 31 minutes; the agent's own 95-minute estimate is not used"
   synced_at: 2026-11-06
 ---
 
@@ -146,9 +146,9 @@ Because the one-shot functions are now the builder, a mutant in shared code chan
 
 ### Cost self-report
 
-- **Tokens (total):** 240,918 (orchestrator-transcribed from the metered sub-agent result)
-- **Estimated USD:** 1.59 (240,918 tokens at 6.60 USD per Mtok)
-- **Duration (minutes):** 25 (harness wall-clock 1,528,917 ms)
+- **Tokens (total):** 258,098 (orchestrator-transcribed; final cumulative figure after one follow-up)
+- **Estimated USD:** 1.70 (258,098 tokens at 6.60 USD per Mtok)
+- **Duration (minutes):** 31 (harness wall-clock, build run plus one follow-up)
 - **Source of the number:** harness report (subagent_tokens)
 
 ### Drift and new artifacts
