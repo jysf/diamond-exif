@@ -168,10 +168,10 @@ impl Iterator for Walker<'_> {
             };
             let produced = match step {
                 Some((path, depth)) => self.found(path, depth),
-                None => match self.args.next() {
-                    Some(arg) => self.named(arg),
-                    None => return None,
-                },
+                None => {
+                    let arg = self.args.next()?;
+                    self.named(arg)
+                }
             };
             if produced.is_some() {
                 return produced;
@@ -217,12 +217,10 @@ mod tests {
         let got = labels(&[root.as_os_str().to_owned()]);
         // Bytewise name order: ".hidden" < "Z" < "a" < "b" < "m" < "z-empty";
         // a directory is expanded in place; hidden entries are scanned.
-        let want: Vec<String> = [
-            ".hidden", "Z", "a", "b", "m/sub/p", "m/sub/q", "m/x", "m/y",
-        ]
-        .iter()
-        .map(|n| format!("{r}/{n} file"))
-        .collect();
+        let want: Vec<String> = [".hidden", "Z", "a", "b", "m/sub/p", "m/sub/q", "m/x", "m/y"]
+            .iter()
+            .map(|n| format!("{r}/{n} file"))
+            .collect();
         assert_eq!(got, want);
         // Arguments keep their order, and a path named twice appears twice.
         let a = root.join("b").into_os_string();
@@ -262,7 +260,10 @@ mod tests {
         let got = labels(&[tmp.0.as_os_str().to_owned()]);
         assert_eq!(got.len(), 2, "{got:?}");
         // In name order: the 65th directory "d" comes before the file "f".
-        assert!(got[0].ends_with("/d failed:directory depth limit"), "{got:?}");
+        assert!(
+            got[0].ends_with("/d failed:directory depth limit"),
+            "{got:?}"
+        );
         assert!(got[1].ends_with("/d/f file"), "{got:?}");
     }
 }

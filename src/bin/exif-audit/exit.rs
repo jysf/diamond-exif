@@ -98,48 +98,62 @@ mod tests {
         // (failed, unreadable, unsupported, issues, max severity, strict,
         //  fail_on, write_failed) -> code. Typed from the DEC-011 part 2 table.
         #[rustfmt::skip]
-        let grid: &[((usize, usize, usize, usize, Option<Severity>, bool, Option<Severity>, bool), u8)] = &[
+        type Cell = (
+            usize,
+            usize,
+            usize,
+            usize,
+            Option<Severity>,
+            bool,
+            Option<Severity>,
+            bool,
+        );
+        let grid: &[(Cell, u8)] = &[
             // 0: complete and under the threshold (also: no files, fail-on none).
             ((0, 0, 0, 0, NONE, false, HIGH, false), 0),
-            ((0, 0, 0, 0, NONE, true,  HIGH, false), 0),
-            ((0, 0, 0, 0, LOW,  false, HIGH, false), 0),
-            ((0, 0, 0, 0, MED,  false, HIGH, false), 0),
+            ((0, 0, 0, 0, NONE, true, HIGH, false), 0),
+            ((0, 0, 0, 0, LOW, false, HIGH, false), 0),
+            ((0, 0, 0, 0, MED, false, HIGH, false), 0),
             ((0, 0, 0, 0, HIGH, false, NONE, false), 0),
-            ((0, 0, 0, 0, HIGH, true,  NONE, false), 0),
-            ((0, 0, 0, 0, LOW,  false, MED,  false), 0),
+            ((0, 0, 0, 0, HIGH, true, NONE, false), 0),
+            ((0, 0, 0, 0, LOW, false, MED, false), 0),
             // 0: unsupported and issues are fine without --strict.
             ((0, 0, 4, 0, NONE, false, HIGH, false), 0),
-            ((0, 0, 0, 5, LOW,  false, HIGH, false), 0),
-            ((0, 0, 2, 2, NONE, false, LOW,  false), 0),
+            ((0, 0, 0, 5, LOW, false, HIGH, false), 0),
+            ((0, 0, 2, 2, NONE, false, LOW, false), 0),
             // 1: complete, at or above the threshold.
             ((0, 0, 0, 0, HIGH, false, HIGH, false), 1),
-            ((0, 0, 0, 0, HIGH, false, MED,  false), 1),
-            ((0, 0, 0, 0, HIGH, false, LOW,  false), 1),
-            ((0, 0, 0, 0, MED,  false, MED,  false), 1),
-            ((0, 0, 0, 0, MED,  false, LOW,  false), 1),
-            ((0, 0, 0, 0, LOW,  false, LOW,  false), 1),
+            ((0, 0, 0, 0, HIGH, false, MED, false), 1),
+            ((0, 0, 0, 0, HIGH, false, LOW, false), 1),
+            ((0, 0, 0, 0, MED, false, MED, false), 1),
+            ((0, 0, 0, 0, MED, false, LOW, false), 1),
+            ((0, 0, 0, 0, LOW, false, LOW, false), 1),
             ((0, 0, 3, 3, HIGH, false, HIGH, false), 1),
             // 3: incomplete (failed or unreadable), with or without findings.
             ((1, 0, 0, 0, NONE, false, HIGH, false), 3),
             ((0, 1, 0, 0, NONE, false, HIGH, false), 3),
             ((1, 1, 0, 0, NONE, false, NONE, false), 3),
             ((1, 0, 0, 0, HIGH, false, HIGH, false), 3),
-            ((0, 2, 0, 0, HIGH, false, LOW,  false), 3),
+            ((0, 2, 0, 0, HIGH, false, LOW, false), 3),
             // 3: --strict adds unsupported and issues.
-            ((0, 0, 1, 0, NONE, true,  HIGH, false), 3),
-            ((0, 0, 0, 1, NONE, true,  HIGH, false), 3),
-            ((0, 0, 1, 1, NONE, true,  NONE, false), 3),
-            ((0, 0, 1, 0, HIGH, true,  HIGH, false), 3),
-            ((0, 0, 0, 1, LOW,  true,  HIGH, false), 3),
+            ((0, 0, 1, 0, NONE, true, HIGH, false), 3),
+            ((0, 0, 0, 1, NONE, true, HIGH, false), 3),
+            ((0, 0, 1, 1, NONE, true, NONE, false), 3),
+            ((0, 0, 1, 0, HIGH, true, HIGH, false), 3),
+            ((0, 0, 0, 1, LOW, true, HIGH, false), 3),
             // 4: write failure outranks everything.
-            ((0, 0, 0, 0, NONE, false, HIGH, true),  4),
-            ((0, 0, 0, 0, HIGH, false, HIGH, true),  4),
-            ((1, 0, 0, 0, HIGH, false, HIGH, true),  4),
-            ((0, 1, 2, 3, MED,  true,  LOW,  true),  4),
-            ((0, 0, 0, 0, NONE, false, NONE, true),  4),
+            ((0, 0, 0, 0, NONE, false, HIGH, true), 4),
+            ((0, 0, 0, 0, HIGH, false, HIGH, true), 4),
+            ((1, 0, 0, 0, HIGH, false, HIGH, true), 4),
+            ((0, 1, 2, 3, MED, true, LOW, true), 4),
+            ((0, 0, 0, 0, NONE, false, NONE, true), 4),
         ];
         for (i, ((f, u, s, is, sev, strict, fail_on, wf), want)) in grid.iter().enumerate() {
-            let got = exit_code(&summary(*f, *u, *s, *is, *sev), &opts(*strict, *fail_on), *wf);
+            let got = exit_code(
+                &summary(*f, *u, *s, *is, *sev),
+                &opts(*strict, *fail_on),
+                *wf,
+            );
             assert_eq!(
                 got, *want,
                 "row {i}: failed {f} unreadable {u} unsupported {s} issues {is} max {sev:?} strict {strict} fail_on {fail_on:?} write_failed {wf}"
@@ -150,10 +164,22 @@ mod tests {
     #[test]
     fn incomplete_outranks_findings() {
         for fail_on in [LOW, MED, HIGH] {
-            assert_eq!(exit_code(&summary(1, 0, 0, 0, HIGH, ), &opts(false, fail_on), false), 3);
-            assert_eq!(exit_code(&summary(0, 1, 0, 0, HIGH), &opts(false, fail_on), false), 3);
-            assert_eq!(exit_code(&summary(0, 0, 1, 0, HIGH), &opts(true, fail_on), false), 3);
-            assert_eq!(exit_code(&summary(0, 0, 0, 1, HIGH), &opts(true, fail_on), false), 3);
+            assert_eq!(
+                exit_code(&summary(1, 0, 0, 0, HIGH,), &opts(false, fail_on), false),
+                3
+            );
+            assert_eq!(
+                exit_code(&summary(0, 1, 0, 0, HIGH), &opts(false, fail_on), false),
+                3
+            );
+            assert_eq!(
+                exit_code(&summary(0, 0, 1, 0, HIGH), &opts(true, fail_on), false),
+                3
+            );
+            assert_eq!(
+                exit_code(&summary(0, 0, 0, 1, HIGH), &opts(true, fail_on), false),
+                3
+            );
         }
     }
 
@@ -162,7 +188,10 @@ mod tests {
         for (f, u) in [(0, 0), (1, 0), (0, 1)] {
             for sev in [NONE, LOW, HIGH] {
                 for strict in [false, true] {
-                    assert_eq!(exit_code(&summary(f, u, 1, 1, sev), &opts(strict, HIGH), true), 4);
+                    assert_eq!(
+                        exit_code(&summary(f, u, 1, 1, sev), &opts(strict, HIGH), true),
+                        4
+                    );
                 }
             }
         }

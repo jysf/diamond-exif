@@ -102,6 +102,9 @@ jobs:
     env:
       # A missing ExifTool is a test FAILURE here, not a loud skip.
       DIAMOND_EXIF_REQUIRE_ORACLE: "1"
+      # A filesystem feature the CLI tests need (FIFO, symlink, sparse file,
+      # invalid UTF-8 name) that is missing is a test FAILURE here, not a skip.
+      DIAMOND_EXIF_REQUIRE_CLI_FS: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -181,13 +184,51 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [tiff_ifd, jpeg_segments, audit, audit_render]
+        target: [tiff_ifd, jpeg_segments, audit, audit_render, cli_args]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - run: cargo install cargo-fuzz --locked
       - run: mkdir -p fuzz/corpus/${{ matrix.target }}
       - run: cargo +nightly fuzz run ${{ matrix.target }} fuzz/corpus/${{ matrix.target }} fuzz/seeds/${{ matrix.target }} -- -max_total_time=60
+
+  # SPEC-016: the shipped artifact is the release binary, so CI builds exactly
+  # that (locked) and runs it the way a user would, on both platforms. The JSON
+  # check is `python3 -c 'import json'`: test-only, not a dependency.
+  exif-audit-release:
+    name: rust / exif-audit release build and smoke run (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release --locked --bin exif-audit
+      - run: ./target/release/exif-audit --version
+      # The fixtures are committed: the full-house JPEG and TIFF seeds (findings
+      # and a clean read of two supported files).
+      - name: findings give exit 1 and a valid JSON report
+        run: |
+          set -u
+          ./target/release/exif-audit --json fuzz/seeds/audit/audit-full-house-jpeg fuzz/seeds/audit/audit-full-house-tiff > report.json && code=0 || code=$?
+          echo "exit code: ${code}"
+          test "${code}" = "1"
+          python3 -c 'import json,sys; d=json.load(open("report.json")); assert d["summary"]["files"] == 2, d["summary"]; print("files:", d["summary"]["files"])'
+      - name: --fail-on none exits 0
+        run: |
+          set -u
+          ./target/release/exif-audit --json --fail-on none fuzz/seeds/audit/audit-full-house-jpeg fuzz/seeds/audit/audit-full-house-tiff > report.json && code=0 || code=$?
+          echo "exit code: ${code}"
+          test "${code}" = "0"
+      - name: a missing path is incomplete (exit 3) and a usage error is 2
+        run: |
+          set -u
+          ./target/release/exif-audit --json --fail-on none fuzz/seeds/audit/audit-full-house-jpeg does-not-exist > report.json && code=0 || code=$?
+          test "${code}" = "3"
+          ./target/release/exif-audit --nope > /dev/null 2>&1 && code=0 || code=$?
+          test "${code}" = "2"
 
   msrv:
     name: rust / MSRV (1.90.0)

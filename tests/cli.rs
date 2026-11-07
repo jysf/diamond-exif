@@ -23,9 +23,7 @@ use std::time::Duration;
 
 use cli_tree::{skip, Cmd, Out, Tree};
 use exif_core::audit::audit;
-use exif_core::report::{
-    render, FailReason, FileEntry, FileResult, Format, RenderOptions,
-};
+use exif_core::report::{render, FailReason, FileEntry, FileResult, Format, RenderOptions};
 use exif_core::StripPolicy;
 use render_check::{naive_safe_text, parse_csv, parse_json, J};
 
@@ -127,8 +125,14 @@ fn files_of(j: &J) -> Vec<(String, String, Option<String>)> {
         .iter()
         .map(|f| {
             (
-                f.get("label").and_then(J::as_str).expect("label").to_string(),
-                f.get("status").and_then(J::as_str).expect("status").to_string(),
+                f.get("label")
+                    .and_then(J::as_str)
+                    .expect("label")
+                    .to_string(),
+                f.get("status")
+                    .and_then(J::as_str)
+                    .expect("status")
+                    .to_string(),
                 f.get("failure")
                     .and_then(|x| x.get("detail"))
                     .and_then(J::as_str)
@@ -168,10 +172,22 @@ fn defaults_match_dec_011() {
     assert_eq!(out.text(), want);
     // The expectation is not insensitive to the options it pins.
     for other in [
-        RenderOptions { values: true, ..default_opts() },
-        RenderOptions { inventory: true, ..default_opts() },
-        RenderOptions { policy: None, ..default_opts() },
-        RenderOptions { policy: Some(StripPolicy::Gps), ..default_opts() },
+        RenderOptions {
+            values: true,
+            ..default_opts()
+        },
+        RenderOptions {
+            inventory: true,
+            ..default_opts()
+        },
+        RenderOptions {
+            policy: None,
+            ..default_opts()
+        },
+        RenderOptions {
+            policy: Some(StripPolicy::Gps),
+            ..default_opts()
+        },
     ] {
         assert_ne!(expect(Format::Text, other, &entries), want, "{other:?}");
     }
@@ -204,14 +220,28 @@ fn report_equals_the_library_render_in_every_format() {
     ];
     let option_sets: [(&[&str], RenderOptions); 4] = [
         (&[], default_opts()),
-        (&["--policy", "none"], RenderOptions { policy: None, ..default_opts() }),
+        (
+            &["--policy", "none"],
+            RenderOptions {
+                policy: None,
+                ..default_opts()
+            },
+        ),
         (
             &["--policy=gps", "--inventory"],
-            RenderOptions { policy: Some(StripPolicy::Gps), inventory: true, values: false },
+            RenderOptions {
+                policy: Some(StripPolicy::Gps),
+                inventory: true,
+                values: false,
+            },
         ),
         (
             &["--values", "--inventory", "--policy", "everything"],
-            RenderOptions { policy: Some(StripPolicy::Everything), inventory: true, values: true },
+            RenderOptions {
+                policy: Some(StripPolicy::Everything),
+                inventory: true,
+                values: true,
+            },
         ),
     ];
     for (fargs, format) in formats {
@@ -270,7 +300,11 @@ fn output_is_deterministic_and_independent_of_cwd() {
     assert_eq!(from_inside.text(), render_with("."));
     // Not canonicalised: a path with `..` keeps it.
     let dotted = Cmd::new().args(["dir/../dir/sub"]).cwd(&t.root).run();
-    assert!(dotted.text().contains("file: dir/../dir/sub/pic.png"), "{}", dotted.text());
+    assert!(
+        dotted.text().contains("file: dir/../dir/sub/pic.png"),
+        "{}",
+        dotted.text()
+    );
     // No absolute path, no temp directory, in any output.
     let root = t.root.display().to_string();
     for out in [&from_parent, &from_inside, &dotted] {
@@ -280,7 +314,12 @@ fn output_is_deterministic_and_independent_of_cwd() {
     // An absolute argument is printed as given (not resolved further).
     let abs = t.path("dir/sub");
     let out = Cmd::new().args([abs.as_os_str()]).cwd(&t.root).run();
-    assert!(out.text().contains(&format!("file: {}/pic.png", abs.display())), "{}", out.text());
+    assert!(
+        out.text()
+            .contains(&format!("file: {}/pic.png", abs.display())),
+        "{}",
+        out.text()
+    );
 }
 
 // ── exit codes, usage, help ─────────────────────────────────────────────────
@@ -293,29 +332,94 @@ fn exit_code_for_each_row_of_the_table() {
         args: Vec<&'static str>,
         want: i32,
     }
-    let row = |name, files, args, want| Row { name, files, args, want };
+    let row = |name, files, args, want| Row {
+        name,
+        files,
+        args,
+        want,
+    };
     let rows = vec![
         // 0: complete and under the threshold.
         row("an empty directory", vec![], vec!["dir"], 0),
-        row("a low-only file under fail-on high", vec![("low.tif", low_only())], vec!["dir"], 0),
-        row("a png (unsupported is not failure)", vec![("a.png", png())], vec!["dir"], 0),
-        row("an issues jpeg without --strict", vec![("i.jpg", issues_jpeg())], vec!["dir"], 0),
-        row("findings with --fail-on none", vec![("h.jpg", house())], vec!["--fail-on", "none", "dir"], 0),
+        row(
+            "a low-only file under fail-on high",
+            vec![("low.tif", low_only())],
+            vec!["dir"],
+            0,
+        ),
+        row(
+            "a png (unsupported is not failure)",
+            vec![("a.png", png())],
+            vec!["dir"],
+            0,
+        ),
+        row(
+            "an issues jpeg without --strict",
+            vec![("i.jpg", issues_jpeg())],
+            vec!["dir"],
+            0,
+        ),
+        row(
+            "findings with --fail-on none",
+            vec![("h.jpg", house())],
+            vec!["--fail-on", "none", "dir"],
+            0,
+        ),
         // 1: complete, at or above the threshold.
-        row("the full-house jpeg", vec![("h.jpg", house())], vec!["dir"], 1),
-        row("a high-only file", vec![("high.tif", high_only())], vec!["dir"], 1),
-        row("findings next to unsupported files", vec![("h.jpg", house()), ("a.png", png())], vec!["dir"], 1),
+        row(
+            "the full-house jpeg",
+            vec![("h.jpg", house())],
+            vec!["dir"],
+            1,
+        ),
+        row(
+            "a high-only file",
+            vec![("high.tif", high_only())],
+            vec!["dir"],
+            1,
+        ),
+        row(
+            "findings next to unsupported files",
+            vec![("h.jpg", house()), ("a.png", png())],
+            vec!["dir"],
+            1,
+        ),
         // 3: incomplete.
-        row("an unreadable jpeg", vec![("u.jpg", unreadable_jpeg())], vec!["dir"], 3),
+        row(
+            "an unreadable jpeg",
+            vec![("u.jpg", unreadable_jpeg())],
+            vec!["dir"],
+            3,
+        ),
         row("a missing path", vec![], vec!["dir/nope"], 3),
-        row("a png under --strict", vec![("a.png", png())], vec!["--strict", "dir"], 3),
-        row("an issues jpeg under --strict", vec![("i.jpg", issues_jpeg())], vec!["--strict", "dir"], 3),
-        row("a failure beside findings", vec![("h.jpg", house()), ("u.jpg", unreadable_jpeg())], vec!["dir"], 3),
+        row(
+            "a png under --strict",
+            vec![("a.png", png())],
+            vec!["--strict", "dir"],
+            3,
+        ),
+        row(
+            "an issues jpeg under --strict",
+            vec![("i.jpg", issues_jpeg())],
+            vec!["--strict", "dir"],
+            3,
+        ),
+        row(
+            "a failure beside findings",
+            vec![("h.jpg", house()), ("u.jpg", unreadable_jpeg())],
+            vec!["dir"],
+            3,
+        ),
         // 2: usage.
         row("no path", vec![], vec![], 2),
         row("an unknown option", vec![], vec!["--nope", "dir"], 2),
         row("json with csv", vec![], vec!["--json", "--csv", "dir"], 2),
-        row("a bad value", vec![], vec!["--fail-on", "critical", "dir"], 2),
+        row(
+            "a bad value",
+            vec![],
+            vec!["--fail-on", "critical", "dir"],
+            2,
+        ),
     ];
     for r in rows {
         let t = Tree::new("exit");
@@ -324,7 +428,14 @@ fn exit_code_for_each_row_of_the_table() {
             t.write(&format!("dir/{name}"), bytes);
         }
         let out = Cmd::new().args(&r.args).cwd(&t.root).run();
-        assert_eq!(exit_of(&out), r.want, "{}: stdout {} stderr {}", r.name, out.text(), out.err_text());
+        assert_eq!(
+            exit_of(&out),
+            r.want,
+            "{}: stdout {} stderr {}",
+            r.name,
+            out.text(),
+            out.err_text()
+        );
     }
     // 3 again, from a real permission error (not when root can read anything).
     #[cfg(unix)]
@@ -334,7 +445,9 @@ fn exit_code_for_each_row_of_the_table() {
         let p = t.write("dir/locked.jpg", &house());
         fs::set_permissions(&p, fs::Permissions::from_mode(0o000)).expect("chmod");
         if fs::File::open(&p).is_ok() {
-            skip("this user can read a mode 000 file (root?): the permission-denied row is not run");
+            skip(
+                "this user can read a mode 000 file (root?): the permission-denied row is not run",
+            );
         } else {
             let (out, files) = run_json(&t, &["dir"]);
             assert_eq!(exit_of(&out), 3);
@@ -358,14 +471,27 @@ fn precedence_incomplete_over_findings_and_write_failure_over_all() {
     t.write("pad.png", &png());
     // Findings alone: 1. Findings plus a missing path: 3, not 1.
     assert_eq!(exit_of(&Cmd::new().args(["dir"]).cwd(&t.root).run()), 1);
-    assert_eq!(exit_of(&Cmd::new().args(["dir", "missing"]).cwd(&t.root).run()), 3);
-    assert_eq!(exit_of(&Cmd::new().args(["missing", "dir"]).cwd(&t.root).run()), 3);
+    assert_eq!(
+        exit_of(&Cmd::new().args(["dir", "missing"]).cwd(&t.root).run()),
+        3
+    );
+    assert_eq!(
+        exit_of(&Cmd::new().args(["missing", "dir"]).cwd(&t.root).run()),
+        3
+    );
     // Usage outranks the rest (nothing is scanned).
-    let usage = Cmd::new().args(["dir", "missing", "--bogus"]).cwd(&t.root).run();
+    let usage = Cmd::new()
+        .args(["dir", "missing", "--bogus"])
+        .cwd(&t.root)
+        .run();
     assert_eq!(exit_of(&usage), 2);
     assert!(usage.stdout.is_empty());
     // A report that cannot be written: 4 over findings and over incomplete.
-    for args in [&["dir"][..], &["dir", "missing"], &["--fail-on", "none", "dir"]] {
+    for args in [
+        &["dir"][..],
+        &["dir", "missing"],
+        &["--fail-on", "none", "dir"],
+    ] {
         let code = closed_pipe_run(&t, args);
         assert_eq!(code, Some(4), "{args:?}");
     }
@@ -379,8 +505,10 @@ fn closed_pipe_run(t: &Tree, args: &[&str]) -> Option<i32> {
     const PADS: usize = 2500;
     let mut c = Command::new(cli_tree::BIN);
     c.current_dir(&t.root).args(args);
-    c.args(std::iter::repeat("pad.png").take(PADS));
-    c.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
+    c.args(std::iter::repeat_n("pad.png", PADS));
+    c.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
     let mut child = c.spawn().expect("spawn");
     drop(child.stdout.take());
     let start = std::time::Instant::now();
@@ -403,11 +531,17 @@ fn write_failure_exits_four() {
     t.write("pad.png", &png());
     // A closed pipe: the report is far larger than a pipe buffer.
     assert_eq!(closed_pipe_run(&t, &["--csv"]), Some(4));
-    assert_eq!(closed_pipe_run(&t, &["--json", "--fail-on", "none"]), Some(4));
+    assert_eq!(
+        closed_pipe_run(&t, &["--json", "--fail-on", "none"]),
+        Some(4)
+    );
     // A full disk, where /dev/full exists.
     if Path::new("/dev/full").exists() {
         use std::process::{Command, Stdio};
-        let full = fs::OpenOptions::new().write(true).open("/dev/full").expect("open /dev/full");
+        let full = fs::OpenOptions::new()
+            .write(true)
+            .open("/dev/full")
+            .expect("open /dev/full");
         let status = Command::new(cli_tree::BIN)
             .current_dir(&t.root)
             .arg("dir")
@@ -443,7 +577,9 @@ fn usage_error_has_empty_stdout_and_a_message_on_stderr() {
     #[cfg(unix)]
     {
         use std::os::unix::ffi::OsStringExt;
-        cases.push(vec![std::ffi::OsString::from_vec(b"--bad\xFF\xFE".to_vec())]);
+        cases.push(vec![std::ffi::OsString::from_vec(
+            b"--bad\xFF\xFE".to_vec(),
+        )]);
     }
     for args in cases {
         let out = Cmd::new().args(&args).cwd(&t.root).run();
@@ -459,7 +595,12 @@ fn usage_error_has_empty_stdout_and_a_message_on_stderr() {
 #[test]
 fn help_and_version_exit_zero() {
     let t = Tree::new("help");
-    for args in [&["--help"][..], &["-h"], &["--bogus", "--help"], &["--format", "xml", "-h", "p"]] {
+    for args in [
+        &["--help"][..],
+        &["-h"],
+        &["--bogus", "--help"],
+        &["--format", "xml", "-h", "p"],
+    ] {
         let out = Cmd::new().args(args).cwd(&t.root).run();
         assert_eq!(exit_of(&out), 0, "{args:?}");
         assert!(out.stderr.is_empty(), "{args:?}: {}", out.err_text());
@@ -477,13 +618,21 @@ fn help_and_version_exit_zero() {
 #[test]
 fn usage_text_matches_the_golden_file() {
     let t = Tree::new("golden");
-    let golden =
-        fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/usage.txt")).expect("golden");
+    let golden = fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/usage.txt"))
+        .expect("golden");
     let out = Cmd::new().args(["--help"]).cwd(&t.root).run();
-    assert_eq!(out.stdout, golden, "tests/golden/usage.txt is the --help output byte for byte");
+    assert_eq!(
+        out.stdout, golden,
+        "tests/golden/usage.txt is the --help output byte for byte"
+    );
     // Every option's default is in the text, quoted from DEC-011.
     let text = out.text();
-    for default in ["[default: text]", "[default: all-pii]", "[default: high]", "[default: 256M]"] {
+    for default in [
+        "[default: text]",
+        "[default: all-pii]",
+        "[default: high]",
+        "[default: 256M]",
+    ] {
         assert!(text.contains(default), "{default}");
     }
     assert_eq!(text.matches("[default: off]").count(), 3);
@@ -491,19 +640,29 @@ fn usage_text_matches_the_golden_file() {
 
 #[test]
 fn strict_turns_unsupported_and_issues_into_exit_three() {
-    for (name, bytes) in [("a.png", png()), ("i.jpg", issues_jpeg()), ("n.txt", b"text".to_vec())] {
+    for (name, bytes) in [
+        ("a.png", png()),
+        ("i.jpg", issues_jpeg()),
+        ("n.txt", b"text".to_vec()),
+    ] {
         let t = Tree::new("strict");
         t.write(&format!("dir/{name}"), &bytes);
         let plain = Cmd::new().args(["dir"]).cwd(&t.root).run();
         let strict = Cmd::new().args(["--strict", "dir"]).cwd(&t.root).run();
         assert_eq!(exit_of(&plain), 0, "{name} without --strict");
         assert_eq!(exit_of(&strict), 3, "{name} with --strict");
-        assert_eq!(plain.stdout, strict.stdout, "--strict changes the exit code, not the report");
+        assert_eq!(
+            plain.stdout, strict.stdout,
+            "--strict changes the exit code, not the report"
+        );
     }
     // A clean file stays 0 under --strict.
     let t = Tree::new("strict-clean");
     t.write("dir/low.tif", &low_only());
-    assert_eq!(exit_of(&Cmd::new().args(["--strict", "dir"]).cwd(&t.root).run()), 0);
+    assert_eq!(
+        exit_of(&Cmd::new().args(["--strict", "dir"]).cwd(&t.root).run()),
+        0
+    );
 }
 
 #[test]
@@ -517,10 +676,23 @@ fn fail_on_thresholds_are_inclusive_and_none_disables() {
     assert_eq!(audit(&medium).max_severity(), Some(Severity::Medium));
     assert_eq!(audit(&high).max_severity(), Some(Severity::High));
     // (file, [(fail-on, expected exit)])
-    let grid: [(&str, &Vec<u8>, [(&str, i32); 4]); 3] = [
-        ("low", &low, [("none", 0), ("low", 1), ("medium", 0), ("high", 0)]),
-        ("medium", &medium, [("none", 0), ("low", 1), ("medium", 1), ("high", 0)]),
-        ("high", &high, [("none", 0), ("low", 1), ("medium", 1), ("high", 1)]),
+    type Cells = [(&'static str, i32); 4];
+    let grid: [(&str, &Vec<u8>, Cells); 3] = [
+        (
+            "low",
+            &low,
+            [("none", 0), ("low", 1), ("medium", 0), ("high", 0)],
+        ),
+        (
+            "medium",
+            &medium,
+            [("none", 0), ("low", 1), ("medium", 1), ("high", 0)],
+        ),
+        (
+            "high",
+            &high,
+            [("none", 0), ("low", 1), ("medium", 1), ("high", 1)],
+        ),
     ];
     for (name, bytes, cells) in grid {
         let t = Tree::new("failon");
@@ -561,7 +733,8 @@ fn symlink_in_a_walk_is_reported_not_followed() {
     symlink("missing-target", t.path("dir/dangling")).expect("symlink");
     let (out, files) = run_json(&t, &["dir"]);
     assert_eq!(exit_of(&out), 3);
-    let want = |l: &str, s: &str, d: Option<&str>| (l.to_string(), s.to_string(), d.map(str::to_string));
+    let want =
+        |l: &str, s: &str, d: Option<&str>| (l.to_string(), s.to_string(), d.map(str::to_string));
     assert_eq!(
         files,
         vec![
@@ -576,9 +749,18 @@ fn symlink_in_a_walk_is_reported_not_followed() {
     let j = json_of(&out);
     let f = &j.get("files").and_then(J::as_arr).expect("files")[1];
     let failure = f.get("failure").expect("failure");
-    assert_eq!(failure.get("reason").and_then(J::as_str), Some("not_regular_file"));
+    assert_eq!(
+        failure.get("reason").and_then(J::as_str),
+        Some("not_regular_file")
+    );
     // The target was not read twice: one audited house file.
-    assert_eq!(files.iter().filter(|f| f.1 != "failed" && f.0.ends_with(".jpg")).count(), 1);
+    assert_eq!(
+        files
+            .iter()
+            .filter(|f| f.1 != "failed" && f.0.ends_with(".jpg"))
+            .count(),
+        1
+    );
 }
 
 #[cfg(unix)]
@@ -623,8 +805,15 @@ fn symlink_loop_does_not_hang() {
     let files = files_of(&json_of(&out));
     for name in ["self", "up", "p1", "p2"] {
         let label = format!("dir/{name}");
-        let f = files.iter().find(|f| f.0 == label).unwrap_or_else(|| panic!("{label}"));
-        assert_eq!((f.1.as_str(), f.2.as_deref()), ("failed", Some("symlink not followed")), "{label}");
+        let f = files
+            .iter()
+            .find(|f| f.0 == label)
+            .unwrap_or_else(|| panic!("{label}"));
+        assert_eq!(
+            (f.1.as_str(), f.2.as_deref()),
+            ("failed", Some("symlink not followed")),
+            "{label}"
+        );
     }
     // A loop named on the command line cannot be followed either: a failed
     // entry with a text from the closed list, never a hang.
@@ -638,7 +827,10 @@ fn symlink_loop_does_not_hang() {
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].1, "failed");
     let closed = ["not found", "permission denied", "read error", "i/o error"];
-    assert!(closed.contains(&files[0].2.as_deref().expect("detail")), "{files:?}");
+    assert!(
+        closed.contains(&files[0].2.as_deref().expect("detail")),
+        "{files:?}"
+    );
 }
 
 #[cfg(unix)]
@@ -662,14 +854,22 @@ fn fifo_is_reported_and_never_opened() {
     }
     let limit = Duration::from_secs(20);
     // Opening the FIFO for reading would block forever: the limit kills it.
-    let out = Cmd::new().args(["--json", "dir"]).cwd(&t.root).limit(limit).run();
+    let out = Cmd::new()
+        .args(["--json", "dir"])
+        .cwd(&t.root)
+        .limit(limit)
+        .run();
     assert_eq!(exit_of(&out), 3);
     let files = files_of(&json_of(&out));
     assert_eq!(
         files,
         vec![
             ("dir/a.png".into(), "unsupported".into(), None),
-            ("dir/pipe".into(), "failed".into(), Some("not a regular file".into())),
+            (
+                "dir/pipe".into(),
+                "failed".into(),
+                Some("not a regular file".into())
+            ),
         ]
     );
     let j = json_of(&out);
@@ -679,11 +879,19 @@ fn fifo_is_reported_and_never_opened() {
         .and_then(J::as_str);
     assert_eq!(reason, Some("not_regular_file"));
     // Named on the command line it is the same.
-    let named = Cmd::new().args(["--json", "dir/pipe"]).cwd(&t.root).limit(limit).run();
+    let named = Cmd::new()
+        .args(["--json", "dir/pipe"])
+        .cwd(&t.root)
+        .limit(limit)
+        .run();
     assert_eq!(exit_of(&named), 3);
     assert_eq!(
         files_of(&json_of(&named)),
-        vec![("dir/pipe".into(), "failed".into(), Some("not a regular file".into()))]
+        vec![(
+            "dir/pipe".into(),
+            "failed".into(),
+            Some("not a regular file".into())
+        )]
     );
 }
 
@@ -704,7 +912,11 @@ fn depth_limit_is_reported() {
     assert_eq!(
         files,
         vec![
-            (deep.clone(), "failed".into(), Some("directory depth limit".into())),
+            (
+                deep.clone(),
+                "failed".into(),
+                Some("directory depth limit".into())
+            ),
             (format!("{rel}/f.png"), "unsupported".into(), None),
         ]
     );
@@ -733,14 +945,21 @@ fn missing_path_is_failed_and_others_still_run() {
         vec![
             ("nope".into(), "failed".into(), Some("not found".into())),
             ("dir/a.png".into(), "unsupported".into(), None),
-            ("also/nope".into(), "failed".into(), Some("not found".into())),
+            (
+                "also/nope".into(),
+                "failed".into(),
+                Some("not found".into())
+            ),
             ("b.png".into(), "unsupported".into(), None),
         ]
     );
     // The empty string is a path too, and missing.
     let (out, files) = run_json(&t, &["", "b.png"]);
     assert_eq!(exit_of(&out), 3);
-    assert_eq!(files[0], ("".into(), "failed".into(), Some("not found".into())));
+    assert_eq!(
+        files[0],
+        ("".into(), "failed".into(), Some("not found".into()))
+    );
     assert_eq!(files.len(), 2);
 }
 
@@ -763,15 +982,26 @@ fn size_cap_is_exact() {
         let (out, files) = run_json(&t, &["--max-size", arg, file]);
         if audited {
             assert_eq!(exit_of(&out), 0, "--max-size {arg} {file}: {files:?}");
-            assert_eq!(files, vec![(file.into(), "ok".into(), None)], "--max-size {arg} {file}");
+            assert_eq!(
+                files,
+                vec![(file.into(), "ok".into(), None)],
+                "--max-size {arg} {file}"
+            );
         } else {
             assert_eq!(exit_of(&out), 3, "--max-size {arg} {file}");
             assert_eq!(
                 files,
-                vec![(file.into(), "failed".into(), Some("larger than --max-size".into()))],
+                vec![(
+                    file.into(),
+                    "failed".into(),
+                    Some("larger than --max-size".into())
+                )],
                 "--max-size {arg} {file}"
             );
-            let reason = json_of(&out).get("files").and_then(J::as_arr).expect("files")[0]
+            let reason = json_of(&out)
+                .get("files")
+                .and_then(J::as_arr)
+                .expect("files")[0]
                 .get("failure")
                 .and_then(|f| f.get("reason"))
                 .and_then(J::as_str)
@@ -802,7 +1032,10 @@ fn sparse_file(t: &Tree, rel: &str, head: &[u8], len: u64) -> Option<std::path::
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        let allocated = fs::metadata(&p).expect("metadata").blocks().saturating_mul(512);
+        let allocated = fs::metadata(&p)
+            .expect("metadata")
+            .blocks()
+            .saturating_mul(512);
         if allocated > 64 * 1024 * 1024 {
             skip("this filesystem does not keep a 2 GiB file sparse");
             let _ = fs::remove_file(&p);
@@ -816,11 +1049,19 @@ fn sparse_file(t: &Tree, rel: &str, head: &[u8], len: u64) -> Option<std::path::
 fn non_image_is_not_read_whole() {
     let t = Tree::new("sparse");
     let gib2: u64 = 2 * 1024 * 1024 * 1024;
-    let Some(_) = sparse_file(&t, "dir/big.png", &png(), gib2) else { return };
-    let Some(_) = sparse_file(&t, "dir/big.bin", &[0; 16], gib2) else { return };
+    let Some(_) = sparse_file(&t, "dir/big.png", &png(), gib2) else {
+        return;
+    };
+    let Some(_) = sparse_file(&t, "dir/big.bin", &[0; 16], gib2) else {
+        return;
+    };
     let limit = Duration::from_secs(60);
     // Default cap (256 MiB): a 2 GiB non-image is `unsupported`, not too large.
-    let out = Cmd::new().args(["--json", "dir"]).cwd(&t.root).limit(limit).run();
+    let out = Cmd::new()
+        .args(["--json", "dir"])
+        .cwd(&t.root)
+        .limit(limit)
+        .run();
     assert_eq!(exit_of(&out), 0);
     assert_eq!(
         files_of(&json_of(&out)),
@@ -839,19 +1080,32 @@ fn non_image_is_not_read_whole() {
     assert_eq!(exit_of(&out), 0);
     match peak {
         Some(p) => {
-            println!("peak resident memory over two 2 GiB non-images: {} MB", p / 1_000_000);
+            println!(
+                "peak resident memory over two 2 GiB non-images: {} MB",
+                p / 1_000_000
+            );
             assert!(p < 100_000_000, "peak {p} bytes: the file was read");
         }
         None => skip("/usr/bin/time is not available to measure the peak memory"),
     }
     // A 2 GiB TIFF header is rejected from its length, not read: `too_large`.
     let tiff_head = b"II*\x00\x08\x00\x00\x00";
-    let Some(_) = sparse_file(&t, "tiff/big.tif", tiff_head, gib2) else { return };
-    let out = Cmd::new().args(["--json", "tiff"]).cwd(&t.root).limit(limit).run();
+    let Some(_) = sparse_file(&t, "tiff/big.tif", tiff_head, gib2) else {
+        return;
+    };
+    let out = Cmd::new()
+        .args(["--json", "tiff"])
+        .cwd(&t.root)
+        .limit(limit)
+        .run();
     assert_eq!(exit_of(&out), 3);
     assert_eq!(
         files_of(&json_of(&out)),
-        vec![("tiff/big.tif".into(), "failed".into(), Some("larger than --max-size".into()))]
+        vec![(
+            "tiff/big.tif".into(),
+            "failed".into(),
+            Some("larger than --max-size".into())
+        )]
     );
 }
 
@@ -863,19 +1117,33 @@ fn peak_memory_does_not_grow_with_the_number_of_files() {
         segments.push(report_inputs::seg(0xFE, &vec![b'x'; 65_000]));
     }
     let big = report_inputs::jpeg(&segments);
-    assert!(big.len() > 2_000_000 && big.len() < 2_100_000, "{}", big.len());
+    assert!(
+        big.len() > 2_000_000 && big.len() < 2_100_000,
+        "{}",
+        big.len()
+    );
     let t = Tree::new("memory");
     t.write("dir/f000.jpg", &big);
     for i in 1..200 {
         fs::copy(t.path("dir/f000.jpg"), t.path(&format!("dir/f{i:03}.jpg"))).expect("copy");
     }
-    let (out, peak) = Cmd::new().args(["--json", "dir"]).cwd(&t.root).run_measured();
+    let (out, peak) = Cmd::new()
+        .args(["--json", "dir"])
+        .cwd(&t.root)
+        .run_measured();
     assert_eq!(exit_of(&out), 1, "stderr: {}", out.err_text());
     assert_eq!(files_of(&json_of(&out)).len(), 200);
     match peak {
         Some(p) => {
-            println!("peak resident memory over 200 x {} bytes: {} MB", big.len(), p / 1_000_000);
-            assert!(p < 100_000_000, "peak resident memory {p} bytes is not under 100 MB");
+            println!(
+                "peak resident memory over 200 x {} bytes: {} MB",
+                big.len(),
+                p / 1_000_000
+            );
+            assert!(
+                p < 100_000_000,
+                "peak resident memory {p} bytes is not under 100 MB"
+            );
         }
         None => skip("/usr/bin/time is not available to measure the peak memory"),
     }
@@ -919,7 +1187,10 @@ fn assert_csv_is_well_formed(out: &Out, labels: &[Vec<u8>]) {
     assert_eq!(got, want);
     // No label cell starts a formula.
     for label in &got {
-        assert!(!label.starts_with(['=', '+', '-', '@', '\t', '\r']), "{label:?}");
+        assert!(
+            !label.starts_with(['=', '+', '-', '@', '\t', '\r']),
+            "{label:?}"
+        );
     }
 }
 
@@ -930,7 +1201,10 @@ fn hostile_file_names_give_well_formed_json_and_csv() {
         t.write(&format!("dir/{name}"), &png());
     }
     // In a walk: labels are `dir/` plus the name.
-    let labels: Vec<Vec<u8>> = HOSTILE_NAMES.iter().map(|n| format!("dir/{n}").into_bytes()).collect();
+    let labels: Vec<Vec<u8>> = HOSTILE_NAMES
+        .iter()
+        .map(|n| format!("dir/{n}").into_bytes())
+        .collect();
     let json = Cmd::new().args(["--json", "dir"]).cwd(&t.root).run();
     assert_eq!(exit_of(&json), 0, "{}", json.err_text());
     let mut got: Vec<String> = files_of(&json_of(&json)).into_iter().map(|f| f.0).collect();
@@ -943,21 +1217,35 @@ fn hostile_file_names_give_well_formed_json_and_csv() {
     assert_csv_is_well_formed(&csv, &labels);
     // And the text report has no raw control or bidi characters.
     let text = Cmd::new().args(["dir"]).cwd(&t.root).run().text();
-    assert!(text.chars().all(|c| !c.is_control() || c == '\n'), "a control character leaked");
+    assert!(
+        text.chars().all(|c| !c.is_control() || c == '\n'),
+        "a control character leaked"
+    );
     assert!(!text.contains('\u{202E}') && !text.contains('\u{200B}') && !text.contains('\u{FEFF}'));
     // Named directly from inside `dir`, the label starts with the hostile
     // character (a formula start): the CSV quotes it. `--` lets a path start
     // with `-`.
-    let inside: Vec<&str> = HOSTILE_NAMES.iter().copied().filter(|n| !n.contains('\n')).collect();
+    let inside: Vec<&str> = HOSTILE_NAMES
+        .iter()
+        .copied()
+        .filter(|n| !n.contains('\n'))
+        .collect();
     let mut a2 = vec!["--csv", "--"];
     a2.extend(inside.iter().copied());
     let out = Cmd::new().args(&a2).cwd(&t.path("dir")).run();
     assert_eq!(exit_of(&out), 0, "{}", out.err_text());
     let labels: Vec<Vec<u8>> = inside.iter().map(|n| n.as_bytes().to_vec()).collect();
     assert_csv_is_well_formed(&out, &labels);
-    let formula_starts = inside.iter().filter(|n| n.starts_with(['=', '@', '+', '-'])).count();
+    let formula_starts = inside
+        .iter()
+        .filter(|n| n.starts_with(['=', '@', '+', '-']))
+        .count();
     assert_eq!(formula_starts, 4);
-    let json = Cmd::new().args(["--json", "--"]).args(&inside).cwd(&t.path("dir")).run();
+    let json = Cmd::new()
+        .args(["--json", "--"])
+        .args(&inside)
+        .cwd(&t.path("dir"))
+        .run();
     let mut got: Vec<String> = files_of(&json_of(&json)).into_iter().map(|f| f.0).collect();
     let mut want: Vec<String> = labels.iter().map(|l| naive_safe_text(l)).collect();
     got.sort();
@@ -978,7 +1266,8 @@ fn invalid_utf8_file_names_are_escaped() {
         // macOS filesystems refuse non-UTF-8 names; Linux must accept them.
         println!("SKIP: this filesystem refuses an invalid UTF-8 file name");
         assert!(
-            cfg!(target_os = "macos") || std::env::var("DIAMOND_EXIF_REQUIRE_CLI_FS").as_deref() != Ok("1"),
+            cfg!(target_os = "macos")
+                || std::env::var("DIAMOND_EXIF_REQUIRE_CLI_FS").as_deref() != Ok("1"),
             "DIAMOND_EXIF_REQUIRE_CLI_FS=1 and an invalid UTF-8 name is refused"
         );
         return;
@@ -1012,24 +1301,40 @@ fn no_seed_makes_the_binary_panic() {
                 target.file_name().to_string_lossy(),
                 seed.file_name().to_string_lossy()
             );
-            fs::copy(seed.path(), t.path(&format!("seeds/{name}"))).or_else(|_| {
-                fs::create_dir_all(t.path("seeds")).and_then(|()| fs::copy(seed.path(), t.path(&format!("seeds/{name}"))))
-            }).expect("copy a seed");
+            fs::copy(seed.path(), t.path(&format!("seeds/{name}")))
+                .or_else(|_| {
+                    fs::create_dir_all(t.path("seeds"))
+                        .and_then(|()| fs::copy(seed.path(), t.path(&format!("seeds/{name}"))))
+                })
+                .expect("copy a seed");
             n += 1;
         }
     }
     assert!(n >= 150, "only {n} seeds found");
     for format in ["text", "json", "csv"] {
         for extra in [&[][..], &["--strict"], &["--policy", "none"]] {
-            let mut args = vec!["--format", format, "--inventory", "--values", "--policy", "everything"];
+            let mut args = vec![
+                "--format",
+                format,
+                "--inventory",
+                "--values",
+                "--policy",
+                "everything",
+            ];
             if !extra.is_empty() {
                 args.retain(|a| *a != "everything" && *a != "--policy");
                 args.extend_from_slice(extra);
             }
             args.push("seeds");
             let out = Cmd::new().args(&args).cwd(&t.root).run();
-            let code = out.code.unwrap_or_else(|| panic!("killed by a signal: {args:?}"));
-            assert!([0, 1, 3].contains(&code), "{args:?} exited {code}; stderr: {}", out.err_text());
+            let code = out
+                .code
+                .unwrap_or_else(|| panic!("killed by a signal: {args:?}"));
+            assert!(
+                [0, 1, 3].contains(&code),
+                "{args:?} exited {code}; stderr: {}",
+                out.err_text()
+            );
             assert_ne!(code, 101);
             assert!(out.stderr.is_empty(), "{args:?}: {}", out.err_text());
             assert!(!out.stdout.is_empty());

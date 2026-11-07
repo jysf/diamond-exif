@@ -1304,6 +1304,127 @@ fn render_seeds() -> Vec<(String, Vec<u8>)> {
         .collect()
 }
 
+/// One `cli_args` input: the arguments joined with NUL (see
+/// `fuzz/shared/cli_invariants.rs`, `split_args`). Zero bytes are not loaded
+/// by libFuzzer, so "no arguments" is not a seed; a lone NUL is two empty
+/// arguments.
+fn cli_seed(args: &[&[u8]]) -> Vec<u8> {
+    args.join(&0u8)
+}
+
+/// The `cli_args` target's seeds (SPEC-016): the DEC-011 grammar.
+fn cli_seeds() -> Vec<(String, Vec<u8>)> {
+    let long = {
+        let mut v = b"--".to_vec();
+        v.extend(std::iter::repeat_n(b'a', 400));
+        v
+    };
+    let all: Vec<(&str, Vec<u8>)> = vec![
+        ("cli-defaults", cli_seed(&[b"dir"])),
+        ("cli-two-paths", cli_seed(&[b"a", b"b"])),
+        (
+            "cli-every-option",
+            cli_seed(&[
+                b"--format",
+                b"json",
+                b"--policy",
+                b"gps",
+                b"--fail-on",
+                b"low",
+                b"--strict",
+                b"--values",
+                b"--inventory",
+                b"--max-size",
+                b"512K",
+                b"a",
+                b"b",
+            ]),
+        ),
+        (
+            "cli-equals-forms",
+            cli_seed(&[
+                b"--format=csv",
+                b"--policy=none",
+                b"--fail-on=none",
+                b"--max-size=1G",
+                b"p",
+            ]),
+        ),
+        (
+            "cli-json-shorthand",
+            cli_seed(&[b"--json", b"--policy=all-pii", b"p"]),
+        ),
+        (
+            "cli-csv-shorthand",
+            cli_seed(&[b"p", b"--csv", b"--fail-on", b"medium"]),
+        ),
+        (
+            "cli-double-dash",
+            cli_seed(&[b"--strict", b"--", b"--json", b"-", b"-h", b"--"]),
+        ),
+        (
+            "cli-repeat-option",
+            cli_seed(&[b"--policy", b"gps", b"--policy", b"all", b"p"]),
+        ),
+        (
+            "cli-repeat-flag",
+            cli_seed(&[b"--strict", b"p", b"--strict"]),
+        ),
+        (
+            "cli-json-csv-conflict",
+            cli_seed(&[b"--json", b"--csv", b"p"]),
+        ),
+        (
+            "cli-format-json-conflict",
+            cli_seed(&[b"--format", b"text", b"--json", b"p"]),
+        ),
+        ("cli-size-zero", cli_seed(&[b"--max-size", b"0", b"p"])),
+        (
+            "cli-size-overflow",
+            cli_seed(&[b"--max-size", b"18446744073709551616", b"p"]),
+        ),
+        (
+            "cli-size-lowercase-suffix",
+            cli_seed(&[b"--max-size", b"1k", b"p"]),
+        ),
+        (
+            "cli-size-largest-fit",
+            cli_seed(&[b"--max-size", b"17179869183G", b"p"]),
+        ),
+        ("cli-lone-dash", cli_seed(&[b"-"])),
+        (
+            "cli-help-after-invalid",
+            cli_seed(&[b"--bogus", b"--format", b"xml", b"--help"]),
+        ),
+        ("cli-version", cli_seed(&[b"-V", b"p"])),
+        ("cli-help-and-version", cli_seed(&[b"--version", b"-h"])),
+        (
+            "cli-help-after-dash-dash",
+            cli_seed(&[b"--", b"--help", b"-V"]),
+        ),
+        ("cli-no-path", cli_seed(&[b"--strict", b"--values"])),
+        ("cli-missing-value", cli_seed(&[b"p", b"--format"])),
+        ("cli-flag-with-value", cli_seed(&[b"--strict=1", b"p"])),
+        (
+            "cli-value-looks-like-option",
+            cli_seed(&[b"--policy", b"--json", b"p"]),
+        ),
+        ("cli-unknown-option", cli_seed(&[b"-x", b"p"])),
+        (
+            "cli-hostile-bytes",
+            cli_seed(&[b"--\xFF\xFE", b"\x1B[31m", b"--format=\xE2\x82", b"\xFF"]),
+        ),
+        (
+            "cli-non-utf8-value",
+            cli_seed(&[b"--format", b"\xFF", b"p"]),
+        ),
+        ("cli-two-empty-arguments", cli_seed(&[b"", b""])),
+        ("cli-empty-path-and-option", cli_seed(&[b"", b"--strict"])),
+        ("cli-long-unknown-option", cli_seed(&[&long, b"p"])),
+    ];
+    all.into_iter().map(|(n, b)| (n.to_string(), b)).collect()
+}
+
 fn main() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/tiff_ifd");
     fs::create_dir_all(&dir).expect("create seeds dir");
@@ -1372,4 +1493,12 @@ fn main() {
         fs::write(rdir.join(name), bytes).expect("write seed");
     }
     println!("wrote {} seeds to {}", rseeds.len(), rdir.display());
+
+    let cdir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/cli_args");
+    fs::create_dir_all(&cdir).expect("create seeds dir");
+    let cseeds = cli_seeds();
+    for (name, bytes) in &cseeds {
+        fs::write(cdir.join(name), bytes).expect("write seed");
+    }
+    println!("wrote {} seeds to {}", cseeds.len(), cdir.display());
 }

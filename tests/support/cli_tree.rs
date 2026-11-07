@@ -140,7 +140,11 @@ impl Cmd {
         if !time.is_file() {
             return (self.run(), None);
         }
-        let flag = if cfg!(target_os = "macos") { "-l" } else { "-v" };
+        let flag = if cfg!(target_os = "macos") {
+            "-l"
+        } else {
+            "-v"
+        };
         let mut c = Command::new(time);
         c.arg(flag).arg(BIN).args(&self.args);
         if let Some(cwd) = &self.cwd {

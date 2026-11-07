@@ -241,10 +241,7 @@ impl Opt {
     }
 
     fn takes_value(self) -> bool {
-        matches!(
-            self,
-            Opt::Format | Opt::Policy | Opt::FailOn | Opt::MaxSize
-        )
+        matches!(self, Opt::Format | Opt::Policy | Opt::FailOn | Opt::MaxSize)
     }
 }
 
@@ -291,9 +288,7 @@ fn parse_run(args: &[OsString]) -> Result<Options, UsageError> {
             continue;
         }
         if bytes == b"-" {
-            return Err(err(
-                "a lone - is not a path (stdin is not read)".to_string()
-            ));
+            return Err(err("a lone - is not a path (stdin is not read)".to_string()));
         }
         // `--name=value`: split at the first `=`.
         let (name_bytes, inline): (&[u8], Option<&[u8]>) = match bytes
@@ -434,7 +429,11 @@ mod tests {
         // Typed from DEC-011 part 1, not from the code.
         let o = run(&["p"]);
         assert_eq!(o.format, Format::Text, "--format default text");
-        assert_eq!(o.policy, Some(StripPolicy::AllPii), "--policy default all-pii");
+        assert_eq!(
+            o.policy,
+            Some(StripPolicy::AllPii),
+            "--policy default all-pii"
+        );
         assert_eq!(o.fail_on, Some(Severity::High), "--fail-on default high");
         assert!(!o.strict, "--strict default off");
         assert!(!o.values, "--values default off");
@@ -445,41 +444,87 @@ mod tests {
 
     #[test]
     fn every_option_and_its_equals_form() {
-        let cases: [(&[&str], Box<dyn Fn(&Options) -> bool>); 24] = [
-            (&["--format", "text", "p"], Box::new(|o| o.format == Format::Text)),
-            (&["--format", "json", "p"], Box::new(|o| o.format == Format::Json)),
-            (&["--format=csv", "p"], Box::new(|o| o.format == Format::Csv)),
+        type Check = Box<dyn Fn(&Options) -> bool>;
+        let cases: [(&[&str], Check); 24] = [
+            (
+                &["--format", "text", "p"],
+                Box::new(|o| o.format == Format::Text),
+            ),
+            (
+                &["--format", "json", "p"],
+                Box::new(|o| o.format == Format::Json),
+            ),
+            (
+                &["--format=csv", "p"],
+                Box::new(|o| o.format == Format::Csv),
+            ),
             (&["--json", "p"], Box::new(|o| o.format == Format::Json)),
             (&["--csv", "p"], Box::new(|o| o.format == Format::Csv)),
-            (&["--policy", "gps", "p"], Box::new(|o| o.policy == Some(StripPolicy::Gps))),
+            (
+                &["--policy", "gps", "p"],
+                Box::new(|o| o.policy == Some(StripPolicy::Gps)),
+            ),
             (
                 &["--policy=gps-and-device", "p"],
                 Box::new(|o| o.policy == Some(StripPolicy::GpsAndDevice)),
             ),
-            (&["--policy", "all-pii", "p"], Box::new(|o| o.policy == Some(StripPolicy::AllPii))),
-            (&["--policy=all", "p"], Box::new(|o| o.policy == Some(StripPolicy::All))),
+            (
+                &["--policy", "all-pii", "p"],
+                Box::new(|o| o.policy == Some(StripPolicy::AllPii)),
+            ),
+            (
+                &["--policy=all", "p"],
+                Box::new(|o| o.policy == Some(StripPolicy::All)),
+            ),
             (
                 &["--policy", "everything", "p"],
                 Box::new(|o| o.policy == Some(StripPolicy::Everything)),
             ),
             (&["--policy=none", "p"], Box::new(|o| o.policy.is_none())),
-            (&["--fail-on", "none", "p"], Box::new(|o| o.fail_on.is_none())),
-            (&["--fail-on=low", "p"], Box::new(|o| o.fail_on == Some(Severity::Low))),
+            (
+                &["--fail-on", "none", "p"],
+                Box::new(|o| o.fail_on.is_none()),
+            ),
+            (
+                &["--fail-on=low", "p"],
+                Box::new(|o| o.fail_on == Some(Severity::Low)),
+            ),
             (
                 &["--fail-on", "medium", "p"],
                 Box::new(|o| o.fail_on == Some(Severity::Medium)),
             ),
-            (&["--fail-on=high", "p"], Box::new(|o| o.fail_on == Some(Severity::High))),
+            (
+                &["--fail-on=high", "p"],
+                Box::new(|o| o.fail_on == Some(Severity::High)),
+            ),
             (&["--strict", "p"], Box::new(|o| o.strict)),
             (&["--values", "p"], Box::new(|o| o.values)),
             (&["--inventory", "p"], Box::new(|o| o.inventory)),
-            (&["--max-size", "1000", "p"], Box::new(|o| o.max_size == 1000)),
-            (&["--max-size=2K", "p"], Box::new(|o| o.max_size == 2048)),
-            (&["p", "--strict"], Box::new(|o| o.strict && o.paths == os(&["p"]))),
-            (&["a", "--values", "b"], Box::new(|o| o.paths == os(&["a", "b"]))),
             (
-                &["--format=json", "--policy=none", "--fail-on=none", "--strict", "--values",
-                    "--inventory", "--max-size=7", "x", "y"],
+                &["--max-size", "1000", "p"],
+                Box::new(|o| o.max_size == 1000),
+            ),
+            (&["--max-size=2K", "p"], Box::new(|o| o.max_size == 2048)),
+            (
+                &["p", "--strict"],
+                Box::new(|o| o.strict && o.paths == os(&["p"])),
+            ),
+            (
+                &["a", "--values", "b"],
+                Box::new(|o| o.paths == os(&["a", "b"])),
+            ),
+            (
+                &[
+                    "--format=json",
+                    "--policy=none",
+                    "--fail-on=none",
+                    "--strict",
+                    "--values",
+                    "--inventory",
+                    "--max-size=7",
+                    "x",
+                    "y",
+                ],
                 Box::new(|o| {
                     o.format == Format::Json
                         && o.policy.is_none()
@@ -491,9 +536,12 @@ mod tests {
                         && o.paths == os(&["x", "y"])
                 }),
             ),
-            (&["--fail-on", "low", "--policy", "gps", "p"], Box::new(|o| {
-                o.fail_on == Some(Severity::Low) && o.policy == Some(StripPolicy::Gps)
-            })),
+            (
+                &["--fail-on", "low", "--policy", "gps", "p"],
+                Box::new(|o| {
+                    o.fail_on == Some(Severity::Low) && o.policy == Some(StripPolicy::Gps)
+                }),
+            ),
         ];
         for (args, check) in &cases {
             let o = run(args);
@@ -526,7 +574,10 @@ mod tests {
             assert!(m.starts_with("bad value for --"), "{args:?}: {m}");
         }
         // A flag takes no value; a value option needs one.
-        assert_eq!(usage(&["--strict=1", "p"]), "--strict does not take a value");
+        assert_eq!(
+            usage(&["--strict=1", "p"]),
+            "--strict does not take a value"
+        );
         assert_eq!(usage(&["--json=x", "p"]), "--json does not take a value");
         assert_eq!(usage(&["p", "--format"]), "missing value for --format");
         assert_eq!(usage(&["p", "--max-size"]), "missing value for --max-size");
@@ -534,7 +585,10 @@ mod tests {
         assert_eq!(usage(&["--nope", "p"]), "unknown option: --nope");
         assert_eq!(usage(&["-x", "p"]), "unknown option: -x");
         assert_eq!(usage(&["-hV=1", "p"]), "unknown option: -hV=1");
-        assert_eq!(usage(&["--Format=json", "p"]), "unknown option: --Format=json");
+        assert_eq!(
+            usage(&["--Format=json", "p"]),
+            "unknown option: --Format=json"
+        );
     }
 
     #[test]
@@ -553,7 +607,10 @@ mod tests {
             assert_eq!(usage(args), conflict, "{args:?}");
         }
         // The same selection twice is a repeat.
-        assert_eq!(usage(&["--json", "--json", "p"]), "--json given more than once");
+        assert_eq!(
+            usage(&["--json", "--json", "p"]),
+            "--json given more than once"
+        );
         assert_eq!(
             usage(&["--format", "text", "--format", "json", "p"]),
             "--format given more than once"
@@ -571,7 +628,11 @@ mod tests {
             (&["--inventory", "--inventory", "p"], "--inventory"),
             (&["--max-size", "1", "--max-size=2", "p"], "--max-size"),
         ] {
-            assert_eq!(usage(args), format!("{name} given more than once"), "{args:?}");
+            assert_eq!(
+                usage(args),
+                format!("{name} given more than once"),
+                "{args:?}"
+            );
         }
     }
 
@@ -597,7 +658,10 @@ mod tests {
     #[test]
     fn lone_dash_and_no_path_are_usage_errors() {
         assert_eq!(usage(&["-"]), "a lone - is not a path (stdin is not read)");
-        assert_eq!(usage(&["p", "-"]), "a lone - is not a path (stdin is not read)");
+        assert_eq!(
+            usage(&["p", "-"]),
+            "a lone - is not a path (stdin is not read)"
+        );
         assert_eq!(usage(&[]), "no path given");
         assert_eq!(usage(&["--strict"]), "no path given");
         assert_eq!(usage(&["--format", "json"]), "no path given");
@@ -657,11 +721,20 @@ mod tests {
         assert_eq!(parse(&os(&["-V"])), Outcome::Version);
         assert_eq!(parse(&os(&["--version"])), Outcome::Version);
         assert_eq!(parse(&os(&["--bogus", "-V"])), Outcome::Version);
-        assert_eq!(parse(&os(&["--json", "--csv", "--version"])), Outcome::Version);
+        assert_eq!(
+            parse(&os(&["--json", "--csv", "--version"])),
+            Outcome::Version
+        );
         // Only before the first `--`.
         assert!(matches!(parse(&os(&["--", "-h"])), Outcome::Run(_)));
-        assert!(matches!(parse(&os(&["--bogus", "--", "-h"])), Outcome::Usage(_)));
-        assert!(matches!(parse(&os(&["--bogus", "--", "-V"])), Outcome::Usage(_)));
+        assert!(matches!(
+            parse(&os(&["--bogus", "--", "-h"])),
+            Outcome::Usage(_)
+        ));
+        assert!(matches!(
+            parse(&os(&["--bogus", "--", "-V"])),
+            Outcome::Usage(_)
+        ));
         // An option value that is `--help` still counts as the argument.
         assert_eq!(parse(&os(&["--format", "--help"])), Outcome::Help);
         // A near miss is not help.
@@ -685,7 +758,7 @@ mod tests {
             hostile.push(OsString::from_vec(b"--format=\xFF".to_vec()));
         }
         for h in hostile {
-            let m = match parse(&[h.clone()]) {
+            let m = match parse(std::slice::from_ref(&h)) {
                 Outcome::Usage(e) => e.message(),
                 other => panic!("{h:?}: {other:?}"),
             };
@@ -711,15 +784,27 @@ mod tests {
         ] {
             assert!(USAGE.contains(needle), "{needle}");
         }
-        assert_eq!(USAGE.matches("[default: off]").count(), 3, "strict, values, inventory");
+        assert_eq!(
+            USAGE.matches("[default: off]").count(),
+            3,
+            "strict, values, inventory"
+        );
         for opt in [
-            "--format", "--json", "--csv", "--policy", "--fail-on", "--strict", "--values",
-            "--inventory", "--max-size", "--help", "--version",
+            "--format",
+            "--json",
+            "--csv",
+            "--policy",
+            "--fail-on",
+            "--strict",
+            "--values",
+            "--inventory",
+            "--max-size",
+            "--help",
+            "--version",
         ] {
             assert!(USAGE.contains(opt), "{opt}");
         }
         assert!(USAGE.ends_with('\n') && !USAGE.ends_with("\n\n"));
         assert!(USAGE.is_ascii());
     }
-
 }

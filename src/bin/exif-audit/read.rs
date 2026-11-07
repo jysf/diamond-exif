@@ -186,10 +186,16 @@ pub(crate) mod tests {
         // The pinned cells.
         assert_eq!(io_failure(ErrorKind::NotFound, false).detail, "not found");
         assert_eq!(io_failure(ErrorKind::NotFound, true).detail, "not found");
-        assert_eq!(io_failure(ErrorKind::PermissionDenied, false).detail, "permission denied");
+        assert_eq!(
+            io_failure(ErrorKind::PermissionDenied, false).detail,
+            "permission denied"
+        );
         assert_eq!(io_failure(ErrorKind::Other, false).detail, "i/o error");
         assert_eq!(io_failure(ErrorKind::Other, true).detail, "read error");
-        assert_eq!(io_failure(ErrorKind::InvalidData, true).detail, "read error");
+        assert_eq!(
+            io_failure(ErrorKind::InvalidData, true).detail,
+            "read error"
+        );
         // The list itself, typed from DEC-011 part 4, all ASCII.
         assert_eq!(
             CLOSED_LIST,
@@ -244,12 +250,17 @@ pub(crate) mod tests {
         assert!(matches!(read_file(&p("at-cap.jpg"), 100), Loaded::Whole(v) if v.len() == 100));
         assert!(matches!(
             read_file(&p("over-cap.jpg"), 100),
-            Loaded::Failed(Failure { reason: FailReason::TooLarge, detail: "larger than --max-size" })
+            Loaded::Failed(Failure {
+                reason: FailReason::TooLarge,
+                detail: "larger than --max-size"
+            })
         ));
         // A cap smaller than the head: a 5-byte JPEG at cap 4 is too large, at 5 read.
         fs::write(p("five.jpg"), jpeg_of(5)).unwrap();
         assert!(matches!(read_file(&p("five.jpg"), 5), Loaded::Whole(v) if v.len() == 5));
-        assert!(matches!(read_file(&p("five.jpg"), 4), Loaded::Failed(f) if f.reason == FailReason::TooLarge));
+        assert!(
+            matches!(read_file(&p("five.jpg"), 4), Loaded::Failed(f) if f.reason == FailReason::TooLarge)
+        );
         // A non-image larger than the cap is answered from its head.
         let mut big = b"\x89PNG\r\n\x1a\n".to_vec();
         big.resize(10_000, 0);
