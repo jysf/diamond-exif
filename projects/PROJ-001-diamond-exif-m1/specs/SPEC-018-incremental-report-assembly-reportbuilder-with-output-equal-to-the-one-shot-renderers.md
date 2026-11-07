@@ -6,7 +6,7 @@
 task:
   id: SPEC-018
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: verify  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -63,11 +63,19 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: 350000
-  sessions: []
+  sessions:
+    - cycle: build
+      agent: claude-sonnet-5-5
+      interface: other
+      tokens_total: 240918
+      estimated_usd: 1.59
+      duration_minutes: 25
+      recorded_at: 2026-11-06
+      notes: "tokens transcribed by the orchestrator from the sub-agent metered result (subagent_tokens 240,918; 1,528,917 ms wall-clock); the agent's own 95-minute estimate is not used"                      # one line if unusual (rework, no meter, etc.)
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 240918
+    estimated_usd: 1.59
+    session_count: 1
 ---
 
 # SPEC-018: Incremental report assembly: ReportBuilder with output equal to the one-shot renderers

@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads (not visible to this agent; orchestrator transcribes the metered figure)
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: 95             # estimate
+  tokens_total: 240918             # orchestrator-recorded from the metered sub-agent result (subagent_tokens)
+  estimated_usd: 1.59
+  duration_minutes: 25
   branch: worktree-agent-ac688c9a11a7dbe7c
   pr: null                         # not opened, per the brief
   completed_at: 2026-11-06         # YYYY-MM-DD
-  notes: "tokens_total null: a subagent cannot see its own token count; orchestrator transcribes the metered figure"                      # one line if unusual (rework, no meter, etc.)
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "tokens transcribed by the orchestrator from the sub-agent metered result (subagent_tokens 240,918; 1,528,917 ms wall-clock); the agent's own 95-minute estimate is not used"                      # one line if unusual (rework, no meter, etc.)
+  synced_at: 2026-11-06
 ---
 
 # HANDOFF-033: Incremental report assembly: ReportBuilder with output equal to the one-shot renderers
@@ -146,10 +146,10 @@ Because the one-shot functions are now the builder, a mutant in shared code chan
 
 ### Cost self-report
 
-- **Tokens (total):** null. A subagent cannot see its own token count; the orchestrator transcribes the metered figure from the `Agent` result.
-- **Estimated USD:** null
-- **Duration (minutes):** about 95 (estimate)
-- **Source of the number:** none available to this agent (harness meters the subagent)
+- **Tokens (total):** 240,918 (orchestrator-transcribed from the metered sub-agent result)
+- **Estimated USD:** 1.59 (240,918 tokens at 6.60 USD per Mtok)
+- **Duration (minutes):** 25 (harness wall-clock 1,528,917 ms)
+- **Source of the number:** harness report (subagent_tokens)
 
 ### Drift and new artifacts
 
