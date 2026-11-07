@@ -20,7 +20,8 @@ use std::path::PathBuf;
 
 use exif_core::audit::{audit, Category, MAX_INVENTORY_ITEMS};
 use exif_core::report::{
-    render_csv, render_json, render_text, FailReason, FileEntry, FileResult, RenderOptions,
+    render, render_csv, render_json, render_text, FailReason, FileEntry, FileResult, Format,
+    RenderOptions, ReportBuilder,
 };
 use exif_core::StripPolicy;
 use render_check::{parse_csv, parse_json, J};
@@ -71,6 +72,64 @@ fn golden_text_json_csv_match_byte_for_byte() {
             got.as_bytes(),
             &want[..],
             "{ext}: the output differs from {}; a golden file changes only by a deliberate edit",
+            path.display()
+        );
+    }
+}
+
+/// SPEC-018: the builder reproduces every golden file, in all three formats,
+/// through `render` and through `ReportBuilder` directly; the golden files
+/// themselves are the committed bytes (the one-shot test above is unchanged).
+#[test]
+fn golden_files_are_unchanged_and_the_builder_reproduces_them() {
+    let jpeg = report_inputs::full_house_jpeg();
+    let png = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    let files = vec![
+        FileEntry {
+            label: b"photos/full-house.jpg",
+            result: FileResult::Audited(audit(&jpeg)),
+        },
+        FileEntry {
+            label: b"photos/screenshot.png",
+            result: FileResult::Audited(audit(&png)),
+        },
+        FileEntry {
+            label: b"photos/locked.jpg",
+            result: FileResult::Failed {
+                reason: FailReason::Unreadable,
+                detail: b"permission denied (os error 13)",
+            },
+        },
+    ];
+    let opts = RenderOptions {
+        policy: Some(StripPolicy::AllPii),
+        inventory: false,
+        values: true,
+    };
+    for (ext, format) in [
+        ("txt", Format::Text),
+        ("json", Format::Json),
+        ("csv", Format::Csv),
+    ] {
+        let path = root().join(format!("tests/golden/report-full-house.{ext}"));
+        let want = fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        // Through the builder, adding the files one at a time.
+        let mut b = ReportBuilder::new(format, opts);
+        for f in &files {
+            b.add(f);
+        }
+        assert_eq!(b.len(), 3);
+        assert_eq!(
+            b.finish().as_bytes(),
+            &want[..],
+            "{ext}: the builder differs from {}",
+            path.display()
+        );
+        // Through `render`.
+        assert_eq!(
+            render(format, &files, &opts).as_bytes(),
+            &want[..],
+            "{ext}: render() differs from {}",
             path.display()
         );
     }
@@ -153,6 +212,127 @@ fn every_seed_every_policy_every_option_renders_well_formed_output() {
         }
     }
     println!("{cases} cases over {} seed files", seeds.len());
+}
+
+/// SPEC-018: over every committed seed of the four fuzz targets, the three
+/// formats, no policy and the six policies, the four `inventory`/`values`
+/// combinations and 0, 1, 2 and 5 entries, the builder's output equals the
+/// one-shot renderer's and its summary equals `summarize`; the builder's
+/// output is also accepted by the strict parsers.
+#[test]
+fn builder_equals_the_one_shot_on_the_seed_cross_product() {
+    let seeds = seed_files();
+    let all = exif_core::StripSpec::all();
+    let policies = [
+        None,
+        Some(StripPolicy::Gps),
+        Some(StripPolicy::GpsAndDevice),
+        Some(StripPolicy::AllPii),
+        Some(StripPolicy::All),
+        Some(StripPolicy::Everything),
+        Some(StripPolicy::Custom(all.exclude(Category::Icc))),
+    ];
+    let reasons = [
+        FailReason::Unreadable,
+        FailReason::TooLarge,
+        FailReason::NotRegularFile,
+        FailReason::Other,
+    ];
+    let mut cases = 0usize;
+    for (n, (name, data)) in seeds.iter().enumerate() {
+        let label = LABELS[n % LABELS.len()];
+        let detail = &data[..data.len().min(64)];
+        let (_, prev) = &seeds[(n + seeds.len() - 1) % seeds.len()];
+        // Five entries: the seed, a failure, the seed again, a failure with
+        // another reason, and the previous seed.
+        let five = vec![
+            FileEntry {
+                label,
+                result: FileResult::Audited(audit(data)),
+            },
+            FileEntry {
+                label: LABELS[(n + 1) % LABELS.len()],
+                result: FileResult::Failed {
+                    reason: reasons[n % 4],
+                    detail,
+                },
+            },
+            FileEntry {
+                label: LABELS[(n + 2) % LABELS.len()],
+                result: FileResult::Audited(audit(data)),
+            },
+            FileEntry {
+                label,
+                result: FileResult::Failed {
+                    reason: reasons[(n + 1) % 4],
+                    detail: b"",
+                },
+            },
+            FileEntry {
+                label: LABELS[(n + 3) % LABELS.len()],
+                result: FileResult::Audited(audit(prev)),
+            },
+        ];
+        for policy in policies {
+            for (inventory, values) in [(false, false), (true, false), (false, true), (true, true)]
+            {
+                let opts = RenderOptions {
+                    policy,
+                    inventory,
+                    values,
+                };
+                for count in [0usize, 1, 2, 5] {
+                    let files = &five[..count];
+                    for (format, oneshot) in [
+                        (Format::Text, render_text(files, &opts)),
+                        (Format::Json, render_json(files, &opts)),
+                        (Format::Csv, render_csv(files, &opts)),
+                    ] {
+                        let mut b = ReportBuilder::new(format, opts);
+                        for f in files {
+                            b.add(f);
+                        }
+                        assert_eq!(b.len(), count);
+                        assert_eq!(
+                            b.summary(),
+                            exif_core::report::summarize(files, &opts),
+                            "{name} {format:?} {policy:?} n={count}"
+                        );
+                        let got = b.finish();
+                        assert_eq!(
+                            got, oneshot,
+                            "{name} {format:?} policy {policy:?} inventory {inventory} values {values} n={count}"
+                        );
+                        assert_eq!(got, render(format, files, &opts));
+                        cases += 1;
+                    }
+                }
+            }
+        }
+        // The builder's documents are well-formed (checked once per seed at
+        // the richest option set).
+        let rich = RenderOptions {
+            policy: Some(StripPolicy::AllPii),
+            inventory: true,
+            values: true,
+        };
+        for format in [Format::Json, Format::Csv] {
+            let mut b = ReportBuilder::new(format, rich);
+            for f in &five {
+                b.add(f);
+            }
+            let out = b.finish();
+            match format {
+                Format::Json => {
+                    parse_json(out.as_bytes()).unwrap_or_else(|e| panic!("{name}: {e}"));
+                }
+                _ => {
+                    parse_csv(out.as_bytes()).unwrap_or_else(|e| panic!("{name}: {e}"));
+                }
+            }
+        }
+    }
+    println!("{cases} builder cases over {} seed files", seeds.len());
 }
 
 // ── carried F2: a truncated audit previews conservatively end to end ────────

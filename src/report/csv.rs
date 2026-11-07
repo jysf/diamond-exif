@@ -5,7 +5,7 @@ use crate::audit::{FileAudit, Item, ItemKind};
 
 use super::{
     container_name, excerpt, ifd_name, preview_of, region_name, safe_text, status_of, tag_hex,
-    FileEntry, FileResult, RenderOptions,
+    FileEntry, FileResult, Format, RenderOptions,
 };
 
 /// The header row, without its line end. Column order is API.
@@ -192,6 +192,31 @@ fn audited_rows(out: &mut String, entry: &FileEntry<'_>, a: &FileAudit<'_>, opts
     }
 }
 
+/// One file's fragment: its rows (a file with no row otherwise gets one).
+pub(super) fn fragment(entry: &FileEntry<'_>, opts: &RenderOptions) -> String {
+    let mut out = String::new();
+    match &entry.result {
+        FileResult::Audited(a) => audited_rows(&mut out, entry, a, opts),
+        FileResult::Failed { detail, .. } => {
+            let mut row = base_row(entry);
+            row[VALUE] = safe_text(detail);
+            push_row(&mut out, &row);
+        }
+    }
+    out
+}
+
+/// The report: the header row, then the fragments.
+pub(super) fn assemble(fragments: &[String]) -> String {
+    let mut out = String::new();
+    out.push_str(HEADER);
+    out.push_str("\r\n");
+    for fragment in fragments {
+        out.push_str(fragment);
+    }
+    out
+}
+
 /// Render the report as CSV (RFC 4180, CRLF), one row per finding, plus one row
 /// for every file that has no row otherwise, so no file is ever absent. With
 /// `inventory` on, one row per inventory item replaces the finding rows of
@@ -201,20 +226,8 @@ fn audited_rows(out: &mut String, entry: &FileEntry<'_>, a: &FileAudit<'_>, opts
 /// excerpt, or a failure detail carried in `value`) that begins with `=`, `+`,
 /// `-`, `@`, TAB or CR is prefixed with a single quote before quoting, so a
 /// spreadsheet does not take it for a formula (DEC-010 part 4). JSON and text
-/// apply no such guard.
+/// apply no such guard. This is a [`ReportBuilder`](super::ReportBuilder) with
+/// every file added.
 pub fn render_csv(files: &[FileEntry<'_>], opts: &RenderOptions) -> String {
-    let mut out = String::new();
-    out.push_str(HEADER);
-    out.push_str("\r\n");
-    for entry in files {
-        match &entry.result {
-            FileResult::Audited(a) => audited_rows(&mut out, entry, a, opts),
-            FileResult::Failed { detail, .. } => {
-                let mut row = base_row(entry);
-                row[VALUE] = safe_text(detail);
-                push_row(&mut out, &row);
-            }
-        }
-    }
-    out
+    super::build_all(Format::Csv, files, opts)
 }
