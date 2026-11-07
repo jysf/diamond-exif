@@ -42,8 +42,6 @@ mod category;
 mod preview;
 mod sniff;
 
-use core::marker::PhantomData;
-
 pub use category::{categorize, region_category, Category, Severity};
 pub use preview::{preview, Counts, Disposition, Preview};
 pub use sniff::{sniff, Sniffed};
@@ -132,16 +130,29 @@ pub enum ItemKind {
     },
 }
 
-/// One inventory entry. Holds no value bytes: counts and types only, so the
-/// model stays small and nothing hostile is copied out.
+/// One inventory entry: where it came from, what it is (counts and types), and
+/// a borrow of the entry's raw payload.
 ///
-/// The lifetime is reserved (the type borrows nothing today); it keeps
-/// `FileAudit<'a>` free to hold borrows later without an API change.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The payload ([`Item::value`]) is a slice of the audited input: never copied
+/// into the audit and never decoded. The audit itself neither reads nor
+/// interprets it; the report renderers print a bounded excerpt of it only when
+/// asked (DEC-010). Equality compares it. `Debug` shows only its **length**, so
+/// a `{:?}` of an audit never prints personal data into a log.
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Item<'a> {
     origin: Origin,
     kind: ItemKind,
-    _input: PhantomData<&'a [u8]>,
+    value: Option<&'a [u8]>,
+}
+
+impl core::fmt::Debug for Item<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Item")
+            .field("origin", &self.origin)
+            .field("kind", &self.kind)
+            .field("value_len", &self.value.map(<[u8]>::len))
+            .finish()
+    }
 }
 
 impl<'a> Item<'a> {
@@ -149,8 +160,13 @@ impl<'a> Item<'a> {
         Item {
             origin,
             kind,
-            _input: PhantomData,
+            value: None,
         }
+    }
+
+    fn with_value(mut self, value: Option<&'a [u8]>) -> Item<'a> {
+        self.value = value;
+        self
     }
 
     /// Where the item came from.
@@ -161,6 +177,14 @@ impl<'a> Item<'a> {
     /// What the item is.
     pub fn kind(&self) -> ItemKind {
         self.kind
+    }
+
+    /// The raw payload of a tag item, exactly as [`Container::payload`]
+    /// returns it (a borrowed slice of the audited input, never decoded).
+    /// `None` for a region and for a tag whose payload is unreadable (an
+    /// unknown field type, an overflowing size, or a range outside the data).
+    pub fn value(&self) -> Option<&'a [u8]> {
+        self.value
     }
 }
 
@@ -412,7 +436,7 @@ impl<'a> Builder<'a> {
     /// Every entry of every IFD of one parsed TIFF, in container order.
     /// `blob` is the byte string the container was parsed from (its offsets
     /// are relative to it).
-    fn add_container(&mut self, container: &Container<'_>, blob: &[u8], origin: Origin) {
+    fn add_container(&mut self, container: &Container<'a>, blob: &[u8], origin: Origin) {
         for (ifd_index, ifd) in container.ifds().iter().enumerate() {
             // Per-IFD context, computed once (never per entry: a hostile IFD
             // can hold 65,535 entries, and a per-entry scan would be quadratic).
@@ -439,7 +463,8 @@ impl<'a> Builder<'a> {
                         field_type: entry.field_type(),
                         count: entry.count(),
                     },
-                );
+                )
+                .with_value(container.payload(entry).ok());
                 // Only the 0x0201 entry carries a range; a strips thumbnail
                 // has none.
                 let range = match (category, thumb) {
@@ -1181,6 +1206,68 @@ mod tests {
         assert_eq!(a.findings().len(), MAX_INVENTORY_ITEMS);
         assert!(a.health().inventory_truncated);
         assert_eq!(a.items().len(), MAX_INVENTORY_ITEMS);
+    }
+
+    #[test]
+    fn item_value_is_the_raw_payload_and_none_for_regions_and_unreadable_payloads() {
+        let bytes = build(
+            &[(
+                vec![
+                    ascii(0x010F, b"Camera"),       // out of line: "Camera\0"
+                    short(0x0112, 0x1234),          // inline, 2 bytes
+                    raw(0x9999, 99, 1, 0),          // unknown field type
+                    raw(0x9998, 4, 0x4000_0000, 8), // size overflows the data
+                    raw(0x9997, 2, 8, 0xFFFF_FF00), // offset outside the data
+                    ascii(0x0131, b""),             // one NUL byte, inline
+                ],
+                None,
+            )],
+            &[],
+        );
+        let a = audit(&bytes);
+        let values: Vec<Option<&[u8]>> = a.items().iter().map(|i| i.value()).collect();
+        assert_eq!(values[0], Some(&b"Camera\0"[..]));
+        assert_eq!(values[1], Some(&0x1234u16.to_le_bytes()[..]));
+        assert_eq!(values[2], None, "unknown type");
+        assert_eq!(values[3], None, "overflowing size");
+        assert_eq!(values[4], None, "offset outside the data");
+        assert_eq!(values[5], Some(&b"\0"[..]));
+        // A finding's item carries the same slice as the inventory's.
+        assert_eq!(a.findings()[0].at.value(), Some(&b"Camera\0"[..]));
+        // A region has none.
+        let xmp = seg(0xE1, b"http://ns.adobe.com/xap/1.0/\0<x:xmpmeta/>");
+        let j = audit(&jpeg(&[xmp]));
+        assert_eq!(j.items().len(), 1);
+        assert_eq!(j.items()[0].value(), None);
+    }
+
+    #[test]
+    fn debug_of_an_item_and_an_audit_never_prints_the_payload() {
+        let bytes = build(
+            &[(
+                vec![
+                    ascii(0x010F, b"SECRET-SERIAL-0042"),
+                    ascii(0xA431, b"SECRET-SERIAL-0042"),
+                ],
+                None,
+            )],
+            &[],
+        );
+        let a = audit(&bytes);
+        assert_eq!(a.items()[0].value(), Some(&b"SECRET-SERIAL-0042\0"[..]));
+        for dump in [
+            format!("{:?}", a.items()[0]),
+            format!("{:#?}", a.items()),
+            format!("{:?}", a.findings()),
+            format!("{a:?}"),
+        ] {
+            assert!(!dump.contains("SECRET"), "{dump}");
+            // Nor as a byte list: 'S' is 83, 'E' 69.
+            assert!(!dump.contains("83, 69, 67"), "{dump}");
+        }
+        let one = format!("{:?}", a.items()[0]);
+        assert!(one.contains("value_len: Some(19)"), "{one}");
+        assert!(one.contains("origin") && one.contains("kind"), "{one}");
     }
 
     #[test]

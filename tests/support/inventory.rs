@@ -1029,6 +1029,11 @@ pub const KNOWN_DIVERGENCES: &[Divergence] = &[
         "ExifTool lists no XMP group for the short extended-XMP chunk",
     ),
     region_only(
+        "seed-audit/audit-full-house-jpeg",
+        &[RegionKind::Icc, RegionKind::Jumbf],
+        "ExifTool lists no ICC or JUMBF group for the stub payloads of the full-house JPEG",
+    ),
+    region_only(
         "seed-jpeg_segments/icc-chunks-mismatch",
         &[RegionKind::Icc],
         "ExifTool lists no ICC group for the mismatched ICC chunks",

@@ -1,0 +1,60 @@
+file: photos/full-house.jpg
+  status: ok
+  container: jpeg
+  health: jpeg_issues=0 exif_issues=0 failed_blocks=0 inventory_truncated=false
+  max severity: high
+  15 findings
+    - free_text [medium] tag 0x010e ifd=ifd0#0 type=2 count=2 block=0 segment=0 value="a": removed
+    - camera_model [low] tag 0x010f ifd=ifd0#0 type=2 count=2 block=0 segment=0 value="a": removed
+    - software [low] tag 0x0131 ifd=ifd0#0 type=2 count=2 block=0 segment=0 value="a": kept (not targeted by this policy)
+    - timestamps [low] tag 0x0132 ifd=ifd0#0 type=2 count=2 block=0 segment=0 value="a": removed
+    - authorship [medium] tag 0x013b ifd=ifd0#0 type=2 count=2 block=0 segment=0 value="a": removed
+    - device_id [high] tag 0xa431 ifd=ifd0#0 type=2 count=2 block=0 segment=0 value="a": removed
+    - timestamps [low] tag 0x9003 ifd=exif#1 type=2 count=2 block=0 segment=0 value="a": removed
+    - device_id [high] tag 0xa431 ifd=exif#1 type=2 count=2 block=0 segment=0 value="a": removed
+    - maker_note [medium] tag 0x927c ifd=exif#1 type=7 count=4 block=0 segment=0 value="a\x00\x00\x00": removed
+    - gps [high] tag 0x0001 ifd=gps#2 type=2 count=2 block=0 segment=0 value="a": removed
+    - thumbnail [medium] tag 0x0201 ifd=ifd1#3 type=4 count=1 block=0 segment=0 thumbnail offset=0 length=0 starts_with_ffd8=false value="\x00\x00\x00\x00": removed
+    - xmp [medium] region xmp len=4 block=- segment=1: kept_unread (may hold what this policy removes)
+    - iptc [medium] region iptc len=6 block=- segment=2: kept_unread (may hold what this policy removes)
+    - icc [low] region icc len=7 block=- segment=3: kept (not targeted by this policy)
+    - jumbf [medium] region jumbf len=1 block=- segment=4: kept_unread (may hold what this policy removes)
+  preview (all_pii): removed 10, kept 2, kept_unread 3; residual findings 5, residual severity medium
+
+file: photos/screenshot.png
+  status: unsupported
+  container: png
+  health: jpeg_issues=0 exif_issues=0 failed_blocks=0 inventory_truncated=false
+  max severity: none
+  0 findings
+  preview not reliable: the file was not read cleanly
+
+file: photos/locked.jpg
+  status: failed
+  failure: unreadable: permission denied (os error 13)
+  0 findings
+
+summary
+  files: 3
+  ok: 1
+  issues: 0
+  unreadable: 0
+  unsupported: 1
+  failed: 1
+  findings: 15
+  max severity: high
+  category gps: 1
+  category device_id: 2
+  category authorship: 1
+  category free_text: 1
+  category thumbnail: 1
+  category maker_note: 1
+  category xmp: 1
+  category iptc: 1
+  category jumbf: 1
+  category timestamps: 2
+  category camera_model: 1
+  category software: 1
+  category icc: 1
+  reliable files: 1, unreliable files: 1
+  policy all_pii: residual findings 5 (reliable files only)

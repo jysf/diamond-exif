@@ -656,3 +656,82 @@ questions:
       No preset outcome changes (the pairs fall in cells already Removed or KeptUnread), so
       this affects `Custom` policies only. Amend DEC-009, `may_hold` and the three hand-typed
       grids together, with the first writer spec or a user report. Source: HANDOFF-030 F6.
+
+  - id: report-value-decoding
+    question: "Should reports decode tag values (rationals, dates, GPS degrees) instead of printing a raw payload excerpt?"
+    priority: low
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-06
+    assigned_to: null
+    notes: |
+      DEC-010 prints at most 64 raw payload bytes, only with `values` on. A decoded view is a
+      second parsing surface (SPEC-007 decoders exist but are not report-tuned) and needs its
+      own correctness proof. Decide after SPEC-016 shows what users read in the output.
+
+  - id: report-tag-names
+    question: "Should reports show a tag name (for example Make, Artist) next to the tag number?"
+    priority: low
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-06
+    assigned_to: null
+    notes: |
+      DEC-010 shows the category and the hex tag number only. The DEC-008 rows have names
+      measured against ExifTool (tests/oracle-fixtures/exiftool/audit-tag-names.txt) that
+      could ship as a table in `src/`; it is a data and test cost, not a design risk.
+
+  - id: inventory-oracle-low-findings
+    question: "Do the two low SPEC-013 verify findings still matter: the Class H region-kind match, and ExifTool's exit status in the inventory records?"
+    priority: low
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-06
+    assigned_to: null
+    notes: |
+      Carried out of SPEC-015 (no rendering link). (1) Class H in tests/support/inventory.rs
+      drops every ExifTool region line for a bare TIFF; the companion test checks the file
+      holds one of the four directory-valued ids but not that the region kind matches the id
+      (0x83BB Iptc, 0x02BC Xmp, 0x8773 Icc, 0x8649 Photoshop/Iptc). Tighten when a second
+      such input appears. (2) The records do not keep ExifTool's exit status (1 on four
+      inputs where both sides are empty); record it if a divergence could hide there.
+
+  - id: report-dec-010-build-doubts
+    question: "Four DEC-010 / SPEC-015 rules the SPEC-015 build found underspecified or awkward: which wording should SPEC-016 and a later DEC-010 amendment take?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-06
+    assigned_to: null
+    notes: |
+      Raised by the SPEC-015 build (HANDOFF-031). decisions/ was not touched.
+      (1) The summary's `residual_findings` is `Some(0)` when a policy is set and no file is
+      reliable (reliable_files = 0), and the text summary prints "residual findings 0 (reliable
+      files only)". A reader can take 0 for "nothing would remain", which is the claim DEC-009's
+      amendment forbids for an unreliable file. SPEC-015 rule 5 fixed "sums reliable files only",
+      so it was built that way; consider `null` when unreliable_files > 0 or reliable_files = 0.
+      (2) A `Custom` policy is named "custom" in JSON/text/CSV with no way to see which categories
+      it removes. A CI consumer comparing runs cannot tell two custom policies apart.
+      (3) Label and failure-detail length: rule 8 calls the label "bounded", but the renderers do
+      not truncate it (a cut would break the "label text equals safe_text" facts guard and hide
+      which file). Output is linear in the caller's label, at most 4x its bytes escaped (and a
+      CSV repeats the label on every row of the file). SPEC-016 should bound a path (PATH_MAX).
+      The failure `detail` is printed even with `values` off: it is caller text, not a payload,
+      but the fuzz target feeds it file bytes, so SPEC-016 must pass only OS error messages.
+      (4) DEC-010 part 4 lists TAB and CR as formula-guard triggers, but part 2 escapes TAB and CR
+      first (`\t`, `\r`), so through `render_csv` those two triggers never fire; the guard on them
+      is defence in depth, exercised only by the row-level unit test. Also part 2 names no
+      form for DEL (built: `\x7f`, lowercase hex everywhere) and the JSON IFD name `other` is
+      unreachable (IfdKind is non_exhaustive but exhaustive inside the crate).
+
+  - id: report-custom-policy-identity
+    question: "Should a report say which categories a `Custom` policy removes, instead of only naming it \"custom\"?"
+    priority: low
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-06
+    assigned_to: null
+    notes: |
+      DEC-010 amendment (2026-11-06) item 4. Two different custom sets render identically.
+      The binary exposes presets only, so nothing produces a Custom policy today. If it ever
+      does, add a `policy_categories` list to the JSON and text (a schema_version bump).

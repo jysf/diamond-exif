@@ -260,7 +260,7 @@ mod audit_invariants {
         }
     }
 
-    fn rank(severity: &str) -> u8 {
+    pub fn rank(severity: &str) -> u8 {
         match severity {
             "High" => 2,
             "Medium" => 1,
@@ -777,7 +777,7 @@ mod audit_invariants {
 
     /// Preset name and the categories it removes (DEC-009 columns), smallest
     /// preset first.
-    const H_PRESETS: [(&str, &[&str]); 5] = [
+    pub const H_PRESETS: [(&str, &[&str]); 5] = [
         ("gps", &["Gps"]),
         ("gps_and_device", &["Gps", "DeviceId"]),
         (
@@ -830,7 +830,7 @@ mod audit_invariants {
     ];
 
     /// Every category, by `Debug` name.
-    const H_ALL: [&str; 13] = [
+    pub const H_ALL: [&str; 13] = [
         "Gps",
         "DeviceId",
         "Authorship",
@@ -917,7 +917,7 @@ mod audit_invariants {
 
     /// The expected preview, from the flattened audit and the categories the
     /// policy removes.
-    fn h_want(f: &Facts, removed: &[&str]) -> PreviewF {
+    pub fn h_want(f: &Facts, removed: &[&str]) -> PreviewF {
         let mut dispositions = Vec::new();
         let (mut r, mut k, mut u) = (0usize, 0usize, 0usize);
         let mut sev: Option<&'static str> = None;
@@ -962,7 +962,7 @@ mod audit_invariants {
     }
 
     /// A category set chosen deterministically from the input bytes.
-    fn custom_names(data: &[u8]) -> Vec<&'static str> {
+    pub fn custom_names(data: &[u8]) -> Vec<&'static str> {
         let mut m: u16 = 0x5A5A;
         for b in data {
             m = m.rotate_left(5) ^ u16::from(*b);

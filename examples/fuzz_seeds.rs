@@ -12,6 +12,11 @@
 use std::fs;
 use std::path::PathBuf;
 
+// The full-house inputs and the report fixtures, shared with
+// `tests/report_render.rs` so the seeds cannot drift from the tests.
+#[path = "../tests/support/report_inputs.rs"]
+mod report_inputs;
+
 const BYTE: u16 = 1;
 const ASCII: u16 = 2;
 const SHORT: u16 = 3;
@@ -1178,9 +1183,125 @@ fn audit_seeds(
         ),
         ("audit-ifd1-strips", tiff_ifd1_strips(&le)),
         ("audit-many-overlapping-ifds", many_overlapping_ifds(255)),
+        // SPEC-015 (carried SPEC-014 F1): the two inputs that carry every
+        // category, so the preview's may-hold relation is in the corpus.
+        ("audit-full-house-tiff", report_inputs::full_house_tiff()),
+        ("audit-full-house-jpeg", report_inputs::full_house_jpeg()),
     ];
     out.extend(new.into_iter().map(|(n, b)| (n.to_string(), b)));
     out
+}
+
+/// One `audit_render` input: the options byte, the label length, the label,
+/// then the file (see `fuzz/shared/render_invariants.rs`, `build`).
+fn render_seed(opts: u8, label: &[u8], file: &[u8]) -> Vec<u8> {
+    let mut v = vec![opts, u8::try_from(label.len()).expect("label fits a byte")];
+    v.extend_from_slice(label);
+    v.extend_from_slice(file);
+    v
+}
+
+/// The `audit_render` target's seeds (SPEC-015).
+fn render_seeds() -> Vec<(String, Vec<u8>)> {
+    // Option bits: low 3 = policy (1 gps, 2 gps_and_device, 3 all_pii, 4 all,
+    // 5 everything, 6 custom), 8 inventory, 16 values, 32/64 failure reason.
+    const INV: u8 = 8;
+    const VAL: u8 = 16;
+    let house = report_inputs::full_house_jpeg();
+    let house_tiff = report_inputs::full_house_tiff();
+    let png = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0];
+    let long_ascii = {
+        let payload: Vec<u8> = (0..300u32).map(|i| b'a' + (i % 26) as u8).collect();
+        report_inputs::tiff_with_payloads(&[(0x010F, 2, &payload)])
+    };
+    let mut label255 = Vec::new();
+    for i in 0..255u32 {
+        label255.push(match i % 5 {
+            0 => b'=',
+            1 => b',',
+            2 => b'"',
+            3 => 0xC3,
+            _ => (0x20 + i % 90) as u8,
+        });
+    }
+    let secret = report_inputs::secret_tiff();
+    // A Make whose value holds a semicolon (a spreadsheet in a semicolon
+    // locale splits on it).
+    let semi = report_inputs::tiff_with_payloads(&[(0x010F, 2, b"x;=1+cmd\0")]);
+    let seeds: Vec<(&str, Vec<u8>)> = vec![
+        (
+            "full-house-jpeg-all-pii-inventory-values",
+            render_seed(3 | INV | VAL, b"photos/full-house.jpg", &house),
+        ),
+        (
+            "full-house-tiff-gps-values",
+            render_seed(1 | VAL, b"photos/full-house.tif", &house_tiff),
+        ),
+        (
+            "full-house-jpeg-everything-inventory",
+            render_seed(5 | INV | 32, b"a.jpg", &house),
+        ),
+        (
+            "full-house-jpeg-custom-policy",
+            render_seed(6 | VAL | 64, &[0x5A], &house),
+        ),
+        (
+            "full-house-jpeg-no-policy",
+            render_seed(0, b"plain.jpg", &house),
+        ),
+        (
+            "label-control-characters",
+            render_seed(2 | VAL, b"a\x01\x1b[31mred\x07\x00b\x7f", &secret),
+        ),
+        (
+            "label-quotes-comma",
+            render_seed(4 | INV, b"a,\"b\",c", &house_tiff),
+        ),
+        ("label-cr-lf", render_seed(INV, b"x\r\ny\rz\nw", &house)),
+        (
+            "label-invalid-utf8",
+            render_seed(3 | VAL, b"\xFF\xFE\xC3(\xE2\x82", &secret),
+        ),
+        (
+            "label-invisible-characters",
+            render_seed(
+                3 | VAL,
+                "a\u{200B}\u{FEFF}\u{AD}\u{E0041}b".as_bytes(),
+                &secret,
+            ),
+        ),
+        (
+            "label-right-to-left-override",
+            render_seed(VAL, "\u{202E}gpj.exe\u{2028}\u{85}".as_bytes(), &house_tiff),
+        ),
+        (
+            "label-formula-equals",
+            render_seed(3 | VAL, b"=cmd|' /C calc'!A0", &secret),
+        ),
+        (
+            "label-formula-at",
+            render_seed(INV | VAL, b"@SUM(1)", &secret),
+        ),
+        (
+            "label-255-bytes",
+            render_seed(5 | INV | VAL, &label255, &house),
+        ),
+        (
+            "label-semicolon-formula",
+            render_seed(3 | VAL, b"a;=1+cmd|' /C calc'!A0", &semi),
+        ),
+        ("label-empty-png", render_seed(3, b"", &png)),
+        (
+            "ascii-payload-300-bytes",
+            render_seed(3 | INV | VAL, b"long.tif", &long_ascii),
+        ),
+        ("png-signature-values", render_seed(5 | VAL, b"s.png", &png)),
+        ("empty-file", render_seed(1 | INV | VAL, b"empty", b"")),
+    ];
+    seeds
+        .into_iter()
+        .map(|(n, b)| (format!("render-{n}"), b))
+        .collect()
 }
 
 fn main() {
@@ -1243,4 +1364,12 @@ fn main() {
         fs::write(adir.join(name), bytes).expect("write seed");
     }
     println!("wrote {} seeds to {}", aseeds.len(), adir.display());
+
+    let rdir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/audit_render");
+    fs::create_dir_all(&rdir).expect("create seeds dir");
+    let rseeds = render_seeds();
+    for (name, bytes) in &rseeds {
+        fs::write(rdir.join(name), bytes).expect("write seed");
+    }
+    println!("wrote {} seeds to {}", rseeds.len(), rdir.display());
 }
