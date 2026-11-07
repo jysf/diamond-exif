@@ -11,7 +11,7 @@ use crate::audit::{Disposition, Finding, Item, ItemKind, Preview};
 
 use super::{
     container_name, excerpt, ifd_name, item_categories, preview_of, region_name, safe_text,
-    status_of, summarize, tag_hex, FileEntry, FileResult, RenderOptions,
+    status_of, tag_hex, FileEntry, FileResult, Format, RenderOptions, Summary,
 };
 
 /// The disposition's wording (DEC-009: `kept` is not an all-clear).
@@ -178,15 +178,20 @@ fn file_block(out: &mut String, entry: &FileEntry<'_>, opts: &RenderOptions) {
     }
 }
 
-/// Render the report as text (see the module docs). Well-formed for any input
-/// bytes; deterministic.
-pub fn render_text(files: &[FileEntry<'_>], opts: &RenderOptions) -> String {
+/// One file's fragment: its block and the blank line after it.
+pub(super) fn fragment(entry: &FileEntry<'_>, opts: &RenderOptions) -> String {
     let mut out = String::new();
-    for entry in files {
-        file_block(&mut out, entry, opts);
-        out.push('\n');
+    file_block(&mut out, entry, opts);
+    out.push('\n');
+    out
+}
+
+/// The report: the fragments, then the summary block.
+pub(super) fn assemble(fragments: &[String], s: &Summary, opts: &RenderOptions) -> String {
+    let mut out = String::new();
+    for fragment in fragments {
+        out.push_str(fragment);
     }
-    let s = summarize(files, opts);
     out.push_str("summary\n");
     for (name, n) in [
         ("files", s.files),
@@ -222,4 +227,11 @@ pub fn render_text(files: &[FileEntry<'_>], opts: &RenderOptions) -> String {
         }
     }
     out
+}
+
+/// Render the report as text (see the module docs). Well-formed for any input
+/// bytes; deterministic. This is a [`ReportBuilder`](super::ReportBuilder)
+/// with every file added.
+pub fn render_text(files: &[FileEntry<'_>], opts: &RenderOptions) -> String {
+    super::build_all(Format::Text, files, opts)
 }

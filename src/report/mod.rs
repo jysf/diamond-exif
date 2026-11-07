@@ -21,6 +21,8 @@
 //!
 //! Provenance (DEC-003, class 1): net-new code over this crate's own audit.
 
+#[cfg(test)]
+mod builder_tests;
 mod csv;
 mod json;
 #[cfg(test)]
@@ -186,60 +188,207 @@ pub struct Summary {
     pub unreliable_files: usize,
 }
 
-/// Summarise a run. Linear in the findings.
-pub fn summarize(files: &[FileEntry<'_>], opts: &RenderOptions) -> Summary {
-    let mut s = Summary {
-        files: files.len(),
-        failed: 0,
-        unsupported: 0,
-        unreadable: 0,
-        issues: 0,
-        ok: 0,
-        findings: 0,
-        by_category: Category::ALL.map(|c| (c, 0usize)),
-        max_severity: None,
-        residual_findings: opts.policy.map(|_| 0usize),
-        reliable_files: 0,
-        unreliable_files: 0,
-    };
-    for entry in files {
+impl Summary {
+    /// The summary of no files under `opts`.
+    fn new(opts: &RenderOptions) -> Summary {
+        Summary {
+            files: 0,
+            failed: 0,
+            unsupported: 0,
+            unreadable: 0,
+            issues: 0,
+            ok: 0,
+            findings: 0,
+            by_category: Category::ALL.map(|c| (c, 0usize)),
+            max_severity: None,
+            residual_findings: opts.policy.map(|_| 0usize),
+            reliable_files: 0,
+            unreliable_files: 0,
+        }
+    }
+
+    /// Count one more file. The one step both [`summarize`] and
+    /// [`ReportBuilder`] use, so they cannot drift. The residual is left at
+    /// its running value (`Some(0)` under a policy); [`Summary::finalized`]
+    /// applies the "no reliable file" rule.
+    fn add_file(&mut self, entry: &FileEntry<'_>, opts: &RenderOptions) {
+        self.files = self.files.saturating_add(1);
         let counter = match status_of(&entry.result) {
-            Status::Failed => &mut s.failed,
-            Status::Unsupported => &mut s.unsupported,
-            Status::Unreadable => &mut s.unreadable,
-            Status::Issues => &mut s.issues,
-            Status::Ok => &mut s.ok,
+            Status::Failed => &mut self.failed,
+            Status::Unsupported => &mut self.unsupported,
+            Status::Unreadable => &mut self.unreadable,
+            Status::Issues => &mut self.issues,
+            Status::Ok => &mut self.ok,
         };
         *counter = counter.saturating_add(1);
         let FileResult::Audited(a) = &entry.result else {
-            continue;
+            return;
         };
-        s.findings = s.findings.saturating_add(a.findings().len());
+        self.findings = self.findings.saturating_add(a.findings().len());
         for f in a.findings() {
-            if let Some(slot) = s.by_category.iter_mut().find(|(c, _)| *c == f.category) {
+            if let Some(slot) = self.by_category.iter_mut().find(|(c, _)| *c == f.category) {
                 slot.1 = slot.1.saturating_add(1);
             }
         }
         if let Some(m) = a.max_severity() {
-            if s.max_severity.is_none_or(|cur| cur < m) {
-                s.max_severity = Some(m);
+            if self.max_severity.is_none_or(|cur| cur < m) {
+                self.max_severity = Some(m);
             }
         }
         let reliable = a.health().clean && !a.health().inventory_truncated;
         if reliable {
-            s.reliable_files = s.reliable_files.saturating_add(1);
-            if let (Some(policy), Some(total)) = (opts.policy, s.residual_findings.as_mut()) {
+            self.reliable_files = self.reliable_files.saturating_add(1);
+            if let (Some(policy), Some(total)) = (opts.policy, self.residual_findings.as_mut()) {
                 *total = total.saturating_add(preview(a, policy).residual_findings());
             }
         } else {
-            s.unreliable_files = s.unreliable_files.saturating_add(1);
+            self.unreliable_files = self.unreliable_files.saturating_add(1);
         }
     }
-    // A residual of zero over no reliable file would read as "nothing remains".
-    if s.reliable_files == 0 {
-        s.residual_findings = None;
+
+    /// The summary as reported: a residual of zero over no reliable file would
+    /// read as "nothing remains", so it is `None` there.
+    fn finalized(&self) -> Summary {
+        let mut s = self.clone();
+        if s.reliable_files == 0 {
+            s.residual_findings = None;
+        }
+        s
     }
-    s
+}
+
+/// Summarise a run. Linear in the findings.
+pub fn summarize(files: &[FileEntry<'_>], opts: &RenderOptions) -> Summary {
+    let mut s = Summary::new(opts);
+    for entry in files {
+        s.add_file(entry, opts);
+    }
+    s.finalized()
+}
+
+/// The report formats a [`ReportBuilder`] can assemble.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Format {
+    /// Line-oriented text for a terminal.
+    Text,
+    /// One JSON document.
+    Json,
+    /// RFC 4180 CSV.
+    Csv,
+}
+
+impl Format {
+    /// A stable lowercase name: `text`, `json` or `csv`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Format::Text => "text",
+            Format::Json => "json",
+            Format::Csv => "csv",
+        }
+    }
+}
+
+/// Assembles a report one file at a time (SPEC-018).
+///
+/// A [`FileEntry`] borrows the bytes of its file. A run over a large
+/// directory must not keep every file's bytes alive until the report is
+/// rendered, so the builder renders each file's fragment in [`add`] and keeps
+/// only that fragment and a running [`Summary`]; it holds no reference to the
+/// entry. The JSON document puts `summary` before `files`, so [`finish`]
+/// assembles the document from the fragments and the final summary.
+///
+/// **Output equals the one-shot renderers byte for byte.** `render_text`,
+/// `render_json` and `render_csv` are this builder (new, add each, finish), so
+/// there is one code path and they cannot drift.
+///
+/// **Memory bound.** The retained memory is the *capacity* of the fragment
+/// strings (a `String` may reserve up to about twice its length, so at most a
+/// small constant factor over the fragment lengths), plus one `String` header
+/// per fragment and a constant for the summary and options. It grows with the
+/// fragment of each added file and never holds an input byte; [`finish`]
+/// allocates the document once, of the fragments' total length plus the frame.
+///
+/// [`add`]: ReportBuilder::add
+/// [`finish`]: ReportBuilder::finish
+#[derive(Debug, Clone)]
+pub struct ReportBuilder {
+    format: Format,
+    opts: RenderOptions,
+    /// One rendered fragment per added file, in `add` order.
+    fragments: Vec<String>,
+    /// The running summary (residual not yet finalized).
+    summary: Summary,
+}
+
+impl ReportBuilder {
+    /// An empty builder for `format` under `opts`.
+    pub fn new(format: Format, opts: RenderOptions) -> ReportBuilder {
+        ReportBuilder {
+            format,
+            opts,
+            fragments: Vec::new(),
+            summary: Summary::new(&opts),
+        }
+    }
+
+    /// Render `entry`'s fragment now and count it in the summary. Keeps no
+    /// borrow of `entry` or of the bytes it borrows.
+    pub fn add(&mut self, entry: &FileEntry<'_>) {
+        let fragment = match self.format {
+            Format::Text => text::fragment(entry, &self.opts),
+            Format::Json => json::fragment(entry, &self.opts),
+            Format::Csv => csv::fragment(entry, &self.opts),
+        };
+        self.fragments.push(fragment);
+        self.summary.add_file(entry, &self.opts);
+    }
+
+    /// The summary of the entries added so far; equals [`summarize`] over
+    /// them.
+    pub fn summary(&self) -> Summary {
+        self.summary.finalized()
+    }
+
+    /// How many entries have been added.
+    pub fn len(&self) -> usize {
+        self.fragments.len()
+    }
+
+    /// Whether no entry has been added.
+    pub fn is_empty(&self) -> bool {
+        self.fragments.is_empty()
+    }
+
+    /// Assemble the document: the format's frame around the fragments and the
+    /// summary of every added entry.
+    pub fn finish(self) -> String {
+        let summary = self.summary.finalized();
+        match self.format {
+            Format::Text => text::assemble(&self.fragments, &summary, &self.opts),
+            Format::Json => json::assemble(&self.fragments, &summary, &self.opts),
+            Format::Csv => csv::assemble(&self.fragments),
+        }
+    }
+}
+
+/// Render `files` in `format`: [`render_text`], [`render_json`] or
+/// [`render_csv`].
+pub fn render(format: Format, files: &[FileEntry<'_>], opts: &RenderOptions) -> String {
+    match format {
+        Format::Text => render_text(files, opts),
+        Format::Json => render_json(files, opts),
+        Format::Csv => render_csv(files, opts),
+    }
+}
+
+/// The one-shot path every renderer takes: a builder, every file added, then
+/// finished.
+fn build_all(format: Format, files: &[FileEntry<'_>], opts: &RenderOptions) -> String {
+    let mut builder = ReportBuilder::new(format, *opts);
+    for entry in files {
+        builder.add(entry);
+    }
+    builder.finish()
 }
 
 // ── helpers shared by the three renderers ───────────────────────────────────

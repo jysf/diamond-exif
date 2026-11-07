@@ -3179,7 +3179,20 @@ fn csv_rows_of(s: &str) -> Vec<String> {
     s.split_inclusive("\r\n").map(str::to_string).collect()
 }
 
+/// Every plant the generic render-guard test runs: the fact guards' plants and
+/// the builder guard's.
 fn render_plants() -> Vec<RenderPlant> {
+    let mut all = fact_render_plants();
+    all.extend(builder_plants().into_iter().map(|p| RenderPlant {
+        name: p.name,
+        input: p.input,
+        guard: "builder_equals_oneshot",
+        apply: p.apply,
+    }));
+    all
+}
+
+fn fact_render_plants() -> Vec<RenderPlant> {
     vec![
         // json_wellformed
         RenderPlant {
@@ -3820,6 +3833,423 @@ fn render_plants() -> Vec<RenderPlant> {
     ]
 }
 
+// ── SPEC-018: the builder guard (`builder_equals_oneshot`) ───────────────────
+
+/// Which side of a comparison a plant breaks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Side {
+    /// The builder is wrong, the one-shot is right.
+    Builder,
+    /// The builder is right, the one-shot (or the bookkeeping) is wrong.
+    OneShot,
+}
+
+struct BuilderPlant {
+    name: &'static str,
+    input: &'static str,
+    side: Side,
+    apply: fn(&mut Ctx),
+}
+
+/// Index of a pair by name (`scenario/format`).
+fn pair_at(c: &Ctx, name: &str) -> usize {
+    c.pairs
+        .iter()
+        .position(|p| p.name == name)
+        .unwrap_or_else(|| panic!("no comparison {name}"))
+}
+
+/// Change one letter's case: the same length, different content.
+fn same_length_corrupt(s: &mut String) {
+    let before = s.len();
+    let at = s
+        .char_indices()
+        .find(|(_, ch)| ch.is_ascii_alphabetic())
+        .map(|(i, _)| i)
+        .expect("a letter to flip");
+    let flipped = if s[at..].starts_with(|c: char| c.is_ascii_lowercase()) {
+        s[at..at + 1].to_ascii_uppercase()
+    } else {
+        s[at..at + 1].to_ascii_lowercase()
+    };
+    s.replace_range(at..at + 1, &flipped);
+    assert_eq!(s.len(), before);
+}
+
+fn builder_plants() -> Vec<BuilderPlant> {
+    vec![
+        BuilderPlant {
+            name: "same-length corruption of the builder output of forward/text",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "forward/text");
+                same_length_corrupt(&mut c.pairs[i].builder);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the builder output of forward/json",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "forward/json");
+                same_length_corrupt(&mut c.pairs[i].builder);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the builder output of forward/csv",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "forward/csv");
+                same_length_corrupt(&mut c.pairs[i].builder);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the builder output of reverse/text",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "reverse/text");
+                same_length_corrupt(&mut c.pairs[i].builder);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the builder output of reverse/json",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "reverse/json");
+                same_length_corrupt(&mut c.pairs[i].builder);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the builder output of reverse/csv",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "reverse/csv");
+                same_length_corrupt(&mut c.pairs[i].builder);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the builder output of alone-audited/text",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "alone-audited/text");
+                same_length_corrupt(&mut c.pairs[i].builder);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the builder output of alone-audited/json",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "alone-audited/json");
+                same_length_corrupt(&mut c.pairs[i].builder);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the builder output of alone-audited/csv",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "alone-audited/csv");
+                same_length_corrupt(&mut c.pairs[i].builder);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the builder output of alone-failed/text",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "alone-failed/text");
+                same_length_corrupt(&mut c.pairs[i].builder);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the builder output of alone-failed/json",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "alone-failed/json");
+                same_length_corrupt(&mut c.pairs[i].builder);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the builder output of alone-failed/csv",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "alone-failed/csv");
+                same_length_corrupt(&mut c.pairs[i].builder);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the one-shot output of forward/json",
+            input: HOUSE_ALL_PII,
+            side: Side::OneShot,
+            apply: |c| {
+                let i = pair_at(c, "forward/json");
+                same_length_corrupt(&mut c.pairs[i].oneshot);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the one-shot output of reverse/text",
+            input: HOUSE_ALL_PII,
+            side: Side::OneShot,
+            apply: |c| {
+                let i = pair_at(c, "reverse/text");
+                same_length_corrupt(&mut c.pairs[i].oneshot);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the one-shot output of reverse/csv",
+            input: HOUSE_ALL_PII,
+            side: Side::OneShot,
+            apply: |c| {
+                let i = pair_at(c, "reverse/csv");
+                same_length_corrupt(&mut c.pairs[i].oneshot);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the one-shot output of alone-audited/json",
+            input: HOUSE_ALL_PII,
+            side: Side::OneShot,
+            apply: |c| {
+                let i = pair_at(c, "alone-audited/json");
+                same_length_corrupt(&mut c.pairs[i].oneshot);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the one-shot output of alone-failed/csv",
+            input: HOUSE_ALL_PII,
+            side: Side::OneShot,
+            apply: |c| {
+                let i = pair_at(c, "alone-failed/csv");
+                same_length_corrupt(&mut c.pairs[i].oneshot);
+            },
+        },
+        // The builder is wrong.
+        BuilderPlant {
+            name: "the builder drops the last fragment (the CSV loses its last row)",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "forward/csv");
+                let b = &mut c.pairs[i].builder;
+                let body = &b[..b.len() - 2];
+                let cut = body.rfind("\r\n").expect("a row boundary") + 2;
+                b.truncate(cut);
+            },
+        },
+        BuilderPlant {
+            name: "a fragment is rendered with the options of a different builder (no values)",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "alone-audited/text");
+                rep(&mut c.pairs[i].builder, " value=\"", " v=\"");
+            },
+        },
+        BuilderPlant {
+            name: "the builder's summary is the one of the entries before the last",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let before_last = c.summary_pairs[1].0.clone();
+                c.summary_pairs[2].0 = before_last;
+            },
+        },
+        BuilderPlant {
+            name: "the builder joins JSON fragments with a space after the comma",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "reverse/json");
+                rep(&mut c.pairs[i].builder, "},{\"label\":", "}, {\"label\":");
+            },
+        },
+        // The builder is right and the other side is wrong: an iff.
+        BuilderPlant {
+            name: "the one-shot output gains a byte",
+            input: HOUSE_ALL_PII,
+            side: Side::OneShot,
+            apply: |c| {
+                let i = pair_at(c, "reverse/csv");
+                c.pairs[i].oneshot.push('x');
+            },
+        },
+        BuilderPlant {
+            name: "the summarize side counts one more file",
+            input: HOUSE_ALL_PII,
+            side: Side::OneShot,
+            apply: |c| c.summary_pairs[1].1.files += 1,
+        },
+        BuilderPlant {
+            name: "a comparison is missing",
+            input: HOUSE_ALL_PII,
+            side: Side::OneShot,
+            apply: |c| {
+                c.pairs.pop();
+            },
+        },
+        BuilderPlant {
+            name: "builder and one-shot agree with each other but not with the case's JSON",
+            input: HOUSE_ALL_PII,
+            side: Side::OneShot,
+            apply: |c| {
+                let i = pair_at(c, "forward/json");
+                c.pairs[i].builder.push(' ');
+                c.pairs[i].oneshot.push(' ');
+            },
+        },
+    ]
+}
+
+#[test]
+fn builder_guard_holds_on_every_seed_and_degenerate_inputs() {
+    let inputs = render_harness_inputs();
+    for (name, data) in &inputs {
+        let c = render_invariants::build(data);
+        assert_eq!(c.pairs.len(), render_invariants::BUILDER_PAIRS, "{name}");
+        render_invariants::run_guard("builder_equals_oneshot", &c)
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
+    }
+    // All 256 option bytes over a rich input and a hostile one.
+    let rich = full_house_jpeg_bytes();
+    for opt in 0..=255u8 {
+        for (label_len, extra) in [
+            (0u8, &rich[..]),
+            (3, &b"\xFF\xFE\x00ab"[..]),
+            (4, &rich[..]),
+        ] {
+            let mut input = vec![opt, label_len];
+            input.extend_from_slice(&b"=a,\"\r\x1b"[..usize::from(label_len).min(7)]);
+            input.extend_from_slice(extra);
+            let c = render_invariants::build(&input);
+            render_invariants::run_guard("builder_equals_oneshot", &c)
+                .unwrap_or_else(|e| panic!("option byte {opt}: {e}"));
+        }
+    }
+    // Degenerate: nothing at all, one byte, an empty label and file.
+    for input in [&[][..], &[0x1B], &[0xFF, 0xFF, 0xFF], &[0x18, 0x00]] {
+        let c = render_invariants::build(input);
+        render_invariants::run_guard("builder_equals_oneshot", &c).expect("degenerate input");
+    }
+    // The seeds' policies cover the Custom case.
+    for seed in AUDIT_RENDER_SEEDS {
+        let c = render_ctx(seed);
+        render_invariants::run_guard("builder_equals_oneshot", &c)
+            .unwrap_or_else(|e| panic!("{seed}: {e}"));
+    }
+    println!("{} inputs", inputs.len());
+}
+
+#[test]
+fn builder_guard_goes_red_alone_when_planted() {
+    let plants = builder_plants();
+    for side in [Side::Builder, Side::OneShot] {
+        let n = plants.iter().filter(|p| p.side == side).count();
+        assert!(n >= 2, "{side:?}: {n} plant(s), want at least two");
+    }
+    for p in &plants {
+        let good = render_ctx(p.input);
+        // CONTROL: the unplanted case is green, for this guard alone and for
+        // all of them.
+        assert_eq!(
+            render_invariants::run_guard("builder_equals_oneshot", &good),
+            Ok(()),
+            "{}: control",
+            p.name
+        );
+        let mut bad = good.clone();
+        (p.apply)(&mut bad);
+        let flat = |c: &Ctx| format!("{:?}", (&c.pairs, &c.summary_pairs));
+        assert!(
+            flat(&bad) != flat(&good),
+            "{}: the plant changed nothing",
+            p.name
+        );
+        let alone = render_invariants::run_guard("builder_equals_oneshot", &bad);
+        assert!(
+            alone.is_err(),
+            "{}: the builder guard did not reject the planted bug ({:?})",
+            p.name,
+            p.side
+        );
+    }
+    // The other direction of the iff: a change that keeps builder and
+    // one-shot EQUAL is accepted (the guard compares them, it does not pin
+    // the text), on every scenario that is not the case's own rendering.
+    let good = render_ctx(HOUSE_ALL_PII);
+    for name in [
+        "reverse/text",
+        "reverse/json",
+        "reverse/csv",
+        "alone-audited/csv",
+        "alone-failed/json",
+    ] {
+        let mut same = good.clone();
+        let i = pair_at(&same, name);
+        same.pairs[i].builder.push_str("<changed>");
+        same.pairs[i].oneshot.push_str("<changed>");
+        assert_eq!(
+            render_invariants::run_guard("builder_equals_oneshot", &same),
+            Ok(()),
+            "{name}: equal sides are accepted"
+        );
+        // And a same-length change applied identically to both sides.
+        let mut same = good.clone();
+        same_length_corrupt(&mut same.pairs[i].builder);
+        same_length_corrupt(&mut same.pairs[i].oneshot);
+        assert_eq!(
+            render_invariants::run_guard("builder_equals_oneshot", &same),
+            Ok(()),
+            "{name}: equal sides are accepted"
+        );
+    }
+    println!("{} builder plants, each rejected alone", plants.len());
+}
+
+#[test]
+fn builder_guard_is_linear() {
+    let steps_of = |data: &[u8]| -> (u64, usize) {
+        let mut input = vec![3 | 8 | 16, 4];
+        input.extend_from_slice(b"f.jp");
+        input.extend_from_slice(data);
+        let c = render_invariants::build(&input);
+        render_invariants::reset_steps();
+        render_invariants::run_guard("builder_equals_oneshot", &c).expect("guard holds");
+        (
+            render_invariants::steps(),
+            c.want.items.len() + c.want.findings.len(),
+        )
+    };
+    for (name, big, small) in [
+        ("thumbnails", many_thumbnails(5_000), many_thumbnails(2_500)),
+        ("regions", many_regions(3_000), many_regions(1_500)),
+    ] {
+        let (steps, n) = steps_of(&big);
+        assert!(n >= 5_900, "{name}: {n} items and findings");
+        let (half, n_half) = steps_of(&small);
+        assert!(n_half * 2 <= n + 8, "{name}: the small input is half size");
+        // Steps are items and findings plus output bytes / 256 (about eight
+        // per item at the largest): a rescan per finding would be quadratic.
+        let bound = 40 * n as u64 + 256;
+        println!("{name}: {half} steps at half size, {steps} at full ({bound} allowed)");
+        assert!(
+            steps <= bound,
+            "{name}: {steps} steps for {n} items and findings (bound {bound}): not linear"
+        );
+        assert!(
+            steps <= 3 * half,
+            "{name}: {half} steps at half the size, {steps} at full: not linear"
+        );
+    }
+}
+
 #[test]
 fn each_render_guard_goes_red_alone_when_planted() {
     let plants = render_plants();
@@ -3845,7 +4275,15 @@ fn each_render_guard_goes_red_alone_when_planted() {
         let flat = |c: &Ctx| {
             format!(
                 "{:?}",
-                (&c.json, &c.csv, &c.text, &c.text_again, &c.summary)
+                (
+                    &c.json,
+                    &c.csv,
+                    &c.text,
+                    &c.text_again,
+                    &c.summary,
+                    &c.pairs,
+                    &c.summary_pairs
+                )
             )
         };
         assert!(

@@ -11,7 +11,7 @@ use crate::audit::{Finding, Item, ItemKind, Preview};
 
 use super::{
     container_name, excerpt, ifd_name, item_categories, preview_of, region_name, safe_text,
-    status_of, summarize, tag_hex, FileEntry, FileResult, RenderOptions,
+    status_of, tag_hex, FileEntry, FileResult, Format, RenderOptions, Summary,
 };
 
 /// The schema version; a change to any key or enumeration bumps it.
@@ -271,10 +271,16 @@ fn file_json(out: &mut String, entry: &FileEntry<'_>, opts: &RenderOptions) {
     }
 }
 
-/// Render the report as one JSON document (DEC-010 part 3), followed by a
-/// newline. Well-formed for any input bytes; deterministic.
-pub fn render_json(files: &[FileEntry<'_>], opts: &RenderOptions) -> String {
-    let s = summarize(files, opts);
+/// One file's fragment: its object in the `files` array.
+pub(super) fn fragment(entry: &FileEntry<'_>, opts: &RenderOptions) -> String {
+    let mut out = String::new();
+    file_json(&mut out, entry, opts);
+    out
+}
+
+/// The document: the frame, the summary of every file, then the fragments
+/// joined with `,`.
+pub(super) fn assemble(fragments: &[String], s: &Summary, opts: &RenderOptions) -> String {
     let mut out = String::new();
     out.push_str("{\"schema_version\":");
     number(&mut out, SCHEMA_VERSION);
@@ -315,12 +321,19 @@ pub fn render_json(files: &[FileEntry<'_>], opts: &RenderOptions) -> String {
     out.push_str(",\"unreliable_files\":");
     number(&mut out, s.unreliable_files);
     out.push_str("},\"files\":[");
-    for (i, entry) in files.iter().enumerate() {
+    for (i, fragment) in fragments.iter().enumerate() {
         if i > 0 {
             out.push(',');
         }
-        file_json(&mut out, entry, opts);
+        out.push_str(fragment);
     }
     out.push_str("]}\n");
     out
+}
+
+/// Render the report as one JSON document (DEC-010 part 3), followed by a
+/// newline. Well-formed for any input bytes; deterministic. This is a
+/// [`ReportBuilder`](super::ReportBuilder) with every file added.
+pub fn render_json(files: &[FileEntry<'_>], opts: &RenderOptions) -> String {
+    super::build_all(Format::Json, files, opts)
 }

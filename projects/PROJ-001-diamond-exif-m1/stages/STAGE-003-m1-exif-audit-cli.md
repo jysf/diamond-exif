@@ -97,9 +97,10 @@ Format: `- [status] SPEC-ID (cycle) — one-line summary`
 - [x] SPEC-014 (shipped on 2026-11-06) — [M] StripPolicy presets as data and the policy preview; DEC for preset semantics
 - [x] SPEC-015 (shipped on 2026-11-06) — [L] Text, JSON and CSV renderers and the `audit_render` fuzz target (well-formed on hostile input)
 - [x] SPEC-017 (shipped on 2026-11-06) — [M] Bound Container memory: a total entry budget for the tolerant walk (found by the SPEC-012 build: a 789 KB TIFF parses cleanly to 33M entries, ~950 MB)
-- [ ] SPEC-016 (frame) — [L] The `exif-audit` binary: arguments, directory walk, per-file isolation, exit codes, CLI integration tests, CI build job
+- [x] SPEC-018 (shipped on 2026-11-06) — [M] Incremental report assembly: ReportBuilder with output equal to the one-shot renderers (so the binary holds one input file at a time)
+- [ ] SPEC-016 (design) — [L] The `exif-audit` binary: arguments, directory walk, per-file isolation, exit codes, CLI integration tests, CI build job
 
-**Count:** 5 shipped / 1 active / 0 pending
+**Count:** 6 shipped / 1 active / 0 pending
 
 ## Design Notes
 

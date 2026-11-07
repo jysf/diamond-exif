@@ -23,8 +23,8 @@ mod render_invariants {
     use exif_core::audit::audit;
     use exif_core::jpeg;
     use exif_core::report::{
-        render_csv, render_json, render_text, summarize, FailReason, FileEntry, FileResult,
-        RenderOptions,
+        render_csv, render_json, render_text, summarize, FailReason, FileEntry, FileResult, Format,
+        RenderOptions, ReportBuilder, Summary,
     };
     use exif_core::tiff::Container;
     use exif_core::{StripPolicy, StripSpec};
@@ -338,6 +338,97 @@ mod render_invariants {
         pub json: String,
         pub csv: String,
         pub summary: SummaryF,
+        /// SPEC-018: the builder's output beside the one-shot output, for the
+        /// scenarios and formats of [`BUILDER_PAIRS`], in that order.
+        pub pairs: Vec<BuilderPair>,
+        /// The builder's running summary beside `summarize`, after 0, 1 and 2
+        /// entries.
+        pub summary_pairs: Vec<(SummaryF, SummaryF)>,
+    }
+
+    /// One builder-versus-one-shot comparison (SPEC-018).
+    #[derive(Clone, Debug)]
+    pub struct BuilderPair {
+        /// `scenario/format`, e.g. `reverse/csv`.
+        pub name: String,
+        /// `ReportBuilder::new(format, opts)`, each entry added, `finish()`.
+        pub builder: String,
+        /// `render_text`, `render_json` or `render_csv` over the same entries.
+        pub oneshot: String,
+    }
+
+    /// The scenarios the builder guard compares, in order: the two entries the
+    /// target builds in `add` order, in reverse order, and each alone; each in
+    /// the three formats.
+    pub const BUILDER_SCENARIOS: [&str; 4] =
+        ["forward", "reverse", "alone-audited", "alone-failed"];
+    pub const BUILDER_FORMATS: [&str; 3] = ["text", "json", "csv"];
+
+    /// How many pairs a case has.
+    pub const BUILDER_PAIRS: usize = BUILDER_SCENARIOS.len() * BUILDER_FORMATS.len();
+
+    fn flatten(s: &Summary) -> SummaryF {
+        SummaryF {
+            files: s.files,
+            failed: s.failed,
+            unsupported: s.unsupported,
+            unreadable: s.unreadable,
+            issues: s.issues,
+            ok: s.ok,
+            findings: s.findings,
+            by_category: s
+                .by_category
+                .iter()
+                .map(|(c, n)| (format!("{c:?}"), *n))
+                .collect(),
+            max_severity: s.max_severity.map(|m| format!("{m:?}")),
+            residual: s.residual_findings,
+            reliable: s.reliable_files,
+            unreliable: s.unreliable_files,
+        }
+    }
+
+    fn oneshot_of(format: Format, files: &[FileEntry<'_>], opts: &RenderOptions) -> String {
+        match format {
+            Format::Text => render_text(files, opts),
+            Format::Json => render_json(files, opts),
+            Format::Csv => render_csv(files, opts),
+        }
+    }
+
+    /// The builder-versus-one-shot pairs and summary pairs of `entries`
+    /// (audited first, failed second).
+    fn builder_pairs(
+        entries: &[FileEntry<'_>],
+        opts: &RenderOptions,
+    ) -> (Vec<BuilderPair>, Vec<(SummaryF, SummaryF)>) {
+        let orders: [&[usize]; 4] = [&[0, 1], &[1, 0], &[0], &[1]];
+        let mut pairs = Vec::new();
+        for (scenario, order) in BUILDER_SCENARIOS.iter().zip(orders) {
+            let chosen: Vec<FileEntry<'_>> = order
+                .iter()
+                .filter_map(|i| entries.get(*i).cloned())
+                .collect();
+            for format in [Format::Text, Format::Json, Format::Csv] {
+                let mut b = ReportBuilder::new(format, *opts);
+                for e in &chosen {
+                    b.add(e);
+                }
+                pairs.push(BuilderPair {
+                    name: format!("{scenario}/{}", format.name()),
+                    builder: b.finish(),
+                    oneshot: oneshot_of(format, &chosen, opts),
+                });
+            }
+        }
+        let mut b = ReportBuilder::new(Format::Json, *opts);
+        let mut summary_pairs = vec![(flatten(&b.summary()), flatten(&summarize(&[], opts)))];
+        for (k, e) in entries.iter().enumerate() {
+            b.add(e);
+            let upto = entries.get(..=k).unwrap_or(entries);
+            summary_pairs.push((flatten(&b.summary()), flatten(&summarize(upto, opts))));
+        }
+        (pairs, summary_pairs)
     }
 
     /// The options of one case.
@@ -382,25 +473,8 @@ mod render_invariants {
                 },
             },
         ];
-        let s = summarize(&entries, &opts);
-        let summary = SummaryF {
-            files: s.files,
-            failed: s.failed,
-            unsupported: s.unsupported,
-            unreadable: s.unreadable,
-            issues: s.issues,
-            ok: s.ok,
-            findings: s.findings,
-            by_category: s
-                .by_category
-                .iter()
-                .map(|(c, n)| (format!("{c:?}"), *n))
-                .collect(),
-            max_severity: s.max_severity.map(|m| format!("{m:?}")),
-            residual: s.residual_findings,
-            reliable: s.reliable_files,
-            unreliable: s.unreliable_files,
-        };
+        let summary = flatten(&summarize(&entries, &opts));
+        let (pairs, summary_pairs) = builder_pairs(&entries, &opts);
         Ctx {
             file: file.to_vec(),
             label: label.to_vec(),
@@ -418,6 +492,8 @@ mod render_invariants {
             json: render_json(&entries, &opts),
             csv: render_csv(&entries, &opts),
             summary,
+            pairs,
+            summary_pairs,
         }
     }
 
@@ -1519,8 +1595,78 @@ mod render_invariants {
         Ok(())
     }
 
+    /// SPEC-018: the incremental builder equals the one-shot renderers, byte
+    /// for byte, for the two entries in `add` order, in reverse order and each
+    /// alone, in all three formats, and its running summary equals
+    /// `summarize` after 0, 1 and 2 entries. An `iff`: a difference on either
+    /// side is a violation, and so is a missing comparison.
+    fn g_builder_equals_oneshot(c: &Ctx) -> Result<(), String> {
+        let n = c.want.items.len() + c.want.findings.len();
+        tick(n + BUILDER_PAIRS + 1);
+        if c.pairs.len() != BUILDER_PAIRS {
+            return Err(format!(
+                "{} builder comparisons, want {BUILDER_PAIRS}",
+                c.pairs.len()
+            ));
+        }
+        for (i, p) in c.pairs.iter().enumerate() {
+            let scenario = BUILDER_SCENARIOS.get(i / 3).copied().unwrap_or("?");
+            let format = BUILDER_FORMATS.get(i % 3).copied().unwrap_or("?");
+            let want_name = format!("{scenario}/{format}");
+            if p.name != want_name {
+                return Err(format!(
+                    "comparison {i} is {:?}, want {want_name:?}",
+                    p.name
+                ));
+            }
+            // Work proportional to the bytes compared, counted per 256.
+            tick(1 + p.builder.len() / 256 + p.oneshot.len() / 256);
+            if p.builder != p.oneshot {
+                let at = p
+                    .builder
+                    .bytes()
+                    .zip(p.oneshot.bytes())
+                    .position(|(a, b)| a != b)
+                    .unwrap_or(p.builder.len().min(p.oneshot.len()));
+                return Err(format!(
+                    "{}: the builder's output ({} bytes) differs from the one-shot's ({} bytes) at byte {at}",
+                    p.name,
+                    p.builder.len(),
+                    p.oneshot.len()
+                ));
+            }
+        }
+        // The forward one-shot side is the case's own rendering: the pairs
+        // cannot be replaced by two copies of something else.
+        for (i, own) in [&c.text, &c.json, &c.csv].into_iter().enumerate() {
+            let p = &c.pairs[i];
+            if p.oneshot != *own || p.builder != *own {
+                return Err(format!("{} is not the case's own output", p.name));
+            }
+        }
+        if c.summary_pairs.len() != 3 {
+            return Err(format!(
+                "{} summary comparisons, want 3",
+                c.summary_pairs.len()
+            ));
+        }
+        for (k, (got, want)) in c.summary_pairs.iter().enumerate() {
+            tick(1);
+            if got != want {
+                return Err(format!(
+                    "the builder's summary after {k} entries is {got:?}, summarize says {want:?}"
+                ));
+            }
+        }
+        // After both entries the running summary is the case's summary.
+        if c.summary_pairs.get(2).map(|p| &p.0) != Some(&c.summary) {
+            return Err("the builder's final summary is not the case's summary".to_string());
+        }
+        Ok(())
+    }
+
     /// Every guard, by name. Each one runs alone through [`run_guard`].
-    pub const GUARDS: [(&str, Guard); 9] = [
+    pub const GUARDS: [(&str, Guard); 10] = [
         ("json_wellformed", g_json_wellformed),
         ("json_shape", g_json_shape),
         ("json_facts", g_json_facts),
@@ -1530,6 +1676,7 @@ mod render_invariants {
         ("values_gate", g_values_gate),
         ("summary_facts", g_summary_facts),
         ("render_linear", g_render_linear),
+        ("builder_equals_oneshot", g_builder_equals_oneshot),
     ];
 
     /// Run ONE guard by name.
