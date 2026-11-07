@@ -214,11 +214,17 @@ pub fn render_text(files: &[FileEntry<'_>], opts: &RenderOptions) -> String {
         "  reliable files: {}, unreliable files: {}\n",
         s.reliable_files, s.unreliable_files
     ));
-    if let (Some(policy), Some(residual)) = (opts.policy, s.residual_findings) {
-        out.push_str(&format!(
-            "  policy {}: residual findings {residual} (reliable files only)\n",
-            policy.name()
-        ));
+    if let Some(policy) = opts.policy {
+        match s.residual_findings {
+            Some(residual) => out.push_str(&format!(
+                "  policy {}: residual findings {residual} (reliable files only)\n",
+                policy.name()
+            )),
+            None => out.push_str(&format!(
+                "  policy {}: residual not available: no file was read reliably\n",
+                policy.name()
+            )),
+        }
     }
     out
 }

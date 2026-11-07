@@ -928,3 +928,58 @@ fn render_is_deterministic() {
         render_json(&files, &RenderOptions::default())
     );
 }
+
+#[test]
+fn summary_residual_is_none_when_no_file_is_reliable() {
+    let cut = [0xFF, 0xD8];
+    let files = vec![
+        FileEntry {
+            label: b"image.png",
+            result: FileResult::Audited(audit(&PNG)),
+        },
+        FileEntry {
+            label: b"cut.jpg",
+            result: FileResult::Audited(audit(&cut)),
+        },
+        FileEntry {
+            label: b"bad.tif",
+            result: FileResult::Audited(audit(b"II\x2A\x00\x40\x00\x00\x00")),
+        },
+        FileEntry {
+            label: b"gone",
+            result: FileResult::Failed {
+                reason: FailReason::Other,
+                detail: b"x",
+            },
+        },
+    ];
+    for policy in [StripPolicy::Gps, StripPolicy::Everything] {
+        let o = opts(Some(policy), false, false);
+        let s = summarize(&files, &o);
+        assert_eq!(s.reliable_files, 0);
+        assert_eq!(s.residual_findings, None, "{}", policy.name());
+        let j = json(&files, &o);
+        assert!(j
+            .get("summary")
+            .unwrap()
+            .get("residual_findings")
+            .unwrap()
+            .is_null());
+        let text = render_text(&files, &o);
+        assert!(
+            text.contains("residual not available: no file was read reliably"),
+            "{text}"
+        );
+        assert!(!text.contains("residual findings 0"), "{text}");
+    }
+    // No policy: still None, and no residual line at all.
+    let text = render_text(&files, &RenderOptions::default());
+    assert!(!text.contains("residual"));
+    // With one reliable file the sum comes back.
+    let jpeg = inputs::full_house_jpeg();
+    let mut more = three(&jpeg, b"f.jpg");
+    more.extend(files);
+    let o = opts(Some(StripPolicy::AllPii), false, false);
+    assert_eq!(summarize(&more, &o).residual_findings, Some(5));
+    assert!(render_text(&more, &o).contains("residual findings 5 (reliable files only)"));
+}

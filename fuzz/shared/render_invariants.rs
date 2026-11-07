@@ -1398,13 +1398,13 @@ mod render_invariants {
                 slot.1 += 1;
             }
         }
-        let want_residual = c.policy.map(|_| {
-            if reliable {
-                h_want(w, &c.removed).residual
-            } else {
-                0
-            }
-        });
+        // Some only with a policy AND a reliable file (the case has one
+        // audited file); never a zero over no reliable file.
+        let want_residual = if reliable {
+            c.policy.map(|_| h_want(w, &c.removed).residual)
+        } else {
+            None
+        };
         let s = &c.summary;
         let want = SummaryF {
             files: 2,

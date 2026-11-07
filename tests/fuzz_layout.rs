@@ -3639,6 +3639,24 @@ fn render_plants() -> Vec<RenderPlant> {
             apply: |c| c.summary.residual = Some(3),
         },
         RenderPlant {
+            name: "a zero residual over no reliable file (summary)",
+            input: PNG_VALUES,
+            guard: "summary_facts",
+            apply: |c| c.summary.residual = Some(0),
+        },
+        RenderPlant {
+            name: "a zero residual over no reliable file (JSON summary)",
+            input: PNG_VALUES,
+            guard: "summary_facts",
+            apply: |c| {
+                rep(
+                    &mut c.json,
+                    "\"residual_findings\":null,\"reliable_files\"",
+                    "\"residual_findings\":0,\"reliable_files\"",
+                )
+            },
+        },
+        RenderPlant {
             name: "the maximum severity is wrong",
             input: HOUSE_ALL_PII,
             guard: "summary_facts",

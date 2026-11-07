@@ -173,8 +173,10 @@ pub struct Summary {
     pub by_category: [(Category, usize); 13],
     /// The highest severity over every audited file's findings.
     pub max_severity: Option<Severity>,
-    /// With a policy: the findings that would remain, summed over the
-    /// **reliable** files only. `None` without a policy.
+    /// With a policy and at least one reliable file: the findings that would
+    /// remain, summed over the **reliable** files only. `None` without a
+    /// policy and when no audited file is reliable (a zero there would read as
+    /// "nothing remains").
     pub residual_findings: Option<usize>,
     /// Audited files whose preview is reliable (a clean audit).
     pub reliable_files: usize,
@@ -232,6 +234,10 @@ pub fn summarize(files: &[FileEntry<'_>], opts: &RenderOptions) -> Summary {
         } else {
             s.unreliable_files = s.unreliable_files.saturating_add(1);
         }
+    }
+    // A residual of zero over no reliable file would read as "nothing remains".
+    if s.reliable_files == 0 {
+        s.residual_findings = None;
     }
     s
 }
@@ -577,10 +583,16 @@ mod tests {
             ..RenderOptions::default()
         };
         assert_eq!(summarize(&files, &keeping).residual_findings, Some(2));
+        // No reliable file: no residual number at all (never a zero).
+        let only_png = [FileEntry {
+            label: b"b",
+            result: FileResult::Audited(audit(&png)),
+        }];
+        assert_eq!(summarize(&only_png, &keeping).residual_findings, None);
         // An empty run.
         let empty = summarize(&[], &keeping);
         assert_eq!(empty.files, 0);
-        assert_eq!(empty.residual_findings, Some(0));
+        assert_eq!(empty.residual_findings, None);
         assert_eq!(empty.max_severity, None);
     }
 }
