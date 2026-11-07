@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: 75
+  tokens_total: 341485             # orchestrator-recorded from the metered sub-agent results (subagent_tokens)
+  estimated_usd: 2.25
+  duration_minutes: 27
   branch: worktree-agent-ae1f46310ab6829e9
   pr: null
   completed_at: 2026-11-06               # YYYY-MM-DD
-  notes: "verify APPROVED at 6723aad; delta verify of follow-up 2 PUNCH LIST at e093e57 (F6 timing bound flaky under load); delta verify 2 of follow-up 3 APPROVED at 9c44a21 (final); tokens_total null: this sub-agent has no token meter, the orchestrator transcribes the harness's metered figure" # one line if unusual (rework, no meter, etc.)
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "verify APPROVED at 6723aad; delta verify of follow-up 2 PUNCH LIST at e093e57 (F6 timing bound flaky under load); delta verify 2 of follow-up 3 APPROVED at 9c44a21 (final). Tokens transcribed by the orchestrator from the sub-agent metered results; the agent was resumed twice and each completion reported a cumulative figure: 268,724, 322,683, 341,485 (final, used); wall-clock 1,064,494 + 371,651 + 209,131 = 1,645,276 ms = 27 minutes; the verifier's own 75-minute estimate is not used" # one line if unusual (rework, no meter, etc.)
+  synced_at: 2026-11-06
 ---
 
 # HANDOFF-032: Verify the text, JSON and CSV renderers and the audit_render fuzz target
@@ -415,10 +415,10 @@ The bound is 8. The scratch copy was restored and checked by hash.
 
 ### Cost self-report
 
-- **Tokens (total):** null. This verifier sub-agent has no token meter in its interface; the orchestrator transcribes the harness's metered figure.
-- **Estimated USD:** null
-- **Duration (minutes):** about 75 (estimate)
-- **Source of the number:** none available to the agent (harness report via the orchestrator)
+- **Tokens (total):** 341,485 (orchestrator-transcribed; final cumulative figure after two resumes)
+- **Estimated USD:** 2.25 (341,485 tokens at 6.60 USD per Mtok)
+- **Duration (minutes):** 27 (harness wall-clock; the verifier's own estimate was about 75)
+- **Source of the number:** harness report (subagent_tokens)
 
 ### Drift and new artifacts
 

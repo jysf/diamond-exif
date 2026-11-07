@@ -75,6 +75,13 @@ Four clarifications from the build's doubts; only the first changes behaviour.
 3. **`label` and failure `detail` are caller-supplied, not file content.** The library does not bound their length (output is linear in them) and prints the detail whatever `values` says, because the detail is the caller's own error text. The binary must pass only a path and an OS error message, never bytes read from the file. The fuzz target feeds file bytes into the detail on purpose, to exercise the escaping.
 4. **A `Custom` policy is named only "custom"** in every format. Two different custom sets are not told apart in a report; the binary exposes presets only, so nothing produces this today (question `report-custom-policy-identity`).
 
+## Amendment 2 (2026-11-06, from the SPEC-015 verify)
+
+Two rules tightened; the first closes a bypass the verifier demonstrated.
+
+1. **CSV quotes on semicolon too.** A field is quoted iff it contains a comma, a double quote, CR, LF **or a semicolon**. A spreadsheet in a semicolon locale splits an unquoted `a;=1+cmd|...` into a cell that starts with `=`, which the single-quote guard would not have seen; quoting keeps it one cell. (A leading space before a trigger and the full-width `＝` are text in spreadsheets and are not guarded.)
+2. **`safe_text` also escapes invisible and format characters**, as `\u{NNNN}`: U+00AD, U+200B to U+200D, U+2060, U+FEFF, U+206A to U+206F, U+FFF9 to U+FFFB and the tag characters U+E0000 to U+E007F. `photo\u{200B}.jpg` must not look like `photo.jpg`. Homoglyphs (different letters that look alike) are not addressed: they are valid text.
+
 ## Alternatives considered
 
 - **Print values by default.** Rejected: a CI log is the wrong place for a serial number or coordinates; the opt-in costs one flag.

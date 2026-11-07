@@ -6,14 +6,14 @@
 task:
   id: SPEC-015
   type: story                      # epic | story | task | bug | chore
-  cycle: verify  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
-  complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
+  complexity_actual: L             # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: approved  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
@@ -67,15 +67,24 @@ cost:
     - cycle: build
       agent: claude-sonnet-5-5
       interface: other
-      tokens_total: 515801
-      estimated_usd: 3.40
-      duration_minutes: 58
+      tokens_total: 586061
+      estimated_usd: 3.87
+      duration_minutes: 80
       recorded_at: 2026-11-06
-      notes: "tokens transcribed by the orchestrator from the sub-agent metered results: 493,090 for the build run and 515,801 reported after the follow-up run, read as cumulative (the follow-up is then 22,711); wall-clock 2,895,129 ms + 600,502 ms = 58 minutes; the agent's own 200-minute estimate is not used"
+      notes: "tokens transcribed by the orchestrator from the sub-agent metered results (cumulative over the build run and three follow-ups; final figure 586,061); see HANDOFF-031"
+    - cycle: verify
+      agent: claude-opus-5-5
+      interface: other
+      tokens_total: 341485
+      estimated_usd: 2.25
+      duration_minutes: 27
+      recorded_at: 2026-11-06
+      notes: "verify APPROVED at 6723aad; delta verify of follow-up 2 PUNCH LIST at e093e57 (F6 timing bound flaky under load); delta verify 2 of follow-up 3 APPROVED at 9c44a21 (final). Tokens transcribed by the orchestrator from the sub-agent metered results; the agent was resumed twice and each completion reported a cumulative figure: 268,724, 322,683, 341,485 (final, used); wall-clock 1,064,494 + 371,651 + 209,131 = 1,645,276 ms = 27 minutes; the verifier's own 75-minute estimate is not used" # one line if unusual (rework, no meter, etc.)
   totals:
-    tokens_total: 515801
-    estimated_usd: 3.40
-    session_count: 1
+    tokens_total: 927546
+    estimated_usd: 6.12
+    session_count: 2
+shipped_at: 2026-11-06
 ---
 
 # SPEC-015: Text, JSON and CSV renderers and the `audit_render` fuzz target (well-formed on hostile input)
@@ -136,7 +145,7 @@ impl<'a> Item<'a> { pub fn value(&self) -> Option<&'a [u8]>; }              // r
 
 1. **Value-free default.** With `values == false`, no output of any format contains any byte derived from a tag payload: JSON `value` is `null` for every finding and inventory item, the CSV `value` and `value_truncated` columns are empty, and text prints no excerpt. A test plants a distinctive payload (`SECRET-SERIAL-0042`) in a Make, an Artist and a BodySerialNumber and asserts it appears in none of the three outputs unless `values` is on, and then in all three, escaped.
 2. **Excerpt.** With `values == true`, a Tag item with a readable payload gets an excerpt: for field type ASCII (2) the bytes up to the first NUL (or the whole payload if none), otherwise the payload; at most 64 bytes taken from the start, `truncated` true iff bytes were cut. The excerpt text is `safe_text` of those bytes.
-3. **`safe_text`** is exactly DEC-010 part 2: the output has no character below U+0020 (all escaped), no DEL, no C1, no bidi control, no U+2028/2029, and no raw `"` or `\`; every invalid UTF-8 byte appears as `\xNN`; valid printable text (including non-ASCII letters) is unchanged; it is injective on the byte strings it covers (two different inputs never give one output) and total (no panic, linear time, output at most 4x the input plus constant).
+3. **`safe_text`** is exactly DEC-010 part 2: the output has no character below U+0020 (all escaped), no DEL, no C1, no bidi control, no U+2028/2029, none of the invisible and format characters of DEC-010 amendment 2 (U+00AD, U+200B to U+200D, U+2060, U+FEFF, U+206A to U+206F, U+FFF9 to U+FFFB, U+E0000 to U+E007F), and no raw `"` or `\`; every invalid UTF-8 byte appears as `\xNN`; valid printable text (including non-ASCII letters) is unchanged; it is injective on the byte strings it covers (two different inputs never give one output) and total (no panic, linear time, output at most 4x the input plus constant).
 4. **Status.** `status_of` follows DEC-010 part 5. `Ok` only for `health().clean`. An `Unsupported` kind is never `Ok`, even though it has no findings.
 5. **JSON** (UTF-8, one document, keys in this order, no extra keys, no duplicates, numbers non-negative integers):
    `{"schema_version":1,"policy":str|null,"options":{"inventory":bool,"values":bool},"summary":{"files","failed","unsupported","unreadable","issues","ok","findings","by_category":{13 keys in Category::ALL order},"max_severity":str|null,"residual_findings":n|null,"reliable_files","unreliable_files"},"files":[ FILE... ]}`
@@ -146,7 +155,7 @@ impl<'a> Item<'a> { pub fn value(&self) -> Option<&'a [u8]>; }              // r
    `WHERE = {"kind":"tag","ifd":str,"ifd_index":n,"tag":"0xNNNN","field_type":n,"count":n}` or `{"kind":"region","region":str,"segment":n,"len":n}`;
    `PREVIEW = {"policy":str,"counts":{"removed","kept","kept_unread"},"reliable":bool,"residual_findings":n|null,"residual_severity":str|null}` where both residual fields are `null` unless `reliable` is true (DEC-009 amendment);
    `ifd` names: `ifd0 ifd1 chain sub exif gps interop other`; `container`: `tiff jpeg` or the sniffed name (`png webp heic gif bigtiff unknown empty`), `null` for a failed file. `disposition` is `null` unless a policy is set.
-6. **CSV** (RFC 4180, CRLF): header `label,status,container,category,severity,kind,ifd,ifd_index,tag,field_type,count,region,region_len,block,segment,after_scan,disposition,value,value_truncated`. Rows: one per finding; with `inventory` on, one per inventory item (category and severity empty for an item with no finding) followed by one per finding that has no item; and **one row for every file that has no row otherwise** (label, status, container only; the rest empty), so no file is ever absent. Every row has exactly 19 fields. Quoting and the formula guard are DEC-010 part 4; the guard applies to `label`, `value` and the failure detail (carried in `value` for a failed file's row) and to nothing else.
+6. **CSV** (RFC 4180, CRLF): header `label,status,container,category,severity,kind,ifd,ifd_index,tag,field_type,count,region,region_len,block,segment,after_scan,disposition,value,value_truncated`. Rows: one per finding; with `inventory` on, one per inventory item (category and severity empty for an item with no finding) followed by one per finding that has no item; and **one row for every file that has no row otherwise** (label, status, container only; the rest empty), so no file is ever absent. Every row has exactly 19 fields. A field is quoted iff it contains a comma, semicolon, quote, CR or LF (DEC-010 amendment 2); quoting and the formula guard are DEC-010 part 4; the guard applies to `label`, `value` and the failure detail (carried in `value` for a failed file's row) and to nothing else.
 7. **Text** is line-oriented, UTF-8, `\n` line ends, no character below U+0020 other than `\n`, no bidi, C1 or DEL characters. Required content: per file the label (via `safe_text`), the status, the container, a findings count (a zero is printed as `0 findings`), each finding with category, severity, location and (with a policy) disposition worded `removed`, `kept (not targeted by this policy)`, `kept_unread (may hold what this policy removes)`; the preview's residual numbers only when `reliable`, otherwise the line `preview not reliable: the file was not read cleanly`; and a final summary block. The text never contains the phrases "no personal data", "safe" or "clean file". The exact layout is pinned by the golden files below.
 8. **Determinism and bounds.** Output is a pure function of the arguments; same input, same bytes. Work and output size are linear in `sum(items + findings)`; per item the output is bounded (the label and excerpt are bounded, 64 bytes of excerpt after escaping at most 4x). The build measures and reports the largest output for one file at the audit caps (`MAX_INVENTORY_ITEMS` items with `inventory` and `values` on).
 9. **No I/O, no dependencies, no panics.** Pure functions returning `String`.
@@ -260,25 +269,20 @@ Carried: the SPEC-014 mutants 15, 16, vG, vM and the SPEC-013 rescan-without-tic
 *Appended during **ship**. Three questions, short answers.*
 
 1. **What would I do differently next time?**
-   — <answer>
+   — Put a security review of the escaping into the design, not only into verify: the cold verifier found a real CSV bypass (a semicolon locale splits an unquoted field into a formula cell) and invisible characters that spoof a name, both of which the DEC's own list should have named. I would also have pre-computed the output-size worst case (CSV with inventory on, 131,072 rows) and specified the timing test as a ratio from the start; the absolute 55 ms bound flaked under load.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — DEC-010 gained two amendments (summary residual needs a reliable file, DEL form, caller-supplied label and detail, Custom naming; then semicolon quoting and the wider invisible-character escape set). Lesson, N=2 with SPEC-014 (a guard is only as strong as what its inputs reach): a harness over a classification needs a seed for every class, here the tag-character range and DeviceId/MakerNote. Added to `guidance/signals.yaml` as a watch lesson.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — No new spec. SPEC-016 must know: the renderers return a `String` (72 MB JSON, 48 MB text, about 44 MB CSV at the caps), label and detail come from the binary and must be OS text, never file bytes, and `Custom` policies are unreachable from the CLI. Questions carry value decoding, tag names and custom-policy identity.
 
 4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
    the defect-escape distribution is greppable across specs:
    `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
    `none` (clean first try).
-   — <one word>
-   *(Runtime/operational defects — the escape-prone class — only exist once the
-   artifact meets its real host. `escaped` here is a signal to strengthen the
-   §12 behavioral pre-flight for that surface.)*
+   — verify
+   *(The CSV semicolon bypass and the invisible-character gap were found by the cold verifier; the build's own flaky timing bound was found by the delta verify under load.)*
 
 5. **What can a user do now that they couldn't before?** — one sentence,
    before → after; quote the confirming number if one exists, name the outcome
@@ -287,4 +291,4 @@ Carried: the SPEC-014 mutants 15, 16, vG, vM and the SPEC-013 rescan-without-tic
    `impact` field is transcribed from, and both halves are already written above
    (## Context is the before, ## Goal is the after): confirm the prediction,
    don't reconstruct it from memory.
-   — <answer | none>
+   — Render an audit as text, JSON or CSV that stays well-formed and safe for any file name or tag value (before: no report at all; after: three renderers proved against independent strict checkers and a new `audit_render` fuzz target, values hidden unless asked, and a file never reported "ok" unless the audit was clean).

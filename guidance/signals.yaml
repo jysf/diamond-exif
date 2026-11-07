@@ -182,3 +182,15 @@ signals:
     last_touched: 2026-11-05
     raised_by: claude
     notes: "Alternative: add these scripts to a single `just ci-local` recipe."
+
+  - id: fuzz-guard-needs-seeds-for-every-class
+    type: lesson
+    summary: "A fuzz guard over a classification proves nothing about classes its seeds never reach; add a seed per class or the guard is vacuous for it."
+    evidence: "SPEC-014 verify F1 (DeviceId/MakerNote not in any audit seed; a plant was not found in 181 s) and SPEC-015 verify N4 (no seed with a tag character; a harness safe_text missing that range went unnoticed by the harness). N=2."
+    bar: "N=3 same-outcome"
+    status: watch
+    disposition_at: stage-close
+    first_flagged: 2026-11-06
+    last_touched: 2026-11-06
+    raised_by: claude
+    notes: "At N=2. Third occurrence codifies 'every classification guard lists its classes and the harness test asserts a seed reaches each' into the spec design checklist."
