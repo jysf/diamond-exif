@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: verifier             # implementer | verifier
   created_at: 2026-11-06
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-018
@@ -42,14 +42,14 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: null
-  branch: null
-  pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # one line if unusual (rework, no meter, etc.)
+  status: completed                # completed | blocked | rejected
+  tokens_total: null               # the verifier cannot see its own meter; the orchestrator transcribes the metered sub-agent figure
+  estimated_usd: null
+  duration_minutes: 50             # verifier's estimate; the harness wall-clock supersedes it
+  branch: worktree-agent-a4b5a3aaf3af38bfd
+  pr: null                         # verify cycle: verdict only, no PR
+  completed_at: 2026-11-06         # YYYY-MM-DD
+  notes: "verdict PUNCH LIST at f18bbda (2 small test-strength items); tokens_total null because the sub-agent cannot read its own meter, orchestrator to transcribe subagent_tokens"
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -111,38 +111,126 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** branch `worktree-agent-a4b5a3aaf3af38bfd`, no PR (verify). `git merge --ff-only claude/rust-exif-metadata-6351d5` succeeded (fast-forward to f18bbda). Code reviewed: `git diff 8d7ca73..f18bbda` (build commits 19ba3cd, d33bd6e).
+- **Completed at:** 2026-11-06
+- **All acceptance criteria met?** Yes for the code and the gates. Two test-strength gaps (F1, F2) make up the punch list.
+- **For `verify`:** ⚠ **PUNCH LIST at f18bbda.** The library change is correct and minimal, every gate is green, and the build's mutant claims reproduce. The punch list asks for two small tests (F1, F2). No library code change is needed.
+
+**Gates (run by the verifier, each exit status recorded without a pipe):** `cargo fmt --all -- --check` 0; `rustfmt --edition 2021 --check fuzz/shared/render_invariants.rs fuzz/fuzz_targets/audit_render.rs` 0; `cd fuzz && cargo fmt --all -- --check` 0; `just lint` 0; `just lint-fuzz` 0; `just lint-no-allow` 0; `just lint-red-proof` 0; `just lint-fuzz-red-proof` 0; `DIAMOND_EXIF_REQUIRE_ORACLE=1 cargo test --no-fail-fast` (Homebrew 1.99.1) 0, every binary ok; the same with `~/.cargo/bin/cargo +1.90.0` 0; `just forbid-unsafe` 0; `just deny` 0; `just deny-fuzz` 0; `just validate` 0; `just decisions-audit` 0 (0 structural errors, 11 scope warnings that were already there); `just cost-audit` 0; `just oracle-record` 0, then `git status --porcelain` empty. `just fuzz-smoke audit_render` (60 s, unmodified tree): exit 0, `Done 36441 runs in 61 second(s)`, final `cov: 4780 ft: 14397 corp: 929/245Kb exec/s: 597`. Other builds were running on the host at the same time; the build reported about 700 exec/s.
+
+**Untouched (checked with `git diff --stat 8d7ca73..HEAD`):** `tests/golden/` (all three files byte-identical), `decisions/`, `scripts/`, `Cargo.toml`, `Cargo.lock`, `fuzz/Cargo.toml`, `fuzz/fuzz_targets/`, `fuzz/seeds/`, `src/report/safe.rs`, `src/audit/` (the audit and the preview), `src/policy.rs`, `src/lib.rs`.
+
+**Existing test lines changed:**
+- `tests/report_render.rs`: only the `use` line, which adds `render`, `Format` and `ReportBuilder`.
+- `tests/fuzz_layout.rs`: the old `render_plants()` body became `fact_render_plants()` with the same plants. The `flat` tuple in `each_render_guard_goes_red_alone_when_planted` gained `&c.pairs, &c.summary_pairs`. That widens only the precondition "the plant changed something". The fact plants still change the same fields, and the assertion "rejected by its own guard alone" is unchanged.
+
+Neither change relaxes an expectation, and no `#[ignore]` was added.
+
+**Rules checked by hand.**
+- Rule 2: `ReportBuilder { format: Format, opts: RenderOptions, fragments: Vec<String>, summary: Summary }`. `RenderOptions` is `Option<StripPolicy>` plus two bools, and `Summary` holds only owned counters. There is no lifetime parameter and no index into an entry. `builder_keeps_no_borrow_of_the_added_entry` drops the label and the detail and overwrites the buffer before `finish`. Holds.
+- Rule 3: fragments are pushed in `add` order, each built from `entry` and `opts` alone. Adding the same entry twice pushes two fragments. Holds.
+- Rule 4: JSON is the frame, then `summary` (the finalized running summary), then the fragments joined by `,`. CSV is `HEADER` plus CRLF once, then the fragments. Text is the fragments, then the summary block. An empty builder goes through the same `assemble`. Holds.
+- Rule 5, measured with a counting global allocator in a scratch crate (release build): I added a 50 MiB TIFF (one 50 MiB ASCII Make) and a failed entry, then dropped every input. Across the three formats and two option sets the builder kept 2,334 to 3,552 bytes; the outputs were 1,293 to 2,646 bytes. No input byte is retained. The bytes beyond the fragment lengths are `String`/`Vec` capacity slack (see F3).
+- `Summary::add_file`: the logic is identical to the old `summarize` loop. The amendment-1 rule (`residual_findings` is `None` when no file is reliable) lives only in `finalized`. `summarize`, `summary()` and `finish` all apply it, so the running value stays `Some(0)` and recovers when a reliable file arrives. The unit test and my mutants v10, v11 and v13 check this, and all three were caught. `max_severity` equality holds by construction, but no test checks it is correct across files (F2).
+
+**The central claim: one code path.** `render_text`, `render_json` and `render_csv` are all `build_all`: new, add each, finish. So for any bug in the shared code, builder-equals-one-shot stays true by construction.
+
+The equivalence checks (`builder_equals_the_one_shot_*`, the seed cross product, the guard) can only see a divergence in the builder-only surface:
+- `summary()` or `len()`
+- the `render` dispatch
+- a one-shot that stops using the builder
+
+These are spec mutants 8, 9, 10 and 12, and my v04.
+
+Other checks, independent of the builder, keep the shared output *correct*:
+- the goldens: `golden_text_json_csv_match_byte_for_byte`, unchanged
+- the strict JSON/CSV checkers and the fact guards of `audit_render` (`json_facts`, `csv_rows`, `summary_facts`, `values_gate`, and the rest)
+- the format tests in `tests/report_formats.rs` and `render_tests.rs`
+- the builder unit tests that pin literal structure: fragment composition, `"files":[]}`, per-file length deltas
+
+Except v09, one of these caught every shared-path mutant I wrote (list below).
+
+Ways the one-shot output could be wrong while every equivalence check passes, and what catches each:
+- a wrong separator or frame: the goldens and the fragment-composition test
+- the text summary placed first: the goldens and the text format tests
+- an option ignored in `add`: the format tests and the harness
+- a bug in the empty document: only the two builder unit tests (s11)
+- a wrong `max_severity` across files: nothing (F2)
+
+**Mutants.** I applied each by script in a separate detached worktree of f18bbda. Each run made an exact-string edit, ran `cargo test --no-fail-fast --lib --test report_render --test report_formats --test fuzz_layout`, then `git checkout`, and confirmed `git status --porcelain` was empty. A control run was green first, and survivors were re-run against the full `cargo test`.
+
+The build's mutants, re-run (all match the build handback's claims):
+- 2 (JSON joined with `, `): caught by `golden_text_json_csv_match_byte_for_byte`, `golden_files_are_unchanged_and_the_builder_reproduces_them`, `builder_fragments_appear_in_add_order_and_are_independent_of_neighbours` and `builder_retains_only_fragments_not_input_bytes`. No harness guard fires; the plant tests fail only because a plant's `},{` anchor is gone. Matches the claim.
+- 5 (text summary first): caught by both goldens, `render_dispatches_to_the_matching_one_shot`, `builder_fragments_appear_in_add_order_and_are_independent_of_neighbours`, many text format tests and the render harness.
+- 8 (`summary()` skips Failed): 13 tests fail, including `builder_summary_equals_summarize_at_every_step`, `builder_equals_the_one_shot_on_the_seed_cross_product`, `builder_guard_holds_on_every_seed_and_degenerate_inputs` and `render_harness_holds_on_every_seed_and_degenerate_inputs`.
+- 9 (divergent `render_json`): 19 tests fail, including both goldens, `builder_equals_the_one_shot_for_one_and_for_many_entries_in_every_format`, the cross product, the builder guard and `json_summary_matches_summarize`.
+- 11 (empty JSON `[,]`): caught only by `builder_with_no_entries_equals_the_empty_one_shot_in_every_format` and `builder_retains_only_fragments_not_input_bytes`. Matches the claim.
+- 12 (`len()` + 1): caught by `builder_with_no_entries_...`, `builder_adding_the_same_entry_twice_gives_two_fragments`, `builder_summary_equals_summarize_at_every_step`, the cross product and `golden_files_are_unchanged_and_the_builder_reproduces_them`.
+
+The verifier's own:
+- v01 (CSV header only if the first added entry has findings): caught by `csv_uses_crlf`, `csv_has_a_row_for_every_file_without_findings`, `render_harness_holds_on_every_seed_and_degenerate_inputs`, the fragment-composition test and others.
+- v02 (text drops the blank line after Failed blocks only): caught only by the two golden tests.
+- v03 (`finish` swaps fragments 2 and 3 when there are more than 2): caught by both goldens, `json_has_the_pinned_key_order_at_every_level` and `json_enumerations_are_pinned`. No guard fires, because the harness never has 3 entries.
+- v04 (`summary()` doubles `findings` from 2 entries): caught by `builder_summary_equals_summarize_at_every_step`, the cross product, the builder guard and `builder_json_assembly_puts_the_running_summary_before_the_files`.
+  - **The real `audit_render` libFuzzer target also finds it:** `just fuzz-smoke audit_render` exits 1 with `render invariants violated: [("builder_equals_oneshot", "the builder's summary after 2 entries is SummaryF { ... findings: 2 ...` and `deadly signal`. Reverted; tree clean.
+- v05 (JSON re-escapes backslashes in fragments): caught by the goldens, `json_escapes_quote_backslash_and_every_control_end_to_end`, the render harness and others.
+- v06 (`add` reads `RenderOptions::default().inventory`): caught by `csv_inventory_mode_rows`, `json_has_the_pinned_key_order_at_every_level` and the render harness. The goldens miss it because inventory is off there.
+- v07 (the guard compares lengths only, `p.builder.len() != p.oneshot.len()`): **SURVIVES the full `cargo test`.** See F1.
+- v08 (the guard always fails, so a plant's control is red): caught by the control assertions in `builder_guard_goes_red_alone_when_planted` and `each_render_guard_goes_red_alone_when_planted`, and by `builder_guard_holds_on_every_seed_and_degenerate_inputs`.
+- v09 (`add_file` keeps the lowest `max_severity` across files, `cur > m`): **SURVIVES the full `cargo test`.** See F2.
+- v10 (the rule "`None` when no file is reliable" removed): caught by `summary_residual_is_none_when_no_file_is_reliable`, `summarize_counts_each_status_category_and_reliability`, the step test and the harness.
+- v11 (`None` latched into the running summary at the first unreliable audited file): caught only by `summary_residual_counts_the_reliable_files_only_when_an_unreliable_file_has_findings`.
+- v12 (`reliable` ignores `inventory_truncated`): survives, but it is an equivalent mutant. `Health::clean` already requires `!truncated` (`finish` in `src/audit/mod.rs`). Not a finding.
+- v13 (text summary uses the un-finalized running summary): caught only by `summary_residual_is_none_when_no_file_is_reliable`.
+- v14 (CSV failed row loses its detail): caught by the goldens, the CSV format tests and the harness.
+
+**Linearity.** `builder_guard_is_linear` runs the new guard alone and asserts the ratio `steps <= 3 * half`. It also asserts a per-item bound of `40 n + 256`, which grows with n, not an absolute constant. `render_guards_are_linear` runs every guard, the new one included, with the same ratio. Covered.
+
+The step counter counts the guard's own comparisons. The 21 renders `build_case` now does happen outside any guard, as they already did for the earlier render guards.
+
+**Findings.**
+- **F1 (Medium, test strength; punch list).** The `builder_equals_oneshot` plants cannot tell byte equality from length equality.
+  - Every builder-side plant changes the length: dropping the last row, ` value="` to ` v="`, and `}, {`. So does the "one-shot gains a byte" plant.
+  - A guard that compares only lengths (v07) therefore passes `builder_guard_goes_red_alone_when_planted`, `builder_guard_holds_...` and every other test.
+  - The forward pairs are still byte-checked against the case's own output, so the blind spot is the reverse and alone scenarios.
+  - Fix: add a plant that keeps the length on a non-forward pair, e.g. swap two adjacent bytes, or replace `"status":"ok"` with `"status":"ko"` in `reverse/json`.
+- **F2 (Low; a test gap that predates this spec, surfaced by its brief; punch list).** No test or guard has two audited files with different maximum severities, the higher one first.
+  - So a running maximum that keeps the minimum (v09) passes the full suite.
+  - The builder-versus-`summarize` checks are equal by construction, so they cannot see it.
+  - Fix: one unit test, on the builder or on `summarize`, with a high-severity file then a lower-severity one, asserting that the summary's `max_severity` is the higher.
+- **F3 (Info, doc precision).** The `ReportBuilder` doc says the retained size is the sum of the fragment lengths plus a constant per fragment.
+  - It is really the sum of the fragment *capacities* plus the `Vec`'s capacity, up to about twice the lengths. I measured 2.3 to 3.6 KB retained for 1.3 to 2.6 KB of output.
+  - The property that matters holds: no input byte is retained (under 4 KB retained after a 50 MiB input).
+  - Optional fix: say "capacities" in the doc, or `shrink_to_fit` each fragment.
+- **F4 (Info).** Some mutants are caught by a single check or a single kind of check:
+  - v02: only the goldens
+  - s11: only the two builder unit tests
+  - v11 and v13: one existing test each
+
+  Acceptable, but recorded so nobody deletes those tests as redundant.
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null. The sub-agent cannot read its own meter; the orchestrator transcribes the metered `subagent_tokens` figure.
+- **Estimated USD:** null (follows the tokens)
+- **Duration (minutes):** about 50 (an estimate; the harness wall-clock supersedes it)
+- **Source of the number:** none available to the agent; the harness report, via the orchestrator
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
-- **Deviations from spec:**
-  - [list]
+- **New decisions emitted:** none.
+- **Deviations from spec:** none beyond those the build handback declares. I checked and accept them all: the location of `builder_tests.rs`, the extra rule-5 test, the per-fragment constant in the bound, and the widened `flat` tuple.
 - **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - F1 and F2 above: two small tests, no library change.
+  - Optional, agreeing with the build handback: a harness guard that renders an empty report and pins its frame, so that mutant 11's class is not caught by the two builder unit tests alone.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — Nothing material. The brief's list of mutant ideas was useful. The isolation sandbox refuses compound shell commands that name `git` or `$HOME` in this worktree, so the mutant and fuzz runs went through small scripts.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — A rule for guard plants: every guard that compares strings needs at least one plant that keeps the length unchanged, so a length-only comparison is caught (F1). Other guards that compare strings may have the same gap.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Run the mutants in a separate detached worktree from the start, as I did. But wait for the runner to exit rather than for a marker line: waiting on the marker made me read a half-finished results file once.
