@@ -45,11 +45,11 @@ handback:
   status: completed                     # completed | blocked | rejected
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: 75
+  duration_minutes: 105
   branch: worktree-agent-a8294d7bb91892337
   pr: null
   completed_at: 2026-11-06               # YYYY-MM-DD
-  notes: "verify verdict PUNCH LIST at 6935f90 (code at 3bde9e7); tokens_total null: the sub-agent cannot read its own meter, the orchestrator transcribes the metered figure"
+  notes: "full verify PUNCH LIST at 6935f90; delta verify APPROVED at b224a12 (fix b00299b); tokens_total null: the sub-agent cannot read its own meter, the orchestrator transcribes the metered figure (covers both passes)"
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -237,3 +237,55 @@ D1 and D2 (carried from SPEC-018) are present: the end and middle same-length pl
 
 3. **If you did this task again, what would you do differently?**
    — Start the TOCTOU race probe first: it is the one finding a suite cannot surface, and it decided the verdict.
+
+### Delta verify (follow-up 1: `b00299b` fix, `b224a12` handback)
+
+**Verdict: ✅ APPROVED at `b224a12`.** The merge into this branch was a fast-forward from `8f89dd5`. The review covers `git diff 8f89dd5..HEAD`.
+
+- **F1: closed.**
+  - `read_file` now opens through `open_nonblocking`: `OpenOptions` with `read(true)` and `OpenOptionsExt::custom_flags(O_NONBLOCK)` under `cfg(unix)`. The `Ok(m) if m.is_file()` re-check on the handle comes before any read. There is no `unsafe` and no `libc`; `-F unsafe_code` on the bin is clean.
+  - The constants are correct:
+    - Linux x86, x86_64, arm, aarch64 and riscv64 all use the generic `0o4000`. MIPS (`0x80`), SPARC (`0x4000`) and Alpha (`0x4`) are the ones that differ, and they are correctly left out.
+    - macOS, iOS, FreeBSD, OpenBSD, NetBSD and DragonFly all use `0x4`.
+    - Every other target, Android included (`target_os = "android"`), gets `0`. That is safe: the code behaves exactly as before.
+  - **Race, re-run with the original reproducer (`race.sh`):**
+    - Control, the old binary: **3 hangs in 132 runs**.
+    - New release binary: **0 hangs in 1,500 runs**.
+    - A second harness (`race2.sh`) alternates the named path with a walk: FIFO swap 0 hangs in 1,000 runs (all exit 3); directory swap 0 hangs and 0 wrongly audited in 600.
+  - Symlink swap in a walk (no `O_NOFOLLOW`): **18 of 1,500 runs audited the outside target** through a symlink swapped in after `symlink_metadata`. This is the window the amendment documents.
+  - **The new unit test `read::open_of_a_fifo_returns_promptly_with_not_a_regular_file` is deterministic.** It opens a FIFO directly, without the walk. If the open blocks, the thread stays blocked for the rest of the test run, and the test fails at 10 s. Mutants:
+
+    | Mutant | Result |
+    |---|---|
+    | v13 (no handle re-check) | red (unit) |
+    | d01 (`custom_flags(0)`) | red (unit) |
+    | d02 (macOS constant typed as `0o4000`) | red (unit) |
+    | d03 (re-check moved after the first 12-byte read: the FIFO reads EOF and is reported `unsupported`) | red (unit) |
+    | d04 (a non-blocking probe open, then a second blocking `File::open` that is read) | red (unit) |
+
+    All five are red only through this unit test.
+  - **The probabilistic `fifo_swap_race_never_hangs` (300 runs) is a smoke test, not a guard.**
+    - It did **not** go red on d01 (no `O_NONBLOCK`) in this run. Its in-process swapper rarely hits the window.
+    - It cannot flake red on correct code: a red needs a real hang.
+    - If it does hang, `Cmd::run` kills the child at 10 s and panics before `stop` is set. The swapper thread then spins until the test process exits. That does not hang CI, but it costs CPU.
+    - It adds about 2 s. **Low, non-blocking:** keep it labelled as a smoke test. The unit test is what holds the fix.
+- **F2: closed.** `fifo_is_reported_and_never_opened` now also has `dir/queue.jpg` (a FIFO) and `dir/sock` (a Unix socket, bound in `/tmp` and renamed into the tree), and v08 is red there. One nit: the rename from `/tmp` into `temp_dir()` would fail with EXDEV if `TMPDIR` were on another filesystem. It is fine on both CI runners.
+- **F5: closed.**
+  - README row fixed.
+  - `--help` now shows `[default: off]` on `--json`/`--csv`. `usage_text_names_every_default` counts 5 and checks that both lines end with it.
+  - `--help` output and the README usage block both equal the updated `tests/golden/usage.txt` byte for byte.
+  - HANDOFF-035's Return Criteria paragraph is restored.
+- **v04: killed.** `sniff_first_reads_exactly_twelve_bytes` (cli: `RIFF…WEBP` at 32 and 12 bytes, plus an `ftyp` HEIC) is red together with the unit test.
+- **Scope:** under `src/`, the diff touches only `src/bin/exif-audit/{args,read}.rs`. The only golden that changed is `usage.txt`. `decisions/`, `scripts/`, `Cargo.lock` and `fuzz/` are unchanged.
+- **Gates, all green:**
+  - fmt on both graphs and the six harness files; `just lint`, `lint-fuzz`, `lint-no-allow`, `lint-fuzz-red-proof`.
+  - `cargo test` (stable, `DIAMOND_EXIF_REQUIRE_ORACLE=1 DIAMOND_EXIF_REQUIRE_CLI_FS=1`): bin unit 20, cli 25, all ok.
+  - `just fuzz-smoke cli_args`: rc 0, 2,233,868 runs in 61 s, cov 878.
+  - Release build.
+  - The CI job's commands by hand: `--version`; 2-file JSON exit 1 and valid; `--fail-on none` 0; missing path 3; `--nope` 2.
+  - `just validate`; `git status --porcelain` empty.
+- **The DEC-011 amendment (item 3, not yet committed; read from the architect's checkout):** the **conclusion is acceptable, but the stated reason is not sound.**
+  - "Its value differs per architecture" is equally true of `O_NONBLOCK`, which the fix typed per target anyway. `O_NOFOLLOW` could be typed the same way: `0o400000` on Linux x86/x86_64/riscv64, `0o100000` on Linux arm/aarch64, `0x100` on macOS and the BSDs.
+  - A portable std-only alternative also exists: compare the handle's `(dev, ino)` from `MetadataExt` with the walk's `symlink_metadata`, and report a mismatch.
+  - The honest reason to accept the window: winning it requires running code concurrently on the scanning host. A party who can do that can usually read the file directly. A symlink that is already in the tree is always reported, and `--values` excerpts are cut at 64 bytes.
+  - I recommend rewording the amendment that way and adding a question for the `(dev, ino)` check. **Low, non-blocking.**
