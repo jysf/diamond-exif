@@ -49,7 +49,7 @@ handback:
   branch: worktree-agent-a4b5a3aaf3af38bfd
   pr: null                         # verify cycle: verdict only, no PR
   completed_at: 2026-11-06         # YYYY-MM-DD
-  notes: "verdict PUNCH LIST at f18bbda (2 small test-strength items); tokens_total null because the sub-agent cannot read its own meter, orchestrator to transcribe subagent_tokens"
+  notes: "verdict PUNCH LIST at f18bbda, then APPROVED at 8d4778c after the delta verify; tokens_total null because the sub-agent cannot read its own meter, orchestrator to transcribe subagent_tokens"
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -234,3 +234,44 @@ The step counter counts the guard's own comparisons. The 21 renders `build_case`
 
 3. **If you did this task again, what would you do differently?**
    — Run the mutants in a separate detached worktree from the start, as I did. But wait for the runner to exit rather than for a marker line: waiting on the marker made me read a half-finished results file once.
+
+### Delta verify (follow-up 1: 4105f42, 73c182b, 8d4778c)
+
+**Verdict: ✅ APPROVED at 8d4778c.** I reviewed `git diff fe862e4..8d4778c` after `git merge --ff-only claude/rust-exif-metadata-6351d5`. F1, F2 and F3 are closed. Two narrower variants survive (D1, D2); both are Low and non-blocking.
+
+**No library logic change.** `git diff --stat f18bbda..8d4778c -- src/` touches only:
+- `src/report/builder_tests.rs`: one new test, +49 lines.
+- `src/report/mod.rs`: 11 lines, all inside the `ReportBuilder` doc comment (F3). The struct and every function are unchanged.
+
+`tests/golden/`, `src/report/safe.rs`, `src/audit/`, `decisions/`, `scripts/`, `Cargo.toml`, `Cargo.lock` and `fuzz/` have no diff since f18bbda, so the goldens are byte-identical.
+
+**F1 closed.** `same_length_corrupt` flips the case of the first ASCII letter. It asserts the length is unchanged, and the content always differs. There are 17 new plants:
+- 12 corrupt the builder side of every pair, forward and non-forward.
+- 5 corrupt the one-shot side: forward/json, reverse/text, reverse/csv, alone-audited/json, alone-failed/csv.
+- In the accept direction, the same corruption applied to both sides of the 5 non-forward pairs is accepted.
+
+Mutants on the guard (each applied, run, reverted):
+- v07, comparing lengths only: now red (`builder_guard_goes_red_alone_when_planted`, `each_render_guard_goes_red_alone_when_planted`).
+- d01, comparing lengths and the first byte: red, same two tests.
+- d02, byte-comparing only the forward pairs: red, same two tests.
+- d04, comparing lengths and the last byte: red, same two tests.
+
+**F2 closed.** `builder_summary_max_severity_is_the_maximum_in_both_add_orders` kills:
+- v09, keep the minimum.
+- d05, the maximum of the first file only.
+
+Both fail only that test.
+
+**F3 closed.** The doc now says the builder keeps the *capacity* of each fragment (up to about twice its length), plus one header per fragment and a constant. That matches what I measured.
+
+**Residual survivors (Low, non-blocking, both survive the full `cargo test`):**
+- **D1.** d03, a guard comparing lengths and the first 16 bytes. Every same-length plant corrupts the first letter, which is within the first 3 bytes of every output (`file:`, `{"schema`, `label`). So a guard that compares a prefix passes them all. Suggested fix: also corrupt a letter near the end of the output, e.g. the last letter.
+- **D2.** d06, a severity order of its own with `Low` and `Medium` swapped. Nothing has two audited files whose highest severities are Medium and Low. The F2 test uses High and Low. The real code uses the derived `Ord`, so this needs someone to write a custom ranking. Suggested fix: add a Medium file to the F2 test.
+
+**Gates at 8d4778c (all exit 0):**
+- fmt: `cargo fmt --all -- --check`, the fuzz graph, and `rustfmt --check` of the two harness files.
+- `just lint`, `just lint-fuzz`, `just lint-fuzz-red-proof`.
+- `DIAMOND_EXIF_REQUIRE_ORACLE=1 cargo test --no-fail-fast` on stable 1.99.1: every binary ok.
+- `just fuzz-smoke audit_render`, 60 s: `Done 36566 runs in 61 second(s)`, `cov: 4823 ft: 14727 corp: 881/222Kb exec/s: 599`.
+
+The mutant runs used a detached scratch worktree, which has been removed. The tree is clean.
