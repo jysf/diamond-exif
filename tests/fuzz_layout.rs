@@ -1374,7 +1374,7 @@ fn audit_target_is_declared_and_runs_in_ci() {
     assert!(root().join("fuzz/shared/audit_invariants.rs").is_file());
     let ci = read(".github/workflows/ci.yml");
     assert!(
-        ci.contains("target: [tiff_ifd, jpeg_segments, audit]"),
+        ci.contains("target: [tiff_ifd, jpeg_segments, audit, audit_render]"),
         "the fuzz-smoke matrix must run the audit target"
     );
 }
@@ -2287,10 +2287,10 @@ fn lin_jpeg(segments: &[Vec<u8>]) -> Vec<u8> {
     d
 }
 
-/// One Exif APP1 whose IFD1 holds `k` thumbnail-pointer entries: the first
-/// `0x0201`/`0x0202` pair gives every `0x0201` entry a valid range, so every
-/// one of the `k - 1` thumbnail findings has a range to re-read.
-fn many_thumbnails(k: usize) -> Vec<u8> {
+/// The TIFF of one Exif block whose IFD1 holds `k` thumbnail-pointer entries:
+/// the first `0x0201`/`0x0202` pair gives every `0x0201` entry a valid range,
+/// so every one of the `k - 1` thumbnail findings has a range to re-read.
+fn thumbnail_tiff(k: usize) -> Vec<u8> {
     let entry = |t: &mut Vec<u8>, tag: u16, v: u32| {
         t.extend_from_slice(&tag.to_le_bytes());
         t.extend_from_slice(&4u16.to_le_bytes());
@@ -2307,7 +2307,15 @@ fn many_thumbnails(k: usize) -> Vec<u8> {
         entry(&mut t, 0x0201, 0);
     }
     t.extend_from_slice(&0u32.to_le_bytes());
-    lin_jpeg(&[lin_seg(0xE1, &[&b"Exif\0\0"[..], &t].concat())])
+    t
+}
+
+/// One Exif APP1 whose IFD1 holds `k` thumbnail-pointer entries.
+fn many_thumbnails(k: usize) -> Vec<u8> {
+    lin_jpeg(&[lin_seg(
+        0xE1,
+        &[&b"Exif\0\0"[..], &thumbnail_tiff(k)].concat(),
+    )])
 }
 
 /// `n` JUMBF APP11 segments: `n` region items, each with one finding.
@@ -2318,6 +2326,30 @@ fn many_regions(n: usize) -> Vec<u8> {
     );
     lin_jpeg(&vec![one; n])
 }
+
+/// Many findings AND many regions at once: twelve Exif blocks of 5,000
+/// thumbnail entries (each under the 64 KiB segment limit; 59,988 findings) and
+/// 4,000 JUMBF segments. A guard that rescans the findings once per region item
+/// is `O(regions x findings)` here: 240 million comparisons.
+fn heavy_findings_and_regions() -> Vec<u8> {
+    let exif = lin_seg(0xE1, &[&b"Exif\0\0"[..], &thumbnail_tiff(5_000)].concat());
+    let jumbf = lin_seg(
+        0xEB,
+        &[0x4A, 0x50, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x6A],
+    );
+    let mut segments = vec![exif; 12];
+    segments.extend(std::iter::repeat_n(jumbf, 4_000));
+    lin_jpeg(&segments)
+}
+
+/// The wall-clock ceiling for each of the eleven audit guards on
+/// [`heavy_findings_and_regions`] (SPEC-015, carried from the SPEC-013 verify:
+/// a step counter only sees the `tick()` calls somebody remembered to place).
+/// Chosen from measurement, see the handback: the guards take a small fraction
+/// of this on the reference host in a debug build, and the quadratic rescan
+/// without a `tick` takes more than twenty times of it.
+const GUARD_WALL_BOUND: std::time::Duration = std::time::Duration::from_millis(WALL_MS);
+const WALL_MS: u64 = 55;
 
 /// The work the guards do on `data` (counted, not timed), with the facts and
 /// the re-derivation computed before the counter is reset.
@@ -2375,6 +2407,41 @@ fn audit_harness_guards_are_linear_in_the_input() {
             "{name}: {half} steps at half the size, {steps} at full: not linear"
         );
     }
+
+    // The counter above only sees the places a `tick()` sits. A guard can be
+    // linear in the counter and quadratic in time (the SPEC-013 verify's `f5`
+    // mutant restores a per-region rescan of the findings with no tick), so the
+    // eleven guards are also timed on an input with many findings and many
+    // regions.
+    let heavy = heavy_findings_and_regions();
+    let a = exif_core::audit::audit(&heavy);
+    let got = audit_invariants::facts(&a);
+    let want = audit_invariants::rederive(&heavy);
+    assert!(got.findings.len() > 59_000 && got.items.len() > 63_000);
+    // Each guard alone, so the slowest linear guard sets the margin, not the
+    // sum of eleven.
+    let mut worst = std::time::Duration::ZERO;
+    for (name, _) in audit_invariants::GUARDS {
+        // Best of three: a scheduling hiccup on a busy runner must not fail
+        // a guard that is linear; a quadratic one is slow all three times.
+        let mut elapsed = std::time::Duration::MAX;
+        for _ in 0..3 {
+            let start = std::time::Instant::now();
+            let r = audit_invariants::run_guard(name, &heavy, &got, &want);
+            elapsed = elapsed.min(start.elapsed());
+            assert!(r.is_ok(), "{name}: {r:?}");
+        }
+        println!("guard {name}: {elapsed:?}");
+        worst = worst.max(elapsed);
+        assert!(
+            elapsed < GUARD_WALL_BOUND,
+            "guard {name} took {elapsed:?} on {} items and {} findings (bound {GUARD_WALL_BOUND:?}): \
+             it is quadratic in time",
+            got.items.len(),
+            got.findings.len()
+        );
+    }
+    println!("slowest guard {worst:?} (bound {GUARD_WALL_BOUND:?})");
 }
 
 // ── SPEC-014: the strip-policy preview guards ────────────────────────────────

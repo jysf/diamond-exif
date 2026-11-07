@@ -962,7 +962,7 @@ mod audit_invariants {
     }
 
     /// A category set chosen deterministically from the input bytes.
-    fn custom_names(data: &[u8]) -> Vec<&'static str> {
+    pub fn custom_names(data: &[u8]) -> Vec<&'static str> {
         let mut m: u16 = 0x5A5A;
         for b in data {
             m = m.rotate_left(5) ^ u16::from(*b);
