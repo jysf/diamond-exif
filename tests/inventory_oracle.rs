@@ -4,7 +4,7 @@
 //! file checks that listing, as a multiset of `(group, tag id)` plus the set of
 //! region kinds, against `exiftool -a -u -G1 -H -s` over five corpora: the
 //! hand-built fixtures, the DEC-008 one-entry TIFFs and the three fuzz-seed
-//! directories (247 inputs, 178 distinct by content). The model and the pinned
+//! directories (249 inputs, 180 distinct by content). The model and the pinned
 //! divergences are in `tests/support/inventory.rs`; the committed ExifTool
 //! listings are in `tests/oracle-fixtures/exiftool-inventory/`.
 //!
@@ -459,24 +459,24 @@ fn theirs_parser_maps_region_groups_by_prefix() {
 #[test]
 fn distinct_inputs_are_counted_once_across_seed_directories() {
     let all = all_inputs();
-    assert_eq!(all.len(), 247, "inputs over the five corpora");
+    assert_eq!(all.len(), 249, "inputs over the five corpora");
     let per_corpus: Vec<usize> = inventory_corpus::CORPORA
         .iter()
         .map(|c| all.iter().filter(|i| i.corpus == *c).count())
         .collect();
     // 61 hand-built (12 + 2 TIFF, 42 + 5 JPEG), 41 DEC-008 ids, and the seeds
-    // (32 TIFF, 37 JPEG, 76 audit).
-    assert_eq!(per_corpus, vec![61, 41, 32, 37, 76]);
+    // (32 TIFF, 37 JPEG, 78 audit).
+    assert_eq!(per_corpus, vec![61, 41, 32, 37, 78]);
     let keys: BTreeSet<String> = all.iter().map(Input::key).collect();
     assert_eq!(keys.len(), all.len(), "keys are unique");
 
     let distinct = inventory_corpus::distinct(&all);
-    assert_eq!(distinct.len(), 178, "distinct inputs by content");
+    assert_eq!(distinct.len(), 180, "distinct inputs by content");
     let members: usize = distinct.iter().map(|d| d.keys.len()).sum();
     assert_eq!(members, all.len(), "every input belongs to one group");
 
     // The audit directory copies the other two seed directories under a prefix:
-    // 32 + 37 of its 76 seeds are aliases of an earlier seed, none is a
+    // 32 + 37 of its 78 seeds are aliases of an earlier seed, none is a
     // canonical name.
     let aliases = |prefix: &str, target: &str| -> usize {
         distinct
@@ -495,7 +495,7 @@ fn distinct_inputs_are_counted_once_across_seed_directories() {
         .iter()
         .filter(|d| d.canonical.corpus == "seed-audit")
         .count();
-    assert_eq!(audit_canonical, 7, "the seven audit-only shapes");
+    assert_eq!(audit_canonical, 9, "the nine audit-only shapes");
     // A canonical key is the first corpus's: fixtures before audit-tags before
     // the seed directories.
     for d in &distinct {
@@ -557,8 +557,8 @@ fn replay_every_corpus_is_clean_except_pinned_divergences() {
     }
     assert_eq!(
         KNOWN_DIVERGENCES.len(),
-        32,
-        "5 A, 2 B, 1 C, 4 D, 1 E, 6 F, 13 R"
+        33,
+        "5 A, 2 B, 1 C, 4 D, 1 E, 6 F, 14 R"
     );
 }
 
@@ -671,8 +671,8 @@ fn live_inventory_parity_on_the_seed_corpora() {
         return;
     }
     let n = live_parity(|d| d.canonical.corpus.starts_with("seed-"));
-    // 76 distinct seeds, minus the one ExifTool never returns on.
-    assert_eq!(n, 75);
+    // 78 distinct seeds, minus the one ExifTool never returns on.
+    assert_eq!(n, 77);
 }
 
 // ── the classes ─────────────────────────────────────────────────────────────
@@ -1090,7 +1090,7 @@ fn stub_icc_and_jumbf_are_listed_by_us_and_not_by_exiftool() {
     // The eleven seed payloads of the same kind: every Class R row is a region
     // only ours lists, and ours is the side that locates the segment.
     let r = divergences_of(Class::R);
-    assert_eq!(r.len(), 13);
+    assert_eq!(r.len(), 14);
     for k in r {
         assert!(k.ours_only.is_empty() && k.theirs_only.is_empty());
         assert!(!k.regions_ours_only.is_empty() && k.regions_theirs_only.is_empty());

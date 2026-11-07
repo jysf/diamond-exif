@@ -11,6 +11,34 @@ GPS	0x0003	GPSLongitudeRef
 IFD1	0x0201	ThumbnailOffset
 IFD1	0x0202	ThumbnailLength
 IFD1	-	ThumbnailImage
+## audit-full-house-jpeg
+IFD0	0x010e	ImageDescription
+IFD0	0x010f	Make
+IFD0	0x0131	Software
+IFD0	0x0132	ModifyDate
+IFD0	0x013b	Artist
+IFD0	0xa431	SerialNumber
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0xa431	SerialNumber
+ExifIFD	0x927c	MakerNoteUnknownText
+GPS	0x0001	GPSLatitudeRef
+IFD1	0x0201	ThumbnailOffset
+IFD1	0x0202	ThumbnailLength
+XMP	-	TagX
+IPTC	0x0005	ObjectName
+## audit-full-house-tiff
+IFD0	0x010e	ImageDescription
+IFD0	0x010f	Make
+IFD0	0x0131	Software
+IFD0	0x0132	ModifyDate
+IFD0	0x013b	Artist
+IFD0	0xa431	SerialNumber
+ExifIFD	0x9003	DateTimeOriginal
+ExifIFD	0xa431	SerialNumber
+ExifIFD	0x927c	MakerNoteUnknownText
+GPS	0x0001	GPSLatitudeRef
+IFD1	0x0201	ThumbnailOffset
+IFD1	0x0202	ThumbnailLength
 ## audit-ifd1-strips
 IFD0	0x010f	Make
 IFD1	0x0111	StripOffsets

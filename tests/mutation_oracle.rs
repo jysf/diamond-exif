@@ -1668,7 +1668,7 @@ fn inventory_probe_control_run_is_clean_before_every_mutant() {
     // returns on (its answer is not recorded, so there is nothing to compare).
     let all = inventory_corpus::all_inputs(&root());
     let distinct = inventory_corpus::distinct(&all);
-    assert_eq!(distinct.len(), 178);
+    assert_eq!(distinct.len(), 180);
     let keys: Vec<String> = distinct
         .iter()
         .filter(|d| !inventory_corpus::is_not_run(d))
