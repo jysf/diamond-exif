@@ -384,7 +384,7 @@ questions:
   - id: audit-exit-code-contract
     question: "What exit codes does exif-audit use (clean / findings at or above the threshold / per-file errors / usage error), and does an unsupported file count as a failure?"
     priority: medium
-    status: open
+    status: answered
     raised_by: claude
     raised_at: 2026-11-05
     assigned_to: null
@@ -392,6 +392,8 @@ questions:
       Decided at the design of SPEC-016 and recorded in a DEC (CI jobs depend on it).
       Principle already fixed in the STAGE-003 frame: an unsupported or unreadable file
       is a reported outcome, never silently counted as clean.
+      Answered 2026-11-07 in DEC-011 (exit codes 0 clean, 1 findings at or above --fail-on, 2 usage,
+      3 incomplete, 4 write failure; unsupported fails only under --strict).
 
   - id: audit-makernote-serials
     question: "How should the audit treat device serial numbers that live inside MakerNotes, which are not parsed?"
@@ -735,3 +737,49 @@ questions:
       DEC-010 amendment (2026-11-06) item 4. Two different custom sets render identically.
       The binary exposes presets only, so nothing produces a Custom policy today. If it ever
       does, add a `policy_categories` list to the JSON and text (a schema_version bump).
+
+  - id: cli-stdin-input
+    question: "Should exif-audit read a file (or a list of paths) from stdin, for use in pipelines?"
+    priority: low
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-07
+    assigned_to: null
+    notes: |
+      DEC-011 makes a lone `-` a usage error. Add when a pipeline user asks; the size cap and
+      the sniff-first read would apply to the stream.
+
+  - id: cli-follow-symlinks
+    question: "Should exif-audit offer --follow-symlinks for symlinks found inside a walked directory?"
+    priority: low
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-07
+    assigned_to: null
+    notes: |
+      DEC-011 reports them as failed / symlink not followed. Following needs loop detection
+      (visited set), a guard against leaving the tree, and a decision on double counting.
+
+  - id: cli-large-trees
+    question: "How should a very large tree (millions of files) be reported without holding the whole report in memory?"
+    priority: low
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-07
+    assigned_to: null
+    notes: |
+      DEC-011 holds one input file in memory at a time but assembles the report as one String
+      (SPEC-018). A streaming writer (CSV and text rows as they are produced, JSON with the
+      summary last) or a --max-files cap are the options. Decide after a real large run.
+
+  - id: cli-fail-on-residual
+    question: "Should exif-audit offer a threshold on what a policy would leave behind (residual severity), not only on what the file contains?"
+    priority: low
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-07
+    assigned_to: null
+    notes: |
+      DEC-011 gates on each audit's max_severity over all findings. A pre-publish check might
+      want "fail if anything above Low would remain after AllPii". The summary already carries
+      the residual numbers (reliable files only).
