@@ -3876,8 +3876,88 @@ fn same_length_corrupt(s: &mut String) {
     assert_eq!(s.len(), before);
 }
 
+/// Where `same_length_corrupt_at` flips a letter.
+#[derive(Clone, Copy)]
+enum Where {
+    /// The last ASCII letter of the output.
+    End,
+    /// The ASCII letter nearest the middle byte.
+    Middle,
+}
+
+/// Change one letter's case at `at`, keeping the length (SPEC-018 verify D1: a
+/// guard that compares the length plus the first 16 bytes must not pass).
+fn same_length_corrupt_at(s: &mut String, at: Where) {
+    let before = s.len();
+    let letters: Vec<usize> = s
+        .char_indices()
+        .filter(|(_, ch)| ch.is_ascii_alphabetic())
+        .map(|(i, _)| i)
+        .collect();
+    let i = match at {
+        Where::End => *letters.last().expect("a letter"),
+        Where::Middle => *letters
+            .iter()
+            .min_by_key(|i| i.abs_diff(before / 2))
+            .expect("a letter"),
+    };
+    assert!(i >= 16, "the flipped letter is past the first 16 bytes");
+    let flipped = if s[i..].starts_with(|c: char| c.is_ascii_lowercase()) {
+        s[i..i + 1].to_ascii_uppercase()
+    } else {
+        s[i..i + 1].to_ascii_lowercase()
+    };
+    s.replace_range(i..=i, &flipped);
+    assert_eq!(s.len(), before);
+}
+
 fn builder_plants() -> Vec<BuilderPlant> {
     vec![
+        BuilderPlant {
+            name: "same-length corruption at the END of the builder output of reverse/json",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "reverse/json");
+                same_length_corrupt_at(&mut c.pairs[i].builder, Where::End);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption at the END of the builder output of reverse/text",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "reverse/text");
+                same_length_corrupt_at(&mut c.pairs[i].builder, Where::End);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption in the MIDDLE of the builder output of reverse/csv",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "reverse/csv");
+                same_length_corrupt_at(&mut c.pairs[i].builder, Where::Middle);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption in the MIDDLE of the builder output of alone-audited/json",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "alone-audited/json");
+                same_length_corrupt_at(&mut c.pairs[i].builder, Where::Middle);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption at the END of the one-shot output of alone-failed/csv",
+            input: HOUSE_ALL_PII,
+            side: Side::OneShot,
+            apply: |c| {
+                let i = pair_at(c, "alone-failed/csv");
+                same_length_corrupt_at(&mut c.pairs[i].oneshot, Where::End);
+            },
+        },
         BuilderPlant {
             name: "same-length corruption of the builder output of forward/text",
             input: HOUSE_ALL_PII,
