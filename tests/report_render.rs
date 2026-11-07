@@ -227,6 +227,21 @@ fn a_truncated_audit_previews_conservatively_end_to_end() {
         }
     }
 
+    // The harness's preview guards agree with the library on this audit: they
+    // re-derive the truncated branch (including the `all()` exception) from the
+    // flattened audit, and this is an audit that really takes that branch with
+    // stored findings (carried F2: the old mutants 15, 16 and vM).
+    let facts = audit_invariants::facts(&a);
+    let pin = audit_invariants::preview_input(&bytes, &a, &facts);
+    assert!(pin.truncated && !pin.clean && pin.findings.len() == 2);
+    let bad = audit_invariants::preview_violations(&pin);
+    assert!(bad.is_empty(), "{bad:?}");
+    let everything = &pin.cases[4];
+    assert_eq!(everything.label, "everything");
+    assert_eq!(everything.got.residual_sev, None);
+    assert_eq!(everything.want.residual_sev, None);
+    assert_eq!(pin.cases[0].want.residual_sev.as_deref(), Some("High"));
+
     // End to end: the three renderers say the same thing.
     let files = vec![FileEntry {
         label: b"huge.tif",
