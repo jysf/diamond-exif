@@ -1384,7 +1384,7 @@ fn audit_seed(name: &str) -> Vec<u8> {
     fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
-const AUDIT_NEW_SEEDS: [&str; 7] = [
+const AUDIT_NEW_SEEDS: [&str; 9] = [
     "audit-png-magic",
     "audit-bigtiff-magic",
     "audit-empty-marker",
@@ -1392,6 +1392,9 @@ const AUDIT_NEW_SEEDS: [&str; 7] = [
     "audit-two-blocks-same-tag",
     "audit-ifd1-strips",
     "audit-many-overlapping-ifds",
+    // SPEC-015 (carried SPEC-014 F1): the two full-house inputs.
+    "audit-full-house-tiff",
+    "audit-full-house-jpeg",
 ];
 
 #[test]
@@ -1399,7 +1402,7 @@ fn audit_seeds_are_committed_and_have_the_shapes_they_claim() {
     use exif_core::audit::{audit, Category};
 
     // The 66 older seeds are copied byte for byte under a prefix, and the
-    // directory holds exactly those 66 plus the seven new shapes.
+    // directory holds exactly those 66 plus the nine new shapes.
     let dir = root().join("fuzz/seeds/audit");
     let mut names: Vec<String> = fs::read_dir(&dir)
         .unwrap_or_else(|e| panic!("{}: {e}", dir.display()))
@@ -1535,7 +1538,7 @@ fn audit_harness_holds_on_every_seed_and_degenerate_inputs() {
         audit_invariants::check(&data);
         seen += 1;
     }
-    assert_eq!(seen, 76, "32 TIFF + 37 JPEG + 7 new");
+    assert_eq!(seen, 78, "32 TIFF + 37 JPEG + 9 new");
     for data in audit_degenerate_inputs() {
         audit_invariants::check(&data);
     }
@@ -2139,7 +2142,7 @@ fn tiff_harness_entry_budget_invariants_hold_on_every_seed() {
             seen += 1;
         }
     }
-    assert_eq!(seen, 32 + 76);
+    assert_eq!(seen, 32 + 78);
     // The degenerate inputs too, and the generated big inventory.
     for data in audit_degenerate_inputs() {
         entry_budget_invariants::check_input(&data);
@@ -2498,7 +2501,7 @@ fn preview_guards_hold_on_every_seed_and_degenerate_inputs() {
             inputs.push((path.display().to_string(), data));
         }
     }
-    assert_eq!(inputs.len(), 32 + 37 + 76);
+    assert_eq!(inputs.len(), 32 + 37 + 78);
     for (i, d) in audit_degenerate_inputs().into_iter().enumerate() {
         inputs.push((format!("degenerate {i}"), d));
     }

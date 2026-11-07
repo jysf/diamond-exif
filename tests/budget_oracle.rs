@@ -172,6 +172,9 @@ fn existing_records_and_seeds_are_byte_identical() {
         "tiff-entry-budget-exact",
         "tiff-entry-budget-over",
         "tiff-overlapping-subifds",
+        // SPEC-015: the two full-house inputs (carried SPEC-014 F1).
+        "audit-full-house-tiff",
+        "audit-full-house-jpeg",
     ];
     check_dir("fuzz/seeds/audit", &OLD_AUDIT_SEEDS, &new_audit);
 }

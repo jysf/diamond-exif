@@ -17,6 +17,7 @@ pub mod error;
 pub mod jpeg;
 pub mod policy;
 pub mod reader;
+pub mod report;
 pub mod tiff;
 
 pub use error::{Error, Result};

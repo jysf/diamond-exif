@@ -411,8 +411,8 @@ fn all_seeds() -> (Vec<(String, Vec<u8>)>, [usize; 3]) {
 #[test]
 fn nesting_holds_on_every_committed_seed_for_every_preset() {
     let (seeds, seen) = all_seeds();
-    // The same counts audit_model.rs asserts (32 TIFF, 37 JPEG, 76 audit).
-    assert_eq!(seen, [32, 37, 76]);
+    // The same counts audit_model.rs asserts (32 TIFF, 37 JPEG, 78 audit).
+    assert_eq!(seen, [32, 37, 78]);
     let mut with_findings = 0usize;
     for (name, data) in &seeds {
         let a = audit(data);
