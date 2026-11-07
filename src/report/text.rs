@@ -52,13 +52,8 @@ fn location(out: &mut String, item: &Item<'_>) {
                 count
             ));
         }
-        ItemKind::Region { kind, segment, len } => {
-            out.push_str(&format!(
-                "region {} segment={} len={}",
-                region_name(kind),
-                segment,
-                len
-            ));
+        ItemKind::Region { kind, len, .. } => {
+            out.push_str(&format!("region {} len={}", region_name(kind), len));
         }
     }
     let o = item.origin();

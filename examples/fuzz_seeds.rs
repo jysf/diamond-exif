@@ -1225,6 +1225,9 @@ fn render_seeds() -> Vec<(String, Vec<u8>)> {
         });
     }
     let secret = report_inputs::secret_tiff();
+    // A Make whose value holds a semicolon (a spreadsheet in a semicolon
+    // locale splits on it).
+    let semi = report_inputs::tiff_with_payloads(&[(0x010F, 2, b"x;=1+cmd\0")]);
     let seeds: Vec<(&str, Vec<u8>)> = vec![
         (
             "full-house-jpeg-all-pii-inventory-values",
@@ -1274,6 +1277,10 @@ fn render_seeds() -> Vec<(String, Vec<u8>)> {
         (
             "label-255-bytes",
             render_seed(5 | INV | VAL, &label255, &house),
+        ),
+        (
+            "label-semicolon-formula",
+            render_seed(3 | VAL, b"a;=1+cmd|' /C calc'!A0", &semi),
         ),
         ("label-empty-png", render_seed(3, b"", &png)),
         (

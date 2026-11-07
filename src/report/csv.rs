@@ -46,10 +46,12 @@ pub(super) fn starts_like_formula(text: &str) -> bool {
     )
 }
 
-/// One CSV field: quoted iff it holds a comma, a quote, CR or LF; quotes are
-/// doubled.
+/// One CSV field: quoted iff it holds a comma, a semicolon, a quote, CR or LF;
+/// quotes are doubled. The semicolon is the field separator of spreadsheets in
+/// semicolon locales: an unquoted `a;=1+cmd` would split into a cell that
+/// starts a formula, past the guard.
 pub(super) fn push_field(out: &mut String, text: &str) {
-    if text.contains([',', '"', '\r', '\n']) {
+    if text.contains([',', ';', '"', '\r', '\n']) {
         out.push('"');
         for c in text.chars() {
             if c == '"' {

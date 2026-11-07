@@ -135,6 +135,10 @@ fn csv_quotes_comma_quote_cr_lf_and_doubles_quotes() {
     assert_eq!(field("\"\""), "\"\"\"\"\"\"");
     assert_eq!(field(",,"), "\",,\"");
     assert_eq!(field("it's"), "it's");
+    // The semicolon quotes too (a semicolon-locale spreadsheet splits on it).
+    assert_eq!(field("a;b"), "\"a;b\"");
+    assert_eq!(field(";"), "\";\"");
+    assert_eq!(field("a;=1+cmd"), "\"a;=1+cmd\"");
     // A row ends with CRLF and has the 19 fields.
     let mut row = csv::Row::default();
     row[csv::LABEL] = "a,b".to_string();

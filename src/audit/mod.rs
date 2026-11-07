@@ -130,18 +130,29 @@ pub enum ItemKind {
     },
 }
 
-/// One inventory entry. Holds no value bytes: counts and types only, so the
-/// model stays small and nothing hostile is copied out.
+/// One inventory entry: where it came from, what it is (counts and types), and
+/// a borrow of the entry's raw payload.
 ///
-/// The one thing it borrows is the entry's raw payload ([`Item::value`]), as a
-/// slice of the audited input: never copied into the audit and never decoded.
-/// The audit itself neither reads nor interprets it; the report renderers
-/// print a bounded excerpt of it only when asked (DEC-010).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The payload ([`Item::value`]) is a slice of the audited input: never copied
+/// into the audit and never decoded. The audit itself neither reads nor
+/// interprets it; the report renderers print a bounded excerpt of it only when
+/// asked (DEC-010). Equality compares it. `Debug` shows only its **length**, so
+/// a `{:?}` of an audit never prints personal data into a log.
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Item<'a> {
     origin: Origin,
     kind: ItemKind,
     value: Option<&'a [u8]>,
+}
+
+impl core::fmt::Debug for Item<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Item")
+            .field("origin", &self.origin)
+            .field("kind", &self.kind)
+            .field("value_len", &self.value.map(<[u8]>::len))
+            .finish()
+    }
 }
 
 impl<'a> Item<'a> {
@@ -1228,6 +1239,35 @@ mod tests {
         let j = audit(&jpeg(&[xmp]));
         assert_eq!(j.items().len(), 1);
         assert_eq!(j.items()[0].value(), None);
+    }
+
+    #[test]
+    fn debug_of_an_item_and_an_audit_never_prints_the_payload() {
+        let bytes = build(
+            &[(
+                vec![
+                    ascii(0x010F, b"SECRET-SERIAL-0042"),
+                    ascii(0xA431, b"SECRET-SERIAL-0042"),
+                ],
+                None,
+            )],
+            &[],
+        );
+        let a = audit(&bytes);
+        assert_eq!(a.items()[0].value(), Some(&b"SECRET-SERIAL-0042\0"[..]));
+        for dump in [
+            format!("{:?}", a.items()[0]),
+            format!("{:#?}", a.items()),
+            format!("{:?}", a.findings()),
+            format!("{a:?}"),
+        ] {
+            assert!(!dump.contains("SECRET"), "{dump}");
+            // Nor as a byte list: 'S' is 83, 'E' 69.
+            assert!(!dump.contains("83, 69, 67"), "{dump}");
+        }
+        let one = format!("{:?}", a.items()[0]);
+        assert!(one.contains("value_len: Some(19)"), "{one}");
+        assert!(one.contains("origin") && one.contains("kind"), "{one}");
     }
 
     #[test]

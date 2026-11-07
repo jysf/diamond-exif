@@ -778,13 +778,21 @@ fn forbidden_char(c: char) -> bool {
         )
         || ('\u{202A}'..='\u{202E}').contains(&c)
         || ('\u{2066}'..='\u{2069}').contains(&c)
+        || matches!(c, '\u{00AD}' | '\u{2060}' | '\u{FEFF}')
+        || ('\u{200B}'..='\u{200D}').contains(&c)
+        || ('\u{206A}'..='\u{206F}').contains(&c)
+        || ('\u{FFF9}'..='\u{FFFB}').contains(&c)
+        || ('\u{E0000}'..='\u{E007F}').contains(&c)
 }
 
 #[test]
 fn text_has_no_forbidden_character_or_phrase() {
     let jpeg = inputs::full_house_jpeg();
     let hostile: Vec<u8> = {
-        let mut v = b"a\x1b[31mred\x07\xE2\x80\xAEgpj.exe\xC2\x85\xE2\x80\xA8\xFF\"\\".to_vec();
+        let mut v = "a\x1b[31mred\x07\u{202E}gpj.exe\u{85}\u{2028}\u{200B}\u{AD}\u{FEFF}\u{E0041}"
+            .as_bytes()
+            .to_vec();
+        v.extend_from_slice(b"\xFF\"\\");
         v.extend((0u8..32).collect::<Vec<_>>());
         v
     };
@@ -982,4 +990,129 @@ fn summary_residual_is_none_when_no_file_is_reliable() {
     let o = opts(Some(StripPolicy::AllPii), false, false);
     assert_eq!(summarize(&more, &o).residual_findings, Some(5));
     assert!(render_text(&more, &o).contains("residual findings 5 (reliable files only)"));
+}
+
+#[test]
+fn csv_semicolon_fields_are_quoted_and_parse_back_as_one_field() {
+    // A label and an excerpt holding a semicolon: quoted, and the strict
+    // parser reads each back as ONE field equal to the source.
+    let label = b"a;=1+cmd|' /C calc'!A0";
+    let t = inputs::tiff_with_payloads(&[(0x010F, 2, b"x;=1+y\0")]);
+    let files = vec![FileEntry {
+        label,
+        result: FileResult::Audited(audit(&t)),
+    }];
+    let o = opts(None, false, true);
+    let text = render_csv(&files, &o);
+    assert!(text.contains("\"a;=1+cmd|' /C calc'!A0\""), "{text}");
+    assert!(text.contains("\"x;=1+y\""), "{text}");
+    let rows = parse_csv(text.as_bytes()).unwrap();
+    assert_eq!(rows[1].len(), 19);
+    assert_eq!(rows[1][0].as_bytes(), label);
+    assert_eq!(rows[1][17], "x;=1+y");
+    // A failure detail too.
+    let files = vec![FileEntry {
+        label: b"x",
+        result: FileResult::Failed {
+            reason: FailReason::Other,
+            detail: b"a;b",
+        },
+    }];
+    let text = render_csv(&files, &RenderOptions::default());
+    let rows = parse_csv(text.as_bytes()).unwrap();
+    assert_eq!(rows[1][17], "a;b");
+    // Fields without a semicolon, comma, quote, CR or LF stay unquoted.
+    assert!(text.contains("\r\nx,failed,"), "{text}");
+}
+
+#[test]
+fn summary_residual_counts_the_reliable_files_only_when_an_unreliable_file_has_findings() {
+    // An unreliable audited file WITH findings (two Exif segments: an
+    // ExtraExif issue, both blocks audited) next to a reliable file with
+    // findings: the residual is the reliable file's alone.
+    let make = inputs::tiff_with_payloads(&[(0x010F, 2, b"Cam\0")]);
+    let unreliable = inputs::jpeg(&[inputs::exif_app1(&make), inputs::exif_app1(&make)]);
+    let reliable = inputs::full_house_jpeg();
+    let a_bad = audit(&unreliable);
+    assert!(!a_bad.health().clean && a_bad.findings().len() == 2);
+    let a_good = audit(&reliable);
+    assert!(a_good.health().clean);
+    let files = vec![
+        FileEntry {
+            label: b"unreliable.jpg",
+            result: FileResult::Audited(a_bad),
+        },
+        FileEntry {
+            label: b"reliable.jpg",
+            result: FileResult::Audited(a_good),
+        },
+    ];
+    // Gps removes one of the 15 findings of the full house; the unreliable
+    // file would add 2 if it were summed.
+    let o = opts(Some(StripPolicy::Gps), false, false);
+    let s = summarize(&files, &o);
+    assert_eq!((s.reliable_files, s.unreliable_files), (1, 1));
+    assert_eq!(s.residual_findings, Some(14), "reliable file only");
+    let j = json(&files, &o);
+    let r = j.get("summary").unwrap().get("residual_findings").unwrap();
+    assert_eq!(r.as_uint(), Some(14));
+    assert!(render_text(&files, &o).contains("residual findings 14 (reliable files only)"));
+    // Same with the unreliable file listed second.
+    let mut rev = files;
+    rev.reverse();
+    assert_eq!(summarize(&rev, &o).residual_findings, Some(14));
+}
+
+#[test]
+fn excerpt_content_is_the_expected_escaped_text_in_every_format() {
+    // A 70-byte ASCII value that starts with a control byte: the excerpt is
+    // the first 64 SOURCE bytes, escaped (so longer than 64 characters), and
+    // flagged truncated.
+    let mut value = b"ab\x01".to_vec();
+    value.extend(std::iter::repeat_n(b'x', 67));
+    assert_eq!(value.len(), 70);
+    let mut payload = value.clone();
+    payload.push(0);
+    let t = inputs::tiff_with_payloads(&[(0x010F, 2, &payload)]);
+    let files = vec![FileEntry {
+        label: b"x",
+        result: FileResult::Audited(audit(&t)),
+    }];
+    let expected = format!("ab\\x01{}", "x".repeat(61));
+    let o = opts(None, false, true);
+    // JSON.
+    let j = json(&files, &o);
+    let v = j.get("files").unwrap().as_arr().unwrap()[0]
+        .get("findings")
+        .unwrap()
+        .as_arr()
+        .unwrap()[0]
+        .get("value")
+        .unwrap()
+        .clone();
+    assert_eq!(v.get("text").unwrap().as_str(), Some(expected.as_str()));
+    assert_eq!(v.get("truncated").unwrap().as_bool(), Some(true));
+    // CSV.
+    let rows = csv(&files, &o);
+    assert_eq!(rows[1][17], expected);
+    assert_eq!(rows[1][18], "true");
+    // Text.
+    let text = render_text(&files, &o);
+    assert!(
+        text.contains(&format!(" value=\"{expected}\" (truncated)")),
+        "{text}"
+    );
+    // A value of exactly 64 bytes is not truncated, and is not cut.
+    let exact: Vec<u8> = std::iter::repeat_n(b'y', 64).collect();
+    let mut p64 = exact.clone();
+    p64.push(0);
+    let t = inputs::tiff_with_payloads(&[(0x010F, 2, &p64)]);
+    let files = vec![FileEntry {
+        label: b"x",
+        result: FileResult::Audited(audit(&t)),
+    }];
+    let rows = csv(&files, &o);
+    assert_eq!(rows[1][17], "y".repeat(64));
+    assert_eq!(rows[1][18], "false");
+    assert!(render_text(&files, &o).contains(&format!(" value=\"{}\"\n", "y".repeat(64))));
 }

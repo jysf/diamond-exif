@@ -7,8 +7,10 @@
 //! raw `"` and no raw `\`. Because the backslash is always escaped, the
 //! mapping is injective: the output can be read back to the exact input bytes.
 
-/// The characters DEC-010 escapes as `\u{NNNN}` besides C1: the bidirectional
-/// controls and the line and paragraph separators.
+/// The characters escaped as `\u{NNNN}` besides C1: the bidirectional controls,
+/// the line and paragraph separators and the invisible format characters
+/// (soft hyphen, zero-width characters, word joiner, BOM, deprecated format
+/// controls, interlinear annotation, Unicode tag characters).
 fn is_bidi_or_separator(c: char) -> bool {
     matches!(
         c,
@@ -19,6 +21,14 @@ fn is_bidi_or_separator(c: char) -> bool {
             | '\u{2066}'..='\u{2069}'
             | '\u{2028}'
             | '\u{2029}'
+            // Invisible and format characters that hide text from a reader.
+            | '\u{00AD}'
+            | '\u{200B}'..='\u{200D}'
+            | '\u{2060}'
+            | '\u{FEFF}'
+            | '\u{206A}'..='\u{206F}'
+            | '\u{FFF9}'..='\u{FFFB}'
+            | '\u{E0000}'..='\u{E007F}'
     )
 }
 
@@ -48,7 +58,8 @@ fn push_char(out: &mut String, c: char) {
         '\u{0000}'..='\u{001F}' | '\u{007F}' => push_escaped_byte(out, u32::from(c) as u8),
         c if ('\u{0080}'..='\u{009F}').contains(&c) || is_bidi_or_separator(c) => {
             out.push_str("\\u{");
-            push_hex(out, u32::from(c), 4);
+            // Four digits up to U+FFFF, more for the tag characters.
+            push_hex(out, u32::from(c), if u32::from(c) > 0xFFFF { 5 } else { 4 });
             out.push('}');
         }
         c => out.push(c),
@@ -117,6 +128,9 @@ mod tests {
         let escaped = [
             0x061Cu32, 0x200E, 0x200F, 0x202A, 0x202B, 0x202C, 0x202D, 0x202E, 0x2066, 0x2067,
             0x2068, 0x2069, 0x2028, 0x2029,
+            // Invisible and format characters, with the edges of each range.
+            0x00AD, 0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF, 0x206A, 0x206B, 0x206C, 0x206D, 0x206E,
+            0x206F, 0xFFF9, 0xFFFA, 0xFFFB, 0xE0000, 0xE0001, 0xE0020, 0xE007E, 0xE007F,
         ];
         for cp in escaped {
             let s = char::from_u32(cp).unwrap().to_string();
@@ -161,6 +175,10 @@ mod tests {
             "\u{1F600} emoji",
             "\u{FFFD}",
             "\u{00A0}nbsp",
+            // Neighbours of the escaped ranges stay as they are.
+            "\u{00AC}\u{00AE}\u{200A}\u{2010}\u{2061}\u{2062}\u{2063}\u{2064}",
+            "\u{205F}\u{2065}\u{FEFE}\u{FF00}\u{FFF8}\u{FFFC}\u{FFFD}",
+            "\u{DFFFF}\u{E0080}\u{E0100}\u{E01EF}",
             "",
         ] {
             assert_eq!(safe_text(s.as_bytes()), s);
@@ -171,7 +189,7 @@ mod tests {
     fn safe_text_is_injective_on_a_sampled_set() {
         // Every byte string over a small alphabet that mixes the interesting
         // classes, up to length 4: no two different inputs share an output.
-        let alphabet: [&[u8]; 9] = [
+        let alphabet: [&[u8]; 11] = [
             b"a",
             b"\\",
             b"\"",
@@ -181,6 +199,8 @@ mod tests {
             &[0x80],
             "\u{202E}".as_bytes(),
             "\u{FFFD}".as_bytes(),
+            "\u{200B}".as_bytes(),
+            "\u{E0041}".as_bytes(),
         ];
         let mut seen: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
         let mut level: Vec<Vec<u8>> = vec![Vec::new()];
@@ -212,6 +232,8 @@ mod tests {
             vec![0xFFu8; 1000],
             "\u{0085}".repeat(500).into_bytes(),
             "\u{202E}".repeat(333).into_bytes(),
+            "\u{E0041}".repeat(250).into_bytes(),
+            "\u{200B}".repeat(333).into_bytes(),
             vec![0u8; 1000],
             all_bytes,
         ];

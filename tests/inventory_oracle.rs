@@ -1087,7 +1087,7 @@ fn stub_icc_and_jumbf_are_listed_by_us_and_not_by_exiftool() {
         assert_eq!(k.regions_ours_only, &[kind]);
         assert!(k.theirs_only.is_empty() && k.regions_theirs_only.is_empty());
     }
-    // The eleven seed payloads of the same kind: every Class R row is a region
+    // Every Class R row (the stub and seed payloads) is a region
     // only ours lists, and ours is the side that locates the segment.
     let r = divergences_of(Class::R);
     assert_eq!(r.len(), 14);

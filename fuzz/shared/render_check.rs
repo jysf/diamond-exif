@@ -348,6 +348,15 @@ mod render_check {
     /// with doubled inner quotes (and free to hold CR and LF), no quote in an
     /// unquoted field, no bare CR or LF.
     pub fn parse_csv(bytes: &[u8]) -> Result<Vec<Vec<String>>, String> {
+        Ok(parse_csv_quoted(bytes)?
+            .into_iter()
+            .map(|r| r.into_iter().map(|(v, _)| v).collect())
+            .collect())
+    }
+
+    /// Like [`parse_csv`], but each field also says whether it was written
+    /// quoted (the quoting predicate of the writer is checked with it).
+    pub fn parse_csv_quoted(bytes: &[u8]) -> Result<Vec<Vec<(String, bool)>>, String> {
         if std::str::from_utf8(bytes).is_err() {
             return Err("csv: input is not valid UTF-8".to_string());
         }
@@ -355,13 +364,14 @@ mod render_check {
             return Err("csv: empty document".to_string());
         }
         let b = bytes;
-        let mut rows: Vec<Vec<String>> = Vec::new();
-        let mut row: Vec<String> = Vec::new();
+        let mut rows: Vec<Vec<(String, bool)>> = Vec::new();
+        let mut row: Vec<(String, bool)> = Vec::new();
         let mut i = 0usize;
         loop {
             // One field starts at `i`.
             let mut field: Vec<u8> = Vec::new();
-            if b.get(i) == Some(&b'"') {
+            let quoted = b.get(i) == Some(&b'"');
+            if quoted {
                 i += 1;
                 loop {
                     match b.get(i) {
@@ -399,7 +409,10 @@ mod render_check {
                     }
                 }
             }
-            row.push(String::from_utf8(field).map_err(|_| "csv: bad utf-8".to_string())?);
+            row.push((
+                String::from_utf8(field).map_err(|_| "csv: bad utf-8".to_string())?,
+                quoted,
+            ));
             match b.get(i) {
                 Some(b',') => {
                     i += 1;
@@ -439,6 +452,13 @@ mod render_check {
             || (0x2066..=0x2069).contains(&n)
             || n == 0x2028
             || n == 0x2029
+            || n == 0x00AD
+            || (0x200B..=0x200D).contains(&n)
+            || n == 0x2060
+            || n == 0xFEFF
+            || (0x206A..=0x206F).contains(&n)
+            || (0xFFF9..=0xFFFB).contains(&n)
+            || (0xE0000..=0xE007F).contains(&n)
     }
 
     /// The expected display-safe text of `bytes`. Decodes one character at a

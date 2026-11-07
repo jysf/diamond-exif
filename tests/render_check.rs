@@ -162,4 +162,32 @@ fn the_naive_safe_text_matches_the_dec_010_examples() {
         "\\xffa\\xe2\\x82"
     );
     assert_eq!(naive_safe_text("caf\u{e9}".as_bytes()), "caf\u{e9}");
+    // Invisible and format characters, their edges, and their neighbours.
+    for (c, want) in [
+        ('\u{ad}', "\\u{00ad}"),
+        ('\u{200b}', "\\u{200b}"),
+        ('\u{200d}', "\\u{200d}"),
+        ('\u{2060}', "\\u{2060}"),
+        ('\u{feff}', "\\u{feff}"),
+        ('\u{206a}', "\\u{206a}"),
+        ('\u{206f}', "\\u{206f}"),
+        ('\u{fff9}', "\\u{fff9}"),
+        ('\u{fffb}', "\\u{fffb}"),
+        ('\u{e0000}', "\\u{e0000}"),
+        ('\u{e007f}', "\\u{e007f}"),
+    ] {
+        assert_eq!(naive_safe_text(c.to_string().as_bytes()), want);
+    }
+    for c in [
+        '\u{ac}',
+        '\u{ae}',
+        '\u{200a}',
+        '\u{2010}',
+        '\u{2061}',
+        '\u{2064}',
+        '\u{fffc}',
+        '\u{e0080}',
+    ] {
+        assert_eq!(naive_safe_text(c.to_string().as_bytes()), c.to_string());
+    }
 }

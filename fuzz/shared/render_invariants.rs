@@ -19,7 +19,7 @@
 #[allow(dead_code)]
 mod render_invariants {
     use super::audit_invariants::{h_want, rederive, severity_of, Facts, What, H_PRESETS};
-    use super::render_check::{naive_safe_text, parse_csv, parse_json, J};
+    use super::render_check::{naive_safe_text, parse_csv, parse_csv_quoted, parse_json, J};
     use exif_core::audit::audit;
     use exif_core::jpeg;
     use exif_core::report::{
@@ -1166,6 +1166,22 @@ mod render_invariants {
         if rows[0] != header {
             return Err(format!("header {:?}", rows[0]));
         }
+        // The quoting predicate, typed again: a field is written quoted iff
+        // it holds a comma, a semicolon, a quote, CR or LF.
+        for (r, quoted_row) in parse_csv_quoted(c.csv.as_bytes())?.iter().enumerate() {
+            tick(quoted_row.len());
+            for (col, (value, quoted)) in quoted_row.iter().enumerate() {
+                let must = value
+                    .chars()
+                    .any(|ch| matches!(ch, ',' | ';' | '"' | '\r' | '\n'));
+                if *quoted != must {
+                    return Err(format!(
+                        "row {r} column {col}: {value:?} is {}, quoting is required iff it holds a comma, semicolon, quote, CR or LF",
+                        if *quoted { "quoted" } else { "unquoted" }
+                    ));
+                }
+            }
+        }
         let mut want = expected_csv_rows(c);
         // The failed file: label, status, and the detail in `value`.
         let mut failed = vec![String::new(); 19];
@@ -1244,7 +1260,14 @@ mod render_invariants {
                 || (0x202A..=0x202E).contains(&n)
                 || (0x2066..=0x2069).contains(&n)
                 || n == 0x2028
-                || n == 0x2029;
+                || n == 0x2029
+                || n == 0x00AD
+                || (0x200B..=0x200D).contains(&n)
+                || n == 0x2060
+                || n == 0xFEFF
+                || (0x206A..=0x206F).contains(&n)
+                || (0xFFF9..=0xFFFB).contains(&n)
+                || (0xE0000..=0xE007F).contains(&n);
             if bad {
                 return Err(format!("forbidden character {ch:?} at char {i}"));
             }

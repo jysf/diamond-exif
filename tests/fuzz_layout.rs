@@ -2327,29 +2327,48 @@ fn many_regions(n: usize) -> Vec<u8> {
     lin_jpeg(&vec![one; n])
 }
 
-/// Many findings AND many regions at once: twelve Exif blocks of 5,000
-/// thumbnail entries (each under the 64 KiB segment limit; 59,988 findings) and
-/// 4,000 JUMBF segments. A guard that rescans the findings once per region item
-/// is `O(regions x findings)` here: 240 million comparisons.
-fn heavy_findings_and_regions() -> Vec<u8> {
+/// Many findings AND many regions at once: `blocks` Exif blocks of 5,000
+/// thumbnail entries (each under the 64 KiB segment limit; 4,999 findings
+/// each) and `regions` JUMBF segments. A guard that rescans the findings once
+/// per region item is `O(regions x findings)` here.
+fn heavy_findings_and_regions(blocks: usize, regions: usize) -> Vec<u8> {
     let exif = lin_seg(0xE1, &[&b"Exif\0\0"[..], &thumbnail_tiff(5_000)].concat());
     let jumbf = lin_seg(
         0xEB,
         &[0x4A, 0x50, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x6A],
     );
-    let mut segments = vec![exif; 12];
-    segments.extend(std::iter::repeat_n(jumbf, 4_000));
+    let mut segments = vec![exif; blocks];
+    segments.extend(std::iter::repeat_n(jumbf, regions));
     lin_jpeg(&segments)
 }
 
-/// The wall-clock ceiling for each of the eleven audit guards on
-/// [`heavy_findings_and_regions`] (SPEC-015, carried from the SPEC-013 verify:
-/// a step counter only sees the `tick()` calls somebody remembered to place).
-/// Chosen from measurement, see the handback: the guards take a small fraction
-/// of this on the reference host in a debug build, and the quadratic rescan
-/// without a `tick` takes more than twenty times of it.
-const GUARD_WALL_BOUND: std::time::Duration = std::time::Duration::from_millis(WALL_MS);
-const WALL_MS: u64 = 55;
+/// Best-of-`runs` wall time of each audit guard, run alone on `data`.
+fn guard_times(data: &[u8], runs: usize) -> Vec<(&'static str, std::time::Duration, usize)> {
+    let a = exif_core::audit::audit(data);
+    let got = audit_invariants::facts(&a);
+    let want = audit_invariants::rederive(data);
+    let mut out = Vec::new();
+    for (name, _) in audit_invariants::GUARDS {
+        // Best of several: a scheduling hiccup on a busy runner must not fail
+        // a guard that is linear; a quadratic one is slow every time.
+        let mut best = std::time::Duration::MAX;
+        for _ in 0..runs {
+            let start = std::time::Instant::now();
+            let r = audit_invariants::run_guard(name, data, &got, &want);
+            best = best.min(start.elapsed());
+            assert!(r.is_ok(), "{name}: {r:?}");
+        }
+        out.push((name, best, got.findings.len()));
+    }
+    out
+}
+
+/// A guard that is linear takes about 4 times as long on 4 times the input; a
+/// quadratic one about 16 times. The bound sits between, and compares two runs
+/// on the same host in the same process, so it does not depend on host speed.
+const GUARD_TIME_RATIO_BOUND: u32 = 8;
+/// Below this the small run is timer noise and the guard is not in question.
+const GUARD_TIME_FLOOR: std::time::Duration = std::time::Duration::from_millis(1);
 
 /// The work the guards do on `data` (counted, not timed), with the facts and
 /// the re-derivation computed before the counter is reset.
@@ -2410,38 +2429,30 @@ fn audit_harness_guards_are_linear_in_the_input() {
 
     // The counter above only sees the places a `tick()` sits. A guard can be
     // linear in the counter and quadratic in time (the SPEC-013 verify's `f5`
-    // mutant restores a per-region rescan of the findings with no tick), so the
-    // eleven guards are also timed on an input with many findings and many
-    // regions.
-    let heavy = heavy_findings_and_regions();
-    let a = exif_core::audit::audit(&heavy);
-    let got = audit_invariants::facts(&a);
-    let want = audit_invariants::rederive(&heavy);
-    assert!(got.findings.len() > 59_000 && got.items.len() > 63_000);
-    // Each guard alone, so the slowest linear guard sets the margin, not the
-    // sum of eleven.
-    let mut worst = std::time::Duration::ZERO;
-    for (name, _) in audit_invariants::GUARDS {
-        // Best of three: a scheduling hiccup on a busy runner must not fail
-        // a guard that is linear; a quadratic one is slow all three times.
-        let mut elapsed = std::time::Duration::MAX;
-        for _ in 0..3 {
-            let start = std::time::Instant::now();
-            let r = audit_invariants::run_guard(name, &heavy, &got, &want);
-            elapsed = elapsed.min(start.elapsed());
-            assert!(r.is_ok(), "{name}: {r:?}");
-        }
-        println!("guard {name}: {elapsed:?}");
-        worst = worst.max(elapsed);
+    // mutant restores a per-region rescan of the findings with no tick), so
+    // each guard is also timed on an input with many findings and many regions
+    // and on one a quarter of its size, in the same run: time(N) must stay
+    // under 8 x time(N/4).
+    let big = heavy_findings_and_regions(12, 4_000);
+    let small = heavy_findings_and_regions(3, 1_000);
+    let tb = guard_times(&big, 3);
+    let ts = guard_times(&small, 5);
+    assert!(
+        tb[0].2 > 59_000 && ts[0].2 > 14_000,
+        "{} {}",
+        tb[0].2,
+        ts[0].2
+    );
+    for ((name, big_t, _), (_, small_t, _)) in tb.iter().zip(&ts) {
+        let ratio = big_t.as_secs_f64() / small_t.as_secs_f64().max(1e-9);
+        println!("guard {name}: {small_t:?} at N/4, {big_t:?} at N, ratio {ratio:.1}");
+        let reference = (*small_t).max(GUARD_TIME_FLOOR);
         assert!(
-            elapsed < GUARD_WALL_BOUND,
-            "guard {name} took {elapsed:?} on {} items and {} findings (bound {GUARD_WALL_BOUND:?}): \
-             it is quadratic in time",
-            got.items.len(),
-            got.findings.len()
+            *big_t < reference * GUARD_TIME_RATIO_BOUND,
+            "guard {name} took {big_t:?} at N and {small_t:?} at N/4 (ratio {ratio:.1}, bound \
+             {GUARD_TIME_RATIO_BOUND}): it is superlinear in time"
         );
     }
-    println!("slowest guard {worst:?} (bound {GUARD_WALL_BOUND:?})");
 }
 
 // ── SPEC-014: the strip-policy preview guards ────────────────────────────────
@@ -2851,7 +2862,9 @@ fn render_ctx(seed: &str) -> Ctx {
     render_invariants::build(&render_seed(seed))
 }
 
-const AUDIT_RENDER_SEEDS: [&str; 17] = [
+const SEMICOLON: &str = "render-label-semicolon-formula";
+
+const AUDIT_RENDER_SEEDS: [&str; 18] = [
     "render-ascii-payload-300-bytes",
     "render-empty-file",
     "render-full-house-jpeg-all-pii-inventory-values",
@@ -2868,6 +2881,7 @@ const AUDIT_RENDER_SEEDS: [&str; 17] = [
     "render-label-invalid-utf8",
     "render-label-quotes-comma",
     "render-label-right-to-left-override",
+    "render-label-semicolon-formula",
     "render-png-signature-values",
 ];
 
@@ -2950,6 +2964,7 @@ fn audit_render_seeds_are_committed_and_have_the_shapes_they_claim() {
     assert!(String::from_utf8_lossy(&label("label-right-to-left-override")).contains('\u{202E}'));
     assert_eq!(label("label-formula-equals"), b"=cmd|' /C calc'!A0");
     assert_eq!(label("label-formula-at"), b"@SUM(1)");
+    assert_eq!(label("label-semicolon-formula"), b"a;=1+cmd|' /C calc'!A0");
     assert_eq!(label("label-255-bytes").len(), 255);
     assert!(label("label-empty-png").is_empty());
     // A 300-byte ASCII payload: the excerpt is cut and flagged.
@@ -3480,7 +3495,46 @@ fn render_plants() -> Vec<RenderPlant> {
             guard: "csv_rows",
             apply: |c| rep(&mut c.csv, ",free_text,", ",gps,"),
         },
+        RenderPlant {
+            name: "a field with a semicolon written unquoted",
+            input: SEMICOLON,
+            guard: "csv_rows",
+            apply: |c| {
+                rep(
+                    &mut c.csv,
+                    "\"a;=1+cmd|' /C calc'!A0\"",
+                    "a;=1+cmd|' /C calc'!A0",
+                )
+            },
+        },
+        RenderPlant {
+            name: "a plain field written quoted",
+            input: SEMICOLON,
+            guard: "csv_rows",
+            apply: |c| rep(&mut c.csv, ",tiff,", ",\"tiff\","),
+        },
         // text_safe
+        RenderPlant {
+            name: "a zero-width space",
+            input: HOUSE_ALL_PII,
+            guard: "text_safe",
+            apply: |c| c.text.insert(3, '\u{200B}'),
+        },
+        RenderPlant {
+            name: "a tag character",
+            input: HOUSE_ALL_PII,
+            guard: "text_safe",
+            apply: |c| c.text.insert(3, '\u{E0041}'),
+        },
+        RenderPlant {
+            name: "a soft hyphen and a BOM",
+            input: HOUSE_ALL_PII,
+            guard: "text_safe",
+            apply: |c| {
+                c.text.insert(3, '\u{AD}');
+                c.text.insert(3, '\u{FEFF}');
+            },
+        },
         RenderPlant {
             name: "a terminal escape character",
             input: HOUSE_ALL_PII,
