@@ -6,7 +6,7 @@
 task:
   id: SPEC-015
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: verify  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
