@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-06
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-015
@@ -42,14 +42,14 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
+  status: completed                # completed | blocked | rejected
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: null
-  branch: null
+  duration_minutes: 200            # estimate from the session; not metered
+  branch: worktree-agent-a98883200c333058f
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # one line if unusual (rework, no meter, etc.)
+  completed_at: 2026-11-06         # YYYY-MM-DD
+  notes: "tokens_total is null: the implementer cannot see its own token count (no /cost, no usage object in this harness); the orchestrator transcribes the metered figure. No rework."
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -92,63 +92,117 @@ Constraints: `panic-free-library` (five-lint deny set: `arithmetic_side_effects`
 ## Return Criteria — how to hand back
 
 **Completing this handoff means filling in the `handback:` front-matter block
-above AND the `## Handback` section below.** An unfilled handback is an
-incomplete cycle, and `just handback-sync` will tell the orchestrator so.
-
-On success:
-1. Fill the `handback:` front-matter — **including a real `tokens_total`**.
-2. Fill the `## Handback` section (the reflection is part of it, not optional).
-3. Set `handoff.status` → `completed` and `handback.status` → `completed`.
-4. Open a PR (build) or return your verdict (verify).
-
-If you cannot complete the task:
-1. Fill the `## Handback` section with what was done and what blocked you.
-2. Set `handoff.status` → `rejected`, `handback.status` → `blocked`.
-3. **Still report your token usage** — blocked work costs money too.
-4. Set the spec's `task.blocked: true` and add a question to
-   `/guidance/questions.yaml`.
-
----
-
-## Handback
-
-*Filled in by the receiving agent. The orchestrator does not reconstruct any of
-this — it transcribes it. The reflection questions are part of completion.*
+above AND the `## Handback
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** branch `worktree-agent-a98883200c333058f` (fast-forwarded to `claude/rust-exif-metadata-6351d5` at 105a723 first: `git merge --ff-only` succeeded, no merge commit). No PR, not pushed, cycle not advanced. The final commit hash is in the report that carried this handback.
+- **Completed at:** 2026-11-06
+- **All acceptance criteria met?** yes, with the deviations listed below. Gates run locally and green: `cargo fmt --all -- --check`, the same with `--manifest-path fuzz/Cargo.toml`, `rustfmt --edition 2021 --check` on the three harness files; `just lint`, `lint-fuzz`, `lint-no-allow`, `lint-red-proof`, `lint-fuzz-red-proof`, `deny`, `deny-fuzz`, `validate`, `decisions-audit`, `cost-audit`; `DIAMOND_EXIF_REQUIRE_ORACLE=1 cargo test` on Homebrew stable and on `~/.cargo/bin/cargo +1.90.0` (all targets pass); `RUSTFLAGS="-F unsafe_code" cargo +1.90.0 check --all-targets`; `just oracle-record` (`git status --porcelain` clean after it, once the new records were committed, see deviation 3); `just fuzz-smoke audit` and `audit_render`.
+- **What was built:** `src/report/{mod,safe,text,json,csv}.rs` (+ `render_tests.rs`), `Item::value` (additive: `PhantomData` replaced by `value: Option<&'a [u8]>`, derives unchanged), `fuzz/shared/{render_check,render_invariants}.rs`, `fuzz/fuzz_targets/audit_render.rs`, 17 `audit_render` seeds, two new `audit` seeds (`audit-full-house-tiff`, `audit-full-house-jpeg`), `tests/{report_render,report_formats,render_check}.rs`, `tests/golden/report-full-house.{txt,json,csv}`, `tests/support/report_inputs.rs`, edits to `fuzz/Cargo.toml`, the CI matrix, `app.just`, `examples/fuzz_seeds.rs`, `tests/fuzz_layout.rs` and the seed-count assertions. No dependency added; `decisions/`, `scripts/`, irradiance untouched; existing seeds and records byte-identical (`git status` on `fuzz/seeds` shows additions only).
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
+- **Tokens (total):** null. I cannot see my token count in this harness; the orchestrator transcribes the metered figure.
+- **Estimated USD:** null
+- **Duration (minutes):** about 200 (estimate)
+- **Source of the number:** none available
 
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+### Fuzz smoke (60 s each, nightly, from the committed seeds, `just fuzz-smoke`)
+
+- `audit` (78 seeds): clean. 103,085 runs in 61 s, `DONE cov: 2080 ft: 8007 corp: 841/7323Kb` (an earlier identical run: 173,751 runs).
+- `audit_render` (17 seeds): clean. 68,357 runs in 61 s, `INITED cov: 3639 ft: 7628 corp: 17/3835b`, `DONE cov: 4469 ft: 14825 corp: 1045/289Kb exec/s: 1120`.
+- Plants against the real targets (fresh scratch corpus under the scratchpad, the seeds directory as the only input, working tree reverted afterwards, `git diff` empty):
+  - `audit`, the old SPEC-014 mutant 9 (`may_hold(MakerNote)` loses `Gps`): **found at once, on seed load** (`preview_dispositions`: "gps: finding 8: expected kept_unread, got kept"). With the two full-house seeds this closes carried F1.
+  - `audit_render`, mutant 15 (`@` missing from the CSV formula guard): found at once on seed load (`csv_rows`: "row 0: column 0 starts a formula: \"@SUM(1)\"").
+
+### Wall-clock bound and the quadratic mutant (SPEC-013 linearity)
+
+- `audit_harness_guards_are_linear_in_the_input` keeps its step counter and now also times each of the eleven audit guards (best of three runs) on `heavy_findings_and_regions()`: twelve Exif blocks of 5,000 thumbnail entries and 4,000 JUMBF segments, 64,000 items and 63,988 findings. **Bound chosen: 55 ms per guard.** Measured on this host (Apple silicon, the test profile): the slowest linear guard (`thumbnail`) takes 12 ms, `category_shape` 3.4 ms, the rest under 3 ms.
+- The rescan-without-tick mutant (`!got.findings.iter().any(|f| f.item == Some(i))` replacing the marking pass in `g_category_shape`) took **1.22 s**: `guard category_shape took 1.222467917s ... (bound 55ms): it is quadratic in time`. That is 22 times the bound and 360 times the linear guard. A generous bound and a 20 times margin pull against each other: a JPEG holds at most 4,095 regions, so the ratio cannot grow, and the bound is 4.6 times the slowest linear guard (12 ms), not more. Best-of-three guards against a scheduling hiccup; a runner more than 4 times slower than this host would flake. I judged that acceptable; a bound of 60 ms would give a 20 times margin on the mutant and is the highest that does.
+
+### Largest output at the caps (`largest_output_at_the_caps_is_measured`, `--ignored --nocapture`)
+
+One file, 65,536 items and 65,536 findings (every entry a Make whose shared 70-byte payload escapes to a full 64-byte excerpt of `\x01`), policy `all_pii`:
+
+| options | text | JSON | CSV |
+|---|---|---|---|
+| inventory + values | 47,710,754 B | 71,959,372 B | 22,151,327 B |
+| values only | 24,052,233 B | 37,880,656 B | 22,151,327 B |
+
+About 550 bytes per entry in JSON and 340 in CSV. A 72 MB JSON string for one hostile 786 KB file is large enough that SPEC-016 should know: the renderers return a `String`, so memory is about the size of the report. I added no cap. The bounded test `largest_output_at_the_caps_stays_under_the_ceiling` asserts 1,400 bytes per entry (91.7 MB).
+
+### Mutants (each: control green first, applied by hand as a text replacement, run, reverted with `git checkout`, `git diff` empty; the script is `mutants.py` in the scratchpad)
+
+"harness" = `render_harness_holds_on_every_seed_and_degenerate_inputs`, "cross" = `every_seed_every_policy_every_option_renders_well_formed_output`, "plants" = `each_render_guard_goes_red_alone_when_planted` (its control run fails when the mutant breaks an unplanted case).
+
+| # | Mutant | Caught by (assertion text shortened) |
+|---|---|---|
+| 1 | `"` unescaped | `safe_text_escapes_controls_c1_bidi_separators_quote_and_backslash` (left `say \"hi\"\\`), `excerpt_of_a_non_ascii_type_is_the_raw_payload_prefix`, `csv_quotes_..._end_to_end`, `values_are_absent_unless_asked`, harness (`json_facts`), cross |
+| 2 | DEL left | the same unit test (left `\u{7f}`, right `\x7f`), `audit_render_seeds_are_committed...`, harness, cross |
+| 3 | C1 left | the same unit test (`\u{0080}`), `text_has_no_forbidden_character_or_phrase`, harness, cross |
+| 4 | U+202E left | the same unit test (`0x202e`), `text_has_no_forbidden_character_or_phrase`, harness, cross |
+| 5 | invalid bytes to U+FFFD | `safe_text_writes_invalid_utf8_bytes_as_hex_escapes`, `safe_text_is_injective_on_a_sampled_set` ("two inputs give"), `safe_text_output_bound_holds`, harness, cross, plants, `render_guards_are_linear` |
+| 6 | JSON skips `\u00XX` | `json_escapes_quote_backslash_and_every_control` (unit: "a raw control in") only |
+| 7 | key order status/label | `json_has_the_pinned_key_order_at_every_level`, golden, harness/cross/plants/`render_guards_are_linear` (`json_shape`), `a_truncated_audit...` |
+| 8 | JSON ok for issues | `json_enumerations_are_pinned`, cross (`json_facts`: "status ok, want issues"), `a_truncated_audit...` |
+| 9 | residuals when unreliable | `json_preview_residuals_are_null_unless_reliable` ("unreliable: both null"), golden, harness, cross, plants, `a_truncated_audit...` |
+| 10 | summary double-counts | `json_summary_matches_summarize`, golden, harness/cross/plants (`summary_facts`) |
+| 11 | by_category order | `json_has_the_pinned_key_order_at_every_level`, golden, `json_shape`, `a_truncated_audit...` |
+| 12 | quotes not doubled | `csv_quotes_comma_quote_cr_lf_and_doubles_quotes` (unit), `..._end_to_end`, `values_are_absent_unless_asked`, harness, cross (`csv_wellformed`) |
+| 13 | CSV LF | `csv_quotes_...` (unit: `out.ends_with("\r\n")`), `csv_uses_crlf`, golden, 8 more format tests, harness, cross (`csv_wellformed`: "bare LF"), `largest_output_at_the_caps_stays_under_the_ceiling` |
+| 14 | CR not quoted | `csv_quotes_comma_quote_cr_lf_and_doubles_quotes` (unit) only |
+| 15 | guard omits `@` | `csv_formula_guard_prefixes_each_trigger_character_on_hostile_fields_only` (unit) and `..._end_to_end`, harness and cross (`csv_rows`: "starts a formula"), the real `audit_render` plant |
+| 16 | guard on category | `csv_formula_guard_prefixes_each_trigger_character_on_hostile_fields_only` (unit: "column 3 for '='") only; no real category starts with a trigger character |
+| 17 | no row for a file without findings | `csv_has_a_row_for_every_file_without_findings`, golden, harness/cross/plants (`csv_rows`: "1 rows, want 2") |
+| 18 | inventory drops items | `csv_inventory_mode_rows`, `a_truncated_audit...`, harness/cross/`render_guards_are_linear` (`csv_rows`: "16 rows, want 19") |
+| 19 | "contains none of it" | `text_words_kept_and_kept_unread_as_dec_009_requires`, golden (txt) |
+| 20 | text excerpt with values off | `values_are_absent_unless_asked`, harness/cross/plants (`values_gate`: "a text excerpt with values off"), `a_truncated_audit...` |
+| 21 | cap 65 | `excerpt_cuts_ascii_at_nul_and_caps_at_64_bytes_and_flags_truncation`, `excerpt_of_a_non_ascii_type_is_the_raw_payload_prefix`, harness/cross/plants (`json_facts`: excerpt) |
+| 22 | truncated on escaped length | `audit_render_seeds_are_committed...`, harness/cross/plants (`json_facts`) |
+| 23 | values default true | `excerpt_of_a_non_ascii_type_is_the_raw_payload_prefix` only (its `excerpt(&item, &RenderOptions::default())` is `Some`, want `None`) |
+| 24 | failed label unescaped | `json_escapes_quote_backslash_and_every_control_end_to_end`, harness/cross (`json_facts`: label) |
+| 25 | `status_of` Ok for Unsupported | `status_of_follows_dec_010` ("an unsupported audit with zero findings is never ok"), `summarize_counts_each_status_category_and_reliability`, 8 more, golden, harness/cross/plants |
+| 26 | JSON checker, trailing comma | `json_checker_accepts_valid_documents_and_rejects_each_invalid_one` ("accepted a trailing comma in an array: [1,2,]"), plants (`json_wellformed`) |
+| 27 | JSON checker, leading zero | the same test ("accepted a leading zero: [01]") only |
+| 28 | JSON checker, raw control | the same test, plants (`json_wellformed`) |
+| 29 | CSV checker, ragged row | `csv_checker_accepts_valid_documents_and_rejects_each_invalid_one` ("accepted a ragged row"), plants (`csv_wellformed`) |
+| 30 | CSV checker, bare quote | the same test ("accepted a bare quote in an unquoted field"), plants (`csv_wellformed`) |
+
+Carried, applied against the new tests:
+
+| Mutant | Result |
+|---|---|
+| SPEC-014 15 (truncated rule dropped) | caught by `audit::preview::tests::truncated_audit_residual_severity_is_conservative` and `a_truncated_audit_previews_conservatively_end_to_end` ("gps_and_device ... Some(Low) vs Some(High)") |
+| SPEC-014 16 (truncated `all()` exception dropped) | caught by the same two ("everything ... Some(High) vs None") |
+| SPEC-014 vG (harness `custom_names` always empty) | caught by `preview_custom_case_is_non_trivial` ("only 0 inputs give a non-trivial custom set") |
+| SPEC-014 vM (harness truncated `all()` exception dropped) | **survived at first**: `h_want` is reached only by the preview guards and no truncated input with findings reached them. I added the harness preview guards over the `over` input to `a_truncated_audit_previews_conservatively_end_to_end`; now caught (`preview_residual_and_reliable`: "everything: residual severity None, want Some(\"High\")") |
+| SPEC-013 rescan without tick | caught by `audit_harness_guards_are_linear_in_the_input` (1.22 s against 55 ms) |
+| SPEC-014 mutant 9 (F1) | found at once by the real `audit` target on seed load, see above |
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
+- **New decisions emitted:** none.
 - **Deviations from spec:**
-  - [list]
-- **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  1. **Format tests moved out of `src/`.** `just lint-red-proof` copies only `Cargo.toml` and `src/`, so a unit test under `src/` cannot `include!` the checkers or read `tests/support`. The tests that read a whole report back with the strict parsers are in `tests/report_formats.rs` under their spec names (`values_are_absent_unless_asked`, `json_has_the_pinned_key_order_at_every_level`, `json_enumerations_are_pinned`, `json_preview_residuals_are_null_unless_reliable`, `json_summary_matches_summarize`, `csv_has_the_pinned_header_and_19_fields_per_row`, `csv_uses_crlf`, `csv_has_a_row_for_every_file_without_findings`, `csv_inventory_mode_rows`, the four `text_*`, `render_is_deterministic`). Three names exist twice: the layer-only version in `src/report/render_tests.rs` under the spec name (`json_escapes_quote_backslash_and_every_control`, `csv_quotes_comma_quote_cr_lf_and_doubles_quotes`, `csv_formula_guard_prefixes_each_trigger_character_on_hostile_fields_only`) and the pipeline version in `tests/report_formats.rs` with an `_end_to_end` suffix. Extra tests: `report_names_are_pinned` (src), `largest_output_at_the_caps_stays_under_the_ceiling` (the bounded twin of the ignored named test), `audit_render_target_is_declared_and_runs_in_ci`.
+  2. **Option byte.** The failure reason uses bits 5 to 6 of byte 0 (all four `FailReason`s), not bit 5 alone.
+  3. **Edits outside the spec's list, forced by the two new `audit` seeds:** counts and lists in `tests/inventory_oracle.rs`, `tests/support/inventory.rs`, `tests/mutation_oracle.rs`, `tests/budget_oracle.rs`, `tests/policy_preview.rs` (78 audit seeds, 249 inputs, 180 distinct, 14 Class R rows, 33 pinned divergences); a new pinned Class R divergence for `seed-audit/audit-full-house-jpeg` (ExifTool lists no ICC or JUMBF group for its stub payloads); `just oracle-record` appended two sections (28 lines, nothing removed) to `tests/oracle-fixtures/exiftool-inventory/seed-audit.txt`. `guidance/toolchain-brief.md` carries the new counts.
+  4. `audit_harness_guards_are_linear_in_the_input` times each guard separately (best of three), and `thumbnail_tiff(k)` was split out of `many_thumbnails(k)` (same bytes).
+  5. `audit_invariants.rs`: `H_PRESETS`, `H_ALL`, `h_want`, `rank` and `custom_names` became `pub` (no behaviour change) so `render_invariants` reuses the typed DEC-009 grid.
+  6. `Summary.reliable_files + unreliable_files` counts audited files (a failed file has no audit), as the `summary_facts` guard in the spec says, not `files`.
+  7. The IFD name `other` is in the spec's list but unreachable: `IfdKind` is `#[non_exhaustive]` yet exhaustive inside its own crate, and a wildcard arm would be an unreachable-pattern warning.
+  8. `json_facts` cannot compare the excerpt of a finding whose item did not fit in the inventory (past 65,536 entries; unreachable at libFuzzer's default 4 KiB input) because the independent payload walk is capped like the items; its shape and the values-off rule are still checked.
+  9. In the `audit_render` input, byte 1 is both the label length and the byte a Custom category set comes from (the spec says "the next input byte").
+- **Doubts about DEC-010 / SPEC-015 (for the architect; `decisions/` untouched; also in `guidance/questions.yaml`, id `report-dec-010-build-doubts`):** (1) the summary's `residual_findings` is `Some(0)` when a policy is set and no file is reliable, which reads like "nothing remains"; (2) a `Custom` policy is only named "custom"; (3) the library does not bound the label or the failure detail (rule 8 says bounded) and prints the detail with `values` off; (4) the TAB and CR formula triggers never fire through `render_csv` because `safe_text` escapes them first, and DEL's escape form is unspecified (built `\x7f`).
+- **Follow-up work identified:** SPEC-016 should bound a path, pass only OS error text as `detail`, and decide how to stream a report that can reach 72 MB.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — Where the named "src/report (unit)" tests could live: the red-proof script copying only `src/` was not in the brief, so the checker-based tests moved after they were written. Also the 20 times margin and a generous wall-clock bound cannot both hold with at most 4,095 regions.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — The inventory oracle suite (pinned divergences and corpus counts) breaks when a seed is added to `fuzz/seeds/audit`; the brief named `tests/audit_model.rs` and "the seed hash lists" only.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Run `just lint-red-proof` right after the first `src/` test, add the full-house `audit` seeds and run the oracle suite before writing the renderers, and write the per-guard timing test first.
