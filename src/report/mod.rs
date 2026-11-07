@@ -301,11 +301,12 @@ impl Format {
 /// `render_json` and `render_csv` are this builder (new, add each, finish), so
 /// there is one code path and they cannot drift.
 ///
-/// **Memory bound.** The retained size is the sum of the fragment lengths plus
-/// a constant per fragment (one `String` header) and a constant for the
-/// summary and options. It grows by the fragment of each added file and by no
-/// input byte; [`finish`] allocates the document once, of the fragments' total
-/// size plus the frame.
+/// **Memory bound.** The retained memory is the *capacity* of the fragment
+/// strings (a `String` may reserve up to about twice its length, so at most a
+/// small constant factor over the fragment lengths), plus one `String` header
+/// per fragment and a constant for the summary and options. It grows with the
+/// fragment of each added file and never holds an input byte; [`finish`]
+/// allocates the document once, of the fragments' total length plus the frame.
 ///
 /// [`add`]: ReportBuilder::add
 /// [`finish`]: ReportBuilder::finish

@@ -420,6 +420,55 @@ fn render_dispatches_to_the_matching_one_shot() {
     assert!(j.starts_with('{') && c.starts_with("label,") && t.starts_with("file: "));
 }
 
+/// A little-endian TIFF whose IFD0 holds one inline ASCII entry `tag` = "a".
+fn tiff_inline_ascii(tag: u16) -> Vec<u8> {
+    let mut v = b"II\x2A\x00\x08\x00\x00\x00".to_vec();
+    v.extend_from_slice(&1u16.to_le_bytes());
+    v.extend_from_slice(&tag.to_le_bytes());
+    v.extend_from_slice(&2u16.to_le_bytes());
+    v.extend_from_slice(&2u32.to_le_bytes());
+    v.extend_from_slice(&[b'a', 0, 0, 0]);
+    v.extend_from_slice(&0u32.to_le_bytes());
+    v
+}
+
+#[test]
+fn builder_summary_max_severity_is_the_maximum_in_both_add_orders() {
+    use crate::audit::Severity;
+    // BodySerialNumber is high (device_id); Make is low (camera_model).
+    let high_bytes = tiff_inline_ascii(0xA431);
+    let low_bytes = tiff_make(b"Cam");
+    let high = FileEntry {
+        label: b"high",
+        result: FileResult::Audited(audit(&high_bytes)),
+    };
+    let low = FileEntry {
+        label: b"low",
+        result: FileResult::Audited(audit(&low_bytes)),
+    };
+    let sev = |e: &FileEntry<'_>| match &e.result {
+        FileResult::Audited(a) => a.max_severity(),
+        FileResult::Failed { .. } => None,
+    };
+    assert_eq!(sev(&high), Some(Severity::High));
+    assert_eq!(sev(&low), Some(Severity::Low));
+    for opts in option_set() {
+        for order in [[&high, &low], [&low, &high]] {
+            for format in FORMATS {
+                let mut b = ReportBuilder::new(format, opts);
+                let mut so_far: Vec<FileEntry<'_>> = Vec::new();
+                for e in order {
+                    b.add(e);
+                    so_far.push(e.clone());
+                    assert_eq!(b.summary(), summarize(&so_far, &opts));
+                }
+                // After both, the maximum, whichever came first.
+                assert_eq!(b.summary().max_severity, Some(Severity::High));
+            }
+        }
+    }
+}
+
 #[test]
 fn format_names_are_pinned() {
     assert_eq!(Format::Text.name(), "text");
