@@ -15,8 +15,8 @@
 # Everything is read from authoritative front-matter: a spec's stage
 # (project.stage), cycle (task.cycle), complexity (task.complexity),
 # and — for archived specs under specs/done/ — the ship date (the
-# recorded_at of the `ship` cost session, falling back to the stage's
-# shipped_at). Output is human-readable text on stdout.
+# spec's own shipped_at, then the `ship` cost session's recorded_at, then
+# the stage's shipped_at). Output is human-readable text on stdout.
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -50,18 +50,23 @@ get_spec_complexity() {
     ' "$1"
 }
 
-# recorded_at of the `ship` cost session, if any. Indents match the
-# rest of the cost-session readers in _lib.sh.
+# The spec's ship date. Prefers the authoritative top-level `shipped_at`
+# that `archive-spec` stamps on every shipped spec; falls back to the
+# `recorded_at` of the `ship` cost session — a hand-recorded entry that
+# predates the stamp and is routinely skipped. Empty if neither is set.
+# Cost-session indents match the rest of the readers in _lib.sh.
 get_spec_ship_date() {
     awk '
         /^---$/ { fm = !fm; next }
         !fm { next }
+        /^shipped_at:/ { if ($2 != "null" && $2 != "") shipped = $2 }
         /^cost:/ { c = 1; next }
         c && /^[a-zA-Z_]/ { c = 0 }
         c && /^  sessions:/ { s = 1; next }
         c && s && /^  [a-zA-Z_]/ { s = 0 }
         s && /^    - cycle:/ { cyc = $3 }
-        s && /^      recorded_at:/ { if (cyc == "ship") { print $2; exit } }
+        s && /^      recorded_at:/ { if (cyc == "ship" && ship_rec == "") ship_rec = $2 }
+        END { print (shipped != "" ? shipped : ship_rec) }
     ' "$1"
 }
 
