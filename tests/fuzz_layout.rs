@@ -3859,8 +3859,178 @@ fn pair_at(c: &Ctx, name: &str) -> usize {
         .unwrap_or_else(|| panic!("no comparison {name}"))
 }
 
+/// Change one letter's case: the same length, different content.
+fn same_length_corrupt(s: &mut String) {
+    let before = s.len();
+    let at = s
+        .char_indices()
+        .find(|(_, ch)| ch.is_ascii_alphabetic())
+        .map(|(i, _)| i)
+        .expect("a letter to flip");
+    let flipped = if s[at..].starts_with(|c: char| c.is_ascii_lowercase()) {
+        s[at..at + 1].to_ascii_uppercase()
+    } else {
+        s[at..at + 1].to_ascii_lowercase()
+    };
+    s.replace_range(at..at + 1, &flipped);
+    assert_eq!(s.len(), before);
+}
+
 fn builder_plants() -> Vec<BuilderPlant> {
     vec![
+        BuilderPlant {
+            name: "same-length corruption of the builder output of forward/text",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "forward/text");
+                same_length_corrupt(&mut c.pairs[i].builder);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the builder output of forward/json",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "forward/json");
+                same_length_corrupt(&mut c.pairs[i].builder);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the builder output of forward/csv",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "forward/csv");
+                same_length_corrupt(&mut c.pairs[i].builder);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the builder output of reverse/text",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "reverse/text");
+                same_length_corrupt(&mut c.pairs[i].builder);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the builder output of reverse/json",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "reverse/json");
+                same_length_corrupt(&mut c.pairs[i].builder);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the builder output of reverse/csv",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "reverse/csv");
+                same_length_corrupt(&mut c.pairs[i].builder);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the builder output of alone-audited/text",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "alone-audited/text");
+                same_length_corrupt(&mut c.pairs[i].builder);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the builder output of alone-audited/json",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "alone-audited/json");
+                same_length_corrupt(&mut c.pairs[i].builder);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the builder output of alone-audited/csv",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "alone-audited/csv");
+                same_length_corrupt(&mut c.pairs[i].builder);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the builder output of alone-failed/text",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "alone-failed/text");
+                same_length_corrupt(&mut c.pairs[i].builder);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the builder output of alone-failed/json",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "alone-failed/json");
+                same_length_corrupt(&mut c.pairs[i].builder);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the builder output of alone-failed/csv",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "alone-failed/csv");
+                same_length_corrupt(&mut c.pairs[i].builder);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the one-shot output of forward/json",
+            input: HOUSE_ALL_PII,
+            side: Side::OneShot,
+            apply: |c| {
+                let i = pair_at(c, "forward/json");
+                same_length_corrupt(&mut c.pairs[i].oneshot);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the one-shot output of reverse/text",
+            input: HOUSE_ALL_PII,
+            side: Side::OneShot,
+            apply: |c| {
+                let i = pair_at(c, "reverse/text");
+                same_length_corrupt(&mut c.pairs[i].oneshot);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the one-shot output of reverse/csv",
+            input: HOUSE_ALL_PII,
+            side: Side::OneShot,
+            apply: |c| {
+                let i = pair_at(c, "reverse/csv");
+                same_length_corrupt(&mut c.pairs[i].oneshot);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the one-shot output of alone-audited/json",
+            input: HOUSE_ALL_PII,
+            side: Side::OneShot,
+            apply: |c| {
+                let i = pair_at(c, "alone-audited/json");
+                same_length_corrupt(&mut c.pairs[i].oneshot);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption of the one-shot output of alone-failed/csv",
+            input: HOUSE_ALL_PII,
+            side: Side::OneShot,
+            apply: |c| {
+                let i = pair_at(c, "alone-failed/csv");
+                same_length_corrupt(&mut c.pairs[i].oneshot);
+            },
+        },
         // The builder is wrong.
         BuilderPlant {
             name: "the builder drops the last fragment (the CSV loses its last row)",
@@ -4025,6 +4195,15 @@ fn builder_guard_goes_red_alone_when_planted() {
         let i = pair_at(&same, name);
         same.pairs[i].builder.push_str("<changed>");
         same.pairs[i].oneshot.push_str("<changed>");
+        assert_eq!(
+            render_invariants::run_guard("builder_equals_oneshot", &same),
+            Ok(()),
+            "{name}: equal sides are accepted"
+        );
+        // And a same-length change applied identically to both sides.
+        let mut same = good.clone();
+        same_length_corrupt(&mut same.pairs[i].builder);
+        same_length_corrupt(&mut same.pairs[i].oneshot);
         assert_eq!(
             render_invariants::run_guard("builder_equals_oneshot", &same),
             Ok(()),
