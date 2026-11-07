@@ -43,13 +43,13 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: 341445             # orchestrator-recorded from the metered sub-agent result (subagent_tokens)
-  estimated_usd: 2.25
-  duration_minutes: 32
+  tokens_total: 368680             # orchestrator-recorded from the metered sub-agent results (subagent_tokens)
+  estimated_usd: 2.43
+  duration_minutes: 42
   branch: worktree-agent-ae6b635c23ea0f0af
   pr: null
   completed_at: 2026-11-06         # YYYY-MM-DD
-  notes: "tokens transcribed by the orchestrator from the sub-agent metered result (subagent_tokens 341,445; 1,900,342 ms wall-clock)"
+  notes: "tokens transcribed by the orchestrator from the sub-agent metered results; the agent was resumed once and each completion reported a cumulative figure: 341,445, 368,680 (final, used); wall-clock 1,900,342 + 616,070 = 2,516,412 ms = 42 minutes"
   synced_at: 2026-11-06
 ---
 
@@ -122,9 +122,9 @@ If you cannot complete the task:
 
 ### Cost self-report
 
-- **Tokens (total):** 341,445 (orchestrator-transcribed from the metered sub-agent result)
-- **Estimated USD:** 2.25 (341,445 tokens at 6.60 USD per Mtok)
-- **Duration (minutes):** 32 (harness wall-clock 1,900,342 ms)
+- **Tokens (total):** 368,680 (orchestrator-transcribed; final cumulative figure after one follow-up)
+- **Estimated USD:** 2.43 (368,680 tokens at 6.60 USD per Mtok)
+- **Duration (minutes):** 42 (harness wall-clock, build run plus one follow-up)
 - **Source of the number:** harness report (subagent_tokens)
 
 ### Numbers asked for

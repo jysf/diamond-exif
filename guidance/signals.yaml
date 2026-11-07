@@ -206,3 +206,15 @@ signals:
     last_touched: 2026-11-07
     raised_by: claude
     notes: "At N=1. Walk at STAGE-003 close alongside the SPEC-014/015 guard lesson."
+
+  - id: check-then-open-needs-a-safe-open
+    type: lesson
+    summary: "A 'never open X' promise about a filesystem object needs the open itself to be safe (non-blocking, re-checked on the handle), not only a pre-check, because the path can change in between."
+    evidence: "SPEC-016 verify F1: a FIFO renamed over a scanned name between the walk's check and read_file's open hung the binary (3 of 127 races). N=1."
+    bar: "N=3 same-outcome"
+    status: watch
+    disposition_at: stage-close
+    first_flagged: 2026-11-07
+    last_touched: 2026-11-07
+    raised_by: claude
+    notes: "At N=1. Walk at STAGE-003 close."

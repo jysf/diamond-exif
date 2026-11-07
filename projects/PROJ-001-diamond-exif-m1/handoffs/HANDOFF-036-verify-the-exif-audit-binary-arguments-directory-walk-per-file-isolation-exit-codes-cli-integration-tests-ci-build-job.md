@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                     # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: 105
+  tokens_total: 293641             # orchestrator-recorded from the metered sub-agent results (subagent_tokens)
+  estimated_usd: 1.94
+  duration_minutes: 45
   branch: worktree-agent-a8294d7bb91892337
   pr: null
   completed_at: 2026-11-06               # YYYY-MM-DD
-  notes: "full verify PUNCH LIST at 6935f90; delta verify APPROVED at b224a12 (fix b00299b); tokens_total null: the sub-agent cannot read its own meter, the orchestrator transcribes the metered figure (covers both passes)"
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "verify PUNCH LIST at 6935f90, delta verify APPROVED at b224a12 (final). Tokens transcribed by the orchestrator from the sub-agent metered results; the agent was resumed once and each completion reported a cumulative figure: 258,581, 293,641 (final, used); wall-clock per run 755,929 + 1,945,077 = 2,701,006 ms = 45 minutes; the verifier's own 75-minute estimate is not used"
+  synced_at: 2026-11-06
 ---
 
 # HANDOFF-036: Verify the exif-audit binary
@@ -216,10 +216,10 @@ D1 and D2 (carried from SPEC-018) are present: the end and middle same-length pl
 
 ### Cost self-report
 
-- **Tokens (total):** null. A sub-agent cannot read its own meter; the orchestrator transcribes the metered figure from the sub-agent result.
-- **Estimated USD:** null (same reason)
-- **Duration (minutes):** about 75
-- **Source of the number:** harness report (to be transcribed by the orchestrator)
+- **Tokens (total):** 293,641 (orchestrator-transcribed; final cumulative figure after one resume)
+- **Estimated USD:** 1.94 (293,641 tokens at 6.60 USD per Mtok)
+- **Duration (minutes):** 45 (harness wall-clock, first review 13 minutes plus delta verify 32; the verifier's own estimate was about 75)
+- **Source of the number:** harness report (subagent_tokens)
 
 ### Drift and new artifacts
 

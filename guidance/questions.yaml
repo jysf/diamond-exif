@@ -787,7 +787,7 @@ questions:
   - id: cli-closed-stdout-descriptor
     question: "Should exif-audit exit 4 when stdout is a closed file descriptor (`>&-`), not only when a write to a pipe or a full disk fails?"
     priority: low
-    status: open
+    status: answered
     raised_by: claude-sonnet-5-5
     raised_at: 2026-11-07
     assigned_to: null
@@ -799,11 +799,12 @@ questions:
       had been written (measured with the release binary). Detecting it needs either an
       `unsafe` fstat (forbidden) or a probe that opens /dev/stdout (not portable). Decide
       whether to accept the gap, document it, or add a portable probe.
+      Answered 2026-11-07 in the DEC-011 amendment (SPEC-016 verify).
 
   - id: cli-io-error-texts
     question: "When is a failure `read error` and when `i/o error`? DEC-011 part 4 lists both texts but not the rule."
     priority: low
-    status: open
+    status: answered
     raised_by: claude-sonnet-5-5
     raised_at: 2026-11-07
     assigned_to: null
@@ -817,3 +818,17 @@ questions:
       their output cannot be written; a file longer than --max-size is rejected from its
       length (metadata) without reading it, and only when it is a TIFF or JPEG by its first
       12 bytes (any other container is `unsupported`, whatever its size).
+      Answered 2026-11-07 in the DEC-011 amendment (SPEC-016 verify).
+
+  - id: cli-symlink-swap-window
+    question: "Should exif-audit close the window where a symlink is swapped in for a walked entry between the check and the open (O_NOFOLLOW per target, or comparing the open handle's device and inode with the walk's symlink_metadata)?"
+    priority: low
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-07
+    assigned_to: null
+    notes: |
+      DEC-011 amendment item 3 accepts the window: exploiting it needs code running on the
+      scanning host, and --values excerpts are capped at 64 bytes. The verifier measured 18 of
+      1,500 racing runs auditing a file outside the tree. A std-only (dev, ino) comparison is
+      the portable fix. Decide if exif-audit is ever run on untrusted shared trees.
