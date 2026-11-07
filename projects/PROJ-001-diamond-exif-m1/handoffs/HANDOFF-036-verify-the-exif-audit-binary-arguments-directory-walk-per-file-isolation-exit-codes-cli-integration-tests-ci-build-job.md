@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: verifier             # implementer | verifier
   created_at: 2026-11-06
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                  # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-016
@@ -42,14 +42,14 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
+  status: completed                     # completed | blocked | rejected
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: null
-  branch: null
+  duration_minutes: 75
+  branch: worktree-agent-a8294d7bb91892337
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # one line if unusual (rework, no meter, etc.)
+  completed_at: 2026-11-06               # YYYY-MM-DD
+  notes: "verify verdict PUNCH LIST at 6935f90 (code at 3bde9e7); tokens_total null: the sub-agent cannot read its own meter, the orchestrator transcribes the metered figure"
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -113,38 +113,127 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** branch `worktree-agent-a8294d7bb91892337`; no PR, not pushed. `git merge --ff-only claude/rust-exif-metadata-6351d5` was refused (this worktree started at `main` `d5a3c14`, which has two commits the feature branch lacks: the `specs-by-stage` fix, PR #24); a plain `git merge` made the clean merge commit `b5a4041`. The only file it brings in that the build did not touch is `scripts/specs-by-stage.sh` (from `main`). The code under review is the build at `3bde9e7`; the verdict is given at `6935f90` (the tip of `claude/rust-exif-metadata-6351d5`).
+- **Completed at:** 2026-11-06
+- **All acceptance criteria met?** Every gate is green and every named test exists. Two problems remain: a FIFO race (F1) breaks DEC-011's rule that a FIFO is "never opened", and the walk's special-file handling is under-tested (F2).
+- **For `verify`:** ⚠ **PUNCH LIST** at `6935f90`. One Medium finding (F1), plus Low findings and nits. No High findings. Nothing else blocks the work.
+
+#### Gates (run by the verifier, macOS host)
+
+| Gate | Result |
+|---|---|
+| `cargo fmt --all -- --check`; fuzz graph `--check`; `rustfmt --edition 2021 --check` on all six `fuzz/shared/*.rs` | clean |
+| `just lint` (clippy `--all-targets` 0.1.99, covers `bin "exif-audit"` and its tests) | clean |
+| `just lint-fuzz`, `just lint-no-allow` | clean |
+| `just lint-red-proof`, `just lint-fuzz-red-proof` | both print the green "proved" line |
+| `cargo test` on Homebrew stable 1.99.1 and on `~/.cargo/bin/cargo +1.90.0` with `DIAMOND_EXIF_REQUIRE_ORACLE=1 DIAMOND_EXIF_REQUIRE_CLI_FS=1` | all binaries ok on both (unit bin 19, cli 23, fuzz_layout 52, lib 228, …; 0 failed) |
+| `cargo rustc --lib -- -F unsafe_code`, `cargo rustc --bin exif-audit -- -F unsafe_code` | clean; no `unsafe` in `src/bin/` or the target |
+| `just deny`, `just deny-fuzz` | licenses ok |
+| `just validate`, `just decisions-audit` (0 structural errors), `just cost-audit` | pass |
+| `just oracle-record`, then `git status --porcelain` | empty |
+| `just fuzz-smoke cli_args` | rc 0, 2,376,192 runs in 61 s, `DONE cov: 861 ft: 2627 corp: 502/48Kb` |
+| `just fuzz-smoke audit_render` | rc 0, 38,711 runs in 61 s, `DONE cov: 4780 ft: 13984 corp: 950/233Kb` |
+| `cargo build --release --locked --bin exif-audit`, `just dev --version` | ok, `exif-audit 0.0.0` |
+| cli `--nocapture` | measured peak 7 MB for 200 x 2,015,350 B (ceiling 100 MB); 1 MB for two 2 GiB sparse non-images; 196 seeds over 9 invocations; skips on this host: the invalid-UTF-8 name (allowed on macOS) and `/dev/full` (NOTE) |
+
+Scope checks: outside `src/bin/exif-audit/`, the only change under `src/` is test additions in `src/report/builder_tests.rs`. `decisions/`, `scripts/`, `Cargo.lock`, the existing goldens and the existing seeds are unchanged in `8b2dbf5..6935f90`. No dependency was added. The three string literals edited in `tests/fuzz_layout.rs` (the CI matrix string, `audit_render, cli_args]`, the `fuzz-smoke` list) are **acceptable**. Each one adds `cli_args` to a string that pins the complete target list, so the assertion still means "every target runs in CI".
+
+#### Findings
+
+- **F1 (Medium): a FIFO swapped in during the race window is opened, and the run hangs.** In `read.rs`, `read_file` calls `File::open` and only then re-checks that the handle is a regular file. Opening a FIFO for reading blocks until a writer appears, so the re-check never runs. In `walk.rs` the checks happen earlier (`symlink_metadata` in `found`, `metadata` in `named`), which leaves a window between the check and the open. I reproduced it with the release binary: one process kept renaming a fresh FIFO and a fresh regular file over `w/x`, while `perl -e 'alarm 2' exif-audit w/x` ran in a loop. **3 hangs in 127 runs.** This is the same DoS that DEC-011 part 3 rules out ("never opened (opening a FIFO can block forever)"), and the README says "never opened". Anyone who can write into a scanned tree can hang a CI job until its timeout. A symlink can be swapped in through the same window and is then followed, which lets `--values` excerpt metadata from a file outside the tree (lower impact). Fix in safe Rust: open with `std::os::unix::fs::OpenOptionsExt::custom_flags(O_NONBLOCK | O_NOFOLLOW)` for entries found in a walk (`O_NONBLOCK` only for named paths). With no `libc` dependency, the constants have to be typed per target under `cfg`. Keep the handle re-check, then read normally (O_NONBLOCK does not affect reading a regular file). Verifier mutant v13, which removes the handle re-check, survives the suite. The fix should come with a unit test that the re-check rejects a non-regular handle; the race itself cannot be tested deterministically.
+- **F2 (Low): the walk's special-file test can be fooled by a check on the file name.** Verifier mutant v08 treats a non-regular entry as special only when it is named `pipe` and **survives**: `fifo_is_reported_and_never_opened` uses a single FIFO named `pipe`, and no test puts a socket in a walk. By hand, a socket in a walk, a named socket, `/dev/null` and `/dev/zero` are all reported `not a regular file`. Add a socket and a second FIFO with a different name.
+- **F3 (Low, a DEC wording issue, not a code defect): judging doubt 1 (`>&-`).** The build's explanation of the cause is wrong, but its conclusion is right. The Rust runtime's startup code reopens a closed fd 0/1/2 on `/dev/null`. A probe compiled in the scratchpad printed identical `(dev, ino, rdev)` for `/dev/fd/1` and `/dev/null` under `>&-`, and `try_clone_to_owned` of stdout succeeded. So `>&-` is exactly `> /dev/null`: no safe or unsafe check can tell them apart, and exit 0/1 is the only possible behaviour. Close `cli-closed-stdout-descriptor` with a DEC-011 amendment saying so. Related: a small report piped into `| head -c 1` exits 1, not 4, because the write fit in the pipe buffer before the reader closed. A report larger than the pipe buffer exits 4 (measured). The DEC's "including a closed pipe" should say "a pipe closed before the report is written".
+- **F4 (Low): two survivors that are hard to kill and do not block.** v14: a directory listing that fails part-way is silently ignored, and no test covers it (it needs fault injection). v11: the size cap is read from an environment variable instead of the option; no test varies the environment. Both are recorded here; no action needed now.
+- **F5 (nit): documentation and help text.** (a) README line 152 still says "`exif-audit` bin later". (b) HANDOFF-035's "Return Criteria" paragraph is mangled: line 95 is cut off mid-sentence into `## Handback`. (c) `--help` does not state a default for `--json`/`--csv`. DEC-011 part 1 says every option's default is stated, but these are shorthands whose default follows from `--format [default: text]`. `usage_text_names_every_default` deliberately counts only three `[default: off]`. Either change the DEC wording or add the default to the help text.
+
+#### Judging the other doubts and choices
+
+- **`read error` vs `i/o error`: accept the build's rule.** `not found` and `permission denied` are chosen by error kind. A failing `read` on an open file is `read error`; any other failure (metadata, open, `read_dir`, `symlink_metadata`, ENAMETOOLONG) is `i/o error`. A listing that fails part-way is a `read error` on the directory. The rule is deterministic and never quotes the OS. Write it into DEC-011 part 4 and close `cli-io-error-texts`.
+- **Upper-case-only suffixes** (`1k` is a usage error), leading zeros accepted, and `0K` rejected: all consistent with DEC-011's literal "`K`, `M`, `G`". The message is clear (`bad value for --max-size: 1k`). Accepting lower case is optional and could be a later question.
+- **`--help`/`--version` exit 0 even when their output cannot be written:** GNU tools exit non-zero here. DEC-011 says only "exit 0". It does not matter for CI. Accept, or note it in the DEC.
+- **`-h`/`-V` detected in any argument before `--`** (so `--format --help` is Help, while `--help=x` and `-hV` are unknown options): this is what SPEC-016 specifies, and it is friendlier than reporting a bad value. Accept.
+- **Sniff before the size cap** (deviation 4): needed for behaviour rule 10, and it resolves a real tension in DEC-011 part 3 in the safe direction. Rejecting a TIFF/JPEG by its length before reading keeps the bounded `take(max+1)` read as the fallback. A file that grows while being read is still bounded at `max+1` bytes in memory. A file of exactly `max` bytes is read; one byte more is `too_large` (unit and CLI tests, and b21 is caught). Accept, and amend DEC-011.
+
+#### Using the binary as a hostile user (release binary, all compared against JSON/CSV parsed by `python3`)
+
+Every option in both its `=` and two-argument form gave the expected result. So did repeats, conflicts, `--`, `-- -` and `-- --` (each treated as a path, `failed`/`not found`), a lone `-` (2), an empty-string argument (`failed`/`not found`, exit 3), `-dash.jpg` without `--` (2) and with `--` or `./` (scanned), bidi-override, ESC and non-UTF-8 option bytes (escaped in a fixed ASCII message), a 5,000-byte option (cut at 64 chars + `...`), 10,000 arguments (exit 1, 37 MB of valid JSON, 10,000 files), a 300-byte name and a 4,200-byte path (`i/o error`, exit 3). The exit-code table held cell by cell, including precedence (2 > 4 > 3 > 1 > 0). `--help` output equals `tests/golden/usage.txt` byte for byte, and so does the README usage block. The README exit-code table matches the binary's behaviour.
+
+The library handled every hostile file: a zero-byte file (`unsupported`/`empty`, 0), a truncated TIFF (`unreadable`, 3), a 3-byte `II*` file (`unsupported`), an 11-byte JPEG (`issues`), a JPEG with 1,000 APP1 segments (`unreadable`, 3, 2 MB RSS), and the SPEC-017 amplification shape with 511 SubIFDs (771 KB, `issues`, 0.01 s, 11 MB RSS). Directories also behaved: a symlink loop, a dangling symlink, a symlink to a file in a walk (each `symlink not followed`); a named symlink to a directory (followed, labelled as named); a named symlink to a FIFO (`not a regular file`); a FIFO and a socket in a walk; a chmod-000 directory and a chmod-000 file (`permission denied`); depth 64 entered and 65 reported; 1,000 files (sorted, 12 MB RSS, 0.04 s); names with a newline, quote, `=`, a bidi override, a zero-width space and ESC (escaped in text, JSON and CSV; CSV parses with 19 columns per row). `> /dev/null` exits 1. Two runs were byte-identical; the output did not change with the working directory (modulo the label as typed) or with `LANG/LC_ALL/TZ`. No run exited 101 and none hung, except the F1 race.
+
+#### CI job review
+
+The YAML is valid. The actions are pinned exactly like the existing jobs (`actions/checkout@v4`, `dtolnay/rust-toolchain@stable`). The matrix is `[ubuntu-latest, macos-latest]` with `fail-fast: false`. The `&& code=0 || code=$?` pattern is safe under the runner's `bash -e`. The `python3 -c` JSON check is test-only. `DIAMOND_EXIF_REQUIRE_CLI_FS: "1"` is on the Linux `test` job only. No Docker daemon was running on this host, so the Linux-only branches were **not run**; they were reasoned through:
+- `/dev/full` gives ENOSPC on write, which `write_all` reports, so exit 4. Rust's stdout swallows only EBADF.
+- Invalid-UTF-8 names: ext4 accepts them, and the expectation `\xff\xfe` matches the lower-case escape seen on this host.
+- `mkfifo`, symlinks, sparse 2 GiB files on ext4 `/tmp`, and chmod 000 all work as the non-root `runner` user.
+- Pipe buffers are 64 KiB, so the 2,500-entry reports overflow them and the closed-pipe case still gives 4.
+- `/usr/bin/time -v` prints `Maximum resident set size (kbytes)`, which `peak_from` parses.
+
+The one residual risk is that `/usr/bin/time` might not be installed on `ubuntu-latest`. I believe the runner image ships the `time` package but did not verify it. If it is absent, the peak-memory test fails loudly under `REQUIRE_CLI_FS=1`, which is the right failure mode.
+
+#### Mutants (verifier's driver: exact-once text replacement, suites `cargo test --bin exif-audit`, `--test cli`, `--test fuzz_layout cli_args`, file restored after each; `git status --porcelain` empty at the end)
+
+Builder's mutants re-run, all **caught**:
+- **b02** (default fail-on medium): unit `defaults_are_exactly_the_dec_011_table`, `every_option_and_its_equals_form`; cli `fail_on_thresholds_are_inclusive_and_none_disables`; layout harness and plants.
+- **b05** (repeated `--strict` accepted): unit `repeated_option_is_a_usage_error`; cli `usage_error_has_empty_stdout_and_a_message_on_stderr`; layout harness.
+- **b11** (1 and 3 swapped): four exit unit tests, 15 cli tests.
+- **b12** (precedence swapped): unit `incomplete_outranks_findings` and the table; cli `exit_code_for_each_row_of_the_table`, `precedence_…`.
+- **b13** (threshold `>`): unit `threshold_is_inclusive` and the table; cli `fail_on_thresholds_…`, `defaults_match_dec_011`.
+- **b17** (symlinks followed): cli `symlink_in_a_walk_is_reported_not_followed`, `symlink_loop_does_not_hang`.
+- **b18** (non-regular treated as a file): cli `fifo_is_reported_and_never_opened`.
+- **b21** (cap off by one): unit `sniff_first_and_size_cap_are_exact`; cli `size_cap_is_exact`.
+- **b22** (no sniff first): unit `sniff_first_…`; cli `non_image_is_not_read_whole`.
+- **b23** (OS message): unit `failure_texts_are_the_closed_list_…`, walk order test; cli `missing_path_…`, `report_equals_…`.
+- **b27** (bytes retained): cli `peak_memory_does_not_grow_with_the_number_of_files` only.
+- **b28** (stdout per file): 14 cli tests.
+- **b29** (JSON trailing newline): cli `report_equals_the_library_render_in_every_format` only.
+
+Verifier's own mutants:
+- Caught:
+  - **v01** (incomplete ignores `unreadable`): exit table, cli row table.
+  - **v02** (`--strict` counts issues but not unsupported): exit table, cli `strict_turns_…`.
+  - **v03** (threshold only when every preview is reliable): cli `defaults_match_dec_011`, row table.
+  - **v04** (11-byte sniff): unit `sniff_first_and_size_cap_are_exact` only, through its head-length assertion. No test has a WebP whose magic needs byte 12.
+  - **v05** (case-insensitive sort): unit walk order test.
+  - **v06** (labels lowercased): cli `output_is_deterministic_and_independent_of_cwd`.
+  - **v07** (depth from 1): unit depth test, cli `depth_limit_is_reported`.
+  - **v09** (`args_run_shape` compares path count only): layout `each_cli_args_guard_goes_red_alone_when_planted`.
+  - **v12** (`--values` only for JSON): cli `report_equals_…`.
+  - **v15** (version string): cli `help_and_version_exit_zero`.
+  - **v16** (usage message on stdout): cli `usage_error_…`, `precedence_…`.
+- **Survived:**
+  - **v08**: FIFO check by name (F2).
+  - **v11**: cap from an environment variable (F4).
+  - **v13**: no handle re-check (F1).
+  - **v14**: part-failed listing silent (F4).
+- A plant whose control also fails, which could never show its guard red: the harness asserts the control is clean for every plant (`each_cli_args_guard_goes_red_alone_when_planted`), so such a plant would fail the test.
+
+Plants against the real libFuzzer targets, each from a fresh corpus plus the committed seeds, then reverted:
+- `cli_args`, `parse_size` accepting a lower-case `k`: stopped at exec #26 in `cli_invariants::check`. It was found from the committed seed `cli-size-lowercase-suffix`.
+- `audit_render`, `ReportBuilder::summary()` under-counting `files` by one when more than one file was added: stopped at exec #25 in `render_invariants.rs` `check`.
+
+D1 and D2 (carried from SPEC-018) are present: the end and middle same-length plants, and the Medium file in the max-severity test.
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null. A sub-agent cannot read its own meter; the orchestrator transcribes the metered figure from the sub-agent result.
+- **Estimated USD:** null (same reason)
+- **Duration (minutes):** about 75
+- **Source of the number:** harness report (to be transcribed by the orchestrator)
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
-- **Deviations from spec:**
-  - [list]
-- **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+- **New decisions emitted:** none. Proposed DEC-011 amendments for the architect: `>&-` is `> /dev/null` (F3); "closed pipe" means closed before the write; the `read error`/`i/o error` rule; sniff comes before the size cap; the `--json`/`--csv` default wording.
+- **Deviations from spec:** none by the verifier. The build's deviations 1 to 8 were judged: all accepted (see above). Deviation 7 (Linux paths not run) is still open here, reasoned through but not executed.
+- **Follow-up work identified:** a punch-list fix for F1 (`O_NONBLOCK`/`O_NOFOLLOW` open plus a handle-recheck unit test) and F2 (socket and a second FIFO name in the walk test); F5(a) README row. Optional: a WebP case so the 12-byte sniff is pinned by a CLI test.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — The brief asked for a fast-forward merge, but the worktree started at `main`, which had moved past the feature branch, so a plain merge was needed. Nothing else.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — DEC-011 says "repeated on the open handle" but not "opened without blocking". The open itself is the hazard for a FIFO, so the DEC should name `O_NONBLOCK` (and `O_NOFOLLOW` for walked entries).
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Start the TOCTOU race probe first: it is the one finding a suite cannot surface, and it decided the verdict.
