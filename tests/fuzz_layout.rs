@@ -2830,3 +2830,985 @@ fn preview_guards_are_linear() {
         );
     }
 }
+
+// ── SPEC-015: the report renderers ───────────────────────────────────────────
+
+include!("../fuzz/shared/render_check.rs");
+include!("../fuzz/shared/render_invariants.rs");
+
+use render_invariants::Ctx;
+
+fn render_seed_path(name: &str) -> PathBuf {
+    root().join("fuzz/seeds/audit_render").join(name)
+}
+
+fn render_seed(name: &str) -> Vec<u8> {
+    let path = render_seed_path(name);
+    fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+fn render_ctx(seed: &str) -> Ctx {
+    render_invariants::build(&render_seed(seed))
+}
+
+const AUDIT_RENDER_SEEDS: [&str; 17] = [
+    "render-ascii-payload-300-bytes",
+    "render-empty-file",
+    "render-full-house-jpeg-all-pii-inventory-values",
+    "render-full-house-jpeg-custom-policy",
+    "render-full-house-jpeg-everything-inventory",
+    "render-full-house-jpeg-no-policy",
+    "render-full-house-tiff-gps-values",
+    "render-label-255-bytes",
+    "render-label-control-characters",
+    "render-label-cr-lf",
+    "render-label-empty-png",
+    "render-label-formula-at",
+    "render-label-formula-equals",
+    "render-label-invalid-utf8",
+    "render-label-quotes-comma",
+    "render-label-right-to-left-override",
+    "render-png-signature-values",
+];
+
+const HOUSE_ALL_PII: &str = "render-full-house-jpeg-all-pii-inventory-values";
+const HOUSE_EVERYTHING: &str = "render-full-house-jpeg-everything-inventory";
+const LONG_ASCII: &str = "render-ascii-payload-300-bytes";
+const PNG_VALUES: &str = "render-png-signature-values";
+
+#[test]
+fn audit_render_target_is_declared_and_runs_in_ci() {
+    let fuzz = read("fuzz/Cargo.toml");
+    assert!(
+        fuzz.contains("name = \"audit_render\"") && fuzz.contains("fuzz_targets/audit_render.rs"),
+        "fuzz/Cargo.toml must declare the audit_render bin"
+    );
+    for f in [
+        "fuzz/fuzz_targets/audit_render.rs",
+        "fuzz/shared/render_invariants.rs",
+        "fuzz/shared/render_check.rs",
+    ] {
+        assert!(root().join(f).is_file(), "{f}");
+    }
+    let ci = read(".github/workflows/ci.yml");
+    assert!(
+        ci.contains("audit_render]"),
+        "the fuzz-smoke matrix must run the audit_render target"
+    );
+    let app = read("app.just");
+    assert!(
+        app.contains("audit audit_render\"") && app.contains("`audit_render`"),
+        "`just fuzz-smoke` must know audit_render"
+    );
+}
+
+#[test]
+fn audit_render_seeds_are_committed_and_have_the_shapes_they_claim() {
+    use exif_core::audit::audit;
+    let dir = root().join("fuzz/seeds/audit_render");
+    let mut names: Vec<String> = fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("{}: {e}", dir.display()))
+        .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    assert_eq!(names, AUDIT_RENDER_SEEDS, "the audit_render seed set");
+    assert!(names.len() >= 14);
+
+    let by = |n: &str| render_ctx(&format!("render-{n}"));
+    // The two full-house inputs under several option bytes.
+    let a = render_ctx(HOUSE_ALL_PII);
+    assert_eq!(a.file, full_house_jpeg_bytes());
+    assert_eq!(
+        (a.policy, a.inventory, a.values),
+        (Some(2), true, true),
+        "all_pii, inventory, values"
+    );
+    let b = by("full-house-tiff-gps-values");
+    assert_eq!(b.file, full_house_tiff_bytes());
+    assert_eq!((b.policy, b.inventory, b.values), (Some(0), false, true));
+    let e = render_ctx(HOUSE_EVERYTHING);
+    assert_eq!(
+        (e.policy, e.inventory, e.values, e.reason),
+        (Some(4), true, false, 1)
+    );
+    let c = by("full-house-jpeg-custom-policy");
+    assert_eq!(c.policy, Some(5));
+    assert!(
+        !c.removed.is_empty() && c.removed.len() < 13,
+        "the seed's custom set is non-trivial: {:?}",
+        c.removed
+    );
+    assert_eq!(by("full-house-jpeg-no-policy").policy, None);
+    // Hostile labels.
+    let label = |n: &str| by(n).label;
+    assert!(label("label-control-characters").iter().any(|b| *b < 0x20));
+    let q = label("label-quotes-comma");
+    assert!(q.contains(&b'"') && q.contains(&b','));
+    let crlf = label("label-cr-lf");
+    assert!(crlf.windows(2).any(|w| w == b"\r\n"));
+    assert!(std::str::from_utf8(&label("label-invalid-utf8")).is_err());
+    assert!(String::from_utf8_lossy(&label("label-right-to-left-override")).contains('\u{202E}'));
+    assert_eq!(label("label-formula-equals"), b"=cmd|' /C calc'!A0");
+    assert_eq!(label("label-formula-at"), b"@SUM(1)");
+    assert_eq!(label("label-255-bytes").len(), 255);
+    assert!(label("label-empty-png").is_empty());
+    // A 300-byte ASCII payload: the excerpt is cut and flagged.
+    let long = render_ctx(LONG_ASCII);
+    assert!(long.values && long.payloads.iter().flatten().any(|p| p.len() == 65));
+    assert!(long.json.contains("\"truncated\":true"));
+    // A PNG signature, and an empty file.
+    let png = render_ctx(PNG_VALUES);
+    assert_eq!(format!("{:?}", audit(&png.file).kind()), "Unsupported(Png)");
+    let empty = by("empty-file");
+    assert!(empty.file.is_empty());
+    assert_eq!(
+        format!("{:?}", audit(&empty.file).kind()),
+        "Unsupported(Empty)"
+    );
+    // The hostile labels reach the outputs escaped, never raw.
+    for n in AUDIT_RENDER_SEEDS {
+        let c = render_ctx(n);
+        assert!(
+            c.text.chars().all(|ch| !ch.is_control() || ch == '\n'),
+            "{n}"
+        );
+    }
+}
+
+#[test]
+fn the_two_full_house_inputs_are_audit_seeds() {
+    assert_eq!(
+        audit_seed("audit-full-house-tiff"),
+        full_house_tiff_bytes(),
+        "the TIFF seed is the full-house TIFF of the layout tests"
+    );
+    assert_eq!(audit_seed("audit-full-house-jpeg"), full_house_jpeg_bytes());
+    // And the real audit target's guards hold on them.
+    audit_invariants::check(&audit_seed("audit-full-house-tiff"));
+    audit_invariants::check(&audit_seed("audit-full-house-jpeg"));
+    // They carry every category, so the preview guards discriminate on them.
+    let jpeg = audit_seed("audit-full-house-jpeg");
+    let a = exif_core::audit::audit(&jpeg);
+    for c in exif_core::audit::Category::ALL {
+        assert!(a.findings_in(c).count() > 0, "{c:?}");
+    }
+}
+
+/// Every committed seed of the four targets, plus the degenerate inputs and
+/// the full-house inputs, as raw `audit_render` inputs (the first bytes pick
+/// the options, so each is some case).
+fn render_harness_inputs() -> Vec<(String, Vec<u8>)> {
+    let mut inputs: Vec<(String, Vec<u8>)> = Vec::new();
+    for target in ["tiff_ifd", "jpeg_segments", "audit", "audit_render"] {
+        let dir = root().join("fuzz/seeds").join(target);
+        for entry in fs::read_dir(&dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display())) {
+            let path = entry.expect("entry").path();
+            let data = fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+            inputs.push((path.display().to_string(), data));
+        }
+    }
+    for (i, d) in audit_degenerate_inputs().into_iter().enumerate() {
+        inputs.push((format!("degenerate {i}"), d));
+    }
+    inputs.push(("full-house tiff".into(), full_house_tiff_bytes()));
+    inputs.push(("full-house jpeg".into(), full_house_jpeg_bytes()));
+    inputs
+}
+
+/// A little-endian TIFF with one ASCII Make holding `payload`.
+fn make_tiff(payload: &[u8]) -> Vec<u8> {
+    let mut p = payload.to_vec();
+    p.push(0);
+    let mut t = b"II\x2A\x00\x08\x00\x00\x00".to_vec();
+    t.extend_from_slice(&1u16.to_le_bytes());
+    t.extend_from_slice(&0x010Fu16.to_le_bytes());
+    t.extend_from_slice(&2u16.to_le_bytes());
+    t.extend_from_slice(&u32::try_from(p.len()).expect("small").to_le_bytes());
+    t.extend_from_slice(&26u32.to_le_bytes());
+    t.extend_from_slice(&0u32.to_le_bytes());
+    t.extend_from_slice(&p);
+    t
+}
+
+#[test]
+fn render_harness_holds_on_every_seed_and_degenerate_inputs() {
+    let inputs = render_harness_inputs();
+    for (name, data) in &inputs {
+        let bad = render_invariants::violations(&render_invariants::build(data));
+        assert!(bad.is_empty(), "{name}: {bad:?}");
+    }
+    // Every option byte over a rich input and a hostile one: all 256 option
+    // bytes (policies, inventory, values, reasons).
+    let rich = full_house_jpeg_bytes();
+    for opt in 0..=255u8 {
+        for (label_len, extra) in [
+            (0u8, &rich[..]),
+            (4, &rich[..]),
+            (3, &b"\xFF\xFE\x00ab"[..]),
+        ] {
+            let mut input = vec![opt, label_len];
+            input.extend_from_slice(&b"=a,\"\r\x1b"[..usize::from(label_len).min(7)]);
+            input.extend_from_slice(extra);
+            render_invariants::check(&input);
+        }
+    }
+    // Hostile text is ignored by the phrase check: a label, a failure detail
+    // and an excerpt that say "safe", "clean file" and "no personal data" are
+    // data, not the report's own words.
+    let t = make_tiff(b"safe no personal data clean file");
+    let c = render_invariants::build_case(
+        &t,
+        b"safe clean file no personal data",
+        b"safe",
+        render_invariants::CaseOpts {
+            policy: Some(2),
+            custom_byte: 0,
+            inventory: true,
+            values: true,
+            reason: 0,
+        },
+    );
+    assert!(c.text.contains("safe clean file no personal data"));
+    assert!(render_invariants::violations(&c).is_empty());
+    // Hostile bytes in every position at once.
+    render_invariants::check(&[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00]);
+    render_invariants::check(&[]);
+    render_invariants::check(&[0x1B]);
+    println!("{} inputs", inputs.len());
+}
+
+/// One planted bug: a wrong output (or summary) put into the case built from
+/// `input`, which the named guard, run ALONE, must reject.
+struct RenderPlant {
+    name: &'static str,
+    input: &'static str,
+    guard: &'static str,
+    apply: fn(&mut Ctx),
+}
+
+fn rep(s: &mut String, from: &str, to: &str) {
+    assert!(
+        s.contains(from),
+        "the plant's anchor {from:?} is not in the output"
+    );
+    *s = s.replacen(from, to, 1);
+}
+
+/// Add one to the digit run right after `marker`.
+fn bump_after(s: &mut String, marker: &str) {
+    let at = s.find(marker).unwrap_or_else(|| panic!("no {marker:?}")) + marker.len();
+    let digits: String = s[at..].chars().take_while(char::is_ascii_digit).collect();
+    let n: u64 = digits.parse().expect("a number");
+    s.replace_range(at..at + digits.len(), &(n + 1).to_string());
+}
+
+fn csv_rows_of(s: &str) -> Vec<String> {
+    s.split_inclusive("\r\n").map(str::to_string).collect()
+}
+
+fn render_plants() -> Vec<RenderPlant> {
+    vec![
+        // json_wellformed
+        RenderPlant {
+            name: "a trailing comma in the files array",
+            input: HOUSE_ALL_PII,
+            guard: "json_wellformed",
+            apply: |c| rep(&mut c.json, "]}\n", ",]}\n"),
+        },
+        RenderPlant {
+            name: "the document is cut in half",
+            input: HOUSE_ALL_PII,
+            guard: "json_wellformed",
+            apply: |c| {
+                let n = c.json.len() / 2;
+                c.json.truncate(n);
+            },
+        },
+        RenderPlant {
+            name: "a raw control character inside a string",
+            input: HOUSE_ALL_PII,
+            guard: "json_wellformed",
+            apply: |c| rep(&mut c.json, "\"label\":\"", "\"label\":\"\u{1}"),
+        },
+        RenderPlant {
+            name: "a duplicate key",
+            input: HOUSE_ALL_PII,
+            guard: "json_wellformed",
+            apply: |c| {
+                rep(
+                    &mut c.json,
+                    "\"schema_version\":1,",
+                    "\"schema_version\":1,\"schema_version\":1,",
+                )
+            },
+        },
+        RenderPlant {
+            name: "a lone surrogate escape",
+            input: HOUSE_ALL_PII,
+            guard: "json_wellformed",
+            apply: |c| rep(&mut c.json, "\"label\":\"", "\"label\":\"\\ud800"),
+        },
+        // json_shape
+        RenderPlant {
+            name: "a key is renamed",
+            input: HOUSE_ALL_PII,
+            guard: "json_shape",
+            apply: |c| rep(&mut c.json, "\"status\":", "\"state\":"),
+        },
+        RenderPlant {
+            name: "two keys swap places",
+            input: HOUSE_ALL_PII,
+            guard: "json_shape",
+            apply: |c| {
+                rep(
+                    &mut c.json,
+                    "\"inventory\":true,\"values\":true}",
+                    "\"values\":true,\"inventory\":true}",
+                )
+            },
+        },
+        RenderPlant {
+            name: "an enumeration value outside its set",
+            input: HOUSE_ALL_PII,
+            guard: "json_shape",
+            apply: |c| rep(&mut c.json, "\"status\":\"ok\"", "\"status\":\"fine\""),
+        },
+        RenderPlant {
+            name: "a negative count",
+            input: HOUSE_ALL_PII,
+            guard: "json_shape",
+            apply: |c| {
+                rep(
+                    &mut c.json,
+                    "\"summary\":{\"files\":2",
+                    "\"summary\":{\"files\":-2",
+                )
+            },
+        },
+        RenderPlant {
+            name: "an extra key",
+            input: HOUSE_ALL_PII,
+            guard: "json_shape",
+            apply: |c| {
+                rep(
+                    &mut c.json,
+                    "\"schema_version\":1,",
+                    "\"schema_version\":1,\"extra\":0,",
+                )
+            },
+        },
+        RenderPlant {
+            name: "a severity outside its set",
+            input: HOUSE_ALL_PII,
+            guard: "json_shape",
+            apply: |c| {
+                rep(
+                    &mut c.json,
+                    "\"severity\":\"medium\"",
+                    "\"severity\":\"urgent\"",
+                )
+            },
+        },
+        RenderPlant {
+            name: "a tag number not in 0xNNNN form",
+            input: HOUSE_ALL_PII,
+            guard: "json_shape",
+            apply: |c| rep(&mut c.json, "\"tag\":\"0x010e\"", "\"tag\":\"0x10e\""),
+        },
+        // json_facts: both directions of the status iff
+        RenderPlant {
+            name: "a clean file reported with issues",
+            input: HOUSE_ALL_PII,
+            guard: "json_facts",
+            apply: |c| rep(&mut c.json, "\"status\":\"ok\"", "\"status\":\"issues\""),
+        },
+        RenderPlant {
+            name: "an unsupported file reported ok",
+            input: PNG_VALUES,
+            guard: "json_facts",
+            apply: |c| {
+                rep(
+                    &mut c.json,
+                    "\"status\":\"unsupported\"",
+                    "\"status\":\"ok\"",
+                )
+            },
+        },
+        RenderPlant {
+            name: "a finding in the wrong category",
+            input: HOUSE_ALL_PII,
+            guard: "json_facts",
+            apply: |c| {
+                rep(
+                    &mut c.json,
+                    "\"category\":\"free_text\"",
+                    "\"category\":\"gps\"",
+                )
+            },
+        },
+        RenderPlant {
+            name: "a finding at the wrong tag",
+            input: HOUSE_ALL_PII,
+            guard: "json_facts",
+            apply: |c| rep(&mut c.json, "\"tag\":\"0x010e\"", "\"tag\":\"0x010f\""),
+        },
+        RenderPlant {
+            name: "a removed finding reported kept",
+            input: HOUSE_ALL_PII,
+            guard: "json_facts",
+            apply: |c| {
+                rep(
+                    &mut c.json,
+                    "\"disposition\":\"removed\"",
+                    "\"disposition\":\"kept\"",
+                )
+            },
+        },
+        RenderPlant {
+            name: "a kept_unread finding reported kept",
+            input: HOUSE_ALL_PII,
+            guard: "json_facts",
+            apply: |c| {
+                rep(
+                    &mut c.json,
+                    "\"disposition\":\"kept_unread\"",
+                    "\"disposition\":\"kept\"",
+                )
+            },
+        },
+        RenderPlant {
+            name: "the label is changed",
+            input: HOUSE_ALL_PII,
+            guard: "json_facts",
+            apply: |c| {
+                rep(
+                    &mut c.json,
+                    "photos/full-house.jpg",
+                    "photos/full-house.jpG",
+                )
+            },
+        },
+        RenderPlant {
+            name: "residual findings are off by one on a reliable preview",
+            input: HOUSE_ALL_PII,
+            guard: "json_facts",
+            apply: |c| bump_after(&mut c.json, "\"reliable\":true,\"residual_findings\":"),
+        },
+        RenderPlant {
+            name: "residual findings printed for an unreliable preview",
+            input: PNG_VALUES,
+            guard: "json_facts",
+            apply: |c| {
+                rep(
+                    &mut c.json,
+                    "\"reliable\":false,\"residual_findings\":null",
+                    "\"reliable\":false,\"residual_findings\":0",
+                )
+            },
+        },
+        RenderPlant {
+            name: "an excerpt text is wrong",
+            input: HOUSE_ALL_PII,
+            guard: "json_facts",
+            apply: |c| {
+                rep(
+                    &mut c.json,
+                    "\"value\":{\"text\":\"a\"",
+                    "\"value\":{\"text\":\"b\"",
+                )
+            },
+        },
+        RenderPlant {
+            name: "an excerpt is missing with values on",
+            input: HOUSE_ALL_PII,
+            guard: "json_facts",
+            apply: |c| {
+                rep(
+                    &mut c.json,
+                    "\"value\":{\"text\":\"a\",\"truncated\":false}",
+                    "\"value\":null",
+                )
+            },
+        },
+        RenderPlant {
+            name: "an inventory item names a category it has no finding for",
+            input: HOUSE_ALL_PII,
+            guard: "json_facts",
+            apply: |c| {
+                let at = c.json.find("\"inventory\":[").expect("inventory");
+                let tail = c.json.split_off(at);
+                c.json
+                    .push_str(&tail.replacen("\"category\":null", "\"category\":\"gps\"", 1));
+            },
+        },
+        RenderPlant {
+            name: "the inventory item count is off by one",
+            input: HOUSE_ALL_PII,
+            guard: "json_facts",
+            apply: |c| bump_after(&mut c.json, "\"inventory_items\":"),
+        },
+        RenderPlant {
+            name: "the failure reason is changed",
+            input: HOUSE_EVERYTHING,
+            guard: "json_facts",
+            apply: |c| {
+                rep(
+                    &mut c.json,
+                    "\"reason\":\"too_large\"",
+                    "\"reason\":\"other\"",
+                )
+            },
+        },
+        // csv_wellformed
+        RenderPlant {
+            name: "the final CRLF is missing",
+            input: HOUSE_ALL_PII,
+            guard: "csv_wellformed",
+            apply: |c| {
+                c.csv.pop();
+                c.csv.pop();
+            },
+        },
+        RenderPlant {
+            name: "a ragged row",
+            input: HOUSE_ALL_PII,
+            guard: "csv_wellformed",
+            apply: |c| rep(&mut c.csv, ",removed,a,false\r\n", ",removed,a\r\n"),
+        },
+        RenderPlant {
+            name: "a bare LF line end",
+            input: HOUSE_ALL_PII,
+            guard: "csv_wellformed",
+            apply: |c| rep(&mut c.csv, "\r\nphotos", "\nphotos"),
+        },
+        RenderPlant {
+            name: "a bare quote in an unquoted field",
+            input: HOUSE_ALL_PII,
+            guard: "csv_wellformed",
+            apply: |c| rep(&mut c.csv, "\r\nphotos/", "\r\npho\"tos/"),
+        },
+        RenderPlant {
+            name: "an unterminated quoted field",
+            input: HOUSE_ALL_PII,
+            guard: "csv_wellformed",
+            apply: |c| rep(&mut c.csv, "\r\nphotos/", "\r\n\"photos/"),
+        },
+        // csv_rows
+        RenderPlant {
+            name: "the header is changed",
+            input: HOUSE_ALL_PII,
+            guard: "csv_rows",
+            apply: |c| rep(&mut c.csv, "value_truncated", "value_trunc"),
+        },
+        RenderPlant {
+            name: "a row is missing",
+            input: HOUSE_ALL_PII,
+            guard: "csv_rows",
+            apply: |c| {
+                let mut rows = csv_rows_of(&c.csv);
+                rows.remove(2);
+                c.csv = rows.concat();
+            },
+        },
+        RenderPlant {
+            name: "the failed file has no row",
+            input: HOUSE_ALL_PII,
+            guard: "csv_rows",
+            apply: |c| {
+                let mut rows = csv_rows_of(&c.csv);
+                rows.pop();
+                c.csv = rows.concat();
+            },
+        },
+        RenderPlant {
+            name: "an inventory item without a finding is dropped",
+            input: HOUSE_ALL_PII,
+            guard: "csv_rows",
+            apply: |c| {
+                let mut rows = csv_rows_of(&c.csv);
+                let at = rows
+                    .iter()
+                    .position(|r| r.contains(",0x8769,"))
+                    .expect("pointer");
+                rows.remove(at);
+                c.csv = rows.concat();
+            },
+        },
+        RenderPlant {
+            name: "a label that starts a formula is not guarded",
+            input: HOUSE_ALL_PII,
+            guard: "csv_rows",
+            apply: |c| {
+                rep(
+                    &mut c.csv,
+                    "\r\nphotos/full-house.jpg,",
+                    "\r\n=photos/full-house.jpg,",
+                )
+            },
+        },
+        RenderPlant {
+            name: "a label is guarded that needs no guard",
+            input: HOUSE_ALL_PII,
+            guard: "csv_rows",
+            apply: |c| {
+                rep(
+                    &mut c.csv,
+                    "\r\nphotos/full-house.jpg,",
+                    "\r\n'photos/full-house.jpg,",
+                )
+            },
+        },
+        RenderPlant {
+            name: "a finding row names the wrong category",
+            input: HOUSE_ALL_PII,
+            guard: "csv_rows",
+            apply: |c| rep(&mut c.csv, ",free_text,", ",gps,"),
+        },
+        // text_safe
+        RenderPlant {
+            name: "a terminal escape character",
+            input: HOUSE_ALL_PII,
+            guard: "text_safe",
+            apply: |c| c.text.insert(0, '\u{1b}'),
+        },
+        RenderPlant {
+            name: "a right-to-left override",
+            input: HOUSE_ALL_PII,
+            guard: "text_safe",
+            apply: |c| c.text.insert(3, '\u{202E}'),
+        },
+        RenderPlant {
+            name: "a C1 control",
+            input: HOUSE_ALL_PII,
+            guard: "text_safe",
+            apply: |c| c.text.insert(3, '\u{85}'),
+        },
+        RenderPlant {
+            name: "a DEL",
+            input: HOUSE_ALL_PII,
+            guard: "text_safe",
+            apply: |c| c.text.insert(3, '\u{7f}'),
+        },
+        RenderPlant {
+            name: "the word safe",
+            input: HOUSE_ALL_PII,
+            guard: "text_safe",
+            apply: |c| c.text.push_str("this report is safe\n"),
+        },
+        RenderPlant {
+            name: "the phrase clean file",
+            input: HOUSE_ALL_PII,
+            guard: "text_safe",
+            apply: |c| c.text.push_str("a clean file\n"),
+        },
+        RenderPlant {
+            name: "the phrase no personal data",
+            input: PNG_VALUES,
+            guard: "text_safe",
+            apply: |c| c.text.push_str("  No Personal Data\n"),
+        },
+        RenderPlant {
+            name: "the text is not deterministic",
+            input: HOUSE_ALL_PII,
+            guard: "text_safe",
+            apply: |c| c.text_again.push('x'),
+        },
+        RenderPlant {
+            name: "the label line is wrong",
+            input: HOUSE_ALL_PII,
+            guard: "text_safe",
+            apply: |c| {
+                rep(
+                    &mut c.text,
+                    "file: photos/full-house.jpg",
+                    "file: photos/other.jpg",
+                )
+            },
+        },
+        RenderPlant {
+            name: "no final newline",
+            input: HOUSE_ALL_PII,
+            guard: "text_safe",
+            apply: |c| {
+                c.text.pop();
+            },
+        },
+        // values_gate: values off
+        RenderPlant {
+            name: "a JSON excerpt with values off",
+            input: HOUSE_EVERYTHING,
+            guard: "values_gate",
+            apply: |c| {
+                rep(
+                    &mut c.json,
+                    "\"value\":null",
+                    "\"value\":{\"text\":\"a\",\"truncated\":false}",
+                )
+            },
+        },
+        RenderPlant {
+            name: "a CSV excerpt with values off",
+            input: HOUSE_EVERYTHING,
+            guard: "values_gate",
+            apply: |c| rep(&mut c.csv, ",removed,,\r\n", ",removed,a,false\r\n"),
+        },
+        RenderPlant {
+            name: "a text excerpt with values off",
+            input: HOUSE_EVERYTHING,
+            guard: "values_gate",
+            apply: |c| {
+                rep(
+                    &mut c.text,
+                    " block=0 segment=0",
+                    " value=\"a\" block=0 segment=0",
+                )
+            },
+        },
+        // values_gate: values on
+        RenderPlant {
+            name: "an excerpt flagged truncated that is not",
+            input: HOUSE_ALL_PII,
+            guard: "values_gate",
+            apply: |c| rep(&mut c.json, "\"truncated\":false", "\"truncated\":true"),
+        },
+        RenderPlant {
+            name: "a cut excerpt not flagged truncated",
+            input: LONG_ASCII,
+            guard: "values_gate",
+            apply: |c| rep(&mut c.json, "\"truncated\":true", "\"truncated\":false"),
+        },
+        RenderPlant {
+            name: "an excerpt longer than 64 source bytes",
+            input: LONG_ASCII,
+            guard: "values_gate",
+            apply: |c| {
+                let long = "x".repeat(300);
+                rep(&mut c.json, "\"text\":\"", &format!("\"text\":\"{long}"))
+            },
+        },
+        RenderPlant {
+            name: "a text excerpt is missing with values on",
+            input: HOUSE_ALL_PII,
+            guard: "values_gate",
+            apply: |c| rep(&mut c.text, " value=\"a\"", ""),
+        },
+        RenderPlant {
+            name: "the CSV truncated flag disagrees",
+            input: HOUSE_ALL_PII,
+            guard: "values_gate",
+            apply: |c| rep(&mut c.csv, ",a,false\r\n", ",a,true\r\n"),
+        },
+        // summary_facts
+        RenderPlant {
+            name: "ok is counted twice",
+            input: HOUSE_ALL_PII,
+            guard: "summary_facts",
+            apply: |c| c.summary.ok += 1,
+        },
+        RenderPlant {
+            name: "findings are over-counted",
+            input: HOUSE_ALL_PII,
+            guard: "summary_facts",
+            apply: |c| c.summary.findings += 1,
+        },
+        RenderPlant {
+            name: "a category count is off by one",
+            input: HOUSE_ALL_PII,
+            guard: "summary_facts",
+            apply: |c| c.summary.by_category[0].1 += 1,
+        },
+        RenderPlant {
+            name: "reliable and unreliable swapped",
+            input: HOUSE_ALL_PII,
+            guard: "summary_facts",
+            apply: |c| {
+                c.summary.reliable = 0;
+                c.summary.unreliable = 1;
+            },
+        },
+        RenderPlant {
+            name: "residual findings missing with a policy",
+            input: HOUSE_ALL_PII,
+            guard: "summary_facts",
+            apply: |c| c.summary.residual = None,
+        },
+        RenderPlant {
+            name: "an unreliable file's residuals are counted",
+            input: PNG_VALUES,
+            guard: "summary_facts",
+            apply: |c| c.summary.residual = Some(3),
+        },
+        RenderPlant {
+            name: "the maximum severity is wrong",
+            input: HOUSE_ALL_PII,
+            guard: "summary_facts",
+            apply: |c| c.summary.max_severity = Some("Low".into()),
+        },
+        RenderPlant {
+            name: "the JSON summary disagrees",
+            input: HOUSE_ALL_PII,
+            guard: "summary_facts",
+            apply: |c| {
+                rep(
+                    &mut c.json,
+                    "\"summary\":{\"files\":2",
+                    "\"summary\":{\"files\":3",
+                )
+            },
+        },
+        RenderPlant {
+            name: "unsupported is counted as zero",
+            input: PNG_VALUES,
+            guard: "summary_facts",
+            apply: |c| {
+                rep(
+                    &mut c.json,
+                    "\"unsupported\":1,\"unreadable\":0",
+                    "\"unsupported\":0,\"unreadable\":0",
+                )
+            },
+        },
+        // render_linear
+        RenderPlant {
+            name: "a JSON document far larger than its items",
+            input: HOUSE_ALL_PII,
+            guard: "render_linear",
+            apply: |c| c.json.push_str(&" ".repeat(10_000_000)),
+        },
+        RenderPlant {
+            name: "a text report far larger than its items",
+            input: HOUSE_ALL_PII,
+            guard: "render_linear",
+            apply: |c| c.text.push_str(&"x".repeat(10_000_000)),
+        },
+        RenderPlant {
+            name: "a CSV with far more rows than items",
+            input: HOUSE_ALL_PII,
+            guard: "render_linear",
+            apply: |c| c.csv.push_str(&"a\r\n".repeat(10_000)),
+        },
+    ]
+}
+
+#[test]
+fn each_render_guard_goes_red_alone_when_planted() {
+    let plants = render_plants();
+    // Every guard has at least two plants (an iff or a bound: one per
+    // direction where it has both).
+    for (name, _) in render_invariants::GUARDS {
+        let n = plants.iter().filter(|p| p.guard == name).count();
+        assert!(n >= 2, "guard {name} has {n} plant(s), want at least two");
+    }
+    for p in &plants {
+        let good = render_ctx(p.input);
+        // CONTROL: the unplanted case satisfies every guard.
+        let control = render_invariants::violations(&good);
+        assert!(
+            control.is_empty(),
+            "{}: control on {}: {control:?}",
+            p.name,
+            p.input
+        );
+        // MUTATION: rejected by the named guard ALONE.
+        let mut bad = good.clone();
+        (p.apply)(&mut bad);
+        let flat = |c: &Ctx| {
+            format!(
+                "{:?}",
+                (&c.json, &c.csv, &c.text, &c.text_again, &c.summary)
+            )
+        };
+        assert!(
+            flat(&bad) != flat(&good),
+            "{}: the plant changed nothing",
+            p.name
+        );
+        let alone = render_invariants::run_guard(p.guard, &bad);
+        assert!(
+            alone.is_err(),
+            "{}: guard {} did not reject the planted bug on {}",
+            p.name,
+            p.guard,
+            p.input
+        );
+    }
+    println!(
+        "{} render plants, each rejected by its own guard alone",
+        plants.len()
+    );
+}
+
+/// The steps the render guards take on `data` as a case (counted, not timed).
+fn render_guard_steps(data: &[u8]) -> (u64, usize) {
+    let mut input = vec![3 | 8 | 16, 4];
+    input.extend_from_slice(b"f.jp");
+    input.extend_from_slice(data);
+    let c = render_invariants::build(&input);
+    render_invariants::reset_steps();
+    let bad = render_invariants::violations(&c);
+    assert!(
+        bad.is_empty(),
+        "render guards fail on the linearity input: {bad:?}"
+    );
+    (
+        render_invariants::steps(),
+        c.want.items.len() + c.want.findings.len(),
+    )
+}
+
+#[test]
+fn render_guards_are_linear() {
+    for (name, big, small) in [
+        ("thumbnails", many_thumbnails(5_000), many_thumbnails(2_500)),
+        ("regions", many_regions(3_000), many_regions(1_500)),
+    ] {
+        let (steps, n) = render_guard_steps(&big);
+        assert!(n >= 5_900, "{name}: {n} items and findings");
+        // About a dozen steps per item and per finding across the nine guards;
+        // a rescan per finding would be quadratic.
+        let bound = 40 * n as u64 + 256;
+        assert!(
+            steps <= bound,
+            "{name}: {steps} steps for {n} items and findings (bound {bound}): not linear"
+        );
+        let (half, _) = render_guard_steps(&small);
+        println!("{name}: {half} steps at half size, {steps} at full ({bound} allowed)");
+        assert!(
+            steps <= 3 * half,
+            "{name}: {half} steps at half the size, {steps} at full: not linear"
+        );
+    }
+}
+
+// ── SPEC-014 F3: the preview harness's Custom case is non-trivial ────────────
+
+#[test]
+fn preview_custom_case_is_non_trivial() {
+    // Over the inputs of the layout tests, the harness's `Custom` case must
+    // sometimes remove a set that is neither empty nor `all()`, and on some
+    // audit that set must split the dispositions: otherwise the case could
+    // silently become `Custom(none)` and test nothing (the vG mutant).
+    let mut nontrivial_sets = 0usize;
+    let mut splitting = 0usize;
+    for (name, data) in render_harness_inputs() {
+        let names = audit_invariants::custom_names(&data);
+        if !names.is_empty() && names.len() < 13 {
+            nontrivial_sets += 1;
+        }
+        let pin = preview_input_of(&data);
+        let custom = &pin.cases[5];
+        assert_eq!(custom.label, "custom", "{name}");
+        let d = &custom.want.dispositions;
+        if d.iter().any(|x| x == "removed") && d.iter().any(|x| x != "removed") {
+            splitting += 1;
+        }
+    }
+    assert!(
+        nontrivial_sets >= 50,
+        "only {nontrivial_sets} inputs give a non-trivial custom set"
+    );
+    assert!(
+        splitting >= 3,
+        "only {splitting} audits are split by their custom set"
+    );
+}
