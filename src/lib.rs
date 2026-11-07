@@ -1,7 +1,8 @@
 //! `exif-core`: a panic-free, pure-Rust, zero-copy EXIF/XMP/IPTC/ICC metadata
-//! reader, writer and stripper. Pre-release: so far the crate holds the strict
-//! TIFF/IFD skeleton ([`tiff::Container`]) and its error type; every bad IFD is
-//! still an `Err` (the tolerant walk of DEC-001 arrives in a later spec).
+//! reader, writer and stripper. Pre-release: the crate reads TIFF ([`tiff`]:
+//! tolerant walk, DEC-001), walks JPEG segments and locates its metadata
+//! regions ([`jpeg`]), and builds a read-only privacy audit over both
+//! ([`audit`]: container sniff, inventory, PII findings). No writer yet.
 
 #![forbid(unsafe_code)]
 #![deny(

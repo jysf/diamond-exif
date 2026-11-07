@@ -54,8 +54,9 @@ red-proof scripts the upstream template has not absorbed. Template-newer content
 - `scripts/test.sh` — only the 19 `|| true` guards `gate-audit` demanded.
 - `app.just` — `validate-red-proof`, `cost-audit-red-proof`, `gate-audit`,
   `gate-audit-red-proof` recipes.
-- **Deliberately not ported:** `lint-red-proof.sh` / `lint-fuzz-red-proof.sh`
-  (SPEC-011). They mutate irradiance's Rust crate (`src/lib.rs` panic-free
-  `#![deny]` policy, `fuzz/`) and have nothing to run against here.
+- `lint-red-proof.sh` / `lint-fuzz-red-proof.sh` were not carried in this reconciliation (no Rust crate yet); they were cloned later with the Rust CI (see the CI entry under Added).
 
 ### Fixed
+
+- Stale prose (no behaviour change): the `src/lib.rs` crate doc still said every bad IFD is an `Err` and the tolerant walk was to come; the README status table said `exif-core` was scaffolded and empty, its status paragraph stopped at SPEC-010, and it still carried the template onboarding line; the gate-harness entry below said `lint-red-proof.sh` was deliberately not ported though the Rust CI entry above records it cloned.
+- Housekeeping: `just worktree-prune` removes merged, clean `.claude/worktrees/agent-*` worktrees and their branches (26 of them, 9.5 GB, accumulated from sub-agent runs; 24 removed, 2 locked ones kept).

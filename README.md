@@ -4,13 +4,13 @@ Panic-free, pure-Rust, zero-copy EXIF/XMP/IPTC/ICC metadata reader, writer and s
 
 | Piece | Status | License |
 |---|---|---|
-| `exif-core` | scaffolded (empty, gated; M1a) | MIT/Apache-2.0 |
-| `exif-audit` CLI (read-only scanner) | planned, first deliverable | free |
+| `exif-core` | reader and read-only audit model (M1a/M1b); no writer yet | MIT/Apache-2.0 |
+| `exif-audit` CLI (read-only scanner) | planned, first deliverable (SPEC-014 to 016) | free |
 | `exif-pro` (compliance tier) | scaffold only | paid |
 
-Status: strict TIFF/IFD reader with a tolerant walk (a corrupt sub-IFD becomes a reported issue, not a failure) that reaches the Exif, GPS and Interop IFDs and labels each IFD by how it was reached, plus ASCII, signed-integer and float value decoders (strings are borrowed from the input), a panic-free JPEG segment walker (markers, APPn kinds by signature, scan region and trailer, damage reported as per-segment issues) whose `jpeg::read` hands each Exif segment to the same tolerant TIFF engine and locates (does not decode) the XMP, extended XMP, ICC, IPTC and JUMBF regions with a layered issue view, two fuzz targets, and an ExifTool read-parity oracle (live and replayed) over hand-built fixtures, shown able to fail by mutated-copy red-proofs (a fault injected into a throw-away copy of the library turns the comparison red); no CLI yet. See `CLAUDE.md` and `AGENTS.md`. First decision: DEC-001 (tolerant-walk policy).
+Status: strict TIFF/IFD reader with a tolerant walk (a corrupt sub-IFD becomes a reported issue, not a failure) that reaches the Exif, GPS and Interop IFDs and labels each IFD by how it was reached, plus ASCII, signed-integer and float value decoders (strings are borrowed from the input), a panic-free JPEG segment walker (markers, APPn kinds by signature, scan region and trailer, damage reported as per-segment issues) whose `jpeg::read` hands each Exif segment to the same tolerant TIFF engine and locates (does not decode) the XMP, extended XMP, ICC, IPTC and JUMBF regions with a layered issue view, two fuzz targets, and an ExifTool read-parity oracle (live and replayed) over hand-built fixtures, shown able to fail by mutated-copy red-proofs (a fault injected into a throw-away copy of the library turns the comparison red); a pure-library audit model (`exif_core::audit`: container sniff, inventory of every tag and located region, PII findings by category; inventory parity against ExifTool over 178 distinct inputs) and a total entry budget that bounds memory on overlapping IFDs; no CLI yet. See `CLAUDE.md` and `AGENTS.md`. First decision: DEC-001 (tolerant-walk policy).
 
-*This file replaces the template README when you run `just init` — rename or customize as needed.*
+## Workflow
 
 This repo uses a spec-driven multi-agent workflow. Claude handles architecture and review; a separate implementer agent (Kilo Code, Factory Droids, AdaL, Cursor, etc.) handles implementation.
 
