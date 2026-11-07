@@ -546,7 +546,7 @@ shared checkout — two agents writing one working tree corrupt each other
 (a parallel build can clobber an uncommitted edit, or a commit can land on
 the wrong branch). `git worktree add <path> <branch>`, work there, commit +
 push, then `git worktree remove`. Always check `git branch --show-current`
-before any commit.
+before any commit. Sub-agent worktrees under `.claude/worktrees/agent-*` each build their own `target/` (150-700 MB); run `just worktree-prune` after their branches merge, or set a shared `CARGO_TARGET_DIR` for them.
 
 ### Delegated execution (sub-agents) — DEC-004
 

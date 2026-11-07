@@ -148,3 +148,20 @@ lint-no-allow:
     cargo clippy --lib --quiet -- \
         -F clippy::unwrap_used -F clippy::expect_used -F clippy::indexing_slicing \
         -F clippy::panic -F clippy::arithmetic_side_effects
+
+# Remove finished sub-agent worktrees (`.claude/worktrees/agent-*`) whose branch is
+# already merged into main and whose tree has no tracked changes. Each one carries
+# its own multi-hundred-MB `target/`; 26 of them reached 9.5 GB. Locked worktrees
+# (a live agent) and unmerged ones are skipped, never forced.
+worktree-prune:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for w in $(git worktree list --porcelain | awk '/^worktree /{print $2}' | grep '/\.claude/worktrees/agent-' || true); do
+        b=$(git -C "$w" branch --show-current)
+        if git merge-base --is-ancestor "$b" main && git worktree remove "$w" 2>/dev/null; then
+            git branch -d "$b" >/dev/null && echo "removed $w ($b)"
+        else
+            echo "kept    $w ($b)"
+        fi
+    done
+    git worktree prune
