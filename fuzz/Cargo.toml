@@ -44,3 +44,10 @@ path = "fuzz_targets/audit_render.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "cli_args"
+path = "fuzz_targets/cli_args.rs"
+test = false
+doc = false
+bench = false
