@@ -635,7 +635,11 @@ fn usage_text_matches_the_golden_file() {
     ] {
         assert!(text.contains(default), "{default}");
     }
-    assert_eq!(text.matches("[default: off]").count(), 3);
+    assert_eq!(
+        text.matches("[default: off]").count(),
+        5,
+        "json, csv, strict, values, inventory"
+    );
 }
 
 #[test]
@@ -852,6 +856,15 @@ fn fifo_is_reported_and_never_opened() {
         skip("mkfifo is not available");
         return;
     }
+    // A second FIFO with a name that looks like an image, so a check by file
+    // name cannot pass (SPEC-016 verify F2), and a socket (unix only; bound in
+    // a short path and renamed in, because a socket path is limited to about
+    // 100 bytes).
+    assert!(mkfifo(&t.path("dir/queue.jpg")));
+    let short = std::path::PathBuf::from(format!("/tmp/ea-{}.sock", std::process::id()));
+    let _ = fs::remove_file(&short);
+    let listener = std::os::unix::net::UnixListener::bind(&short).expect("bind a socket");
+    fs::rename(&short, t.path("dir/sock")).expect("move the socket into the tree");
     let limit = Duration::from_secs(20);
     // Opening the FIFO for reading would block forever: the limit kills it.
     let out = Cmd::new()
@@ -861,17 +874,23 @@ fn fifo_is_reported_and_never_opened() {
         .run();
     assert_eq!(exit_of(&out), 3);
     let files = files_of(&json_of(&out));
+    let not_regular = |l: &str| {
+        (
+            l.to_string(),
+            "failed".to_string(),
+            Some("not a regular file".to_string()),
+        )
+    };
     assert_eq!(
         files,
         vec![
             ("dir/a.png".into(), "unsupported".into(), None),
-            (
-                "dir/pipe".into(),
-                "failed".into(),
-                Some("not a regular file".into())
-            ),
+            not_regular("dir/pipe"),
+            not_regular("dir/queue.jpg"),
+            not_regular("dir/sock"),
         ]
     );
+    drop(listener);
     let j = json_of(&out);
     let reason = j.get("files").and_then(J::as_arr).expect("files")[1]
         .get("failure")
@@ -893,6 +912,98 @@ fn fifo_is_reported_and_never_opened() {
             Some("not a regular file".into())
         )]
     );
+}
+
+#[test]
+fn sniff_first_reads_exactly_twelve_bytes() {
+    // WebP is `RIFF`, four size bytes, `WEBP`: the 12th byte decides it, so a
+    // sniff that reads 11 sees `unknown` (SPEC-016 verify, mutant v04).
+    let t = Tree::new("sniff12");
+    let mut webp = b"RIFF\x00\x00\x00\x00WEBP".to_vec();
+    webp.extend_from_slice(&[0; 20]);
+    t.write("dir/a.webp", &webp);
+    // A twelve-byte file that is only the signature.
+    t.write("dir/b.webp", &webp[..12]);
+    // `ftyp` at 4..8 (a HEIC family file).
+    t.write("dir/c.heic", b"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00");
+    let out = Cmd::new().args(["--json", "dir"]).cwd(&t.root).run();
+    assert_eq!(exit_of(&out), 0);
+    let j = json_of(&out);
+    let containers: Vec<(String, String)> = j
+        .get("files")
+        .and_then(J::as_arr)
+        .expect("files")
+        .iter()
+        .map(|f| {
+            (
+                f.get("label")
+                    .and_then(J::as_str)
+                    .expect("label")
+                    .to_string(),
+                f.get("container")
+                    .and_then(J::as_str)
+                    .expect("container")
+                    .to_string(),
+            )
+        })
+        .collect();
+    let pairs = |l: &str, c: &str| (l.to_string(), c.to_string());
+    assert_eq!(
+        containers,
+        vec![
+            pairs("dir/a.webp", "webp"),
+            pairs("dir/b.webp", "webp"),
+            pairs("dir/c.heic", "heic")
+        ]
+    );
+}
+
+/// A path that is a FIFO one moment and a regular file the next must never
+/// hang the run (SPEC-016 verify F1): a thread renames a FIFO and a regular
+/// file over one name while the binary is run against that name again and
+/// again, each run under a hard limit.
+#[cfg(unix)]
+#[test]
+fn fifo_swap_race_never_hangs() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    let t = Tree::new("race");
+    t.mkdir("dir");
+    t.write("dir/reg_src", &house());
+    if !mkfifo(&t.path("dir/fifo_src")) {
+        skip("mkfifo is not available");
+        return;
+    }
+    let (fifo, reg, name) = (
+        t.path("dir/fifo_src"),
+        t.path("dir/reg_src"),
+        t.path("dir/target.jpg"),
+    );
+    let stop = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&stop);
+    let swapper = std::thread::spawn(move || {
+        while !flag.load(Ordering::Relaxed) {
+            // Each rename may fail when the other side is mid-swap: ignore.
+            let _ = fs::rename(&fifo, &name);
+            let _ = fs::rename(&name, &fifo);
+            let _ = fs::rename(&reg, &name);
+            let _ = fs::rename(&name, &reg);
+        }
+    });
+    let mut codes = std::collections::BTreeMap::new();
+    for _ in 0..300 {
+        let out = Cmd::new()
+            .args(["--json", "dir/target.jpg"])
+            .cwd(&t.root)
+            .limit(Duration::from_secs(10))
+            .run();
+        *codes.entry(exit_of(&out)).or_insert(0usize) += 1;
+    }
+    stop.store(true, Ordering::Relaxed);
+    swapper.join().expect("swapper");
+    println!("exit codes over 300 racing runs: {codes:?}");
+    // Only complete outcomes: findings (1), a failed entry (3).
+    assert!(codes.keys().all(|c| [0, 1, 3].contains(c)), "{codes:?}");
 }
 
 #[test]

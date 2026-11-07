@@ -10,7 +10,7 @@
 //! `io::ErrorKind` or by the condition, never from the operating system's own
 //! message (it varies by host and can quote a path).
 
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{ErrorKind, Read};
 use std::path::Path;
 
@@ -81,11 +81,71 @@ pub fn io_failure(kind: ErrorKind, reading: bool) -> Failure {
     Failure::new(FailReason::Unreadable, detail)
 }
 
+/// `O_NONBLOCK`, typed per target because the standard library does not export
+/// it and a `libc` dependency is not allowed. It makes `open(2)` of a FIFO for
+/// reading return at once instead of waiting for a writer, so a FIFO swapped in
+/// between the walk's check and the open cannot hang the run (the open handle's
+/// `is_file` re-check then reports it). It does nothing to a regular file.
+/// Linux: 0o4000 on x86, ARM and RISC-V (MIPS, SPARC and Alpha differ, so they
+/// get no flag). macOS and the BSDs: 0x4.
+#[cfg(all(
+    target_os = "linux",
+    any(
+        target_arch = "x86",
+        target_arch = "x86_64",
+        target_arch = "arm",
+        target_arch = "aarch64",
+        target_arch = "riscv64"
+    )
+))]
+const O_NONBLOCK: i32 = 0o4000;
+#[cfg(any(
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd",
+    target_os = "dragonfly"
+))]
+const O_NONBLOCK: i32 = 0x4;
+/// Any other target: no flag (a swapped-in FIFO could block there).
+#[cfg(not(any(
+    all(
+        target_os = "linux",
+        any(
+            target_arch = "x86",
+            target_arch = "x86_64",
+            target_arch = "arm",
+            target_arch = "aarch64",
+            target_arch = "riscv64"
+        )
+    ),
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd",
+    target_os = "dragonfly"
+)))]
+const O_NONBLOCK: i32 = 0;
+
+/// Open for reading without ever blocking on a FIFO.
+fn open_nonblocking(path: &Path) -> std::io::Result<File> {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(O_NONBLOCK);
+    }
+    options.open(path)
+}
+
 /// Read `path`, a candidate the walk found to be a regular file (or a named
 /// path that is one). The regular-file check is repeated on the open handle: a
 /// path can change between the check and the open.
 pub fn read_file(path: &Path, max_size: u64) -> Loaded {
-    let mut file = match File::open(path) {
+    let mut file = match open_nonblocking(path) {
         Ok(f) => f,
         Err(e) => return Loaded::Failed(io_failure(e.kind(), false)),
     };
@@ -231,6 +291,48 @@ pub(crate) mod tests {
                 assert!(!f.detail.contains("os error"));
             }
             other => panic!("{other:?}"),
+        }
+    }
+
+    #[cfg(unix)]
+    fn mkfifo(path: &std::path::Path) -> bool {
+        std::process::Command::new("mkfifo")
+            .arg(path)
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+
+    /// DEC-011: a special file is never opened for a blocking read. The walk
+    /// checks first, but a path can change between the check and the open, so
+    /// `read_file` itself must return promptly on a FIFO (F1 of the SPEC-016
+    /// verify). Called directly, bypassing the walk's check, under a hard limit.
+    #[cfg(unix)]
+    #[test]
+    fn open_of_a_fifo_returns_promptly_with_not_a_regular_file() {
+        let tmp = Tmp::new("fifo");
+        let fifo = tmp.0.join("pipe.jpg");
+        if !mkfifo(&fifo) {
+            println!("SKIP: mkfifo is not available");
+            assert!(
+                std::env::var("DIAMOND_EXIF_REQUIRE_CLI_FS").as_deref() != Ok("1"),
+                "DIAMOND_EXIF_REQUIRE_CLI_FS=1 and mkfifo is unavailable"
+            );
+            return;
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        // A blocked open leaks this thread; the test fails on the timeout.
+        std::thread::spawn(move || {
+            let _ = tx.send(read_file(&fifo, 1000));
+        });
+        match rx.recv_timeout(std::time::Duration::from_secs(10)) {
+            Ok(Loaded::Failed(f)) => {
+                assert_eq!(f.reason, FailReason::NotRegularFile);
+                assert_eq!(f.detail, "not a regular file");
+            }
+            Ok(other) => panic!("{other:?}"),
+            Err(_) => panic!("read_file blocked on a FIFO for 10 s: the open must not block"),
         }
     }
 

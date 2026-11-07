@@ -28,8 +28,8 @@ Reads nothing but the named paths; writes nothing but the report.
 
 Options:
       --format <F>    Report format: text, json or csv [default: text]
-      --json          Shorthand for --format json
-      --csv           Shorthand for --format csv
+      --json          Shorthand for --format json [default: off]
+      --csv           Shorthand for --format csv [default: off]
       --policy <P>    Strip policy the report previews: gps, gps-and-device,
                       all-pii, all, everything, or none for no preview
                       [default: all-pii]
@@ -149,7 +149,7 @@ Build and test commands are in `AGENTS.md` §6 (wrapped by `app.just`). The crat
 | `projects/*/stages/` | Stages within a project |
 | `projects/*/specs/` | Specs within a project |
 | `projects/*/handoffs/` | Architect → implementer delegation records |
-| `src/`, `tests/`, `fuzz/` | single crate for now (`exif-core`; `exif-audit` bin later); `exif-pro` and `site/` at M2 |
+| `src/`, `tests/`, `fuzz/` | single crate for now (`exif-core` with the `exif-audit` bin); `exif-pro` and `site/` at M2 |
 
 ## License
 

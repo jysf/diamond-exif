@@ -92,7 +92,25 @@ Constraints: `panic-free-library` (the five-lint deny set also applies to the bi
 ## Return Criteria — how to hand back
 
 **Completing this handoff means filling in the `handback:` front-matter block
-above AND the `## Handback
+above AND the `## Handback` section below.** An unfilled handback is an
+incomplete cycle, and `just handback-sync` will tell the orchestrator so.
+
+On success:
+1. Fill the `handback:` front-matter — **including a real `tokens_total`**.
+2. Fill the `## Handback` section (the reflection is part of it, not optional).
+3. Set `handoff.status` → `completed` and `handback.status` → `completed`.
+4. Open a PR (build) or return your verdict (verify).
+
+If you cannot complete the task:
+1. Fill the `## Handback` section with what was done and what blocked you.
+2. Set `handoff.status` → `rejected`, `handback.status` → `blocked`.
+3. **Still report your token usage** — blocked work costs money too.
+4. Set the spec's `task.blocked: true` and add a question to
+   `/guidance/questions.yaml`.
+
+---
+
+## Handback
 
 ### Execution notes
 

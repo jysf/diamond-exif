@@ -81,8 +81,8 @@ Reads nothing but the named paths; writes nothing but the report.
 
 Options:
       --format <F>    Report format: text, json or csv [default: text]
-      --json          Shorthand for --format json
-      --csv           Shorthand for --format csv
+      --json          Shorthand for --format json [default: off]
+      --csv           Shorthand for --format csv [default: off]
       --policy <P>    Strip policy the report previews: gps, gps-and-device,
                       all-pii, all, everything, or none for no preview
                       [default: all-pii]
@@ -786,9 +786,15 @@ mod tests {
         }
         assert_eq!(
             USAGE.matches("[default: off]").count(),
-            3,
-            "strict, values, inventory"
+            5,
+            "json, csv, strict, values, inventory"
         );
+        for line in USAGE
+            .lines()
+            .filter(|l| l.trim_start().starts_with("--json") || l.trim_start().starts_with("--csv"))
+        {
+            assert!(line.ends_with("[default: off]"), "{line}");
+        }
         for opt in [
             "--format",
             "--json",
