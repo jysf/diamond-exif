@@ -767,6 +767,428 @@ mod audit_invariants {
         Ok(())
     }
 
+    // ── SPEC-014: the strip-policy preview ──────────────────────────────────
+    //
+    // DEC-009 is written out AGAIN here, as data over category names. The
+    // harness never calls `StripPolicy::spec`, `may_hold` or `Category::is_block`
+    // to decide what is expected; it calls `preview` only to get the library's
+    // answer, which is flattened to `PreviewF` and compared with a naive
+    // re-derivation from the flattened audit.
+
+    /// Preset name and the categories it removes (DEC-009 columns), smallest
+    /// preset first.
+    const H_PRESETS: [(&str, &[&str]); 5] = [
+        ("gps", &["Gps"]),
+        ("gps_and_device", &["Gps", "DeviceId"]),
+        (
+            "all_pii",
+            &[
+                "Gps",
+                "DeviceId",
+                "Authorship",
+                "FreeText",
+                "Timestamps",
+                "CameraModel",
+                "Thumbnail",
+                "MakerNote",
+            ],
+        ),
+        (
+            "all",
+            &[
+                "Gps",
+                "DeviceId",
+                "Authorship",
+                "FreeText",
+                "Timestamps",
+                "CameraModel",
+                "Thumbnail",
+                "MakerNote",
+                "Software",
+                "Xmp",
+                "Iptc",
+            ],
+        ),
+        (
+            "everything",
+            &[
+                "Gps",
+                "DeviceId",
+                "Authorship",
+                "FreeText",
+                "Timestamps",
+                "CameraModel",
+                "Thumbnail",
+                "MakerNote",
+                "Software",
+                "Xmp",
+                "Iptc",
+                "Icc",
+                "Jumbf",
+            ],
+        ),
+    ];
+
+    /// Every category, by `Debug` name.
+    const H_ALL: [&str; 13] = [
+        "Gps",
+        "DeviceId",
+        "Authorship",
+        "FreeText",
+        "Timestamps",
+        "CameraModel",
+        "Thumbnail",
+        "MakerNote",
+        "Software",
+        "Xmp",
+        "Iptc",
+        "Icc",
+        "Jumbf",
+    ];
+
+    /// The six block categories.
+    const H_BLOCKS: [&str; 6] = ["Thumbnail", "MakerNote", "Xmp", "Iptc", "Jumbf", "Icc"];
+
+    /// DEC-009's may-hold table.
+    fn h_may_hold(block: &str) -> &'static [&'static str] {
+        match block {
+            "Thumbnail" | "Xmp" | "Jumbf" => &[
+                "Gps",
+                "DeviceId",
+                "Authorship",
+                "FreeText",
+                "Timestamps",
+                "CameraModel",
+                "Software",
+            ],
+            "MakerNote" => &["Gps", "DeviceId", "CameraModel", "Timestamps", "Software"],
+            "Iptc" => &["Authorship", "FreeText", "Timestamps"],
+            _ => &[],
+        }
+    }
+
+    /// The library's preview, flattened.
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct PreviewF {
+        pub dispositions: Vec<String>,
+        pub removed: usize,
+        pub kept: usize,
+        pub kept_unread: usize,
+        pub residual: usize,
+        pub residual_sev: Option<String>,
+        pub reliable: bool,
+    }
+
+    /// One policy applied to the audit: what the library said (`got`) and what
+    /// the harness derives (`want`).
+    #[derive(Clone, Debug)]
+    pub struct CaseF {
+        pub label: String,
+        pub got: PreviewF,
+        pub want: PreviewF,
+    }
+
+    /// The audit facts the preview guards need, and the six cases (the five
+    /// presets in order, then one custom spec chosen from the input bytes).
+    #[derive(Clone, Debug)]
+    pub struct PreviewInput {
+        pub findings: Vec<String>,
+        pub clean: bool,
+        pub truncated: bool,
+        pub cases: Vec<CaseF>,
+    }
+
+    fn preview_flat(p: &exif_core::audit::Preview) -> PreviewF {
+        let c = p.counts();
+        PreviewF {
+            dispositions: p
+                .dispositions()
+                .iter()
+                .map(|d| d.name().to_string())
+                .collect(),
+            removed: c.removed,
+            kept: c.kept,
+            kept_unread: c.kept_unread,
+            residual: p.residual_findings(),
+            residual_sev: p.residual_severity().map(|s| format!("{s:?}")),
+            reliable: p.reliable(),
+        }
+    }
+
+    /// The expected preview, from the flattened audit and the categories the
+    /// policy removes.
+    fn h_want(f: &Facts, removed: &[&str]) -> PreviewF {
+        let mut dispositions = Vec::new();
+        let (mut r, mut k, mut u) = (0usize, 0usize, 0usize);
+        let mut sev: Option<&'static str> = None;
+        for fi in &f.findings {
+            let c = fi.category.as_str();
+            let d = if removed.contains(&c) {
+                r += 1;
+                "removed"
+            } else {
+                let s = severity_of(c);
+                if sev.is_none_or(|m| rank(m) < rank(s)) {
+                    sev = Some(s);
+                }
+                if H_BLOCKS.contains(&c) && h_may_hold(c).iter().any(|x| removed.contains(x)) {
+                    u += 1;
+                    "kept_unread"
+                } else {
+                    k += 1;
+                    "kept"
+                }
+            };
+            dispositions.push(d.to_string());
+        }
+        let residual_sev = if f.health.truncated {
+            if H_ALL.iter().all(|n| removed.contains(n)) {
+                None
+            } else {
+                f.max.clone()
+            }
+        } else {
+            sev.map(str::to_string)
+        };
+        PreviewF {
+            dispositions,
+            removed: r,
+            kept: k,
+            kept_unread: u,
+            residual: k + u,
+            residual_sev,
+            reliable: f.health.clean && !f.health.truncated,
+        }
+    }
+
+    /// A category set chosen deterministically from the input bytes.
+    fn custom_names(data: &[u8]) -> Vec<&'static str> {
+        let mut m: u16 = 0x5A5A;
+        for b in data {
+            m = m.rotate_left(5) ^ u16::from(*b);
+        }
+        H_ALL
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| m & (1u16 << i) != 0)
+            .map(|(_, n)| *n)
+            .collect()
+    }
+
+    /// The six cases for one audit.
+    pub fn preview_input(data: &[u8], a: &FileAudit<'_>, f: &Facts) -> PreviewInput {
+        use exif_core::audit::{preview, Category};
+        use exif_core::{StripPolicy, StripSpec};
+        let mut cases = Vec::new();
+        for (i, (label, names)) in H_PRESETS.iter().enumerate() {
+            let policy = StripPolicy::PRESETS[i];
+            cases.push(CaseF {
+                label: label.to_string(),
+                got: preview_flat(&preview(a, policy)),
+                want: h_want(f, names),
+            });
+        }
+        let names = custom_names(data);
+        let spec = Category::ALL
+            .into_iter()
+            .filter(|c| names.contains(&format!("{c:?}").as_str()))
+            .fold(StripSpec::none(), |s, c| s.include(c));
+        cases.push(CaseF {
+            label: "custom".to_string(),
+            got: preview_flat(&preview(a, StripPolicy::Custom(spec))),
+            want: h_want(f, &names),
+        });
+        PreviewInput {
+            findings: f.findings.iter().map(|x| x.category.clone()).collect(),
+            clean: f.health.clean,
+            truncated: f.health.truncated,
+            cases,
+        }
+    }
+
+    /// Lengths, counts sum, residual equals kept plus kept-unread; the counts
+    /// are the tally of the dispositions (both directions).
+    fn p_shape(inp: &PreviewInput) -> Result<(), String> {
+        for c in &inp.cases {
+            tick(1);
+            let g = &c.got;
+            if g.dispositions.len() != inp.findings.len() {
+                return Err(format!(
+                    "{}: {} dispositions for {} findings",
+                    c.label,
+                    g.dispositions.len(),
+                    inp.findings.len()
+                ));
+            }
+            let (mut r, mut k, mut u) = (0usize, 0usize, 0usize);
+            for d in &g.dispositions {
+                tick(1);
+                match d.as_str() {
+                    "removed" => r += 1,
+                    "kept" => k += 1,
+                    "kept_unread" => u += 1,
+                    other => return Err(format!("{}: unknown disposition {other}", c.label)),
+                }
+            }
+            if (g.removed, g.kept, g.kept_unread) != (r, k, u) {
+                return Err(format!(
+                    "{}: counts ({}, {}, {}) but the dispositions tally ({r}, {k}, {u})",
+                    c.label, g.removed, g.kept, g.kept_unread
+                ));
+            }
+            if g.removed + g.kept + g.kept_unread != inp.findings.len() {
+                return Err(format!("{}: counts do not sum to the findings", c.label));
+            }
+            if g.residual != g.kept + g.kept_unread {
+                return Err(format!(
+                    "{}: residual {} is not kept + kept_unread",
+                    c.label, g.residual
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Every disposition equals the re-derived one; an expected `removed` that
+    /// is missing and an unexpected `removed` both fail, and the same for
+    /// `kept_unread`.
+    fn p_dispositions(inp: &PreviewInput) -> Result<(), String> {
+        for c in &inp.cases {
+            if c.got.dispositions.len() != c.want.dispositions.len() {
+                return Err(format!("{}: disposition count differs", c.label));
+            }
+            for (n, (g, w)) in c
+                .got
+                .dispositions
+                .iter()
+                .zip(&c.want.dispositions)
+                .enumerate()
+            {
+                tick(1);
+                if g == w {
+                    continue;
+                }
+                for kind in ["removed", "kept_unread"] {
+                    if w == kind {
+                        return Err(format!(
+                            "{}: finding {n}: expected {kind}, got {g}",
+                            c.label
+                        ));
+                    }
+                    if g == kind {
+                        return Err(format!(
+                            "{}: finding {n}: unexpected {kind} (want {w})",
+                            c.label
+                        ));
+                    }
+                }
+                return Err(format!("{}: finding {n}: got {g}, want {w}", c.label));
+            }
+        }
+        Ok(())
+    }
+
+    /// Removed non-decreasing, residual non-increasing along the five presets;
+    /// `everything` leaves nothing.
+    fn p_nesting(inp: &PreviewInput) -> Result<(), String> {
+        let presets = &inp.cases[..H_PRESETS.len().min(inp.cases.len())];
+        for pair in presets.windows(2) {
+            tick(1);
+            if pair[0].got.removed > pair[1].got.removed {
+                return Err(format!(
+                    "removed shrinks from {} ({}) to {} ({})",
+                    pair[0].label, pair[0].got.removed, pair[1].label, pair[1].got.removed
+                ));
+            }
+            if pair[0].got.residual < pair[1].got.residual {
+                return Err(format!(
+                    "residual grows from {} ({}) to {} ({})",
+                    pair[0].label, pair[0].got.residual, pair[1].label, pair[1].got.residual
+                ));
+            }
+        }
+        if let Some(last) = presets.last() {
+            tick(1);
+            if last.got.residual != 0 || last.got.residual_sev.is_some() {
+                return Err(format!(
+                    "everything leaves residual {} / {:?}",
+                    last.got.residual, last.got.residual_sev
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Residual severity per rule 4 (re-derived), and `reliable` iff the audit
+    /// is clean and not truncated (both directions).
+    fn p_residual_and_reliable(inp: &PreviewInput) -> Result<(), String> {
+        for c in &inp.cases {
+            tick(1);
+            if c.got.residual_sev != c.want.residual_sev {
+                return Err(format!(
+                    "{}: residual severity {:?}, want {:?}",
+                    c.label, c.got.residual_sev, c.want.residual_sev
+                ));
+            }
+            let reliable = inp.clean && !inp.truncated;
+            if c.got.reliable != reliable {
+                return Err(format!(
+                    "{}: reliable is {}, clean && !truncated is {reliable}",
+                    c.label, c.got.reliable
+                ));
+            }
+            // Without truncation the severity is the maximum over the
+            // dispositions the library itself reported as not removed.
+            if !inp.truncated {
+                let mut m: Option<&'static str> = None;
+                for (cat, d) in inp.findings.iter().zip(&c.got.dispositions) {
+                    tick(1);
+                    if d != "removed" {
+                        let s = severity_of(cat);
+                        if m.is_none_or(|x| rank(x) < rank(s)) {
+                            m = Some(s);
+                        }
+                    }
+                }
+                if c.got.residual_sev.as_deref() != m {
+                    return Err(format!(
+                        "{}: residual severity {:?} is not the maximum over the kept findings ({m:?})",
+                        c.label, c.got.residual_sev
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    type PreviewGuard = fn(&PreviewInput) -> Result<(), String>;
+
+    /// The preview guards, by name. Each one runs alone through
+    /// [`run_preview_guard`].
+    pub const PREVIEW_GUARDS: [(&str, PreviewGuard); 4] = [
+        ("preview_shape", p_shape),
+        ("preview_dispositions", p_dispositions),
+        ("preview_nesting", p_nesting),
+        ("preview_residual_and_reliable", p_residual_and_reliable),
+    ];
+
+    /// Run ONE preview guard by name.
+    pub fn run_preview_guard(name: &str, inp: &PreviewInput) -> Result<(), String> {
+        let guard = PREVIEW_GUARDS
+            .iter()
+            .find(|g| g.0 == name)
+            .unwrap_or_else(|| panic!("no preview guard named {name}"));
+        (guard.1)(inp)
+    }
+
+    /// Every preview guard that fails, with its message.
+    pub fn preview_violations(inp: &PreviewInput) -> Vec<(&'static str, String)> {
+        PREVIEW_GUARDS
+            .iter()
+            .filter_map(|(name, g)| g(inp).err().map(|m| (*name, m)))
+            .collect()
+    }
+
     /// Every guard, by name. Each one runs alone through [`run_guard`].
     pub const GUARDS: [(&str, Guard); 11] = [
         ("kind", g_kind),
@@ -809,5 +1231,9 @@ mod audit_invariants {
         let want = rederive(data);
         let bad = violations(data, &got, &want);
         assert!(bad.is_empty(), "audit invariants violated: {bad:?}");
+        // SPEC-014: the policy preview over this audit.
+        let pin = preview_input(data, &a, &got);
+        let bad = preview_violations(&pin);
+        assert!(bad.is_empty(), "preview invariants violated: {bad:?}");
     }
 }

@@ -39,11 +39,13 @@
 //! and the DEC-008 table. No ExifTool source is read.
 
 mod category;
+mod preview;
 mod sniff;
 
 use core::marker::PhantomData;
 
 pub use category::{categorize, region_category, Category, Severity};
+pub use preview::{preview, Counts, Disposition, Preview};
 pub use sniff::{sniff, Sniffed};
 
 use crate::jpeg::{self, Region};
