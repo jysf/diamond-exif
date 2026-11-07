@@ -49,7 +49,7 @@ handback:
   branch: worktree-agent-ae1f46310ab6829e9
   pr: null
   completed_at: 2026-11-06               # YYYY-MM-DD
-  notes: "verify APPROVED at 6723aad; delta verify of follow-up 2 PUNCH LIST at e093e57 (F6 timing bound flaky under load); tokens_total null: this sub-agent has no token meter, the orchestrator transcribes the harness's metered figure" # one line if unusual (rework, no meter, etc.)
+  notes: "verify APPROVED at 6723aad; delta verify of follow-up 2 PUNCH LIST at e093e57 (F6 timing bound flaky under load); delta verify 2 of follow-up 3 APPROVED at 9c44a21 (final); tokens_total null: this sub-agent has no token meter, the orchestrator transcribes the harness's metered figure" # one line if unusual (rework, no meter, etc.)
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -359,6 +359,59 @@ Applied in a scratch copy, which I restored and checked by hash. The control run
 - `DIAMOND_EXIF_REQUIRE_ORACLE=1 cargo test` on stable (524 passed, 0 failed, 7 ignored) and on `+1.90.0` (524 / 0 / 7). The golden files match the current output (`golden_text_json_csv_match_byte_for_byte` passes), and so does the 18-seed `audit_render_seeds_are_committed_and_have_the_shapes_they_claim`.
 - `cargo run --example fuzz_seeds` leaves `git status --porcelain` empty, so all 18 `audit_render` seeds and every other seed are reproduced byte for byte.
 - `just fuzz-smoke audit_render`, 60 s: 65,811 runs, `DONE cov: 4576 ft: 15465 corp: 969/231Kb`, clean.
+
+### Delta verify 2 (follow-up 3: `598827a` code, `1b27954` handback, merged at `9c44a21`)
+
+I merged `claude/rust-exif-metadata-6351d5` into this branch with `git merge --ff-only`; the branch fast-forwarded from `581bc5f` to `9c44a21`. The diff is limited to:
+
+- the timing test in `tests/fuzz_layout.rs`;
+- the new seed `render-label-invisible-characters`, and its line in `examples/fuzz_seeds.rs`;
+- the HANDOFF-031 handback.
+
+**Final verdict: ✅ APPROVED at `9c44a21`.** The F6 punch-list item is closed.
+
+**New timing test.** Each guard is now timed on N and N/4 in seven interleaved rounds, keeping the minimum for each side. A guard fails if time(N) is at least 8 × max(time(N/4), 5 ms). The test passes as soon as one of 3 attempts shows no failing guard.
+
+**Load runs.** Same setup as before: 8 self-terminating busy loops on 14 cores, plus my mutant builds running in parallel. All of my busy loops were killed afterwards (none left running).
+
+| Condition | Runs passed | Retries needed | Worst raw ratio, linear guard | Worst effective ratio (against the 5 ms floor) |
+|---|---|---|---|---|
+| Under load | 12/12 | none (every run passed on attempt 1) | 6.3 (`gps_iff`) | 4.4 (`thumbnail`) |
+| Without load | 10/10 | none | 4.8 | 2.9 |
+
+A few raw ratios are higher but are below the 5 ms floor, so they do not count:
+- `indices`: 11.7 under load, with an effective ratio of only 1.8.
+- `kind` and `unsupported`: about 41. These guards take microseconds.
+
+Last round, 4 of 10 loaded runs failed; this round none did.
+
+**The quadratic rescan mutant is still red.** I applied the SPEC-013 rescan-without-tick mutant in a scratch copy. `audit_harness_guards_are_linear_in_the_input` failed on all 3 attempts:
+
+| Attempt | `category_shape` at N/4 | at N | Ratio |
+|---|---|---|---|
+| 1 | 79.0 ms | 1.36 s | 17.2 |
+| 2 | 88.4 ms | 2.05 s | 23.3 |
+| 3 | 79.2 ms | 1.36 s | 17.2 |
+
+The bound is 8. The scratch copy was restored and checked by hash.
+
+**Info, not blocking.** With the 5 ms floor, a superlinear guard is only caught once it takes more than 40 ms at N. The known quadratic shape exceeds that by about 30 times.
+
+**N4 is now caught by harness guards, not only the unit test.** N4 removes the tag range U+E0000 to U+E007F from the harness's naive `safe_text`. It is now caught by:
+- `render_harness_holds_on_every_seed_and_degenerate_inputs`: the `json_facts` guard on the seed `render-label-invisible-characters` reports that the label is not the expected one;
+- `every_seed_every_policy_every_option_renders_well_formed_output`: `json_facts` on the same seed;
+- `the_naive_safe_text_matches_the_dec_010_examples`, as before.
+
+**Other checks at `9c44a21` (all exit 0):**
+- `cargo run --example fuzz_seeds` left `git status --porcelain` empty: all 19 `audit_render` seeds are reproduced byte for byte.
+- `DIAMOND_EXIF_REQUIRE_ORACLE=1 cargo test` on stable: 524 passed, 0 failed, 7 ignored.
+- `just lint-fuzz-red-proof` passed.
+
+**Open items, not blocking:**
+- A field that starts with a space and then a formula character (` =1+1`) is still neither guarded nor quoted (Low).
+- `safe_text` still lets through some invisible characters outside the requested set (Info).
+- DEC-010 parts 2 and 4 and SPEC-015 rules 3 and 6 need an amendment from the architect to match the new semicolon quoting and the wider escape set (Low).
+- F7, the larger CSV worst-case size, stays with SPEC-016.
 
 ### Cost self-report
 
