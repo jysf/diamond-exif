@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: null
+  tokens_total: 341445             # orchestrator-recorded from the metered sub-agent result (subagent_tokens)
+  estimated_usd: 2.25
+  duration_minutes: 32
   branch: worktree-agent-ae6b635c23ea0f0af
   pr: null
   completed_at: 2026-11-06         # YYYY-MM-DD
-  notes: "tokens_total and estimated_usd null: the implementer agent cannot see its own token count; the orchestrator transcribes the metered figure. duration_minutes null: not timed."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "tokens transcribed by the orchestrator from the sub-agent metered result (subagent_tokens 341,445; 1,900,342 ms wall-clock)"
+  synced_at: 2026-11-06
 ---
 
 # HANDOFF-035: The exif-audit binary: arguments, directory walk, per-file isolation, exit codes, CLI integration tests, CI build job
@@ -104,10 +104,10 @@ above AND the `## Handback
 
 ### Cost self-report
 
-- **Tokens (total):** null (the implementer agent cannot see its own count; orchestrator transcribes the metered figure)
-- **Estimated USD:** null
-- **Duration (minutes):** null (not timed)
-- **Source of the number:** none available
+- **Tokens (total):** 341,445 (orchestrator-transcribed from the metered sub-agent result)
+- **Estimated USD:** 2.25 (341,445 tokens at 6.60 USD per Mtok)
+- **Duration (minutes):** 32 (harness wall-clock 1,900,342 ms)
+- **Source of the number:** harness report (subagent_tokens)
 
 ### Numbers asked for
 

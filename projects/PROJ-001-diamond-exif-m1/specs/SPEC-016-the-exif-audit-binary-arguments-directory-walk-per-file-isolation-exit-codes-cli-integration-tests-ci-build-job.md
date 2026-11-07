@@ -6,7 +6,7 @@
 task:
   id: SPEC-016
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: verify  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -63,11 +63,19 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: 800000
-  sessions: []
+  sessions:
+    - cycle: build
+      agent: claude-sonnet-5-5
+      interface: other
+      tokens_total: 341445
+      estimated_usd: 2.25
+      duration_minutes: 32
+      recorded_at: 2026-11-06
+      notes: "tokens transcribed by the orchestrator from the sub-agent metered result (subagent_tokens 341,445; 1,900,342 ms wall-clock)"
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 341445
+    estimated_usd: 2.25
+    session_count: 1
 ---
 
 # SPEC-016: The `exif-audit` binary: arguments, directory walk, per-file isolation, exit codes, CLI integration tests, CI build job
