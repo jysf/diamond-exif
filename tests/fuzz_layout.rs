@@ -3070,6 +3070,22 @@ fn render_harness_holds_on_every_seed_and_degenerate_inputs() {
     );
     assert!(c.text.contains("safe clean file no personal data"));
     assert!(render_invariants::violations(&c).is_empty());
+    // Found by the fuzzer: an empty label and a failure detail that ends in
+    // "file: " put the label line text inside another line.
+    let c = render_invariants::build_case(
+        b"",
+        b"",
+        b"x file: ",
+        render_invariants::CaseOpts {
+            policy: None,
+            custom_byte: 0,
+            inventory: false,
+            values: false,
+            reason: 0,
+        },
+    );
+    assert!(c.text.contains("file: \n"));
+    assert!(render_invariants::violations(&c).is_empty());
     // Hostile bytes in every position at once.
     render_invariants::check(&[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00]);
     render_invariants::check(&[]);

@@ -1263,8 +1263,10 @@ mod render_invariants {
             }
         }
         // Every file label appears, escaped.
-        let want = format!("file: {}\n", naive_safe_text(&c.label));
-        if c.text.matches(&want).count() != 2 {
+        // Whole lines: a failure detail may itself end in "file: ", so a
+        // substring count would over-count (found by the fuzzer, empty label).
+        let want = format!("file: {}", naive_safe_text(&c.label));
+        if c.text.lines().filter(|l| *l == want).count() != 2 {
             return Err(format!("the label line {want:?} is not there twice"));
         }
         Ok(())
