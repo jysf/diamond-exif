@@ -75,14 +75,14 @@ cost:
     - cycle: verify
       agent: claude-opus-5-5
       interface: other
-      tokens_total: 293641
-      estimated_usd: 1.94
-      duration_minutes: 45
+      tokens_total: 297136
+      estimated_usd: 1.96
+      duration_minutes: 52
       recorded_at: 2026-11-06
       notes: "verify PUNCH LIST at 6935f90, delta verify APPROVED at b224a12 (final). Tokens transcribed by the orchestrator from the sub-agent metered results; the agent was resumed once and each completion reported a cumulative figure: 258,581, 293,641 (final, used); wall-clock per run 755,929 + 1,945,077 = 2,701,006 ms = 45 minutes; the verifier's own 75-minute estimate is not used"
   totals:
-    tokens_total: 662321
-    estimated_usd: 4.37
+    tokens_total: 665816
+    estimated_usd: 4.39
     session_count: 2
 shipped_at: 2026-11-06
 ---
