@@ -656,3 +656,42 @@ questions:
       No preset outcome changes (the pairs fall in cells already Removed or KeptUnread), so
       this affects `Custom` policies only. Amend DEC-009, `may_hold` and the three hand-typed
       grids together, with the first writer spec or a user report. Source: HANDOFF-030 F6.
+
+  - id: report-value-decoding
+    question: "Should reports decode tag values (rationals, dates, GPS degrees) instead of printing a raw payload excerpt?"
+    priority: low
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-06
+    assigned_to: null
+    notes: |
+      DEC-010 prints at most 64 raw payload bytes, only with `values` on. A decoded view is a
+      second parsing surface (SPEC-007 decoders exist but are not report-tuned) and needs its
+      own correctness proof. Decide after SPEC-016 shows what users read in the output.
+
+  - id: report-tag-names
+    question: "Should reports show a tag name (for example Make, Artist) next to the tag number?"
+    priority: low
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-06
+    assigned_to: null
+    notes: |
+      DEC-010 shows the category and the hex tag number only. The DEC-008 rows have names
+      measured against ExifTool (tests/oracle-fixtures/exiftool/audit-tag-names.txt) that
+      could ship as a table in `src/`; it is a data and test cost, not a design risk.
+
+  - id: inventory-oracle-low-findings
+    question: "Do the two low SPEC-013 verify findings still matter: the Class H region-kind match, and ExifTool's exit status in the inventory records?"
+    priority: low
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-06
+    assigned_to: null
+    notes: |
+      Carried out of SPEC-015 (no rendering link). (1) Class H in tests/support/inventory.rs
+      drops every ExifTool region line for a bare TIFF; the companion test checks the file
+      holds one of the four directory-valued ids but not that the region kind matches the id
+      (0x83BB Iptc, 0x02BC Xmp, 0x8773 Icc, 0x8649 Photoshop/Iptc). Tighten when a second
+      such input appears. (2) The records do not keep ExifTool's exit status (1 on four
+      inputs where both sides are empty); record it if a divergence could hide there.
