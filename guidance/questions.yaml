@@ -783,3 +783,52 @@ questions:
       DEC-011 gates on each audit's max_severity over all findings. A pre-publish check might
       want "fail if anything above Low would remain after AllPii". The summary already carries
       the residual numbers (reliable files only).
+
+  - id: cli-closed-stdout-descriptor
+    question: "Should exif-audit exit 4 when stdout is a closed file descriptor (`>&-`), not only when a write to a pipe or a full disk fails?"
+    priority: low
+    status: answered
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-07
+    assigned_to: null
+    notes: |
+      Found while building SPEC-016. DEC-011 part 2 says 4 means "the report could not be
+      written to stdout (including a closed pipe)". A closed PIPE (EPIPE) and /dev/full give 4,
+      tested. A closed DESCRIPTOR (`exif-audit dir >&-`) does not: Rust's std treats EBADF on
+      stdout as success, so the report is dropped silently and the exit code is 0 or 1 as if it
+      had been written (measured with the release binary). Detecting it needs either an
+      `unsafe` fstat (forbidden) or a probe that opens /dev/stdout (not portable). Decide
+      whether to accept the gap, document it, or add a portable probe.
+      Answered 2026-11-07 in the DEC-011 amendment (SPEC-016 verify).
+
+  - id: cli-io-error-texts
+    question: "When is a failure `read error` and when `i/o error`? DEC-011 part 4 lists both texts but not the rule."
+    priority: low
+    status: answered
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-07
+    assigned_to: null
+    notes: |
+      SPEC-016 build chose: not found and permission denied by io::ErrorKind; any other error
+      after the file is open and a read failed is `read error`; any other error before that
+      (metadata, open, read_dir, symlink_metadata) is `i/o error`. A directory listing that
+      fails part-way is reported on the directory as `read error`. Confirm or replace the rule;
+      both texts are in the closed list either way. Related smaller choices: the size suffix is
+      upper-case only (K, M, G), as written in DEC-011; --help and --version exit 0 even if
+      their output cannot be written; a file longer than --max-size is rejected from its
+      length (metadata) without reading it, and only when it is a TIFF or JPEG by its first
+      12 bytes (any other container is `unsupported`, whatever its size).
+      Answered 2026-11-07 in the DEC-011 amendment (SPEC-016 verify).
+
+  - id: cli-symlink-swap-window
+    question: "Should exif-audit close the window where a symlink is swapped in for a walked entry between the check and the open (O_NOFOLLOW per target, or comparing the open handle's device and inode with the walk's symlink_metadata)?"
+    priority: low
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-07
+    assigned_to: null
+    notes: |
+      DEC-011 amendment item 3 accepts the window: exploiting it needs code running on the
+      scanning host, and --values excerpts are capped at 64 bytes. The verifier measured 18 of
+      1,500 racing runs auditing a file outside the tree. A std-only (dev, ino) comparison is
+      the portable fix. Decide if exif-audit is ever run on untrusted shared trees.

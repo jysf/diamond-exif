@@ -52,12 +52,12 @@ signals:
     summary: "Specs name a flag's accepted values but not its default, so build guesses."
     evidence: "SPEC-026/028/029 (--format default left unstated) — N=3 same-outcome"
     bar: "N=3 same-outcome"
-    status: watch
+    status: codified
     disposition_at: stage-close
     first_flagged: 2026-05-20
-    last_touched: 2026-06-12
+    last_touched: 2026-11-06
     raised_by: claude
-    notes: "At bar (N=3). Codify at the owning stage's close — spec template / Prompt 2b should require each flag's default, not just its accepted values. Do NOT codify mid-stage."
+    notes: "Codified at STAGE-003 close (2026-11-06): the spec template Outputs section already requires each flag's accepted values and its default; SPEC-016 and DEC-011 applied it (every default stated, pinned by usage_text_names_every_default). No further template change needed."
 
   # --- process-debt: THE lever — re-flagged twice, still un-adopted -----------
   - id: lightweight-verify-lane
@@ -203,6 +203,18 @@ signals:
     status: watch
     disposition_at: stage-close
     first_flagged: 2026-11-07
-    last_touched: 2026-11-07
+    last_touched: 2026-11-06
     raised_by: claude
     notes: "At N=1. Walk at STAGE-003 close alongside the SPEC-014/015 guard lesson."
+
+  - id: check-then-open-needs-a-safe-open
+    type: lesson
+    summary: "A 'never open X' promise about a filesystem object needs the open itself to be safe (non-blocking, re-checked on the handle), not only a pre-check, because the path can change in between."
+    evidence: "SPEC-016 verify F1: a FIFO renamed over a scanned name between the walk's check and read_file's open hung the binary (3 of 127 races). N=1."
+    bar: "N=3 same-outcome"
+    status: watch
+    disposition_at: stage-close
+    first_flagged: 2026-11-07
+    last_touched: 2026-11-06
+    raised_by: claude
+    notes: "At N=1. Walk at STAGE-003 close."

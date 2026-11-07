@@ -6,14 +6,14 @@
 task:
   id: SPEC-016
   type: story                      # epic | story | task | bug | chore
-  cycle: design                    # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
-  complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
+  complexity_actual: L             # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: approved  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
@@ -63,11 +63,28 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: 800000
-  sessions: []
+  sessions:
+    - cycle: build
+      agent: claude-sonnet-5-5
+      interface: other
+      tokens_total: 368680
+      estimated_usd: 2.43
+      duration_minutes: 42
+      recorded_at: 2026-11-06
+      notes: "tokens transcribed by the orchestrator from the sub-agent metered result (subagent_tokens 341,445; 1,900,342 ms wall-clock)"
+    - cycle: verify
+      agent: claude-opus-5-5
+      interface: other
+      tokens_total: 297136
+      estimated_usd: 1.96
+      duration_minutes: 52
+      recorded_at: 2026-11-06
+      notes: "verify PUNCH LIST at 6935f90, delta verify APPROVED at b224a12 (final). Tokens transcribed by the orchestrator from the sub-agent metered results; the agent was resumed once and each completion reported a cumulative figure: 258,581, 293,641 (final, used); wall-clock per run 755,929 + 1,945,077 = 2,701,006 ms = 45 minutes; the verifier's own 75-minute estimate is not used"
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 665816
+    estimated_usd: 4.39
+    session_count: 2
+shipped_at: 2026-11-06
 ---
 
 # SPEC-016: The `exif-audit` binary: arguments, directory walk, per-file isolation, exit codes, CLI integration tests, CI build job
@@ -220,25 +237,20 @@ From HANDOFF-034's delta verify; SPEC-016 extends the same `audit_render` harnes
 *Appended during **ship**. Three questions, short answers.*
 
 1. **What would I do differently next time?**
-   — <answer>
+   — Put a race-condition review of the walk into the design, not only into verify: the cold verifier found a FIFO swapped in between the check and the open that hangs the run (3 hangs in 127 races), a classic check-then-open window that DEC-011 said "never opened" but did not say how. I would also have asked, at design, which Linux-only branches CI would be the first to run (`/dev/full`, invalid-UTF-8 names, `time -v`), since none ran on the macOS host and the Docker daemon was down for the verifier too.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — DEC-011 gained an amendment (closed stdout is a documented limit, the failure-text mapping, special files opened non-blocking and re-checked with the symlink-swap window stated, parsing rulings, `--json`/`--csv` defaults). Lesson, N=1: a "never do X" promise about a filesystem object needs the open itself to be safe, not only a pre-check. Added to `guidance/signals.yaml` as a watch lesson.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — No new spec. Questions carry the open items: `cli-symlink-swap-window` (a `(dev, ino)` check or `O_NOFOLLOW` per target), `cli-stdin-input`, `cli-follow-symlinks`, `cli-large-trees`, `cli-fail-on-residual`. STAGE-003 closes next.
 
 4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
    the defect-escape distribution is greppable across specs:
    `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
    `none` (clean first try).
-   — <one word>
-   *(Runtime/operational defects — the escape-prone class — only exist once the
-   artifact meets its real host. `escaped` here is a signal to strengthen the
-   §12 behavioral pre-flight for that surface.)*
+   — verify
+   *(The FIFO swap hang was found by the verifier's race reproducer; the build's own tests had the FIFO pre-checked by the walk and never raced it.)*
 
 5. **What can a user do now that they couldn't before?** — one sentence,
    before → after; quote the confirming number if one exists, name the outcome
@@ -247,4 +259,4 @@ From HANDOFF-034's delta verify; SPEC-016 extends the same `audit_render` harnes
    `impact` field is transcribed from, and both halves are already written above
    (## Context is the before, ## Goal is the after): confirm the prediction,
    don't reconstruct it from memory.
-   — <answer | none>
+   — Run `exif-audit PATH...` to scan files and directories and get a text, JSON or CSV privacy report with exit codes a CI job can act on (before: only a library; after: a binary that never counts an unreadable or unsupported file as clean, holds one input file in memory at a time, and does not hang on a FIFO).

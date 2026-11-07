@@ -1,0 +1,37 @@
+Usage: exif-audit [OPTIONS] [--] PATH...
+
+Scan files and directories for metadata that can identify a person or a
+device. Prints one report on stdout and exits with a code a CI job can act on.
+Reads nothing but the named paths; writes nothing but the report.
+
+Options:
+      --format <F>    Report format: text, json or csv [default: text]
+      --json          Shorthand for --format json [default: off]
+      --csv           Shorthand for --format csv [default: off]
+      --policy <P>    Strip policy the report previews: gps, gps-and-device,
+                      all-pii, all, everything, or none for no preview
+                      [default: all-pii]
+      --fail-on <S>   Exit 1 when a file has a finding of at least this
+                      severity: none, low, medium or high [default: high]
+      --strict        Count unsupported files and files with issues as
+                      incomplete (exit 3) [default: off]
+      --values        Include a raw value excerpt of each tag [default: off]
+      --inventory     List every inventory entry, not only findings
+                      [default: off]
+      --max-size <N>  Largest file read: bytes with an optional K, M or G
+                      suffix (powers of 1024), at least 1 [default: 256M]
+  -h, --help          Print this help and exit 0
+  -V, --version       Print the version and exit 0
+
+Options take their value as the next argument or as --name=value. Each option
+may be given once. A lone - is an error (stdin is not read). After -- every
+argument is a path. Directories are walked recursively in name order; a symlink
+found in a walk is reported, not followed.
+
+Exit codes:
+  0  complete, and no file reaches the --fail-on threshold
+  1  complete, and a file has a finding at or above the threshold
+  2  usage error
+  3  incomplete: a file failed or was unreadable (with --strict, also
+     unsupported or with issues)
+  4  the report could not be written

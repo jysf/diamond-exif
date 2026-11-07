@@ -5,7 +5,7 @@
 
 stage:
   id: STAGE-003                     # stable, zero-padded, continuous across the repo
-  status: active                    # proposed | active | shipped | cancelled | on_hold
+  status: shipped                   # proposed | active | shipped | cancelled | on_hold
   priority: high                    # critical | high | medium | low
   target_complete: null             # optional: YYYY-MM-DD
 
@@ -15,7 +15,7 @@ repo:
   id: diamond-exif
 
 created_at: 2026-11-05
-shipped_at: null
+shipped_at: 2026-11-06
 
 # What part of the project's value thesis this stage advances.
 # If you can't articulate value_contribution, the stage may be
@@ -44,7 +44,11 @@ value_contribution:
 # that is a division you cannot observe, so any per-spec number is invented.
 # Warn-only, never a gate. A null here is honest; a guess is not. (DEC-013 §5)
 orchestration_cost:
-  sessions: []                      # - tokens_total: N
+  sessions:
+    - tokens_total: 1584655
+      estimated_usd: 10.46
+      recorded_at: 2026-11-06
+      notes: "the orchestrator conversation after the STAGE-002 close commit (c3e9578, 2026-11-05T20:43:08-08:00): STAGE-003 framing follow-through, designs of SPEC-012..016 and SPEC-018 and DEC-008..011, dispatches, independent gate re-runs, follow-up rounds for the builders, delta-verify routing, ships, PRs 17-25 and their merges; recovered from transcript 1cd6e68e usage (input + output + cache_creation, de-duplicated by message id, cache_read excluded) at 6.60 USD/Mtok. Read at stage close; the closing turns after the read are not included"                      # - tokens_total: N
                                     #   estimated_usd: N
                                     #   recorded_at: YYYY-MM-DD
                                     #   notes: "framing + spec breakdown"
@@ -98,9 +102,9 @@ Format: `- [status] SPEC-ID (cycle) — one-line summary`
 - [x] SPEC-015 (shipped on 2026-11-06) — [L] Text, JSON and CSV renderers and the `audit_render` fuzz target (well-formed on hostile input)
 - [x] SPEC-017 (shipped on 2026-11-06) — [M] Bound Container memory: a total entry budget for the tolerant walk (found by the SPEC-012 build: a 789 KB TIFF parses cleanly to 33M entries, ~950 MB)
 - [x] SPEC-018 (shipped on 2026-11-06) — [M] Incremental report assembly: ReportBuilder with output equal to the one-shot renderers (so the binary holds one input file at a time)
-- [ ] SPEC-016 (design) — [L] The `exif-audit` binary: arguments, directory walk, per-file isolation, exit codes, CLI integration tests, CI build job
+- [x] SPEC-016 (shipped on 2026-11-06) — [L] The `exif-audit` binary: arguments, directory walk, per-file isolation, exit codes, CLI integration tests, CI build job
 
-**Count:** 6 shipped / 1 active / 0 pending
+**Count:** 7 shipped / 0 active / 0 pending
 
 ## Design Notes
 
@@ -128,18 +132,28 @@ Format: `- [status] SPEC-ID (cycle) — one-line summary`
 *Filled in when status moves to shipped. Run Prompt 1c (Stage Ship) in
 FIRST_SESSION_PROMPTS.md to draft this.*
 
-- **Did we deliver the outcome in "What This Stage Is"?** <yes/no + notes>
-- **How many specs did it actually take?** <number vs. plan>
-- **How many outlines survived unchanged?** <n of m — only if this stage was
-  framed with `just frame-stage`. Counts outlines whose scope held from frame to
-  ship. A low number means framing ran ahead of what was knowable; a high one
-  means it's paying for itself.>
-- **What changed between starting and shipping?** <one sentence>
+- **Did we deliver the outcome in "What This Stage Is"?**
+  Yes. `exif-audit PATH...` is a binary a person or CI job runs: it sniffs each file (TIFF and JPEG are read; anything else is reported `unsupported`, never clean), builds an inventory of every tag and located region, classifies findings by DEC-008 category, previews what each of five strip presets would remove (DEC-009, with `KeptUnread` for blocks the library cannot read), and prints text, JSON or CSV (DEC-010) with exit codes 0/1/2/3/4 (DEC-011). Inventory parity with ExifTool is shown over 178 distinct inputs with every difference pinned; the pure library has no I/O and no dependencies; the binary adds none. Honest narrowing: values are raw excerpts only when asked (no decoding); MakerNote serials, XMP, IPTC, ICC and C2PA are located, not read; the Linux-only paths and the new CI release job had never run on the dev host when the last PR was opened (they run for the first time in PR 25).
+
+- **How many specs did it actually take?**
+  Seven against the six framed: SPEC-012 audit model, SPEC-013 inventory parity, SPEC-014 presets and preview, SPEC-015 renderers, SPEC-016 binary, plus two added mid-stage: SPEC-017 (the total entry budget, found by the SPEC-012 build: a 789 KB TIFF parsed cleanly to 33M entries) and SPEC-018 (the incremental `ReportBuilder`, found at the SPEC-016 design: a directory scan would otherwise hold every file's bytes alive). All seven shipped with verify verdict approved; first-pass verifies that returned a punch list: SPEC-016 (a FIFO swap race that hung the run) and SPEC-018 (test-strength gaps); SPEC-015 was approved with findings that took three builder follow-ups and a delta verify that itself returned a punch list (a timing test that flaked under load) before the final approval. Metered build and verify cost 4,483,854 tokens (about $29.58) across the 7 specs, plus 1,584,655 tokens (about $10.46) of orchestration; 6,068,509 tokens (about $40.04) in total. Per-spec estimates ran under for six of seven (3.60M estimated vs 4.48M actual, about 25 percent under; SPEC-016 alone was over-estimated, 800k vs 666k).
+
+- **How many outlines survived unchanged?**
+  4 of 5 framed outlines kept their scope (012, 013, 014, 015); SPEC-016 kept its goal but lost its memory model to SPEC-018 and gained DEC-011's walk and race rules; SPEC-017 and SPEC-018 were not outlines at frame time.
+
+- **What changed between starting and shipping?**
+  Reading hostile bytes safely turned out to be the work: two library bounds and a builder were added because the first design of each spec let memory scale with the input, and the cold verifiers found real defects in every spec's tests or code (a CSV semicolon bypass of the formula guard, invisible-character name spoofing, a FIFO hang) that the builds' own tests had not.
+
 - **Lessons that should update AGENTS.md, templates, or constraints?**
-  - <one-line updates>
-- **Signals dispositioned at this close?** (Prompt 1d step 7) Every
-  `type: lesson` signal in `/guidance/signals.yaml` owned by this stage close
-  was walked — codified (at its bar), left `watch`, or dropped. No silent carry.
-  - <note what codified / what's still watch + its N>
+  - Put a security and race review of the surface into the design, not only into verify: the escaping gaps (SPEC-015) and the check-then-open window (SPEC-016) were both found by the verifier's own attacks; add "list the hostile shapes and the races for each I/O or escaping surface" to the spec design checklist (below bar, recorded as the watch signals below).
+  - A guard is only as strong as what its inputs and plants vary: seeds must reach every class (SPEC-014, SPEC-015), plants must vary in kind and not only in length (SPEC-018). Both are watch signals.
+  - A timing assertion must be a ratio of the same code at two sizes, never an absolute bound (SPEC-013 weakness, SPEC-015 flake); applied in SPEC-018 and SPEC-016.
+  - Cumulative sub-agent token notices change between a first and a final figure: record only after the final notification (cost fixes were needed for SPEC-013, SPEC-015 and SPEC-016).
+  - The measured table in a design is a prediction for the build to re-measure (SPEC-013 again: Class R, the ICC sizes).
+
+- **Signals dispositioned at this close?**
+  Walked all `type: lesson` signals owned by this stage close. `flag-default-explicitness` (N=3, at its bar) is **codified**: the spec template's Outputs section already requires each flag's accepted values and its default, and SPEC-016 and DEC-011 applied it (every default stated and pinned by `usage_text_names_every_default`); no recurrence this stage. Left `watch`: `fuzz-guard-needs-seeds-for-every-class` (N=2: SPEC-014, SPEC-015), `equality-guard-plants-must-vary-in-kind` (N=1: SPEC-018), `check-then-open-needs-a-safe-open` (N=1: SPEC-016). Project-close signals (`measure-exit-status-without-a-pipe`, `divergence-entries-must-pin-our-values`, `run-ci-only-gates-locally`, the process-debt items) are not owned by this close and were not touched; `run-ci-only-gates-locally` was applied again (the build briefs named the CI-only scripts) with no recurrence.
+
 - **Should any spec-level reflections be promoted to stage-level lessons?**
-  - <one-line items — record below-bar ones as `watch` signals; don't codify yet>
+  - "Design the attack list with the surface": recorded above as below-bar notes tied to the three watch signals; revisit at project close.
+  - Carried forward (not blockers): questions `cli-symlink-swap-window`, `cli-stdin-input`, `cli-follow-symlinks`, `cli-large-trees`, `cli-fail-on-residual`, `report-value-decoding`, `report-tag-names`, `report-custom-policy-identity`, `strip-may-hold-gaps`, `preview-unclassified-entries`, `gps-preset-leaves-unread-blocks`, `inventory-oracle-low-findings`, plus the earlier SBYTE selector, several-exif-segments, C2PA-in-JUMBF, audit-thumbnail-recursion, DEC-008 amendment candidates and the upstream `decisions-audit.sh` parsing.
