@@ -66,6 +66,15 @@ A report is built from audits by pure functions that return a `String` (`render_
 
 The renderers are a surface in their own right: a tag value, a path or an error message is attacker-controlled bytes that end up inside a JSON document read by a CI job, a CSV opened in a spreadsheet, and text printed to a terminal. Each is a known injection channel (invalid JSON that breaks the CI parser, formula injection in a spreadsheet, terminal escape and bidi spoofing). Deciding the escaping and the privacy default once, in a DEC, keeps three renderers and a fuzz harness from each inventing a rule. The value-free default follows from the audit's own purpose and from STAGE-003's honest-limits principle.
 
+## Amendment (2026-11-06, from the SPEC-015 build)
+
+Four clarifications from the build's doubts; only the first changes behaviour.
+
+1. **The summary's residual number needs a reliable file.** `Summary::residual_findings` is `Some(n)` only when a policy is set and at least one audited file is reliable (`n` sums the reliable files only); otherwise it is `None` (JSON `null`, and the text says the residual is not available). `Some(0)` beside zero reliable files read like "nothing remains", which DEC-009's amendment forbids.
+2. **DEL is written `\x7f`**, like the other C0 controls without a short form. TAB and CR are escaped by `safe_text` (`\t`, `\r`) before the CSV layer sees them, so the formula guard's TAB and CR triggers do not fire through `render_csv`; they stay in the guard as defence in depth for any field that reaches the CSV layer another way.
+3. **`label` and failure `detail` are caller-supplied, not file content.** The library does not bound their length (output is linear in them) and prints the detail whatever `values` says, because the detail is the caller's own error text. The binary must pass only a path and an OS error message, never bytes read from the file. The fuzz target feeds file bytes into the detail on purpose, to exercise the escaping.
+4. **A `Custom` policy is named only "custom"** in every format. Two different custom sets are not told apart in a report; the binary exposes presets only, so nothing produces this today (question `report-custom-policy-identity`).
+
 ## Alternatives considered
 
 - **Print values by default.** Rejected: a CI log is the wrong place for a serial number or coordinates; the opt-in costs one flag.

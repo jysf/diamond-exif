@@ -63,11 +63,19 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: 650000
-  sessions: []
+  sessions:
+    - cycle: build
+      agent: claude-sonnet-5-5
+      interface: other
+      tokens_total: 515801
+      estimated_usd: 3.40
+      duration_minutes: 58
+      recorded_at: 2026-11-06
+      notes: "tokens transcribed by the orchestrator from the sub-agent metered results: 493,090 for the build run and 515,801 reported after the follow-up run, read as cumulative (the follow-up is then 22,711); wall-clock 2,895,129 ms + 600,502 ms = 58 minutes; the agent's own 200-minute estimate is not used"
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 515801
+    estimated_usd: 3.40
+    session_count: 1
 ---
 
 # SPEC-015: Text, JSON and CSV renderers and the `audit_render` fuzz target (well-formed on hostile input)

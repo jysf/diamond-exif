@@ -723,3 +723,15 @@ questions:
       is defence in depth, exercised only by the row-level unit test. Also part 2 names no
       form for DEL (built: `\x7f`, lowercase hex everywhere) and the JSON IFD name `other` is
       unreachable (IfdKind is non_exhaustive but exhaustive inside the crate).
+
+  - id: report-custom-policy-identity
+    question: "Should a report say which categories a `Custom` policy removes, instead of only naming it \"custom\"?"
+    priority: low
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-06
+    assigned_to: null
+    notes: |
+      DEC-010 amendment (2026-11-06) item 4. Two different custom sets render identically.
+      The binary exposes presets only, so nothing produces a Custom policy today. If it ever
+      does, add a `policy_categories` list to the JSON and text (a schema_version bump).

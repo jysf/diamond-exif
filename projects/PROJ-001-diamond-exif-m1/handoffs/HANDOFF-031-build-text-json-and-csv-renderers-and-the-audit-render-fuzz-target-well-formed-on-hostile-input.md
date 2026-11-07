@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: 200            # estimate from the session; not metered
+  tokens_total: 515801             # orchestrator-recorded from the metered sub-agent results (subagent_tokens)
+  estimated_usd: 3.40
+  duration_minutes: 58
   branch: worktree-agent-a98883200c333058f
   pr: null
   completed_at: 2026-11-06         # YYYY-MM-DD
-  notes: "tokens_total is null: the implementer cannot see its own token count (no /cost, no usage object in this harness); the orchestrator transcribes the metered figure. No rework."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "tokens transcribed by the orchestrator from the sub-agent metered results: 493,090 for the build run and 515,801 reported after the follow-up run, read as cumulative (the follow-up is then 22,711); wall-clock 2,895,129 ms + 600,502 ms = 58 minutes; the agent's own 200-minute estimate is not used"
+  synced_at: 2026-11-06
 ---
 
 # HANDOFF-031: Text, JSON and CSV renderers and the audit_render fuzz target
@@ -103,10 +103,10 @@ above AND the `## Handback
 
 ### Cost self-report
 
-- **Tokens (total):** null. I cannot see my token count in this harness; the orchestrator transcribes the metered figure.
-- **Estimated USD:** null
-- **Duration (minutes):** about 200 (estimate)
-- **Source of the number:** none available
+- **Tokens (total):** 515,801 (orchestrator-transcribed; 493,090 reported at the first hand-back plus the follow-up, read as cumulative)
+- **Estimated USD:** 3.40 (515,801 tokens at 6.60 USD per Mtok)
+- **Duration (minutes):** 58 (harness wall-clock, build run plus follow-up; the agent's own estimate was about 200)
+- **Source of the number:** harness report (subagent_tokens)
 
 ### Fuzz smoke (60 s each, nightly, from the committed seeds, `just fuzz-smoke`)
 
