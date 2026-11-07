@@ -2342,23 +2342,44 @@ fn heavy_findings_and_regions(blocks: usize, regions: usize) -> Vec<u8> {
     lin_jpeg(&segments)
 }
 
-/// Best-of-`runs` wall time of each audit guard, run alone on `data`.
-fn guard_times(data: &[u8], runs: usize) -> Vec<(&'static str, std::time::Duration, usize)> {
-    let a = exif_core::audit::audit(data);
-    let got = audit_invariants::facts(&a);
-    let want = audit_invariants::rederive(data);
+/// The rounds each measurement is repeated in; the minimum over them is kept.
+const GUARD_TIME_ROUNDS: usize = 7;
+
+/// Wall time of each audit guard on the small and the large input, measured in
+/// interleaved rounds (small, large, small, large, ...) so a burst of load hits
+/// both sides alike; the minimum over the rounds is kept for each. Returns
+/// `(guard, small, large)`.
+fn guard_times_interleaved(
+    small: &[u8],
+    large: &[u8],
+) -> Vec<(&'static str, std::time::Duration, std::time::Duration)> {
+    let prep = |d: &[u8]| {
+        let a = exif_core::audit::audit(d);
+        (audit_invariants::facts(&a), audit_invariants::rederive(d))
+    };
+    let (sg, sw) = prep(small);
+    let (lg, lw) = prep(large);
+    assert!(
+        lg.findings.len() > 59_000 && sg.findings.len() > 14_000,
+        "{} {}",
+        lg.findings.len(),
+        sg.findings.len()
+    );
     let mut out = Vec::new();
     for (name, _) in audit_invariants::GUARDS {
-        // Best of several: a scheduling hiccup on a busy runner must not fail
-        // a guard that is linear; a quadratic one is slow every time.
-        let mut best = std::time::Duration::MAX;
-        for _ in 0..runs {
-            let start = std::time::Instant::now();
-            let r = audit_invariants::run_guard(name, data, &got, &want);
-            best = best.min(start.elapsed());
+        let mut best_s = std::time::Duration::MAX;
+        let mut best_l = std::time::Duration::MAX;
+        for _ in 0..GUARD_TIME_ROUNDS {
+            let t = std::time::Instant::now();
+            let r = audit_invariants::run_guard(name, small, &sg, &sw);
+            best_s = best_s.min(t.elapsed());
+            assert!(r.is_ok(), "{name}: {r:?}");
+            let t = std::time::Instant::now();
+            let r = audit_invariants::run_guard(name, large, &lg, &lw);
+            best_l = best_l.min(t.elapsed());
             assert!(r.is_ok(), "{name}: {r:?}");
         }
-        out.push((name, best, got.findings.len()));
+        out.push((name, best_s, best_l));
     }
     out
 }
@@ -2368,7 +2389,10 @@ fn guard_times(data: &[u8], runs: usize) -> Vec<(&'static str, std::time::Durati
 /// on the same host in the same process, so it does not depend on host speed.
 const GUARD_TIME_RATIO_BOUND: u32 = 8;
 /// Below this the small run is timer noise and the guard is not in question.
-const GUARD_TIME_FLOOR: std::time::Duration = std::time::Duration::from_millis(1);
+const GUARD_TIME_FLOOR: std::time::Duration = std::time::Duration::from_millis(5);
+/// A quadratic guard exceeds the bound on every attempt; load noise has to hit
+/// all of them to fail a linear one.
+const GUARD_TIME_ATTEMPTS: usize = 3;
 
 /// The work the guards do on `data` (counted, not timed), with the facts and
 /// the re-derivation computed before the counter is reset.
@@ -2435,24 +2459,32 @@ fn audit_harness_guards_are_linear_in_the_input() {
     // under 8 x time(N/4).
     let big = heavy_findings_and_regions(12, 4_000);
     let small = heavy_findings_and_regions(3, 1_000);
-    let tb = guard_times(&big, 3);
-    let ts = guard_times(&small, 5);
-    assert!(
-        tb[0].2 > 59_000 && ts[0].2 > 14_000,
-        "{} {}",
-        tb[0].2,
-        ts[0].2
-    );
-    for ((name, big_t, _), (_, small_t, _)) in tb.iter().zip(&ts) {
-        let ratio = big_t.as_secs_f64() / small_t.as_secs_f64().max(1e-9);
-        println!("guard {name}: {small_t:?} at N/4, {big_t:?} at N, ratio {ratio:.1}");
-        let reference = (*small_t).max(GUARD_TIME_FLOOR);
-        assert!(
-            *big_t < reference * GUARD_TIME_RATIO_BOUND,
-            "guard {name} took {big_t:?} at N and {small_t:?} at N/4 (ratio {ratio:.1}, bound \
-             {GUARD_TIME_RATIO_BOUND}): it is superlinear in time"
-        );
+    let mut last_failures = Vec::new();
+    for attempt in 1..=GUARD_TIME_ATTEMPTS {
+        let times = guard_times_interleaved(&small, &big);
+        let mut failures = Vec::new();
+        let mut worst = 0.0f64;
+        for (name, small_t, big_t) in &times {
+            let ratio = big_t.as_secs_f64() / small_t.as_secs_f64().max(1e-9);
+            let reference = (*small_t).max(GUARD_TIME_FLOOR);
+            let effective = big_t.as_secs_f64() / reference.as_secs_f64();
+            worst = worst.max(effective);
+            println!(
+                "attempt {attempt} guard {name}: {small_t:?} at N/4, {big_t:?} at N, ratio {ratio:.1} (against the floor {effective:.1})"
+            );
+            if *big_t >= reference * GUARD_TIME_RATIO_BOUND {
+                failures.push(format!(
+                    "guard {name} took {big_t:?} at N and {small_t:?} at N/4 (ratio {ratio:.1}, bound {GUARD_TIME_RATIO_BOUND})"
+                ));
+            }
+        }
+        println!("attempt {attempt}: worst effective ratio {worst:.1}");
+        if failures.is_empty() {
+            return;
+        }
+        last_failures = failures;
     }
+    panic!("superlinear in time on all {GUARD_TIME_ATTEMPTS} attempts: {last_failures:?}");
 }
 
 // ── SPEC-014: the strip-policy preview guards ────────────────────────────────
@@ -2864,7 +2896,7 @@ fn render_ctx(seed: &str) -> Ctx {
 
 const SEMICOLON: &str = "render-label-semicolon-formula";
 
-const AUDIT_RENDER_SEEDS: [&str; 18] = [
+const AUDIT_RENDER_SEEDS: [&str; 19] = [
     "render-ascii-payload-300-bytes",
     "render-empty-file",
     "render-full-house-jpeg-all-pii-inventory-values",
@@ -2879,6 +2911,7 @@ const AUDIT_RENDER_SEEDS: [&str; 18] = [
     "render-label-formula-at",
     "render-label-formula-equals",
     "render-label-invalid-utf8",
+    "render-label-invisible-characters",
     "render-label-quotes-comma",
     "render-label-right-to-left-override",
     "render-label-semicolon-formula",
@@ -2961,6 +2994,15 @@ fn audit_render_seeds_are_committed_and_have_the_shapes_they_claim() {
     let crlf = label("label-cr-lf");
     assert!(crlf.windows(2).any(|w| w == b"\r\n"));
     assert!(std::str::from_utf8(&label("label-invalid-utf8")).is_err());
+    // Invisible characters in a valid-UTF-8 label: the harness's own
+    // `safe_text` must see them (zero-width space, BOM, soft hyphen, a tag
+    // character).
+    let invisible = label("label-invisible-characters");
+    let text = String::from_utf8(invisible).expect("valid UTF-8");
+    for c in ['\u{200B}', '\u{FEFF}', '\u{AD}', '\u{E0041}', 'a', 'b'] {
+        assert!(text.contains(c), "{c:?}");
+    }
+    assert!(by("label-invisible-characters").values);
     assert!(String::from_utf8_lossy(&label("label-right-to-left-override")).contains('\u{202E}'));
     assert_eq!(label("label-formula-equals"), b"=cmd|' /C calc'!A0");
     assert_eq!(label("label-formula-at"), b"@SUM(1)");

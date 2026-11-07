@@ -1263,6 +1263,14 @@ fn render_seeds() -> Vec<(String, Vec<u8>)> {
             render_seed(3 | VAL, b"\xFF\xFE\xC3(\xE2\x82", &secret),
         ),
         (
+            "label-invisible-characters",
+            render_seed(
+                3 | VAL,
+                "a\u{200B}\u{FEFF}\u{AD}\u{E0041}b".as_bytes(),
+                &secret,
+            ),
+        ),
+        (
             "label-right-to-left-override",
             render_seed(VAL, "\u{202E}gpj.exe\u{2028}\u{85}".as_bytes(), &house_tiff),
         ),
