@@ -189,6 +189,13 @@ fn builder_fragments_appear_in_add_order_and_are_independent_of_neighbours() {
         one.split("summary\n").next().unwrap().to_string()
     };
     let (ba, bb) = (block(&a), block(&b));
+    // The blocks are the files' own (a summary-first text would make both
+    // empty, and "empty then summary" would pass the prefix checks below).
+    assert!(
+        ba.starts_with("file: ") && bb.starts_with("file: "),
+        "{ba:?} {bb:?}"
+    );
+    assert!(ba != bb);
     assert!(render_text(&[a.clone(), b.clone()], &opts).starts_with(&format!("{ba}{bb}summary\n")));
     assert!(render_text(&[b.clone(), a.clone()], &opts).starts_with(&format!("{bb}{ba}summary\n")));
     // JSON: the files array is frag(a),frag(b).
