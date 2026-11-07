@@ -49,7 +49,7 @@ handback:
   branch: worktree-agent-ae1f46310ab6829e9
   pr: null
   completed_at: 2026-11-06               # YYYY-MM-DD
-  notes: "verify APPROVED at 6723aad; tokens_total null: this sub-agent has no token meter, the orchestrator transcribes the harness's metered figure" # one line if unusual (rework, no meter, etc.)
+  notes: "verify APPROVED at 6723aad; delta verify of follow-up 2 PUNCH LIST at e093e57 (F6 timing bound flaky under load); tokens_total null: this sub-agent has no token meter, the orchestrator transcribes the harness's metered figure" # one line if unusual (rework, no meter, etc.)
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -285,6 +285,80 @@ Each mutant was applied in a scratch copy as an exact text replacement. I ran th
 - **F9 (Info).**
   - A text region line prints `segment=` twice (the region's segment and the origin's).
   - The spec says `csv_rows` checks unquoted fields; the code checks all fields, which is stricter.
+
+### Delta verify (follow-up 2: `f2c08ed` code, `e093e57` handback)
+
+`git merge --ff-only worktree-agent-a98883200c333058f` fast-forwarded this branch from `9f32ab6` to `e093e57`. I reviewed `git diff 9f32ab6..e093e57` only and did not re-run the full gate matrix.
+
+**Verdict: ⚠ PUNCH LIST at `e093e57`.** There is one item, F6. F1 to F5 and F9 are closed.
+
+#### Fixes checked, adversarially (my probe calls `render_csv`/`safe_text` directly and parses with `parse_csv_quoted`)
+
+- **F1: closed.**
+  - Labels and values I fed in: `a;=1+cmd|' /C calc'!A0`, `;`, ` ;=1`, `a"b;c`, and an excerpt `x;=HYPERLINK(A1)`. Each is quoted, and the strict parser reads back exactly one field equal to the source.
+  - A field that starts with a trigger and also holds a `;` (`=a;b`, `+1;2`, `-;-`, `@x,y;z`): the guard is applied before quoting, giving `"'=a;b"`, and the parser reads back the single field `'=a;b`.
+  - A raw TAB never reaches the CSV layer (`\t=1;2` arrives as the text `\t=1;2`, quoted because of the `;`).
+  - `csv_rows` now checks the quoting rule independently on every field, in both directions; two new plants cover it.
+  - **Residual (Low, unchanged and outside this fix):** a leading space before a trigger (` =1+1`) is neither guarded nor quoted.
+- **F2: closed.**
+  - The exact set is escaped as `\u{…}` in lowercase hex, with five digits for tag characters (`\u{e0041}`).
+  - Range edges are escaped: U+00AD, U+200B, U+200D, U+2060, U+206A, U+206F, U+FEFF, U+FFF9, U+FFFB, U+E0000, U+E007F.
+  - Neighbours are unchanged: U+00AC, U+00AE, U+200A, U+205F, U+2061, U+2064, U+2070, U+FEFE, U+FF00, U+FFF8, U+FFFC, U+DFFFF, U+E0080, U+E0100.
+  - The naive `safe_text` in `render_check.rs` agrees on every one of these. It is typed independently: its own range list, and `{:04x}` padding, which prints five digits on its own.
+  - Injectivity still holds: the braces delimit the hex, and no escaped code point collides with literal text (`\u{e0041}` from a tag character versus `\\u{e0041}` from the literal text).
+  - The 4x bound still holds: a 4-byte tag character becomes 9 bytes, a 2-byte U+00AD becomes 8.
+  - **Info, outside the requested set:** these still pass through: U+2061 to U+2064 (invisible operators), U+180E, U+034F, the variation selectors U+FE00 to U+FE0F and U+E0100 to U+E01EF, and the Hangul fillers U+115F and U+3164.
+- **F3: closed.** `summary_residual_counts_the_reliable_files_only_when_an_unreliable_file_has_findings` catches V24.
+- **F4: closed.** `excerpt_content_is_the_expected_escaped_text_in_every_format` catches V8.
+- **F5: closed.**
+  - `{:?}` of an audit holding `HYPERLINK` shows only `value_len`.
+  - `PartialEq` is still derived and still compares the payload; two audits of the same bytes compare equal.
+  - The doc comment is corrected.
+  - `debug_of_an_item_and_an_audit_never_prints_the_payload` catches mutant 37.
+- **F9: closed.** A region line now reads `region xmp len=4 block=- segment=1`. The golden `.txt` changed in those four lines only. The "eleven" comment is fixed.
+- **F6: meaningful, but not flake-free under load (PUNCH LIST).**
+  - The bound is time(N) < 8 × max(time(N/4), 1 ms). A quadratic guard gives a ratio of about 16, so the check does catch it.
+  - **Ten runs in a row under heavy load** (8 CPU-burning processes plus my parallel cargo builds, on 14 cores): **4 of 10 failed**:
+    - `thumbnail`: 52.3 ms at N against 3.6 ms at N/4 (ratio 14.5)
+    - `indices`: 12.4 ms against 0.76 ms
+    - `inventory`: 9.1 ms against 0.49 ms
+    - `indices`: 25.5 ms against 0.83 ms
+  - The passing loaded runs had linear guards at 3.6 to 4.7, with outliers of 7.3 to 10.7.
+  - **Without artificial load:** 10/10 passed with the test alone and 10/10 with the whole `fuzz_layout` binary in parallel. Maximum linear ratio was 4.6; `caps` reached 5.4 under the floor.
+  - **Cause:** the N and N/4 runs are measured at different moments (best of 3, then best of 5), so a burst of load during the N runs alone fails a linear guard. The 1 ms floor makes the effective bound 8 ms for guards that take less than 1 ms at N/4.
+  - **Suggested fix** (the builder's call):
+    - interleave the N and N/4 runs so both see the same load, with more runs (best of about 7);
+    - raise the floor to about 5 ms, or compare per-element times against a reference guard measured in the same rounds;
+    - or retry a failure once before failing.
+  - The previous absolute bound held 3/3 under my lighter mutant-build load. Neither version has been measured on CI.
+- **New, Low:**
+  - `decisions/DEC-010-report-rendering-contract.md` is untouched, so its part 4 ("quoted iff it contains a comma, quote, CR or LF") and its part 2 escape list no longer describe the code. The same is true of SPEC-015 rules 3 and 6.
+  - The architect should amend DEC-010; I did not edit `decisions/`.
+
+#### Mutants against the new code
+
+Applied in a scratch copy, which I restored and checked by hash. The control run was green.
+
+| # | Mutant | Caught by |
+|---|---|---|
+| 32 | `;` dropped from the quoting rule | `csv_quotes_comma_quote_cr_lf_and_doubles_quotes` (unit), `csv_semicolon_fields_are_quoted_and_parse_back_as_one_field`, plants, harness, cross product |
+| 33 | U+200B left unescaped | `safe_text_escapes_controls_c1_bidi_separators_quote_and_backslash`, `text_has_no_forbidden_character_or_phrase` |
+| 34 | tag range stops at U+E007E | `safe_text_escapes_...` only |
+| 35 | the residual also sums unreliable files (V24) | `summary_residual_counts_the_reliable_files_only_when_an_unreliable_file_has_findings` only |
+| 36 | text excerpt cut after escaping (V8) | `excerpt_content_is_the_expected_escaped_text_in_every_format` only |
+| 37 | `Debug` prints the bytes | `debug_of_an_item_and_an_audit_never_prints_the_payload` |
+| N1 (mine) | tag characters written with 4 hex digits | `safe_text_escapes_...` |
+| N2 (mine) | the harness's quoting rule forgets `;` | `each_render_guard_goes_red_alone_when_planted`, harness, cross product |
+| N3 (mine) | formula `'` written outside the quotes (`'"=a,b"`) | `csv_formula_guard_prefixes_each_trigger_character_on_hostile_fields_only` (unit), harness |
+| N4 (mine) | the naive `safe_text` forgets the tag range | `the_naive_safe_text_matches_the_dec_010_examples` only. No committed seed holds a tag character, so the harness itself does not notice; it fails only when the fuzzer produces one. |
+
+#### Gates (at `e093e57`, all exit 0)
+
+- fmt on the workspace, the fuzz graph and the three harness files.
+- `just lint`, `lint-fuzz`, `lint-fuzz-red-proof`.
+- `DIAMOND_EXIF_REQUIRE_ORACLE=1 cargo test` on stable (524 passed, 0 failed, 7 ignored) and on `+1.90.0` (524 / 0 / 7). The golden files match the current output (`golden_text_json_csv_match_byte_for_byte` passes), and so does the 18-seed `audit_render_seeds_are_committed_and_have_the_shapes_they_claim`.
+- `cargo run --example fuzz_seeds` leaves `git status --porcelain` empty, so all 18 `audit_render` seeds and every other seed are reproduced byte for byte.
+- `just fuzz-smoke audit_render`, 60 s: 65,811 runs, `DONE cov: 4576 ft: 15465 corp: 969/231Kb`, clean.
 
 ### Cost self-report
 
