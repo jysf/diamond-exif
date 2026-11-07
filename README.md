@@ -5,60 +5,42 @@ Panic-free, pure-Rust, zero-copy EXIF/XMP/IPTC/ICC metadata reader, writer and s
 | Piece | Status | License |
 |---|---|---|
 | `exif-core` | reader and read-only audit model (M1a/M1b); no writer yet | MIT/Apache-2.0 |
-| `exif-audit` CLI (read-only scanner) | planned, first deliverable (SPEC-014 to 016) | free |
+| `exif-audit` CLI (read-only scanner) | library side done (policy presets, text/JSON/CSV renderers, `ReportBuilder`); the binary is next (SPEC-016) | free |
 | `exif-pro` (compliance tier) | scaffold only | paid |
 
-Status: strict TIFF/IFD reader with a tolerant walk (a corrupt sub-IFD becomes a reported issue, not a failure) that reaches the Exif, GPS and Interop IFDs and labels each IFD by how it was reached, plus ASCII, signed-integer and float value decoders (strings are borrowed from the input), a panic-free JPEG segment walker (markers, APPn kinds by signature, scan region and trailer, damage reported as per-segment issues) whose `jpeg::read` hands each Exif segment to the same tolerant TIFF engine and locates (does not decode) the XMP, extended XMP, ICC, IPTC and JUMBF regions with a layered issue view, two fuzz targets, and an ExifTool read-parity oracle (live and replayed) over hand-built fixtures, shown able to fail by mutated-copy red-proofs (a fault injected into a throw-away copy of the library turns the comparison red); a pure-library audit model (`exif_core::audit`: container sniff, inventory of every tag and located region, PII findings by category; inventory parity against ExifTool over 178 distinct inputs) and a total entry budget that bounds memory on overlapping IFDs; no CLI yet. See `CLAUDE.md` and `AGENTS.md`. First decision: DEC-001 (tolerant-walk policy).
+What works today:
 
-## Workflow
+- **Reader:** strict TIFF/IFD parsing with a tolerant walk (a corrupt sub-IFD becomes a reported issue, not a failure). It reaches the Exif, GPS and Interop IFDs, labels each IFD by how it was reached, and decodes ASCII (borrowed from the input), signed-integer and float values. A total entry budget bounds memory on overlapping IFDs.
+- **JPEG:** a panic-free segment walker (markers, APPn kinds by signature, scan region, trailer; damage becomes per-segment issues). `jpeg::read` hands each Exif segment to the same TIFF engine and locates, without decoding, the XMP, extended XMP, ICC, IPTC and JUMBF regions.
+- **Audit model:** `exif_core::audit` does container sniffing, a tag and region inventory, PII findings by category and strip-policy previews. Text, JSON and CSV renderers and an incremental `ReportBuilder` produce the reports.
+- **Verification:** four fuzz targets and an ExifTool read-parity oracle (live and replayed), shown able to fail by mutated-copy red-proofs. Inventory parity against ExifTool covers 178 distinct inputs.
 
-This repo uses a spec-driven multi-agent workflow. Claude handles architecture and review; a separate implementer agent (Kilo Code, Factory Droids, AdaL, Cursor, etc.) handles implementation.
+See `CLAUDE.md` and `AGENTS.md`. First decision: DEC-001 (tolerant-walk policy).
 
-## Hierarchy
+## Build and test
 
-```
-Repo (this app)
- └─ Project (a wave of work: "MVP", "v2 improvements")
-     └─ Stage (a coherent chunk within a project)
-         └─ Spec (an individual task)
-              └─ Cycle (Frame → Design → Build → Verify → Ship)
-```
+App commands live in `app.just` (details in `AGENTS.md` §6):
 
-## Getting started
-
-**First time?** Read `GETTING_STARTED.md` — it walks you through your first project end-to-end.
-
-**Daily work?** Run `just --list` to see available commands.
-
-**Common commands:**
 ```bash
-just status                        # See active project, stage, specs by cycle
-just backlog                       # Spec-grained: what's next in the active stage
-just roadmap                       # Stage-grained: where this project is going
-just new-spec "title" STAGE-001    # Scaffold a new spec
-just advance-cycle SPEC-001 verify # Update a spec's cycle
-just archive-spec SPEC-001         # Move a shipped spec to done/
-just review                        # Print the weekly review prompt
-just report daily                  # Generate today's daily report
-just report weekly                 # Generate this week's weekly report
-just report status                 # Snapshot `just status` to reports/daily/<date>-status.md
+just build              # cargo build
+just test               # cargo test (oracle tests skip LOUDLY without exiftool)
+just lint               # fmt check + clippy
+just deny               # license policy (permissive-only dependencies)
+just forbid-unsafe      # re-check that no unsafe code exists
+just fuzz-smoke [TARGET]  # 60 s smoke per fuzz target (tiff_ifd, jpeg_segments, audit, audit_render)
+just oracle-record      # re-record ExifTool output for the parity fixtures
+just mutation-oracle    # mutated-copy red-proofs against the committed ExifTool records
 ```
-`report-daily` / `report-weekly` remain as permanent aliases for
-`report daily` / `report weekly`.
 
-## Reports
+Run `just --list` for the full set, including the lint and gate red-proofs.
 
-`just report-daily` and `just report-weekly` generate quantitative
-snapshots under `reports/daily/` and `reports/weekly/` from spec
-front-matter and git log. Daily reports show specs by cycle, value
-thesis, cost activity today, and flags. Weekly reports aggregate
-ships, cycle times, cost by cycle and interface, and value
-advancement. Reports are stand-alone artifacts — re-running
-overwrites, so they're always a current snapshot.
+## Process
 
-## The app itself
+This repo is built with a spec-driven, multi-agent workflow (Claude architects and reviews, a separate implementer agent builds from handoffs). The workflow commands (`just status`, `just new-spec`, ...) come from [spec-driven-template](https://github.com/jysf/spec-driven-template), which this repo was scaffolded from (`VERSION` records the template version); they are not documented here.
 
-Build and test commands are in `AGENTS.md` §6 (wrapped by `app.just`). The crate is scaffolded first; promotion to a workspace is planned for M2.
+- `AGENTS.md`: conventions, constraints and the build/test commands.
+- `docs/PLAYBOOK.md` and `docs/USAGE.md`: the workflow and its daily loop.
+- `projects/PROJ-001-diamond-exif-m1/brief.md`: the current project; `just status` shows where it stands.
 
 ## Where things live
 
