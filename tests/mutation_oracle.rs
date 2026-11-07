@@ -1674,7 +1674,7 @@ fn inventory_probe_control_run_is_clean_before_every_mutant() {
         .filter(|d| !inventory_corpus::is_not_run(d))
         .map(|d| d.canonical.key())
         .collect();
-    assert_eq!(keys.len(), 177);
+    assert_eq!(keys.len(), 179);
     let refs: Vec<&str> = keys.iter().map(String::as_str).collect();
     assert_inventory_control("inventory-all", &refs);
     // The mutants' inputs are among them.
