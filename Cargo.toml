@@ -25,3 +25,9 @@ path = "src/lib.rs"
 # Zero dependencies by design (DEC-002). Adding one needs a DEC; see
 # guidance/constraints.yaml `no-new-top-level-deps-without-decision`.
 [dependencies]
+
+# The privacy-scan CLI (SPEC-016, DEC-011): all `std::fs` and stdout code lives
+# here; the library stays I/O-free. No dependencies.
+[[bin]]
+name = "exif-audit"
+path = "src/bin/exif-audit/main.rs"

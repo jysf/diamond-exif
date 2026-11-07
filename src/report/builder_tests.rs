@@ -450,8 +450,44 @@ fn builder_summary_max_severity_is_the_maximum_in_both_add_orders() {
         FileResult::Audited(a) => a.max_severity(),
         FileResult::Failed { .. } => None,
     };
+    // Artist is medium (authorship): the middle rank, so a swapped Low/Medium
+    // ranking (Medium counted below Low) changes a maximum (SPEC-018 verify D2).
+    let medium_bytes = tiff_inline_ascii(0x013B);
+    let medium = FileEntry {
+        label: b"medium",
+        result: FileResult::Audited(audit(&medium_bytes)),
+    };
     assert_eq!(sev(&high), Some(Severity::High));
+    assert_eq!(sev(&medium), Some(Severity::Medium));
     assert_eq!(sev(&low), Some(Severity::Low));
+    // Medium with Low only, both orders: the maximum is Medium.
+    for opts in option_set() {
+        for order in [[&medium, &low], [&low, &medium]] {
+            for format in FORMATS {
+                let mut b = ReportBuilder::new(format, opts);
+                for e in order {
+                    b.add(e);
+                }
+                assert_eq!(b.summary().max_severity, Some(Severity::Medium));
+            }
+        }
+        // All three, in every order: High; without High, Medium.
+        let all: [[&FileEntry<'_>; 3]; 6] = [
+            [&high, &medium, &low],
+            [&high, &low, &medium],
+            [&medium, &high, &low],
+            [&medium, &low, &high],
+            [&low, &high, &medium],
+            [&low, &medium, &high],
+        ];
+        for order in all {
+            let mut b = ReportBuilder::new(Format::Json, opts);
+            for e in order {
+                b.add(e);
+            }
+            assert_eq!(b.summary().max_severity, Some(Severity::High));
+        }
+    }
     for opts in option_set() {
         for order in [[&high, &low], [&low, &high]] {
             for format in FORMATS {

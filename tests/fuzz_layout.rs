@@ -1374,7 +1374,7 @@ fn audit_target_is_declared_and_runs_in_ci() {
     assert!(root().join("fuzz/shared/audit_invariants.rs").is_file());
     let ci = read(".github/workflows/ci.yml");
     assert!(
-        ci.contains("target: [tiff_ifd, jpeg_segments, audit, audit_render]"),
+        ci.contains("target: [tiff_ifd, jpeg_segments, audit, audit_render, cli_args]"),
         "the fuzz-smoke matrix must run the audit target"
     );
 }
@@ -2939,12 +2939,12 @@ fn audit_render_target_is_declared_and_runs_in_ci() {
     }
     let ci = read(".github/workflows/ci.yml");
     assert!(
-        ci.contains("audit_render]"),
+        ci.contains("audit_render, cli_args]"),
         "the fuzz-smoke matrix must run the audit_render target"
     );
     let app = read("app.just");
     assert!(
-        app.contains("audit audit_render\"") && app.contains("`audit_render`"),
+        app.contains("audit audit_render cli_args\"") && app.contains("`audit_render`"),
         "`just fuzz-smoke` must know audit_render"
     );
 }
@@ -3876,8 +3876,89 @@ fn same_length_corrupt(s: &mut String) {
     assert_eq!(s.len(), before);
 }
 
+/// Where `same_length_corrupt_at` flips a letter.
+#[derive(Clone, Copy)]
+enum Where {
+    /// The last ASCII letter of the output.
+    End,
+    /// The ASCII letter nearest the middle byte.
+    Middle,
+}
+
+/// Change one letter's case at `at`, keeping the length (SPEC-018 verify D1: a
+/// guard that compares the length plus the first 16 bytes must not pass).
+fn same_length_corrupt_at(s: &mut String, at: Where) {
+    let before = s.len();
+    let letters: Vec<usize> = s
+        .char_indices()
+        .filter(|(_, ch)| ch.is_ascii_alphabetic())
+        .map(|(i, _)| i)
+        .collect();
+    let i = match at {
+        Where::End => *letters.last().expect("a letter"),
+        Where::Middle => *letters
+            .iter()
+            .min_by_key(|i| i.abs_diff(before / 2))
+            .expect("a letter"),
+    };
+    assert!(i >= 16, "the flipped letter is past the first 16 bytes");
+    let flipped = if s[i..].starts_with(|c: char| c.is_ascii_lowercase()) {
+        s[i..i + 1].to_ascii_uppercase()
+    } else {
+        s[i..i + 1].to_ascii_lowercase()
+    };
+    s.replace_range(i..=i, &flipped);
+    assert_eq!(s.len(), before);
+}
+
 fn builder_plants() -> Vec<BuilderPlant> {
     vec![
+        BuilderPlant {
+            name: "same-length corruption at the END of the builder output of reverse/json",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "reverse/json");
+                same_length_corrupt_at(&mut c.pairs[i].builder, Where::End);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption at the END of the builder output of reverse/text",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "reverse/text");
+                same_length_corrupt_at(&mut c.pairs[i].builder, Where::End);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption in the MIDDLE of the builder output of reverse/csv",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "reverse/csv");
+                same_length_corrupt_at(&mut c.pairs[i].builder, Where::Middle);
+            },
+        },
+        BuilderPlant {
+            name:
+                "same-length corruption in the MIDDLE of the builder output of alone-audited/json",
+            input: HOUSE_ALL_PII,
+            side: Side::Builder,
+            apply: |c| {
+                let i = pair_at(c, "alone-audited/json");
+                same_length_corrupt_at(&mut c.pairs[i].builder, Where::Middle);
+            },
+        },
+        BuilderPlant {
+            name: "same-length corruption at the END of the one-shot output of alone-failed/csv",
+            input: HOUSE_ALL_PII,
+            side: Side::OneShot,
+            apply: |c| {
+                let i = pair_at(c, "alone-failed/csv");
+                same_length_corrupt_at(&mut c.pairs[i].oneshot, Where::End);
+            },
+        },
         BuilderPlant {
             name: "same-length corruption of the builder output of forward/text",
             input: HOUSE_ALL_PII,
@@ -4378,5 +4459,597 @@ fn preview_custom_case_is_non_trivial() {
     assert!(
         splitting >= 3,
         "only {splitting} audits are split by their custom set"
+    );
+}
+
+// ── SPEC-016: the `cli_args` target (argument parser, DEC-011 part 1) ────────
+
+// The real parser, as the fuzz target includes it.
+#[allow(dead_code)]
+#[path = "../src/bin/exif-audit/args.rs"]
+mod cli_args_src;
+include!("../fuzz/shared/cli_invariants.rs");
+
+use cli_args_src::Outcome as CliOutcome;
+use cli_invariants::Ctx as CliCtx;
+
+fn cli_seed_path(name: &str) -> PathBuf {
+    root().join("fuzz/seeds/cli_args").join(name)
+}
+
+fn cli_ctx(seed: &str) -> CliCtx {
+    let path = cli_seed_path(seed);
+    let bytes = fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    cli_invariants::build(&bytes)
+}
+
+/// The outcome of parsing these arguments (a way to get a `Usage` or a `Run`
+/// value without constructing the parser's private types).
+fn cli_outcome_of(args: &[&str]) -> CliOutcome {
+    let os: Vec<std::ffi::OsString> = args.iter().map(std::ffi::OsString::from).collect();
+    cli_args_src::parse(&os)
+}
+
+/// Every committed `cli_args` seed with the class of outcome it claims.
+const CLI_ARGS_SEEDS: [(&str, &str); 30] = [
+    ("cli-csv-shorthand", "run"),
+    ("cli-defaults", "run"),
+    ("cli-double-dash", "run"),
+    ("cli-empty-path-and-option", "run"),
+    ("cli-equals-forms", "run"),
+    ("cli-every-option", "run"),
+    (
+        "cli-flag-with-value",
+        "usage: --strict does not take a value",
+    ),
+    (
+        "cli-format-json-conflict",
+        "usage: only one of --format, --json and --csv may be given",
+    ),
+    ("cli-help-after-dash-dash", "run"),
+    ("cli-help-after-invalid", "help"),
+    ("cli-help-and-version", "help"),
+    ("cli-hostile-bytes", "usage: unknown option: --\\xff\\xfe"),
+    (
+        "cli-json-csv-conflict",
+        "usage: only one of --format, --json and --csv may be given",
+    ),
+    ("cli-json-shorthand", "run"),
+    ("cli-lone-dash", "usage: a lone - is not a path"),
+    ("cli-long-unknown-option", "usage: unknown option: --aaaa"),
+    ("cli-missing-value", "usage: missing value for --format"),
+    ("cli-no-path", "usage: no path given"),
+    ("cli-non-utf8-value", "usage: bad value for --format: \\xff"),
+    ("cli-repeat-flag", "usage: --strict given more than once"),
+    ("cli-repeat-option", "usage: --policy given more than once"),
+    ("cli-size-largest-fit", "run"),
+    (
+        "cli-size-lowercase-suffix",
+        "usage: bad value for --max-size: 1k",
+    ),
+    (
+        "cli-size-overflow",
+        "usage: bad value for --max-size: 18446744073709551616",
+    ),
+    ("cli-size-zero", "usage: bad value for --max-size: 0"),
+    ("cli-two-empty-arguments", "run"),
+    ("cli-two-paths", "run"),
+    ("cli-unknown-option", "usage: unknown option: -x"),
+    (
+        "cli-value-looks-like-option",
+        "usage: bad value for --policy: --json",
+    ),
+    ("cli-version", "version"),
+];
+
+#[test]
+fn cli_args_target_is_declared_and_runs_in_ci() {
+    let fuzz = read("fuzz/Cargo.toml");
+    assert!(
+        fuzz.contains("name = \"cli_args\"") && fuzz.contains("fuzz_targets/cli_args.rs"),
+        "fuzz/Cargo.toml must declare the cli_args bin"
+    );
+    for f in [
+        "fuzz/fuzz_targets/cli_args.rs",
+        "fuzz/shared/cli_invariants.rs",
+    ] {
+        assert!(root().join(f).is_file(), "{f}");
+    }
+    let target = read("fuzz/fuzz_targets/cli_args.rs");
+    assert!(
+        target.contains("../../src/bin/exif-audit/args.rs"),
+        "the target must fuzz the real parser through #[path]"
+    );
+    assert!(read(".github/workflows/ci.yml").contains("audit_render, cli_args]"));
+    assert!(read("app.just").contains("audit audit_render cli_args\""));
+}
+
+#[test]
+fn cli_args_seeds_are_committed_and_have_the_shapes_they_claim() {
+    let dir = root().join("fuzz/seeds/cli_args");
+    let mut names: Vec<String> = fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("{}: {e}", dir.display()))
+        .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    let want: Vec<&str> = CLI_ARGS_SEEDS.iter().map(|s| s.0).collect();
+    assert_eq!(names, want, "the cli_args seed set");
+    assert!(names.len() >= 16);
+    for (name, class) in CLI_ARGS_SEEDS {
+        let c = cli_ctx(name);
+        match (&c.outcome, class) {
+            (CliOutcome::Run(_), "run") => {}
+            (CliOutcome::Help, "help") => {}
+            (CliOutcome::Version, "version") => {}
+            (CliOutcome::Usage(e), cl) if cl.starts_with("usage: ") => {
+                let m = e.message();
+                assert!(
+                    m.starts_with(&cl["usage: ".len()..]),
+                    "{name}: message {m:?}, want prefix {cl:?}"
+                );
+            }
+            (o, class) => panic!("{name}: outcome {o:?}, claimed {class}"),
+        }
+        assert!(cli_invariants::violations(&c).is_empty(), "{name}");
+    }
+    // The Run seeds say what they mean.
+    let run = |n: &str| match cli_ctx(n).outcome {
+        CliOutcome::Run(o) => o,
+        other => panic!("{n}: {other:?}"),
+    };
+    use exif_core::audit::Severity;
+    use exif_core::report::Format;
+    use exif_core::StripPolicy;
+    let d = run("cli-defaults");
+    assert_eq!(
+        (
+            d.format,
+            d.policy,
+            d.fail_on,
+            d.strict,
+            d.values,
+            d.inventory,
+            d.max_size
+        ),
+        (
+            Format::Text,
+            Some(StripPolicy::AllPii),
+            Some(Severity::High),
+            false,
+            false,
+            false,
+            256 * 1024 * 1024
+        )
+    );
+    let e = run("cli-every-option");
+    assert_eq!(
+        (
+            e.format,
+            e.policy,
+            e.fail_on,
+            e.strict,
+            e.values,
+            e.inventory,
+            e.max_size
+        ),
+        (
+            Format::Json,
+            Some(StripPolicy::Gps),
+            Some(Severity::Low),
+            true,
+            true,
+            true,
+            512 * 1024
+        )
+    );
+    assert_eq!(e.paths.len(), 2);
+    let q = run("cli-equals-forms");
+    assert_eq!(
+        (q.format, q.policy, q.fail_on, q.max_size),
+        (Format::Csv, None, None, 1 << 30)
+    );
+    let dd = run("cli-double-dash");
+    assert!(dd.strict);
+    let paths: Vec<&[u8]> = dd.paths.iter().map(|p| p.as_encoded_bytes()).collect();
+    assert_eq!(paths, [&b"--json"[..], b"-", b"-h", b"--"]);
+    assert_eq!(run("cli-help-after-dash-dash").paths.len(), 2);
+    assert_eq!(
+        run("cli-size-largest-fit").max_size,
+        17_179_869_183 * (1 << 30)
+    );
+    let empties = run("cli-two-empty-arguments");
+    assert!(empties.paths.iter().all(|p| p.is_empty()) && empties.paths.len() == 2);
+    // The hostile seed really holds non-UTF-8 bytes.
+    let h = cli_ctx("cli-hostile-bytes");
+    assert!(h.args.iter().any(|a| std::str::from_utf8(a).is_err()));
+    assert!(h.args.iter().any(|a| a.contains(&0x1B)));
+    // The long argument is long, and its message is cut.
+    let l = cli_ctx("cli-long-unknown-option");
+    assert!(l.args[0].len() > 300);
+    assert!(l.message.expect("usage").len() <= 300);
+}
+
+/// Every committed seed of every target read as an argument list, plus
+/// degenerate inputs.
+fn cli_harness_inputs() -> Vec<(String, Vec<u8>)> {
+    let mut inputs: Vec<(String, Vec<u8>)> = Vec::new();
+    for target in [
+        "tiff_ifd",
+        "jpeg_segments",
+        "audit",
+        "audit_render",
+        "cli_args",
+    ] {
+        let dir = root().join("fuzz/seeds").join(target);
+        for e in fs::read_dir(&dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display())) {
+            let e = e.expect("entry");
+            inputs.push((
+                format!("{target}/{}", e.file_name().to_string_lossy()),
+                fs::read(e.path()).expect("seed"),
+            ));
+        }
+    }
+    for (name, data) in [
+        ("empty", &b""[..]),
+        ("one NUL", b"\0"),
+        ("three NULs", b"\0\0\0"),
+        ("trailing NUL", b"p\0"),
+        ("leading NUL", b"\0p"),
+        ("only dash-dash", b"--"),
+        ("dash-dash NUL dash-dash", b"--\0--"),
+        ("every byte", &(0..=255u8).collect::<Vec<u8>>()),
+    ] {
+        inputs.push((name.to_string(), data.to_vec()));
+    }
+    inputs
+}
+
+const CLI_VOCAB: [&[u8]; 30] = [
+    b"p",
+    b"-",
+    b"--",
+    b"-h",
+    b"--help",
+    b"-V",
+    b"--version",
+    b"--format",
+    b"--format=json",
+    b"--json",
+    b"--csv",
+    b"json",
+    b"text",
+    b"--policy",
+    b"--policy=none",
+    b"gps",
+    b"none",
+    b"--fail-on",
+    b"high",
+    b"--strict",
+    b"--values",
+    b"--inventory",
+    b"--max-size",
+    b"--max-size=1K",
+    b"0",
+    b"1G",
+    b"\xFF",
+    b"-x",
+    b"--strict=1",
+    b"",
+];
+
+fn cli_sweep(seq: &mut Vec<&[u8]>, depth: usize, n: &mut u64) {
+    if !seq.is_empty() {
+        cli_invariants::check(&seq.join(&0u8));
+        *n += 1;
+    }
+    if depth == 0 {
+        return;
+    }
+    for t in CLI_VOCAB {
+        seq.push(t);
+        cli_sweep(seq, depth - 1, n);
+        seq.pop();
+    }
+}
+
+#[test]
+fn cli_args_harness_holds_on_every_seed_and_degenerate_inputs() {
+    let inputs = cli_harness_inputs();
+    for (name, data) in &inputs {
+        let bad = cli_invariants::violations(&cli_invariants::build(data));
+        assert!(bad.is_empty(), "{name}: {bad:?}");
+    }
+    // An exhaustive sweep: every sequence of up to three tokens from a
+    // vocabulary that covers every option, its values, the separators and the
+    // hostile shapes (30^3 argument lists), then a deterministic sample of
+    // longer ones.
+    let mut n = 0u64;
+    cli_sweep(&mut Vec::new(), 3, &mut n);
+    let mut x: u64 = 0x9E37_79B9_7F4A_7C15;
+    for _ in 0..20_000 {
+        let len = 4 + (x % 8) as usize;
+        let mut toks: Vec<&[u8]> = Vec::new();
+        for _ in 0..len {
+            x = x
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            toks.push(CLI_VOCAB[((x >> 33) % 30) as usize]);
+        }
+        cli_invariants::check(&toks.join(&0u8));
+        n += 1;
+    }
+    println!(
+        "{} seeds and degenerate inputs, {n} swept argument lists",
+        inputs.len()
+    );
+}
+
+/// One planted bug: a wrong outcome (or message) put into the case built from
+/// the seed, which the named guard, run ALONE, must reject.
+struct CliPlant {
+    name: &'static str,
+    input: &'static str,
+    guard: &'static str,
+    apply: fn(&mut CliCtx),
+}
+
+fn run_of(args: &[&str]) -> CliOutcome {
+    match cli_outcome_of(args) {
+        o @ CliOutcome::Run(_) => o,
+        other => panic!("{args:?}: {other:?}"),
+    }
+}
+
+fn usage_of(args: &[&str]) -> CliOutcome {
+    match cli_outcome_of(args) {
+        o @ CliOutcome::Usage(_) => o,
+        other => panic!("{args:?}: {other:?}"),
+    }
+}
+
+fn with_run(c: &mut CliCtx, f: impl FnOnce(&mut cli_args_src::Options)) {
+    match &mut c.outcome {
+        CliOutcome::Run(o) => f(o),
+        other => panic!("the plant needs a Run, got {other:?}"),
+    }
+}
+
+fn cli_plants() -> Vec<CliPlant> {
+    vec![
+        // args_total
+        CliPlant {
+            name: "the second parse is Help",
+            input: "cli-defaults",
+            guard: "args_total",
+            apply: |c| c.again = CliOutcome::Help,
+        },
+        CliPlant {
+            name: "the second parse flips --strict",
+            input: "cli-every-option",
+            guard: "args_total",
+            apply: |c| {
+                c.again = c.outcome.clone();
+                if let CliOutcome::Run(o) = &mut c.again {
+                    o.strict = !o.strict;
+                }
+            },
+        },
+        CliPlant {
+            name: "the second parse is a usage error",
+            input: "cli-defaults",
+            guard: "args_total",
+            apply: |c| c.again = usage_of(&["--bogus"]),
+        },
+        // args_help_iff, both directions
+        CliPlant {
+            name: "Help for arguments with no help argument",
+            input: "cli-defaults",
+            guard: "args_help_iff",
+            apply: |c| c.outcome = CliOutcome::Help,
+        },
+        CliPlant {
+            name: "a usage error for a help argument after an invalid option",
+            input: "cli-help-after-invalid",
+            guard: "args_help_iff",
+            apply: |c| c.outcome = usage_of(&["--bogus"]),
+        },
+        CliPlant {
+            name: "Version for -h next to --version",
+            input: "cli-help-and-version",
+            guard: "args_help_iff",
+            apply: |c| c.outcome = CliOutcome::Version,
+        },
+        CliPlant {
+            name: "Help honoured after `--`",
+            input: "cli-help-after-dash-dash",
+            guard: "args_help_iff",
+            apply: |c| c.outcome = CliOutcome::Help,
+        },
+        CliPlant {
+            name: "Run for -V",
+            input: "cli-version",
+            guard: "args_help_iff",
+            apply: |c| c.outcome = run_of(&["p"]),
+        },
+        CliPlant {
+            name: "Help for -V",
+            input: "cli-version",
+            guard: "args_help_iff",
+            apply: |c| c.outcome = CliOutcome::Help,
+        },
+        // args_run_shape, both directions and each field
+        CliPlant {
+            name: "a default changed: --fail-on none",
+            input: "cli-defaults",
+            guard: "args_run_shape",
+            apply: |c| with_run(c, |o| o.fail_on = None),
+        },
+        CliPlant {
+            name: "a default changed: --policy none",
+            input: "cli-defaults",
+            guard: "args_run_shape",
+            apply: |c| with_run(c, |o| o.policy = None),
+        },
+        CliPlant {
+            name: "a default changed: --format json",
+            input: "cli-defaults",
+            guard: "args_run_shape",
+            apply: |c| with_run(c, |o| o.format = exif_core::report::Format::Json),
+        },
+        CliPlant {
+            name: "a default changed: --max-size one lower",
+            input: "cli-defaults",
+            guard: "args_run_shape",
+            apply: |c| with_run(c, |o| o.max_size -= 1),
+        },
+        CliPlant {
+            name: "a flag lost: --values",
+            input: "cli-every-option",
+            guard: "args_run_shape",
+            apply: |c| with_run(c, |o| o.values = false),
+        },
+        CliPlant {
+            name: "paths in the wrong order",
+            input: "cli-two-paths",
+            guard: "args_run_shape",
+            apply: |c| with_run(c, |o| o.paths.reverse()),
+        },
+        CliPlant {
+            name: "the last path dropped after `--`",
+            input: "cli-double-dash",
+            guard: "args_run_shape",
+            apply: |c| {
+                with_run(c, |o| {
+                    o.paths.pop();
+                })
+            },
+        },
+        CliPlant {
+            name: "no path at all",
+            input: "cli-defaults",
+            guard: "args_run_shape",
+            apply: |c| with_run(c, |o| o.paths.clear()),
+        },
+        CliPlant {
+            name: "Run for a repeated option",
+            input: "cli-repeat-option",
+            guard: "args_run_shape",
+            apply: |c| c.outcome = run_of(&["p"]),
+        },
+        CliPlant {
+            name: "Run for a lone dash",
+            input: "cli-lone-dash",
+            guard: "args_run_shape",
+            apply: |c| c.outcome = run_of(&["p"]),
+        },
+        CliPlant {
+            name: "a usage error for valid arguments",
+            input: "cli-every-option",
+            guard: "args_run_shape",
+            apply: |c| c.outcome = usage_of(&["--bogus"]),
+        },
+        CliPlant {
+            name: "a usage error for arguments after `--`",
+            input: "cli-help-after-dash-dash",
+            guard: "args_run_shape",
+            apply: |c| c.outcome = usage_of(&["--bogus"]),
+        },
+        // args_usage_message
+        CliPlant {
+            name: "an empty message",
+            input: "cli-size-zero",
+            guard: "args_usage_message",
+            apply: |c| c.message = Some(String::new()),
+        },
+        CliPlant {
+            name: "a non-ASCII message",
+            input: "cli-size-zero",
+            guard: "args_usage_message",
+            apply: |c| c.message = Some("bad value for --max-size: caf\u{e9}".into()),
+        },
+        CliPlant {
+            name: "a control character in the message",
+            input: "cli-unknown-option",
+            guard: "args_usage_message",
+            apply: |c| c.message = Some("unknown option: a\nb".into()),
+        },
+        CliPlant {
+            name: "a 301-byte message",
+            input: "cli-long-unknown-option",
+            guard: "args_usage_message",
+            apply: |c| c.message = Some("a".repeat(301)),
+        },
+        CliPlant {
+            name: "an ESC in the message",
+            input: "cli-hostile-bytes",
+            guard: "args_usage_message",
+            apply: |c| c.message = Some("unknown option: \u{1b}[31m".into()),
+        },
+        CliPlant {
+            name: "a message on a Run",
+            input: "cli-defaults",
+            guard: "args_usage_message",
+            apply: |c| c.message = Some("no path given".into()),
+        },
+        // args_format_conflict
+        CliPlant {
+            name: "--json with --csv gives Run",
+            input: "cli-json-csv-conflict",
+            guard: "args_format_conflict",
+            apply: |c| c.outcome = run_of(&["--json", "p"]),
+        },
+        CliPlant {
+            name: "--format with --json gives Run",
+            input: "cli-format-json-conflict",
+            guard: "args_format_conflict",
+            apply: |c| c.outcome = run_of(&["--format", "text", "p"]),
+        },
+        CliPlant {
+            name: "--json with --csv gives a Run with the last format",
+            input: "cli-json-csv-conflict",
+            guard: "args_format_conflict",
+            apply: |c| c.outcome = run_of(&["--csv", "p"]),
+        },
+    ]
+}
+
+#[test]
+fn each_cli_args_guard_goes_red_alone_when_planted() {
+    let plants = cli_plants();
+    // Every guard has at least two plants (one per direction where it has two).
+    for (name, _) in cli_invariants::GUARDS {
+        let n = plants.iter().filter(|p| p.guard == *name).count();
+        assert!(n >= 2, "guard {name} has {n} plant(s), want at least two");
+    }
+    for p in &plants {
+        let good = cli_ctx(p.input);
+        // CONTROL: the unplanted case satisfies every guard.
+        let control = cli_invariants::violations(&good);
+        assert!(
+            control.is_empty(),
+            "{}: control on {}: {control:?}",
+            p.name,
+            p.input
+        );
+        // MUTATION: rejected by the named guard ALONE.
+        let mut bad = good.clone();
+        (p.apply)(&mut bad);
+        assert!(
+            format!("{bad:?}") != format!("{good:?}"),
+            "{}: the plant changed nothing",
+            p.name
+        );
+        let alone = cli_invariants::run_guard(p.guard, &bad);
+        assert!(
+            alone.is_err(),
+            "{}: guard {} did not reject the planted bug on {}",
+            p.name,
+            p.guard,
+            p.input
+        );
+    }
+    println!(
+        "{} cli plants, each rejected by its own guard alone",
+        plants.len()
     );
 }
