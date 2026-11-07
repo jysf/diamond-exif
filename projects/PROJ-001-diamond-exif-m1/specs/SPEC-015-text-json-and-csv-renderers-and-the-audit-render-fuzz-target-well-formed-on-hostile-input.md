@@ -91,6 +91,15 @@ Pure text, JSON and CSV renderers over `FileAudit` and `Preview` (and a run summ
 - The Class H rule in `tests/support/inventory.rs` drops every ExifTool region line for a bare TIFF; the companion test checks the file carries one of the four directory-valued ids but not that the region kind matches the id (0x83BB -> Iptc, 0x02BC -> Xmp, 0x8773 -> Icc, 0x8649 -> Photoshop/Iptc). Tighten when a second such input appears.
 - The inventory records do not keep ExifTool's exit status (it is 1 on four inputs where both sides are empty); record it if a future divergence could hide there.
 
+## Carried from SPEC-014 verify (findings, none blocking)
+
+From HANDOFF-030; SPEC-015 extends the same `audit` harness, so these belong here:
+
+- **F1 (Medium).** Add the two hand-built full-house inputs of `tests/fuzz_layout.rs` (JPEG and TIFF) as `fuzz/seeds/audit` seeds, so the libFuzzer target, not only the stable layout test, reaches DeviceId and MakerNote (a plant of mutant 9 was not found in 181 s). This moves the audit seed count from 76 to 78: update `audit_model.rs` and the seed hash lists in the same change.
+- **F2 (Low).** Cover rule 4's truncated branch end to end with an input `audit()` really truncates (the `over` input of the cap-boundary test: 65,535 entries then Make and BodySerialNumber), so mutants 15, 16 and the harness's truncated `all()` exception are caught outside the hand-built `FileAudit`.
+- **F3 (Low).** Assert the harness's `Custom` case is non-trivial (some inputs give a set that is neither empty nor `all()`), so it cannot silently become `Custom(none)`.
+- **Wording.** Renderers describe `Kept` for a block as "not targeted by this policy" and `KeptUnread` as "may hold"; they read `reliable()` before the residual numbers (DEC-009 amendment 2026-11-06).
+
 ## Non-Goals
 
 - Reading or writing files; argument handling (SPEC-016)

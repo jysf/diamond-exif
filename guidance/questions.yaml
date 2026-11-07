@@ -644,3 +644,15 @@ questions:
       called safe. A user may expect a GPS strip to leave no GPS anywhere. The alternative
       (widen the presets) is recorded as rejected in DEC-009. Revisit with the writer, or
       earlier if SPEC-016's exit codes make `KeptUnread` too noisy to use.
+
+  - id: strip-may-hold-gaps
+    question: "Should DEC-009's may-hold table gain the pairs the SPEC-014 verify found missing (MakerNote holds Authorship; IPTC holds Software and textual locations; blocks hold other blocks)?"
+    priority: low
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-06
+    assigned_to: null
+    notes: |
+      No preset outcome changes (the pairs fall in cells already Removed or KeptUnread), so
+      this affects `Custom` policies only. Amend DEC-009, `may_hold` and the three hand-typed
+      grids together, with the first writer spec or a user report. Source: HANDOFF-030 F6.

@@ -6,14 +6,14 @@
 task:
   id: SPEC-014
   type: story                      # epic | story | task | bug | chore
-  cycle: verify  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
-  complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
+  complexity_actual: M             # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: approved  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
@@ -72,10 +72,19 @@ cost:
       duration_minutes: 18
       recorded_at: 2026-11-06
       notes: "tokens transcribed by the orchestrator from the sub-agent metered result (subagent_tokens 268,470; 1,094,453 ms wall-clock)"                      # one line if unusual (rework, no meter, etc.)
+    - cycle: verify
+      agent: claude-opus-5-5
+      interface: other
+      tokens_total: 185245
+      estimated_usd: 1.22
+      duration_minutes: 12
+      recorded_at: 2026-11-06
+      notes: "tokens transcribed by the orchestrator from the sub-agent metered result (subagent_tokens 185,245; 699,500 ms wall-clock); the verifier's own 40-minute estimate is not used"
   totals:
-    tokens_total: 268470
-    estimated_usd: 1.77
-    session_count: 1
+    tokens_total: 453715
+    estimated_usd: 2.99
+    session_count: 2
+shipped_at: 2026-11-06
 ---
 
 # SPEC-014: StripPolicy presets as data and the policy preview; DEC for preset semantics
@@ -316,25 +325,20 @@ The report lists, for each, the test or guard that failed:
 *Appended during **ship**. Three questions, short answers.*
 
 1. **What would I do differently next time?**
-   — <answer>
+   — Count the committed seeds before writing a number into a spec (I wrote 29 TIFF seeds; there are 32), and check that a mutant's wording type-checks (mutant 13 did not). I would also have put the two full-house inputs in `fuzz/seeds/audit` in the design, since a harness guard is only as strong as the categories its seeds reach (verify F1).
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — DEC-009 gained an amendment (Icc is kept by decision; read `reliable` first; may-hold gaps recorded as a question). Lesson, N=1: a fuzz guard over a classification needs seeds that reach every class, or it proves nothing about the unreached ones. Not codified at N=1.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — No new spec. Verify findings F1 to F3 and the renderer wording are carried into SPEC-015; the may-hold gaps and unclassified-entry preview are questions.
 
 4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
    the defect-escape distribution is greppable across specs:
    `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
    `none` (clean first try).
-   — <one word>
-   *(Runtime/operational defects — the escape-prone class — only exist once the
-   artifact meets its real host. `escaped` here is a signal to strengthen the
-   §12 behavioral pre-flight for that surface.)*
+   — build
+   *(The builder found that mutants 1 and 3 passed the fuzz harness because no seed held a DeviceId or MakerNote finding, and fixed it with full-house inputs; verify found the remaining reach gap in the libFuzzer target.)*
 
 5. **What can a user do now that they couldn't before?** — one sentence,
    before → after; quote the confirming number if one exists, name the outcome
@@ -343,4 +347,4 @@ The report lists, for each, the test or guard that failed:
    `impact` field is transcribed from, and both halves are already written above
    (## Context is the before, ## Goal is the after): confirm the prediction,
    don't reconstruct it from memory.
-   — <answer | none>
+   — Run `StripPolicy` presets as data and `preview` on an audit to see, per finding, whether a policy removes it, keeps it, or keeps a block it cannot read that may hold what the policy targets (before: no statement of what a strip would do; after: five nested presets, 22 mutants shown red, and a preview that never reads an unsupported, unreadable or truncated file as clean).

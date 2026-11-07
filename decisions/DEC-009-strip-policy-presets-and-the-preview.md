@@ -94,6 +94,14 @@ The strip policies and every report depend on one statement of what a preset mea
 
 The can't-parse blocks are the hard part of the policy question. A preview that said "GpsAndDevice removes the device identity" for a file whose MakerNote holds a serial would be false, and a CI job trusting it would pass a leaking file. `KeptUnread` makes that case a visible, countable outcome instead of a silent one.
 
+## Amendment (2026-11-06, from the SPEC-014 verify)
+
+Three clarifications; no table cell and no code changes.
+
+1. **`Icc` is kept by decision, not because it is empty.** An ICC profile header carries a creation date, device manufacturer and model, a profile creator and free-text tags, so "nothing the policy targets can hide inside it" overstates. `may_hold(Icc)` stays empty because `All` keeps ICC by stated requirement (design section 5) and `Everything` is the explicit opt-in that removes it; marking it `KeptUnread` under every preset would flag every file with a colour profile and make the signal useless. A renderer must therefore describe `Kept` for a block as "not targeted by this policy", never as "contains none of it".
+2. **Read `reliable` first.** When only the inventory cap is hit, the findings are complete but the preview still reports the conservative residual severity (rule 4), so `AllPii` can show `residual_findings == 0` beside a `High` residual severity. This is intended: a caller (SPEC-015, SPEC-016) checks `reliable()` before reading either number.
+3. **Known gaps in the may-hold table, for `Custom` policies only.** No preset's outcome changes, because the missing pairs fall in cells where the block is already removed or already `KeptUnread`: a MakerNote can hold `Authorship` (vendor owner names); IPTC can hold `Software` (OriginatingProgram) and textual locations; a C2PA manifest can carry a thumbnail and XMP; a thumbnail can carry XMP or ICC. They are recorded as question `strip-may-hold-gaps` and amended with the first writer spec or the first user report.
+
 ## Alternatives considered
 
 - **Presets as tag-id lists.** Rejected: it duplicates DEC-008 in a second place; the first drift would make a report promise something a strip does not do.

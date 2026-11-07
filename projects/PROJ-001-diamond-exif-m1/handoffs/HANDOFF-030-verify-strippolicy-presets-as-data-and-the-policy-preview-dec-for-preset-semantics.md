@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: 40
+  tokens_total: 185245             # orchestrator-recorded from the metered sub-agent result (subagent_tokens)
+  estimated_usd: 1.22
+  duration_minutes: 12
   branch: worktree-agent-ae283bfb20cbaec24
   pr: null
   completed_at: 2026-11-06         # YYYY-MM-DD
-  notes: "verify APPROVED at c20df49; the sub-agent cannot read its own meter, the orchestrator transcribes the metered figure"
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "tokens transcribed by the orchestrator from the sub-agent metered result (subagent_tokens 185,245; 699,500 ms wall-clock); the verifier's own 40-minute estimate is not used"
+  synced_at: 2026-11-06
 ---
 
 # HANDOFF-030: Verify StripPolicy presets and the policy preview
@@ -179,9 +179,9 @@ On the brief's question about mutants 15/16 being caught only by one unit test: 
 
 ### Cost self-report
 
-- **Tokens (total):** null. The verifier sub-agent cannot read its own meter; the orchestrator transcribes the metered figure from the sub-agent result.
-- **Estimated USD:** null (follows from the token figure)
-- **Duration (minutes):** about 40 (including 60 s + 60 s + 181 s of fuzzing and a 22-mutant sweep)
+- **Tokens (total):** 185,245 (orchestrator-transcribed from the metered sub-agent result)
+- **Estimated USD:** 1.22 (185,245 tokens at 6.60 USD per Mtok)
+- **Duration (minutes):** 12 (harness wall-clock 699,500 ms; the verifier's own estimate was about 40)
 - **Source of the number:** harness report (to be transcribed by the orchestrator)
 
 ### Drift and new artifacts
