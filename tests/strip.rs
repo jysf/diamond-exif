@@ -543,6 +543,30 @@ fn an_unreadable_exif_block_needs_entry_edit_for_partial_policies() {
 }
 
 #[test]
+fn a_block_with_a_walk_issue_needs_entry_edit_for_partial_policies() {
+    // Found by the verifier: a GPS IFD declaring 0xFFFF entries gives no GPS
+    // finding and no failed block, only a TIFF-layer issue, yet the latitude
+    // and longitude bytes are in the file.
+    let s = shape("gps-count-overflow");
+    assert!(contains(&s.bytes, strip_shapes::C_GPSNUM));
+    assert_eq!(audit(&s.bytes).findings_in(Category::Gps).count(), 0);
+    for p in [
+        StripPolicy::Gps,
+        StripPolicy::GpsAndDevice,
+        StripPolicy::AllPii,
+    ] {
+        assert!(
+            matches!(strip(&s.bytes, p), Err(StripError::NeedsEntryEdit { .. })),
+            "{p:?}"
+        );
+    }
+    // A policy with no Exif category does not care; All removes the block whole.
+    assert!(strip(&s.bytes, policy("xmp")).is_ok());
+    let out = strip(&s.bytes, StripPolicy::All).unwrap();
+    assert!(!contains(out.bytes(), strip_shapes::C_GPSNUM));
+}
+
+#[test]
 fn all_removes_every_exif_block_including_the_extra_ones() {
     let s = shape("two-exif-blocks");
     let out = check_ok(&s, "all");
