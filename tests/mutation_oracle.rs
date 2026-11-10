@@ -38,6 +38,8 @@ mod mutate;
 mod oracle;
 #[path = "support/oracle_jpeg.rs"]
 mod oracle_jpeg;
+#[path = "support/real_shapes.rs"]
+mod real_shapes;
 #[path = "support/oracle_tiff.rs"]
 mod oracle_tiff;
 #[path = "support/probe.rs"]

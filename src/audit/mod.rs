@@ -1367,4 +1367,255 @@ mod tests {
         assert_eq!(a.kind(), b.kind());
         assert_eq!(a.max_severity(), b.max_severity());
     }
+
+    // ── DEC-012: embedded images, comments, other segments, trailers ─────────
+
+    /// A little-endian MPF APP2 segment listing `entries` as `(size, offset)`.
+    fn mpf_seg_le(entries: &[(u32, u32)]) -> Vec<u8> {
+        let mut t = b"II*\0".to_vec();
+        t.extend_from_slice(&8u32.to_le_bytes());
+        t.extend_from_slice(&2u16.to_le_bytes());
+        t.extend_from_slice(&0xB001u16.to_le_bytes());
+        t.extend_from_slice(&4u16.to_le_bytes());
+        t.extend_from_slice(&1u32.to_le_bytes());
+        t.extend_from_slice(&(entries.len() as u32).to_le_bytes());
+        t.extend_from_slice(&0xB002u16.to_le_bytes());
+        t.extend_from_slice(&7u16.to_le_bytes());
+        t.extend_from_slice(&((16 * entries.len()) as u32).to_le_bytes());
+        t.extend_from_slice(&(8u32 + 2 + 24 + 4).to_le_bytes());
+        t.extend_from_slice(&0u32.to_le_bytes());
+        for (size, offset) in entries {
+            t.extend_from_slice(&0u32.to_le_bytes());
+            t.extend_from_slice(&size.to_le_bytes());
+            t.extend_from_slice(&offset.to_le_bytes());
+            t.extend_from_slice(&[0, 0, 0, 0]);
+        }
+        seg(0xE2, &[&b"MPF\0"[..], &t].concat())
+    }
+
+    /// A primary JPEG (with `pre` segments before its MPF index) followed by
+    /// the images back to back, each indexed at its true place.
+    fn mpo(pre: &[Vec<u8>], images: &[Vec<u8>]) -> Vec<u8> {
+        let with = |entries: &[(u32, u32)]| {
+            let mut segs = pre.to_vec();
+            segs.push(mpf_seg_le(entries));
+            jpeg(&segs)
+        };
+        let probe = with(&vec![(0, 0); images.len() + 1]);
+        let mpf_at = 2 + pre.iter().map(Vec::len).sum::<usize>();
+        let header_start = mpf_at + 8;
+        let mut entries = vec![(probe.len() as u32, 0u32)];
+        let mut at = probe.len();
+        for img in images {
+            entries.push((img.len() as u32, (at - header_start) as u32));
+            at += img.len();
+        }
+        let mut file = with(&entries);
+        for img in images {
+            file.extend_from_slice(img);
+        }
+        file
+    }
+
+    fn embedded_findings<'a>(a: &'a FileAudit<'a>) -> Vec<&'a EmbeddedSummary> {
+        a.findings_in(Category::EmbeddedImage)
+            .map(|f| f.embedded.as_ref().expect("an embedded summary"))
+            .collect()
+    }
+
+    fn holds_of(e: &EmbeddedSummary) -> Vec<Category> {
+        e.holds.categories().collect()
+    }
+
+    #[test]
+    fn embedded_image_finding_carries_range_ffd8_flag_and_holds() {
+        let make = build(&[(vec![ascii(0x010F, b"Inner")], None)], &[]);
+        let xmp = seg(0xE1, b"http://ns.adobe.com/xap/1.0/\0<x:xmpmeta/>");
+        let inner = jpeg(&[exif_seg(&make), xmp]);
+        let plain = jpeg(&[]);
+        let file = mpo(&[], &[inner.clone(), plain.clone()]);
+        let a = audit(&file);
+        assert!(a.health().clean, "{:?}", a.health());
+        let embedded = embedded_findings(&a);
+        assert_eq!(embedded.len(), 2);
+        let first_at = file.len() - plain.len() - inner.len();
+        assert_eq!(
+            (embedded[0].offset, embedded[0].length),
+            (first_at, inner.len())
+        );
+        assert_eq!(
+            (embedded[1].offset, embedded[1].length),
+            (first_at + inner.len(), plain.len())
+        );
+        assert!(embedded.iter().all(|e| e.starts_with_ffd8));
+        assert_eq!(
+            holds_of(embedded[0]),
+            vec![Category::Xmp, Category::CameraModel]
+        );
+        assert!(embedded[1].holds.is_empty());
+        // The item is a region of kind EmbeddedImage whose length is the
+        // image's; the inner items are not in the outer inventory.
+        let kinds: Vec<(RegionKind, usize)> = a
+            .items()
+            .iter()
+            .filter_map(|i| match i.kind() {
+                ItemKind::Region { kind, len, .. } => Some((kind, len)),
+                ItemKind::Tag { .. } => None,
+            })
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                (RegionKind::EmbeddedImage, inner.len()),
+                (RegionKind::EmbeddedImage, plain.len())
+            ]
+        );
+        assert_eq!(a.items().len(), 2);
+        assert_eq!(a.max_severity(), Some(Severity::Medium));
+        // Only embedded-image findings carry the summary.
+        assert!(a
+            .findings()
+            .iter()
+            .all(|f| f.embedded.is_some() == (f.category == Category::EmbeddedImage)));
+    }
+
+    #[test]
+    fn holds_is_the_inner_audit_with_embedded_location_off() {
+        // The inner image has a comment, an APP10 segment, a GPS-bearing Exif
+        // and a 5-byte trailer: FreeText, OtherSegment (twice over) and Gps.
+        let gps = build(
+            &[
+                (vec![ptr(0x8825, 1)], None),
+                (vec![ascii(1, b"N")], None),
+            ],
+            &[],
+        );
+        let mut inner = jpeg(&[
+            exif_seg(&gps),
+            seg(0xFE, b"note"),
+            seg(0xEA, b"AROT\0\0"),
+            seg(0xE0, b"JFIF\0\x01\x01\0\0\x01\0\x01\0\0"),
+        ]);
+        inner.extend_from_slice(&[1, 2, 3, 4, 5]);
+        let a = audit(&mpo(&[], &[inner]));
+        let e = embedded_findings(&a);
+        assert_eq!(e.len(), 1);
+        // In Category::ALL order.
+        assert_eq!(
+            holds_of(e[0]),
+            vec![Category::Gps, Category::FreeText, Category::OtherSegment]
+        );
+        // `holds` is exactly the categories the ordinary audit of those bytes
+        // finds (it has no embedded image of its own here).
+        let own = audit(&{
+            let mut v = jpeg(&[
+                exif_seg(&gps),
+                seg(0xFE, b"note"),
+                seg(0xEA, b"AROT\0\0"),
+                seg(0xE0, b"JFIF\0\x01\x01\0\0\x01\0\x01\0\0"),
+            ]);
+            v.extend_from_slice(&[1, 2, 3, 4, 5]);
+            v
+        });
+        let want: Vec<Category> = Category::ALL
+            .into_iter()
+            .filter(|c| own.findings_in(*c).next().is_some())
+            .collect();
+        assert_eq!(holds_of(e[0]), want);
+    }
+
+    #[test]
+    fn an_inner_mpf_does_not_recurse() {
+        // The inner image carries its own MPF index (pointing at a GPS image
+        // past its end): with location off that segment is an OtherSegment and
+        // the GPS image is neither located nor looked into.
+        let gps = build(
+            &[
+                (vec![ptr(0x8825, 1)], None),
+                (vec![ascii(1, b"N")], None),
+            ],
+            &[],
+        );
+        let deep = jpeg(&[exif_seg(&gps)]);
+        let inner = mpo(&[], &[deep.clone()]);
+        // The inner file really does hold a GPS image of its own.
+        assert_eq!(embedded_findings(&audit(&inner)).len(), 1);
+        let outer = mpo(&[], &[inner]);
+        let a = audit(&outer);
+        let e = embedded_findings(&a);
+        assert_eq!(e.len(), 1, "one level only");
+        assert_eq!(holds_of(e[0]), vec![Category::OtherSegment]);
+        assert!(!e[0].holds.contains(Category::EmbeddedImage));
+        assert!(!e[0].holds.contains(Category::Gps));
+        assert!(a.findings_in(Category::Gps).next().is_none());
+    }
+
+    #[test]
+    fn holds_of_an_image_with_no_metadata_is_empty() {
+        let a = audit(&mpo(&[], &[jpeg(&[])]));
+        let e = embedded_findings(&a);
+        assert_eq!(e.len(), 1);
+        assert!(e[0].holds.is_empty());
+        assert_eq!(holds_of(e[0]), Vec::<Category>::new());
+    }
+
+    #[test]
+    fn a_comment_is_a_free_text_finding() {
+        let a = audit(&jpeg(&[seg(0xFE, b"typed by a person")]));
+        assert!(a.health().clean);
+        assert_eq!(cats(&a), vec![Category::FreeText]);
+        assert_eq!(a.findings()[0].category.severity(), Severity::Medium);
+        match a.items()[0].kind() {
+            ItemKind::Region { kind, len, segment } => {
+                assert_eq!(kind, RegionKind::Comment);
+                assert_eq!((len, segment), (17, 0));
+            }
+            ItemKind::Tag { .. } => panic!("a tag"),
+        }
+        assert!(a.findings()[0].embedded.is_none());
+    }
+
+    #[test]
+    fn other_app_and_trailer_are_other_segment_findings_in_container_order() {
+        let mut v = jpeg(&[seg(0xEA, b"AROT\0"), seg(0xFE, b"c")]);
+        let eoi_end = v.len();
+        v.extend_from_slice(&[9u8; 313]);
+        let a = audit(&v);
+        assert_eq!(cats(&a), vec![Category::OtherSegment, Category::FreeText, Category::OtherSegment]);
+        let kinds: Vec<RegionKind> = a
+            .items()
+            .iter()
+            .filter_map(|i| match i.kind() {
+                ItemKind::Region { kind, .. } => Some(kind),
+                ItemKind::Tag { .. } => None,
+            })
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![RegionKind::OtherApp, RegionKind::Comment, RegionKind::Trailer]
+        );
+        // The trailer lies after the scan; its pseudo segment is one past the
+        // last real one.
+        let last = a.items().last().unwrap();
+        assert!(last.origin().after_scan);
+        assert_eq!(last.origin().segment, Some(3));
+        assert_eq!(
+            match last.kind() {
+                ItemKind::Region { len, .. } => len,
+                ItemKind::Tag { .. } => 0,
+            },
+            313
+        );
+        let _ = eoi_end;
+    }
+
+    #[test]
+    fn a_bare_tiff_has_none_of_the_new_regions() {
+        let t = build(&[(vec![ascii(0x010F, b"Cam")], None)], &[]);
+        let a = audit(&t);
+        assert!(a.items().iter().all(|i| matches!(i.kind(), ItemKind::Tag { .. })));
+        for c in [Category::EmbeddedImage, Category::OtherSegment] {
+            assert!(a.findings_in(c).next().is_none());
+        }
+    }
 }

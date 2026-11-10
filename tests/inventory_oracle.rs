@@ -25,6 +25,8 @@ mod inventory_corpus;
 mod mutate;
 #[path = "support/oracle_jpeg.rs"]
 mod oracle_jpeg;
+#[path = "support/real_shapes.rs"]
+mod real_shapes;
 #[path = "support/oracle_tiff.rs"]
 mod oracle_tiff;
 #[path = "support/tools.rs"]
@@ -557,8 +559,8 @@ fn replay_every_corpus_is_clean_except_pinned_divergences() {
     }
     assert_eq!(
         KNOWN_DIVERGENCES.len(),
-        33,
-        "5 A, 2 B, 1 C, 4 D, 1 E, 6 F, 14 R"
+        34,
+        "5 A, 2 B, 1 C, 4 D, 1 E, 6 F, 15 R (one R row is new: DEC-012's Photoshop rule)"
     );
 }
 
@@ -1038,11 +1040,8 @@ fn regions_agree_on_xmp_iptc_icc_and_jumbf_fixtures() {
         ("fixtures/jpeg-icc-valid", Some(RegionKind::Icc)),
         ("fixtures/jpeg-jumbf-valid", Some(RegionKind::Jumbf)),
         ("fixtures/jpeg-extended-xmp-pair", Some(RegionKind::Xmp)),
-        // The absent cases: XMP in the wrong marker, and Photoshop resources
-        // without the 0x0404 IPTC one (ExifTool lists the Photoshop group
-        // only; we list no region).
+        // The absent case: XMP in the wrong marker.
         ("fixtures/jpeg-xmp-in-wrong-marker", None),
-        ("fixtures/jpeg-iptc-without-0404", None),
     ] {
         let mine = ours_of_key(key).regions;
         let their = theirs_of_key(key).regions;
@@ -1050,6 +1049,15 @@ fn regions_agree_on_xmp_iptc_icc_and_jumbf_fixtures() {
         assert_eq!(mine, want, "{key}: ours");
         assert_eq!(their, want, "{key}: theirs");
     }
+    // DEC-012 changed one case (SPEC-019): Photoshop resources without the
+    // 0x0404 one used to give no region; every Photoshop segment is an Iptc
+    // region now, and ExifTool lists the Photoshop group only (a pinned row).
+    let key = "fixtures/jpeg-iptc-without-0404";
+    assert_eq!(
+        ours_of_key(key).regions,
+        [RegionKind::Iptc].into_iter().collect()
+    );
+    assert!(theirs_of_key(key).regions.is_empty());
     // The ICC fixture's ExifTool listing: sixteen header lines and the
     // description (measured; the SPEC-013 design predicted fifteen).
     let recs = records();
@@ -1090,7 +1098,7 @@ fn stub_icc_and_jumbf_are_listed_by_us_and_not_by_exiftool() {
     // Every Class R row (the stub and seed payloads) is a region
     // only ours lists, and ours is the side that locates the segment.
     let r = divergences_of(Class::R);
-    assert_eq!(r.len(), 14);
+    assert_eq!(r.len(), 15);
     for k in r {
         assert!(k.ours_only.is_empty() && k.theirs_only.is_empty());
         assert!(!k.regions_ours_only.is_empty() && k.regions_theirs_only.is_empty());

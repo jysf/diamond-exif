@@ -35,6 +35,8 @@ mod inventory_corpus;
 mod oracle;
 #[path = "../tests/support/oracle_jpeg.rs"]
 mod oracle_jpeg;
+#[path = "../tests/support/real_shapes.rs"]
+mod real_shapes;
 #[path = "../tests/support/oracle_tiff.rs"]
 mod oracle_tiff;
 #[path = "../tests/support/tools.rs"]
