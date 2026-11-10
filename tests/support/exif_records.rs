@@ -321,6 +321,46 @@ pub fn leak_inputs_jpeg() -> Vec<(&'static str, Vec<u8>)> {
             "thumbnail_with_strips_be",
             one(exif_layout::thumbnail_with_strips(true).layout()),
         ),
+        (
+            "typed_ifd1_le",
+            one(exif_layout::typed_offset_entry(false, "ifd1").layout()),
+        ),
+        (
+            "typed_gps_le",
+            one(exif_layout::typed_offset_entry(false, "gps").layout()),
+        ),
+        (
+            "typed_ifd0_le",
+            one(exif_layout::typed_offset_entry(false, "ifd0").layout()),
+        ),
+        (
+            "kept_strip_target_le",
+            one(exif_layout::kept_strip_target_overlapped(false).layout()),
+        ),
+        (
+            "ifd1_kept_category_le",
+            one(exif_layout::thumbnail_ifd1_with_a_kept_category_tag(false).layout()),
+        ),
+        (
+            "typed_ifd1_be",
+            one(exif_layout::typed_offset_entry(true, "ifd1").layout()),
+        ),
+        (
+            "typed_gps_be",
+            one(exif_layout::typed_offset_entry(true, "gps").layout()),
+        ),
+        (
+            "typed_ifd0_be",
+            one(exif_layout::typed_offset_entry(true, "ifd0").layout()),
+        ),
+        (
+            "kept_strip_target_be",
+            one(exif_layout::kept_strip_target_overlapped(true).layout()),
+        ),
+        (
+            "ifd1_kept_category_be",
+            one(exif_layout::thumbnail_ifd1_with_a_kept_category_tag(true).layout()),
+        ),
         ("exif_second_block_unclean", second_block_unclean()),
         ("exif_first_block_unclean", first_block_unclean()),
         ("exif_middle_block_unclean", middle_block_unclean()),
@@ -483,6 +523,10 @@ pub fn stray_seeds() -> Vec<(String, Vec<u8>)> {
             "crash-entries-joined-stray".to_string(),
             CRASH_ENTRIES.to_vec(),
         ),
+        (
+            "crash-mpf-entry-table-overlap".to_string(),
+            CRASH_MPF_TABLE.to_vec(),
+        ),
     ]
 }
 
@@ -496,6 +540,12 @@ pub const CRASH_MPF_FIELDS: &[u8] =
 /// self-check refuses with `Entries`. Verbatim; its only copy is the seed.
 pub const CRASH_ENTRIES: &[u8] =
     include_bytes!("../../fuzz/seeds/rewrite_jpeg/crash-entries-joined-stray");
+
+/// The crash of HANDOFF-044 (policy All, 3,108 bytes): the MP index's entry
+/// array starts inside its own IFD table, so the primary-size field of entry 0
+/// is the MPEntry tag's count. Verbatim; its only copy is the seed.
+pub const CRASH_MPF_TABLE: &[u8] =
+    include_bytes!("../../fuzz/seeds/rewrite_jpeg/crash-mpf-entry-table-overlap");
 
 /// The same shape built by hand: fill bytes, an XMP segment, stray bytes that
 /// start with a non-marker byte, an MPF index and a segment that runs past the

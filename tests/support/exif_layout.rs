@@ -1038,6 +1038,65 @@ pub fn kept_straddling_value(be: bool) -> Build {
     b
 }
 
+/// An entry of field type IFD (13) whose offset leads to data nothing else
+/// references, in IFD1 (tag 0x0100), the GPS IFD (tag 0x001F) or IFD0 (tag
+/// 0x013B, Authorship). `at`: "ifd1", "gps" or "ifd0".
+pub fn typed_offset_entry(be: bool, at: &str) -> Build {
+    let mut b = full(be);
+    let first = thumb_jpeg().len();
+    let (name, tag) = match at {
+        "ifd1" => ("ifd1", 0x0100),
+        "gps" => ("gps", 0x001F),
+        _ => ("ifd0", 0x013B),
+    };
+    let f = b.ifds.iter_mut().find(|f| f.name == name).unwrap();
+    if name == "ifd0" {
+        f.ents.retain(|e| e.tag != 0x013B);
+    }
+    f.ents.push(Ent {
+        tag,
+        ty: 13,
+        count: 1,
+        val: Val::ThumbAt(first),
+        canary: Some(K_HIDDEN.to_vec()),
+    });
+    b.thumb = Some([thumb_jpeg(), K_HIDDEN.to_vec()].concat());
+    b
+}
+
+/// A KEPT strip pair in IFD0 whose target data also holds a deleted Artist's
+/// value.
+pub fn kept_strip_target_overlapped(be: bool) -> Build {
+    let mut b = full(be);
+    let first = thumb_jpeg().len();
+    b.ifds[0].ents.retain(|e| e.tag != 0x013B);
+    b.ifds[0].ents.push(Ent {
+        tag: 0x0111,
+        ty: LONG,
+        count: 1,
+        val: Val::ThumbAt(first),
+        canary: None,
+    });
+    b.ifds[0].ents.push(long(be, 0x0117, K_HIDDEN.len() as u32));
+    b.ifds[0].ents.push(Ent {
+        tag: 0x013B,
+        ty: ASCII,
+        count: 10,
+        val: Val::ThumbAt(first + 2),
+        canary: Some(K_HIDDEN.to_vec()),
+    });
+    b.thumb = Some([thumb_jpeg(), K_HIDDEN.to_vec()].concat());
+    b
+}
+
+/// IFD1 holds a Software tag (a category `Custom{Thumbnail}` keeps).
+pub fn thumbnail_ifd1_with_a_kept_category_tag(be: bool) -> Build {
+    let mut b = full(be);
+    let f = b.ifds.iter_mut().find(|f| f.name == "ifd1").unwrap();
+    f.ents.push(ascii(0x0131, K_SOFTWARE));
+    b
+}
+
 /// The GPS IFD is pointed to by two entries of IFD0.
 pub fn gps_ifd_pointed_to_twice() -> Build {
     let mut b = full(false);

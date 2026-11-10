@@ -481,6 +481,8 @@ mod rewrite_invariants {
         /// Input offset of the byte after `MPF\0`.
         header: usize,
         big: bool,
+        /// The IFD0 table of the index's TIFF, relative to `header`.
+        table: Range<usize>,
         /// `(size_field, offset_field, size, offset)` per examined entry.
         entries: Vec<(usize, usize, u32, u32)>,
     }
@@ -568,6 +570,7 @@ mod rewrite_invariants {
         Some(NMpf {
             header: base,
             big,
+            table: ifd..end + 4,
             entries,
         })
     }
@@ -681,6 +684,10 @@ mod rewrite_invariants {
     /// bytes that runs past the end (or, for an unknown type, everything from
     /// its offset to the end of the blob).
     fn kept_bytes(blob: &[u8], big: bool, e: &NEnt) -> Option<Range<usize>> {
+        if matches!(e.ty, 13 | 18) {
+            let at = usize::try_from(nu32(blob, e.at.checked_add(8)?, big)?).ok()?;
+            return (at < blob.len()).then_some(at..blob.len());
+        }
         if let Some(r) = out_of_line(blob, big, e) {
             return Some(r);
         }
@@ -695,6 +702,85 @@ mod rewrite_invariants {
             .map_or(blob.len(), |l| at.saturating_add(l))
             .min(blob.len());
         (at < end).then_some(at..end)
+    }
+
+    /// The ranges the KEPT entries of `ifd` point at through the strip, tile,
+    /// free-block, JPEG-thumbnail and JPEG-table offset tags (TIFF 6.0
+    /// sections 8, 15 and 22): the k-th offsets entry with the k-th lengths
+    /// entry, value by value, clipped to the blob; an offset with no length runs
+    /// to the end of the blob. `None` when an array cannot be read.
+    fn kept_targets(
+        blob: &[u8],
+        big: bool,
+        ifd: &NIfd,
+        gone: &dyn Fn(usize) -> bool,
+    ) -> Option<Vec<Range<usize>>> {
+        let values = |e: &NEnt| -> Option<Vec<u32>> {
+            let size = match e.ty {
+                1 | 7 => 1usize,
+                3 => 2,
+                4 | 13 => 4,
+                _ => return None,
+            };
+            let bytes = payload_bytes(blob, big, e)?;
+            Some(
+                bytes
+                    .chunks(size)
+                    .map(|c| {
+                        let mut v = 0u32;
+                        if big {
+                            for b in c {
+                                v = (v << 8) | u32::from(*b);
+                            }
+                        } else {
+                            for b in c.iter().rev() {
+                                v = (v << 8) | u32::from(*b);
+                            }
+                        }
+                        v
+                    })
+                    .collect(),
+            )
+        };
+        let pairs: [(u16, Option<u16>); 7] = [
+            (0x0111, Some(0x0117)),
+            (0x0144, Some(0x0145)),
+            (0x0120, Some(0x0121)),
+            (0x0201, Some(0x0202)),
+            (0x0207, None),
+            (0x0208, None),
+            (0x0209, None),
+        ];
+        let mut out = Vec::new();
+        for (ot, lt) in pairs {
+            let pick = |tag: u16| -> Vec<&NEnt> {
+                ifd.ents
+                    .iter()
+                    .enumerate()
+                    .filter(|(n, e)| e.tag == tag && !gone(*n))
+                    .map(|(_, e)| e)
+                    .collect()
+            };
+            let lens = lt.map(pick).unwrap_or_default();
+            for (k, e) in pick(ot).into_iter().enumerate() {
+                let offs = values(e)?;
+                let lengths = match lens.get(k) {
+                    Some(l) => values(l)?,
+                    None => Vec::new(),
+                };
+                for (j, at) in offs.iter().enumerate() {
+                    let at = usize::try_from(*at).ok()?;
+                    let end = match lengths.get(j) {
+                        Some(l) => at.saturating_add(usize::try_from(*l).ok()?).min(blob.len()),
+                        None => blob.len(),
+                    };
+                    if at < end {
+                        out.push(at..end);
+                    }
+                }
+            }
+        }
+        Some(out)
     }
 
     /// DEC-005's table: whether an IFD of `role` follows pointer tag `tag`.
@@ -1055,7 +1141,12 @@ mod rewrite_invariants {
         ];
         for &r in &removed {
             let ok = match ifds[r].role {
-                "ifd1" => ifds[r].ents.iter().all(|e| IFD1_OK.contains(&e.tag)),
+                "ifd1" => ifds[r].ents.iter().all(|e| {
+                    IFD1_OK.contains(&e.tag)
+                        // A tag of a category the policy keeps cannot go with
+                        // the IFD.
+                        && ncat("ifd1", e.tag, ifd1_jpeg).is_none_or(|c| spec.contains(c))
+                }),
                 "gps" => ifds[r].ents.iter().all(|e| e.tag <= 0x001F),
                 _ => true,
             };
@@ -1075,12 +1166,14 @@ mod rewrite_invariants {
                 }
             }
         }
+        let mut ptr_entries: Vec<(usize, usize)> = Vec::new();
         for &r in removed.iter().filter(|&&r| ifds[r].role == "gps") {
             let p = ifds[r].parent?;
             let n = ifds[p].ents.iter().position(|e| {
                 e.tag == 0x8825 && nu32(blob, e.at + 8, big) == Some(ifds[r].off as u32)
             })?;
             gone.push((p, n));
+            ptr_entries.push((p, n));
         }
         gone.sort_unstable();
         gone.dedup();
@@ -1090,6 +1183,16 @@ mod rewrite_invariants {
             all_deleted.extend((0..ifds[r].ents.len()).map(|n| (r, n)));
         }
         all_deleted.sort_unstable();
+        // By type (TIFF 6.0 section 2): only the data types 1 to 12 are
+        // handled; IFD (13), IFD8 (18) and unknown types carry offsets or have
+        // no size. The GPS pointer entries deleted with their IFD are exempt.
+        if all_deleted
+            .iter()
+            .filter(|p| !ptr_entries.contains(p))
+            .any(|&(g, n)| !(1..=12).contains(&ifds[g].ents[n].ty))
+        {
+            return None;
+        }
         if all_deleted.iter().any(|&(g, n)| {
             // A value that cannot be sized, or that does not fit the
             // 4-byte field and is not wholly in the blob, cannot be zeroed.
@@ -1159,6 +1262,7 @@ mod rewrite_invariants {
                     keep.extend(kept_bytes(blob, big, e));
                 }
             }
+            keep.extend(kept_targets(blob, big, ifd, &|n| gone.contains(&(g, n)))?);
         }
         if unlink.is_none() {
             keep.extend(thumb.clone());
@@ -1538,6 +1642,12 @@ mod rewrite_invariants {
                     }
                 };
                 let primary_end = w.eoi.map_or(len, |e| e + 2);
+                // A field may not be patched on the index's own TIFF header or
+                // IFD0 table, nor inside a located image: refused, typed.
+                let mut forbidden: Vec<Range<usize>> = vec![m.header..m.header + 8];
+                forbidden.push(m.header + m.table.start..m.header + m.table.end);
+                forbidden.extend(images.iter().map(|(_, r)| r.clone()));
+                let hit = |f: usize| forbidden.iter().any(|r| f < r.end && r.start < f + 4);
                 for (k, &(size_field, offset_field, size, offset)) in m.entries.iter().enumerate() {
                     if k == 0 {
                         let gone = removed_in(0, primary_end);
@@ -1546,6 +1656,11 @@ mod rewrite_invariants {
                             return Pred::MpfUnderflow;
                         };
                         if new != size {
+                            if hit(size_field) {
+                                return Pred::MpfNotIndexed(
+                                    w.segs[mpf.as_ref().map_or(0, |(i, _)| *i)].off,
+                                );
+                            }
                             patches.push((size_field, enc(new)));
                         }
                     } else if let Some((_, r)) = images.iter().find(|(j, _)| *j == k) {
@@ -1556,6 +1671,11 @@ mod rewrite_invariants {
                             return Pred::MpfUnderflow;
                         };
                         if new != offset {
+                            if hit(offset_field) {
+                                return Pred::MpfNotIndexed(
+                                    w.segs[mpf.as_ref().map_or(0, |(i, _)| *i)].off,
+                                );
+                            }
                             patches.push((offset_field, enc(new)));
                         }
                     }

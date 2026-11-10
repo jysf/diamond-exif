@@ -87,6 +87,9 @@ pub(super) struct Selection {
     /// Where the audit located the thumbnail bytes `(offset, length)`, when
     /// it could. Scrubbed when `thumbnail`, protected otherwise.
     pub thumbnail_range: Option<(u32, u32)>,
+    /// Tags of IFD1 whose category the policy keeps (a removed IFD1 holding
+    /// one is refused: the policy cannot take the IFD whole and keep the tag).
+    pub kept_ifd1_tags: Vec<u16>,
 }
 
 /// One deleted entry, in blob coordinates.
@@ -181,6 +184,12 @@ fn kept_value_range(
     order: ByteOrder,
     e: &Entry,
 ) -> Option<Range<usize>> {
+    if matches!(e.field_type(), 13 | 18) {
+        // An IFD-typed entry points at data whatever its tag: from its offset
+        // to the end of the blob is kept.
+        let at = usize::try_from(read_u32(blob, e.value_at(), order).ok()?).ok()?;
+        return (at < blob.len()).then_some(at..blob.len());
+    }
     if let Some(r) = c.payload_range(e) {
         return Some(r);
     }
@@ -193,6 +202,66 @@ fn kept_value_range(
         .map_or(blob.len(), |l| at.saturating_add(l))
         .min(blob.len());
     (at < end).then_some(at..end)
+}
+
+/// Tag pairs `(offsets, lengths)` whose targets a KEPT entry makes data of the
+/// file: strips, tiles, free blocks, the JPEG thumbnail, and the JPEG tables
+/// (offsets only; their length is not stated).
+const OFFSET_TAGS: [(u16, Option<u16>); 7] = [
+    (0x0111, Some(0x0117)),
+    (0x0144, Some(0x0145)),
+    (0x0120, Some(0x0121)),
+    (0x0201, Some(0x0202)),
+    (0x0207, None),
+    (0x0208, None),
+    (0x0209, None),
+];
+
+/// The ranges the kept entries of `ifd` (all but `gone`) point at through the
+/// offset tags: the k-th offsets entry with the k-th lengths entry, each offset
+/// with its length, clipped to the blob; an offset with no length runs to the
+/// end of the blob. `Err(entry start)` when an array cannot be read.
+fn offset_targets(
+    c: &Container<'_>,
+    blob: &[u8],
+    ifd: &Ifd,
+    gone: Option<&BTreeSet<usize>>,
+) -> Result<Vec<Range<usize>>, usize> {
+    let kept = |n: usize| !gone.is_some_and(|s| s.contains(&n));
+    let mut out = Vec::new();
+    for (off_tag, len_tag) in OFFSET_TAGS {
+        let entries = |tag: u16| -> Vec<&Entry> {
+            ifd.entries()
+                .iter()
+                .enumerate()
+                .filter(|(n, e)| e.tag() == tag && kept(*n))
+                .map(|(_, e)| e)
+                .collect()
+        };
+        let lens = len_tag.map(entries).unwrap_or_default();
+        for (k, e) in entries(off_tag).into_iter().enumerate() {
+            let offsets = c.uints(e).map_err(|_| start_of(e))?;
+            let lengths = match lens.get(k) {
+                Some(l) => c.uints(l).map_err(|_| start_of(l))?,
+                None => Vec::new(),
+            };
+            for (j, at) in offsets.iter().enumerate() {
+                let Ok(at) = usize::try_from(*at) else {
+                    continue;
+                };
+                let end = match lengths.get(j) {
+                    Some(l) => usize::try_from(*l)
+                        .map_or(blob.len(), |l| at.saturating_add(l))
+                        .min(blob.len()),
+                    None => blob.len(),
+                };
+                if at < end {
+                    out.push(at..end);
+                }
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// The in-blob part of the range `ifd`'s first 0x0201 and 0x0202 name (SHORT or
@@ -348,7 +417,9 @@ pub(super) fn plan_block(
         for entry in ifd.entries() {
             let tag = entry.tag();
             match ifd.kind() {
-                IfdKind::Ifd1 if !THUMB_IFD_TAGS.contains(&tag) => {
+                IfdKind::Ifd1
+                    if !THUMB_IFD_TAGS.contains(&tag) || sel.kept_ifd1_tags.contains(&tag) =>
+                {
                     return Err(refuse(
                         UneditableReason::ThumbnailNotLocated,
                         start_of(entry),
@@ -364,6 +435,9 @@ pub(super) fn plan_block(
 
     // ── which entries go (rules 2 and 6) ───────────────────────────────────
     let mut gone: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
+    // The GPS pointer entries deleted with their IFD: the type rule below is for
+    // what a policy or a removed IFD takes, not for these.
+    let mut pointer_entries: Vec<(usize, usize)> = Vec::new();
     for &(g, e) in &sel.deleted {
         let entry = ifds
             .get(g)
@@ -395,6 +469,29 @@ pub(super) fn plan_block(
         let entry = holder.entries().get(first).ok_or_else(|| bad(at))?;
         entry_start(blob, order, entry).ok_or_else(|| bad(start_of(entry)))?;
         gone.entry(p).or_default().insert(first);
+        pointer_entries.push((p, first));
+    }
+
+    // ── closed world, by TYPE: only the data types 1 to 12 are handled ─────
+    // An entry of type 13 (IFD) or 18 (IFD8) carries an offset whatever its tag;
+    // every other type is unknown. Type 129 (Exif 3.0 UTF-8) is not accepted:
+    // refusing it is fail closed, and its size is not known to the walk.
+    let typed = |entry: &Entry| (1..=12).contains(&entry.field_type());
+    for (&g, set) in &gone {
+        let ifd = ifds.get(g).ok_or_else(|| bad(0))?;
+        for &e in set.iter().filter(|e| !pointer_entries.contains(&(g, **e))) {
+            let entry = ifd.entries().get(e).ok_or_else(|| bad(0))?;
+            if !typed(entry) {
+                return Err(refuse(UneditableReason::PayloadUnreadable, start_of(entry)));
+            }
+        }
+    }
+    for &r in &removed {
+        for entry in ifds.get(r).ok_or_else(|| bad(0))?.entries() {
+            if !typed(entry) {
+                return Err(refuse(UneditableReason::PayloadUnreadable, start_of(entry)));
+            }
+        }
     }
 
     // ── the records ─────────────────────────────────────────────────────────
@@ -501,6 +598,10 @@ pub(super) fn plan_block(
             continue;
         }
         kept_tables.push(table);
+        keep.extend(
+            offset_targets(c, blob, ifd, gone.get(&i))
+                .map_err(|at| refuse(UneditableReason::PayloadUnreadable, at))?,
+        );
         for (n, entry) in ifd.entries().iter().enumerate() {
             let is_gone = gone.get(&i).is_some_and(|s| s.contains(&n));
             if !is_gone {
@@ -781,6 +882,9 @@ fn select(
             if let Some(range) = f.thumbnail.and_then(|t| t.range) {
                 sel.thumbnail_range = Some(range);
             }
+        }
+        if ifd == IfdKind::Ifd1 && !spec.contains(f.category) {
+            sel.kept_ifd1_tags.push(tag);
         }
         if !spec.contains(f.category) {
             continue;

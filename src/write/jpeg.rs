@@ -17,6 +17,7 @@ use crate::audit::{audit, Category};
 use crate::error::Error;
 use crate::jpeg::{self, JpegMetadata, Region, SegmentKind};
 use crate::policy::StripSpec;
+use crate::tiff::{Container, Ifd};
 
 use super::exif::{exif9, mode, plan_entries, ExifEdits, Mode};
 use super::plan::{merge_ranges, removed_in};
@@ -423,10 +424,40 @@ fn mpf_patches(
         .jpeg()
         .eoi_offset()
         .map_or(data.len(), |e| e.saturating_add(2));
+    // Where a field may NOT be patched: the index's own TIFF header and IFD0
+    // table (a field that lands on the MPEntry tag's count would rewrite the
+    // index), and every located image (a patch would change a kept image). A
+    // hostile index whose entries lie on its own structure is refused here,
+    // typed, rather than by the self-check afterwards.
+    let seg = meta.jpeg().segments().get(index.segment());
+    let seg_at = seg.map_or(0, |s| s.offset());
+    let mut forbidden: Vec<Range<usize>> = Vec::new();
+    let base = index.header_start();
+    forbidden.push(base..base.saturating_add(8));
+    if let Some(tiff) = seg.and_then(|s| s.payload().get(4..)) {
+        if let Some(table) = Container::parse(tiff)
+            .ok()
+            .and_then(|c| c.ifd0().and_then(Ifd::table_range))
+        {
+            forbidden.push(base.saturating_add(table.start)..base.saturating_add(table.end));
+        }
+    }
+    for r in meta.regions() {
+        if let Region::EmbeddedImage { offset, data, .. } = *r {
+            forbidden.push(offset..offset.saturating_add(data.len()));
+        }
+    }
     let mut put = |field: usize, old: u32, removed: usize| -> Result<(), StripError> {
         let removed = u32::try_from(removed).map_err(|_| stale.clone())?;
         let new = old.checked_sub(removed).ok_or_else(|| stale.clone())?;
         if new != old {
+            let field_end = field.saturating_add(4);
+            if forbidden
+                .iter()
+                .any(|r| field < r.end && r.start < field_end)
+            {
+                return Err(StripError::MpfNotIndexed { offset: seg_at });
+            }
             let bytes = if index.big_endian() {
                 new.to_be_bytes()
             } else {

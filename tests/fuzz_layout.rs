@@ -6393,6 +6393,14 @@ fn a_removal_that_joins_stray_bytes_into_a_marker_is_refused_and_excused_exactly
         })
     ));
     rewrite_invariants::check(&crash2.1);
+    // HANDOFF-044 L12: an index whose entry array lies on its own IFD table. The
+    // primary-size patch would rewrite the MPEntry tag's count; refused up front.
+    let (p3, j3) = rewrite_invariants::decode(exif_records::CRASH_MPF_TABLE);
+    assert!(matches!(
+        exif_core::strip(j3, p3),
+        Err(exif_core::StripError::MpfNotIndexed { offset: 150 })
+    ));
+    rewrite_invariants::check(exif_records::CRASH_MPF_TABLE);
     // L4: on the joined input itself only the checks that see a changed walk
     // are excused; a refusal by any other check is not.
     let xspec = xmp.spec();
@@ -6426,7 +6434,7 @@ fn a_removal_that_joins_stray_bytes_into_a_marker_is_refused_and_excused_exactly
 
 /// SPEC-020's 186 seeds plus SPEC-021's 198 entry seeds plus the two
 /// joined-stray seeds.
-const REWRITE_SEEDS: usize = 621;
+const REWRITE_SEEDS: usize = 712;
 
 #[test]
 fn seed_count_is_pinned() {
@@ -6498,7 +6506,10 @@ fn entry_seeds_are_committed_and_cover_every_fixture_leak_input_and_policy_famil
         .filter(|(n, _)| entry_names.contains(n))
         .filter_map(|(_, d)| d.first().copied())
         .collect();
-    assert_eq!(heads.into_iter().collect::<Vec<_>>(), vec![0, 1, 2, 3, 6]);
+    assert_eq!(
+        heads.into_iter().collect::<Vec<_>>(),
+        vec![0, 1, 2, 3, 6, 7]
+    );
     // The seeds exercise both outcomes: strips and refusals.
     let (mut ok, mut refused) = (0, 0);
     for (n, d) in &seeds {

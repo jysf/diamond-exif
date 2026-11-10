@@ -972,6 +972,231 @@ fn a_kept_thumbnail_that_straddles_the_blob_end_protects_its_in_blob_bytes() {
     }
 }
 
+/// M3: a field type of IFD (13) or IFD8 (18), or any unknown one, carries an
+/// offset whatever its tag; only the data types 1 to 12 are handled.
+#[test]
+fn m3_an_entry_of_an_offset_type_is_refused_when_deleted_or_removed() {
+    for be in [false, true] {
+        for ty in [13u16, 18, 0, 14, 99, 129] {
+            // A deleted Authorship entry.
+            let mut b = Blob::new(be, 8);
+            let es = vec![
+                b.short(0x0112, 1),
+                E {
+                    tag: 0x013B,
+                    ty,
+                    count: 1,
+                    val: b.w32(80),
+                },
+            ];
+            b.ifd(8, &es, 0);
+            b.data(80, b"CANARY-HIDDEN-DATA!!");
+            let err = run(&b.bytes, &del(&[(0, 1)])).unwrap_err();
+            assert_eq!(
+                err.reason,
+                UneditableReason::PayloadUnreadable,
+                "deleted ty {ty} be={be}"
+            );
+            // An entry of a removed GPS IFD (tag 0x0001 is on the list).
+            let mut b = Blob::new(be, 8);
+            let es = vec![b.short(0x0112, 1), b.long(0x8825, 38)];
+            b.ifd(8, &es, 0);
+            let gps = vec![E {
+                tag: 0x0001,
+                ty,
+                count: 1,
+                val: b.w32(80),
+            }];
+            b.ifd(38, &gps, 0);
+            b.data(80, b"CANARY-HIDDEN-DATA!!");
+            let err = run(&b.bytes, &gps_sel()).unwrap_err();
+            assert_eq!(
+                err.reason,
+                UneditableReason::PayloadUnreadable,
+                "gps ty {ty} be={be}"
+            );
+            // An entry of a removed IFD1 (tag 0x0100 is on the list).
+            let mut b = Blob::new(be, 8);
+            let ifd0 = vec![b.short(0x0112, 1)];
+            b.ifd(8, &ifd0, 26);
+            let es = vec![
+                b.long(0x0201, 80),
+                b.long(0x0202, 9),
+                E {
+                    tag: 0x0100,
+                    ty,
+                    count: 1,
+                    val: b.w32(96),
+                },
+            ];
+            b.ifd(26, &es, 0);
+            b.data(80, &[0xFF, 0xD8, b'T', b'H', b'U', b'M', b'B', 0xFF, 0xD9]);
+            b.data(96, b"CANARY-HIDDEN-DATA!!");
+            let err = run(&b.bytes, &thumb_sel_at(80, 9)).unwrap_err();
+            assert_eq!(
+                err.reason,
+                UneditableReason::PayloadUnreadable,
+                "ifd1 ty {ty} be={be}"
+            );
+        }
+        // Control: every data type 1 to 12 is fine for a deleted entry.
+        for ty in 1u16..=12 {
+            let mut b = Blob::new(be, 8);
+            let es = vec![
+                b.short(0x0112, 1),
+                E {
+                    tag: 0x013B,
+                    ty,
+                    count: 1,
+                    val: [0; 4],
+                },
+            ];
+            b.ifd(8, &es, 0);
+            b.data(80, &[0; 8]);
+            let es2 = vec![
+                b.short(0x0112, 1),
+                E {
+                    tag: 0x013B,
+                    ty,
+                    count: 1,
+                    val: if matches!(ty, 5 | 10 | 12) {
+                        b.w32(80)
+                    } else {
+                        [0; 4]
+                    },
+                },
+            ];
+            b.ifd(8, &es2, 0);
+            assert!(run(&b.bytes, &del(&[(0, 1)])).is_ok(), "type {ty} be={be}");
+        }
+    }
+}
+
+fn thumb_sel_at(at: u32, len: u32) -> Selection {
+    Selection {
+        thumbnail: true,
+        thumbnail_range: Some((at, len)),
+        ..Selection::default()
+    }
+}
+
+/// L9: the data a KEPT offset tag points at is kept: a scrub that touches it
+/// is refused.
+#[test]
+fn l9_the_targets_of_kept_offset_tags_are_protected() {
+    // (offsets tag, lengths tag): the lengths tag may be absent (JPEG tables).
+    let pairs: [(u16, Option<u16>); 5] = [
+        (0x0111, Some(0x0117)),
+        (0x0144, Some(0x0145)),
+        (0x0120, Some(0x0121)),
+        (0x0201, Some(0x0202)),
+        (0x0207, None),
+    ];
+    for be in [false, true] {
+        for (off_tag, len_tag) in pairs {
+            let mut b = Blob::new(be, 8);
+            let mut es = vec![b.long(off_tag, 90)];
+            if let Some(l) = len_tag {
+                es.push(b.long(l, 12));
+            }
+            // The deleted Artist's value lies over the target.
+            es.push(b.out(0x013B, 2, 10, 92));
+            let gone = es.len() - 1;
+            b.ifd(8, &es, 0);
+            b.data(90, b"CANARY-TARGET-DATA!!");
+            let err = run(&b.bytes, &del(&[(0, gone)])).unwrap_err();
+            assert_eq!(
+                err.reason,
+                UneditableReason::SharedBytes,
+                "tag {off_tag:#x} be={be}"
+            );
+            assert_eq!(err.at, 92);
+        }
+        // All pairs, not only the first: a second 0x0201/0x0202 pair.
+        let mut b = Blob::new(be, 8);
+        let es = vec![
+            b.long(0x0201, 100),
+            b.long(0x0202, 4),
+            b.long(0x0201, 120),
+            b.long(0x0202, 12),
+            b.out(0x013B, 2, 10, 122),
+        ];
+        b.ifd(8, &es, 0);
+        b.data(100, b"abcd");
+        b.data(120, b"CANARY-TARGET-DATA!!");
+        let err = run(&b.bytes, &del(&[(0, 4)])).unwrap_err();
+        assert_eq!(
+            err.reason,
+            UneditableReason::SharedBytes,
+            "second pair be={be}"
+        );
+        // Array of offsets (two strips): the second target is protected too.
+        let mut b = Blob::new(be, 8);
+        let es = vec![
+            b.out(0x0111, 4, 2, 60),
+            b.out(0x0117, 4, 2, 68),
+            b.out(0x013B, 2, 10, 97),
+        ];
+        b.ifd(8, &es, 0);
+        let w = |v: u32| b.w32(v);
+        let (a1, a2, c1, c2) = (w(80), w(96), w(8), w(12));
+        b.data(60, &[a1, a2].concat());
+        b.data(68, &[c1, c2].concat());
+        b.data(80, b"01234567");
+        b.data(96, b"CANARY-TARGET-DATA!!");
+        let err = run(&b.bytes, &del(&[(0, 2)])).unwrap_err();
+        assert_eq!(err.reason, UneditableReason::SharedBytes, "array be={be}");
+    }
+}
+
+/// L10: a removed IFD1 that holds a tag of a category the policy keeps is a
+/// typed refusal (the policy cannot take the IFD whole and keep the tag).
+#[test]
+fn l10_a_removed_ifd1_with_a_kept_category_tag_is_thumbnail_not_located() {
+    for be in [false, true] {
+        let mut b = Blob::new(be, 8);
+        let ifd0 = vec![b.short(0x0112, 1)];
+        b.ifd(8, &ifd0, 26);
+        let es = vec![
+            b.long(0x0201, 80),
+            b.long(0x0202, 9),
+            b.inl(0x0131, b"ab\0"),
+        ];
+        b.ifd(26, &es, 0);
+        b.data(80, &[0xFF, 0xD8, b'T', b'H', b'U', b'M', b'B', 0xFF, 0xD9]);
+        let sel = Selection {
+            kept_ifd1_tags: vec![0x0131],
+            ..thumb_sel_at(80, 9)
+        };
+        let err = run(&b.bytes, &sel).unwrap_err();
+        assert_eq!(err.reason, UneditableReason::ThumbnailNotLocated, "be={be}");
+        assert_eq!(err.at, 26 + 2 + 24, "the Software entry, be={be}");
+        // Without the kept category the same IFD1 goes.
+        assert!(run(&b.bytes, &thumb_sel_at(80, 9)).is_ok());
+    }
+}
+
+/// L11: a kept RATIONAL (8 bytes) that runs past the blob end keeps its
+/// in-blob bytes; a deleted entry's scrub touching them is refused.
+#[test]
+fn l11_a_kept_eight_byte_value_that_straddles_the_end_is_protected() {
+    for be in [false, true] {
+        let mut b = Blob::new(be, 8);
+        let es = vec![
+            b.out(0x011A, 5, 1, 54),
+            b.short(0x0112, 1),
+            b.out(0x013B, 2, 6, 52),
+        ];
+        b.ifd(8, &es, 0);
+        b.data(52, b"AAAAAA");
+        b.bytes.truncate(58);
+        assert_eq!(b.bytes.len(), 58);
+        let err = run(&b.bytes, &del(&[(0, 2)])).unwrap_err();
+        assert_eq!(err.reason, UneditableReason::SharedBytes, "be={be}");
+        assert_eq!(err.at, 54);
+    }
+}
+
 /// L6: the H1 boundary: a value over 4 bytes that runs past the end.
 #[test]
 fn l6_straddling_values_of_five_and_eight_bytes_are_refused_and_an_exact_fit_is_not() {
