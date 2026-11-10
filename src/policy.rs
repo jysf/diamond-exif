@@ -38,6 +38,8 @@ fn bit(c: Category) -> u16 {
         Category::CameraModel => 0x0400,
         Category::Software => 0x0800,
         Category::Icc => 0x1000,
+        Category::EmbeddedImage => 0x2000,
+        Category::OtherSegment => 0x4000,
     }
 }
 
@@ -194,12 +196,14 @@ pub fn may_hold(block: Category) -> StripSpec {
     match block {
         // A thumbnail JPEG may carry its own Exif.
         Category::Thumbnail => StripSpec::of(&TAGS_AND_SOFTWARE),
+        // DEC-012: a MakerNote may also hold an embedded preview image.
         Category::MakerNote => StripSpec::of(&[
             Category::Gps,
             Category::DeviceId,
             Category::CameraModel,
             Category::Timestamps,
             Category::Software,
+            Category::EmbeddedImage,
         ]),
         Category::Xmp => StripSpec::of(&TAGS_AND_SOFTWARE),
         Category::Iptc => StripSpec::of(&[
@@ -211,6 +215,11 @@ pub fn may_hold(block: Category) -> StripSpec {
         Category::Jumbf => StripSpec::of(&TAGS_AND_SOFTWARE),
         // DEC-008: an ICC profile is "a fingerprint at most".
         Category::Icc => StripSpec::none(),
+        // DEC-012: an embedded image can hold anything the primary can; an
+        // unrecognised segment or trailer can hold anything. Each may hold the
+        // other kind, and neither holds itself.
+        Category::EmbeddedImage => StripSpec::all().exclude(Category::EmbeddedImage),
+        Category::OtherSegment => StripSpec::all().exclude(Category::OtherSegment),
         // Tag categories hold nothing the library cannot see.
         Category::Gps
         | Category::DeviceId
@@ -237,7 +246,7 @@ mod tests {
     /// DEC-009's preset table, typed by hand: for each category (DEC-009 row
     /// order) the cells `[Gps, GpsAndDevice, AllPii, All, Everything]`, `true`
     /// meaning "removed". Not generated from `StripPolicy::spec`.
-    const REMOVED: [(Category, [bool; 5]); 13] = [
+    const REMOVED: [(Category, [bool; 5]); 15] = [
         (Gps, [true, true, true, true, true]),
         (DeviceId, [false, true, true, true, true]),
         (Authorship, [false, false, true, true, true]),
@@ -251,9 +260,13 @@ mod tests {
         (Iptc, [false, false, false, true, true]),
         (Icc, [false, false, false, false, true]),
         (Jumbf, [false, false, false, false, true]),
+        // DEC-012 amendment: removed only by Everything.
+        (EmbeddedImage, [false, false, false, false, true]),
+        (OtherSegment, [false, false, false, false, true]),
     ];
 
-    /// DEC-009's may-hold table, typed by hand: the six block rows.
+    /// DEC-009's may-hold table as amended by DEC-012, typed by hand: the eight
+    /// block rows.
     fn may_hold_table() -> Vec<(Category, Vec<Category>)> {
         vec![
             (
@@ -270,7 +283,14 @@ mod tests {
             ),
             (
                 MakerNote,
-                vec![Gps, DeviceId, CameraModel, Timestamps, Software],
+                vec![
+                    Gps,
+                    DeviceId,
+                    CameraModel,
+                    Timestamps,
+                    Software,
+                    EmbeddedImage,
+                ],
             ),
             (
                 Xmp,
@@ -298,6 +318,45 @@ mod tests {
                 ],
             ),
             (Icc, vec![]),
+            // DEC-012: every category except itself.
+            (
+                EmbeddedImage,
+                vec![
+                    Gps,
+                    DeviceId,
+                    Authorship,
+                    FreeText,
+                    Thumbnail,
+                    MakerNote,
+                    Xmp,
+                    Iptc,
+                    Jumbf,
+                    Timestamps,
+                    CameraModel,
+                    Software,
+                    Icc,
+                    OtherSegment,
+                ],
+            ),
+            (
+                OtherSegment,
+                vec![
+                    Gps,
+                    DeviceId,
+                    Authorship,
+                    FreeText,
+                    Thumbnail,
+                    MakerNote,
+                    Xmp,
+                    Iptc,
+                    Jumbf,
+                    Timestamps,
+                    CameraModel,
+                    Software,
+                    Icc,
+                    EmbeddedImage,
+                ],
+            ),
         ]
     }
 
@@ -315,7 +374,7 @@ mod tests {
             assert!(!seen.contains(&s), "{c:?} shares a bit");
             seen.push(s);
         }
-        assert_eq!(seen.len(), 13, "13 distinct bits");
+        assert_eq!(seen.len(), 15, "15 distinct bits");
         // All the singletons together are all().
         let union = seen.iter().fold(StripSpec::none(), |a, s| {
             s.categories().fold(a, |a, c| a.include(c))
@@ -324,9 +383,11 @@ mod tests {
     }
 
     #[test]
-    fn category_all_fits_in_sixteen_bits() {
+    fn bit_set_uses_fifteen_of_sixteen_bits() {
         assert!(Category::ALL.len() <= 16);
-        assert_eq!(Category::ALL.len(), 13);
+        assert_eq!(Category::ALL.len(), 15);
+        // The 16th bit is spare: no spec built from categories reaches it.
+        assert_eq!(StripSpec::all().0, 0x7FFF);
     }
 
     #[test]
@@ -340,7 +401,7 @@ mod tests {
         }
         let all = StripSpec::all();
         assert!(!all.is_empty());
-        assert_eq!(all.len(), 13);
+        assert_eq!(all.len(), 15);
         for c in Category::ALL {
             assert!(all.contains(c));
         }
@@ -355,7 +416,7 @@ mod tests {
         assert_eq!(t.len(), 1);
         assert_eq!(t.exclude(Gps), t);
         assert_eq!(t.exclude(Xmp), none);
-        assert_eq!(all.exclude(Jumbf).len(), 12);
+        assert_eq!(all.exclude(Jumbf).len(), 14);
         assert!(!all.exclude(Jumbf).contains(Jumbf));
         assert!(all.exclude(Jumbf).contains(Icc));
     }
@@ -402,7 +463,7 @@ mod tests {
     }
 
     #[test]
-    fn each_preset_spec_equals_its_dec_009_column() {
+    fn each_preset_spec_equals_its_dec_009_column_as_amended() {
         for (col, preset) in StripPolicy::PRESETS.iter().enumerate() {
             let spec = preset.spec();
             for (c, cells) in REMOVED {
@@ -430,12 +491,12 @@ mod tests {
             assert!(small.len() < big.len(), "strictly nested");
         }
         assert_eq!(StripPolicy::Everything.spec(), StripSpec::all());
-        assert_eq!(StripPolicy::Everything.spec().len(), 13);
+        assert_eq!(StripPolicy::Everything.spec().len(), 15);
         let lens: Vec<usize> = StripPolicy::PRESETS
             .iter()
             .map(|p| p.spec().len())
             .collect();
-        assert_eq!(lens, vec![1, 2, 8, 11, 13]);
+        assert_eq!(lens, vec![1, 2, 8, 11, 15]);
     }
 
     #[test]
@@ -450,9 +511,9 @@ mod tests {
     }
 
     #[test]
-    fn may_hold_equals_the_dec_009_table() {
+    fn may_hold_equals_the_dec_012_table() {
         let table = may_hold_table();
-        assert_eq!(table.len(), 6);
+        assert_eq!(table.len(), 8);
         for (block, holds) in &table {
             let got = may_hold(*block);
             for c in Category::ALL {
@@ -475,10 +536,23 @@ mod tests {
         ] {
             assert!(may_hold(c).is_empty(), "{c:?}");
         }
-        // The six block rows above are exactly the block categories.
+        // The eight block rows above are exactly the block categories.
         for c in Category::ALL {
             assert_eq!(c.is_block(), table.iter().any(|(b, _)| *b == c), "{c:?}");
         }
+    }
+
+    #[test]
+    fn makernote_may_hold_embedded_image() {
+        assert!(may_hold(MakerNote).contains(EmbeddedImage));
+        // ...and the five it held before are still there.
+        for c in [Gps, DeviceId, CameraModel, Timestamps, Software] {
+            assert!(may_hold(MakerNote).contains(c), "{c:?}");
+        }
+        assert_eq!(may_hold(MakerNote).len(), 6);
+        // Neither new category holds itself.
+        assert!(!may_hold(EmbeddedImage).contains(EmbeddedImage));
+        assert!(!may_hold(OtherSegment).contains(OtherSegment));
     }
 
     #[test]

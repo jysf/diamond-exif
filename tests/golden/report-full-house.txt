@@ -16,7 +16,7 @@ file: photos/full-house.jpg
     - gps [high] tag 0x0001 ifd=gps#2 type=2 count=2 block=0 segment=0 value="a": removed
     - thumbnail [medium] tag 0x0201 ifd=ifd1#3 type=4 count=1 block=0 segment=0 thumbnail offset=0 length=0 starts_with_ffd8=false value="\x00\x00\x00\x00": removed
     - xmp [medium] region xmp len=4 block=- segment=1: kept_unread (may hold what this policy removes)
-    - iptc [medium] region iptc len=6 block=- segment=2: kept_unread (may hold what this policy removes)
+    - iptc [medium] region iptc len=18 block=- segment=2: kept_unread (may hold what this policy removes)
     - icc [low] region icc len=7 block=- segment=3: kept (not targeted by this policy)
     - jumbf [medium] region jumbf len=1 block=- segment=4: kept_unread (may hold what this policy removes)
   preview (all_pii): removed 10, kept 2, kept_unread 3; residual findings 5, residual severity medium

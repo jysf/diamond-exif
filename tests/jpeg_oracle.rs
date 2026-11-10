@@ -60,8 +60,18 @@ fn read_record(name: &str) -> tools::Record {
 /// The committed `jpeg_segments` seeds, sorted by name.
 fn jpeg_seed_files() -> Vec<(String, Vec<u8>)> {
     let dir = root().join("fuzz/seeds/jpeg_segments");
+    // The SPEC-019 `shape-*` seeds are byte copies of the real-shapes fixtures,
+    // whose ExifTool records live in `exiftool-inventory/` (the record set of
+    // this file does not grow).
     let mut out: Vec<(String, Vec<u8>)> = std::fs::read_dir(&dir)
         .expect("read seeds dir")
+        .filter(|e| {
+            !e.as_ref()
+                .expect("dir entry")
+                .file_name()
+                .to_string_lossy()
+                .starts_with("shape-")
+        })
         .map(|e| {
             let path = e.expect("dir entry").path();
             let name = path
@@ -862,10 +872,26 @@ fn iptc_without_0404_and_xmp_in_wrong_marker_are_absent_on_both_sides() {
         );
         let bytes = fixture(name);
         let meta = jpeg::read(&bytes).expect("a JPEG");
+        if name == "jpeg-iptc-without-0404" {
+            // DEC-012 section 1 (SPEC-019): every Photoshop segment is a
+            // region now, so ours is "present" here and a known divergence.
+            assert!(
+                matches!(meta.regions(), [jpeg::Region::Iptc { .. }]),
+                "{name}: one Iptc region: {:?}",
+                meta.regions()
+            );
+            assert!(meta.exif_blocks().is_empty());
+            continue;
+        }
+        // DEC-012: an XMP signature under APP2 is an unrecognised APPn (an
+        // audit-only region kind, no ExifTool counterpart: class S).
         assert!(
-            meta.regions().is_empty(),
-            "{name}: no region: {:?}",
-            meta.regions()
+            matches!(
+                meta.regions(),
+                [jpeg::Region::OtherApp { marker: 0xE2, .. }]
+            ),
+            "{name}: one OtherApp region: {:?}",
+            meta.regions().len()
         );
         assert!(meta.exif_blocks().is_empty());
         let ours = ours_fixture(&bytes);

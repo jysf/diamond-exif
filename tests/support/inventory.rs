@@ -36,6 +36,30 @@ pub const FILE_LEVEL_GROUPS: [&str; 4] = ["System", "File", "ExifTool", "Composi
 /// name; any other group that is not modelled is a [`ParseError`].
 pub const UNMODELLED_GROUPS: [&str; 2] = ["JFIF", "Photoshop"];
 
+/// ExifTool groups that exist only on the SPEC-019 real-shape fixtures and that
+/// the audit model has no item for: the Apple `AROT` APP10 segment (ExifTool
+/// decodes `HDRGainCurveSize` from it; the audit reports the segment as an
+/// unrecognised APPn) and the `Canon` MakerNote group (the audit reports the
+/// MakerNote as one block and does not parse it, DEC-001). Named, never dropped
+/// silently (SPEC-019).
+pub const SHAPE_ONLY_GROUPS: [&str; 2] = ["AROT", "Canon"];
+
+/// Region kinds the audit reports that ExifTool has no reliable counterpart
+/// for (SPEC-019 class S: audit-only region kinds). On the existing inputs they
+/// are excluded from the multiset on our side; an exact list, so adding a kind
+/// here is a visible change. `Iptc` is NOT among them: ExifTool lists IPTC.
+pub const CLASS_S_KINDS: [LibRegionKind; 3] = [
+    LibRegionKind::Comment,
+    LibRegionKind::OtherApp,
+    LibRegionKind::Trailer,
+];
+
+/// ExifTool names the primary image of a Multi-Picture file too: a file with N
+/// index entries has N `MPImage<n>` groups (`MPImage1` is the primary), so the
+/// number of our `EmbeddedImage` regions is the group count minus this offset
+/// (measured on the SPEC-019 fixtures; see `tests/real_shapes.rs`).
+pub const MPIMAGE_PRIMARY_OFFSET: usize = 1;
+
 /// Tag ids whose entries are not compared as tags (Class H): the four pointer
 /// tags (their child IFDs' entries are compared in their own groups) and the
 /// four whose *content* ExifTool decodes into other groups (XMP 0x02BC, IPTC
@@ -116,6 +140,12 @@ pub fn ours(a: &FileAudit<'_>) -> Inventory {
                 *inv.tags.entry((group_of(ifd, position), tag)).or_insert(0) += 1;
             }
             ItemKind::Region { kind, .. } => {
+                // Class S: audit-only kinds (no reliable ExifTool counterpart).
+                // `EmbeddedImage` is compared on its own (see
+                // `embedded_regions`), not as a region presence.
+                if CLASS_S_KINDS.contains(&kind) || kind == LibRegionKind::EmbeddedImage {
+                    continue;
+                }
                 let k = match kind {
                     LibRegionKind::Xmp | LibRegionKind::ExtendedXmp => RegionKind::Xmp,
                     LibRegionKind::Iptc => RegionKind::Iptc,
@@ -128,6 +158,34 @@ pub fn ours(a: &FileAudit<'_>) -> Inventory {
         }
     }
     inv
+}
+
+/// How many `EmbeddedImage` regions the audit reported.
+pub fn embedded_regions(a: &FileAudit<'_>) -> usize {
+    a.items()
+        .iter()
+        .filter(|i| {
+            matches!(
+                i.kind(),
+                ItemKind::Region {
+                    kind: LibRegionKind::EmbeddedImage,
+                    ..
+                }
+            )
+        })
+        .count()
+}
+
+/// How many distinct `MPImage<n>` groups ExifTool listed.
+pub fn mpimage_groups(lines: &[Line]) -> usize {
+    let mut names: Vec<&str> = lines
+        .iter()
+        .map(|l| l.group.as_str())
+        .filter(|g| g.starts_with("MPImage"))
+        .collect();
+    names.sort_unstable();
+    names.dedup();
+    names.len()
 }
 
 /// One kept line of ExifTool's listing: the group, the tag id (`None` for a
@@ -224,14 +282,20 @@ pub enum GroupClass {
     Exif,
     /// A region group: the presence of the region is what is compared.
     Region(RegionKind),
-    /// Named in [`UNMODELLED_GROUPS`].
+    /// Named in [`UNMODELLED_GROUPS`] or [`SHAPE_ONLY_GROUPS`].
     Unmodelled,
+    /// A Multi-Picture group (`MPF0`, `MPImage<n>`): compared by
+    /// [`mpimage_groups`], never as tags.
+    MultiPicture,
 }
 
 /// Classify a group name, or `None` when it is none of the three.
 pub fn classify_group(group: &str) -> Option<GroupClass> {
-    if UNMODELLED_GROUPS.contains(&group) {
+    if UNMODELLED_GROUPS.contains(&group) || SHAPE_ONLY_GROUPS.contains(&group) {
         return Some(GroupClass::Unmodelled);
+    }
+    if group.starts_with("MPF") || group.starts_with("MPImage") {
+        return Some(GroupClass::MultiPicture);
     }
     if group.starts_with("XMP") {
         return Some(GroupClass::Region(RegionKind::Xmp));
@@ -285,7 +349,7 @@ pub fn inventory_of(lines: &[Line]) -> Result<Inventory, ParseError> {
             Some(GroupClass::Region(kind)) => {
                 inv.regions.insert(kind);
             }
-            Some(GroupClass::Unmodelled) => {}
+            Some(GroupClass::Unmodelled | GroupClass::MultiPicture) => {}
             None => {
                 return Err(ParseError::UnknownGroup {
                     group: l.group.clone(),
@@ -1043,10 +1107,22 @@ pub const KNOWN_DIVERGENCES: &[Divergence] = &[
         &[RegionKind::Icc],
         "ExifTool lists no ICC group for the minimal ICC chunks",
     ),
+    // SPEC-019 / DEC-012 section 1: every `Photoshop 3.0` APP13 segment is an
+    // `Iptc` region, whether or not a 0x0404 resource parses inside it. This
+    // seed's APP13 segment holds no IPTC dataset, so ExifTool prints no IPTC
+    // group: Iptc joins the pin (it was matched before DEC-012).
     region_only(
         "seed-jpeg_segments/icc-iptc-jumbf",
-        &[RegionKind::Icc, RegionKind::Jumbf],
-        "ExifTool lists no ICC or JUMBF group for the minimal payloads",
+        &[RegionKind::Icc, RegionKind::Iptc, RegionKind::Jumbf],
+        "ExifTool lists no ICC or JUMBF group for the minimal payloads, and (DEC-012: every Photoshop segment is a region) no IPTC group for the APP13 segment that holds no IPTC dataset",
+    ),
+    // SPEC-019 / DEC-012 section 1: a Photoshop segment without a 0x0404
+    // resource is now an `Iptc` region (it was none before); ExifTool prints no
+    // IPTC group for it. New pin, a consequence of the DEC, not a bug.
+    region_only(
+        "fixtures/jpeg-iptc-without-0404",
+        &[RegionKind::Iptc],
+        "DEC-012: every Photoshop 3.0 APP13 segment is an Iptc region; this one holds only non-IPTC resources and ExifTool prints no IPTC group",
     ),
     region_only(
         "seed-jpeg_segments/icc-seq-zero",
@@ -1074,3 +1150,24 @@ pub const KNOWN_DIVERGENCES: &[Divergence] = &[
         "ExifTool lists no XMP group for the minimal XMP payloads",
     ),
 ];
+
+// ── SPEC-019: the Multi-Picture relation ─────────────────────────────────────
+
+/// The relation on a well-formed Multi-Picture file: ExifTool lists one
+/// `MPImage<n>` group per index entry, the primary (`MPImage1`) included, so
+/// the number of groups is the number of our `EmbeddedImage` regions plus
+/// `offset` ([`MPIMAGE_PRIMARY_OFFSET`]). `Err` names the disagreement.
+pub fn check_embedded_relation(ours: usize, groups: usize, offset: usize) -> Result<(), String> {
+    let want = ours.saturating_add(offset);
+    if groups == want {
+        Ok(())
+    } else if groups < want {
+        Err(format!(
+            "an embedded image we list that ExifTool does not: {ours} regions, {groups} MPImage groups (want {want})"
+        ))
+    } else {
+        Err(format!(
+            "an MPImage group we do not list: {ours} regions, {groups} MPImage groups (want {want})"
+        ))
+    }
+}

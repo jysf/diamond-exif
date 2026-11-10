@@ -43,6 +43,7 @@
 //! No ExifTool source is read.
 
 use crate::error::Error;
+use crate::reader::read_u32;
 use crate::tiff::{Container, ParseIssue};
 
 use super::{
@@ -54,10 +55,31 @@ use super::{
 /// [`Error::ExtraExif`] issue but get no [`ExifBlock`] (bounded work).
 pub const MAX_EXIF_BLOCKS: usize = 16;
 
+/// Most images one MPF index may list, the primary included (DEC-012: at most
+/// 16 images, so at most 15 [`Region::EmbeddedImage`] per file). An index entry
+/// from this one on costs a single [`Error::TooManyMpfImages`] and is not
+/// examined.
+pub const MAX_MPF_IMAGES: usize = 16;
+
 /// Most JPEG-layer issues [`JpegMetadata::jpeg_issues`] can hold: the walker's
 /// (`MAX_JPEG_ISSUES + 1`) plus the extraction's (at most one per recorded
-/// segment, plus one ICC aggregate: `MAX_JPEG_SEGMENTS + 1`).
-pub const MAX_JPEG_METADATA_ISSUES: usize = (MAX_JPEG_ISSUES + 1) + (MAX_JPEG_SEGMENTS + 1);
+/// segment, plus one ICC aggregate: `MAX_JPEG_SEGMENTS + 1`) plus the entry
+/// issues of the one MPF index that is read (at most one per examined entry,
+/// and the too-many issue: `MAX_MPF_IMAGES`).
+pub const MAX_JPEG_METADATA_ISSUES: usize =
+    (MAX_JPEG_ISSUES + 1) + (MAX_JPEG_SEGMENTS + 1) + MAX_MPF_IMAGES;
+
+/// The MPF segment signature (CIPA DC-007): the four bytes before the TIFF-style
+/// MPF header, whose offsets the index entries are relative to.
+const SIG_MPF: &[u8] = b"MPF\0";
+/// The MP index tag (`MPEntry`): 16 bytes per image.
+const TAG_MP_ENTRY: u16 = 0xB002;
+/// One MP index entry: attribute (`u32`), size (`u32`), offset (`u32`) and two
+/// dependent-image numbers (`u16` each).
+const MP_ENTRY_LEN: usize = 16;
+/// The APP14 Adobe signature: a colour-transform marker with no free text
+/// (benign, DEC-012).
+const SIG_ADOBE: &[u8] = b"Adobe\0";
 
 /// The extended-XMP header after the signature: a 32-byte GUID, then the full
 /// length and the chunk offset, both big-endian `u32`.
@@ -66,8 +88,6 @@ const EXTENDED_XMP_HEADER: usize = 32 + 4 + 4;
 const ICC_HEADER: usize = 2;
 /// The JUMBF header after the `JP` signature: `En` (`u16`) and `Z` (`u32`).
 const JUMBF_HEADER: usize = 2 + 4;
-/// The Photoshop image resource id of the IPTC-NAA record block.
-const IPTC_RESOURCE_ID: u16 = 0x0404;
 
 /// One parsed Exif segment: where it came from and what the TIFF engine made
 /// of it.
@@ -136,12 +156,13 @@ pub enum Region<'a> {
         /// The chunk's profile bytes.
         data: &'a [u8],
     },
-    /// The data of a Photoshop `0x0404` (IPTC-NAA) image resource: the IIM
-    /// records, not decoded.
+    /// One APP13 `Photoshop 3.0\0` segment (DEC-012: every such segment is a
+    /// region, whether or not a `0x0404` resource parses inside it): the
+    /// payload after the header, not decoded.
     Iptc {
         /// Index into [`Jpeg::segments`].
         segment: usize,
-        /// The resource data (without its padding byte).
+        /// The segment payload after the header.
         data: &'a [u8],
     },
     /// A JUMBF (JPEG XT) segment. No C2PA detection is claimed (DEC-006).
@@ -155,6 +176,44 @@ pub enum Region<'a> {
         /// The bytes after the 6-byte header.
         data: &'a [u8],
     },
+    /// One Multi-Picture Format image other than the primary (DEC-012): a
+    /// range of the input that starts `FF D8`, found through the MP index.
+    EmbeddedImage {
+        /// Index into [`Jpeg::segments`] of the MPF segment that lists it.
+        segment: usize,
+        /// Input offset of the image's first byte.
+        offset: usize,
+        /// The image's bytes (`size` bytes at `offset`).
+        data: &'a [u8],
+    },
+    /// A `COM` segment: its payload.
+    Comment {
+        /// Index into [`Jpeg::segments`].
+        segment: usize,
+        /// The comment bytes.
+        data: &'a [u8],
+    },
+    /// An APPn segment the library does not recognise (DEC-012): not Exif,
+    /// XMP, extended XMP, ICC, Photoshop, JUMBF, a parsed MPF, `JFIF\0` or
+    /// `Adobe\0`.
+    OtherApp {
+        /// Index into [`Jpeg::segments`].
+        segment: usize,
+        /// The marker code (`0xE0..=0xEF`).
+        marker: u8,
+        /// The segment payload.
+        data: &'a [u8],
+    },
+    /// Bytes after the `EOI` that no embedded image accounts for (DEC-012): one
+    /// region per contiguous remainder.
+    Trailer {
+        /// One past the last segment (`Jpeg::segments().len()`).
+        segment: usize,
+        /// Input offset of the first byte.
+        offset: usize,
+        /// The bytes.
+        data: &'a [u8],
+    },
 }
 
 impl<'a> Region<'a> {
@@ -165,7 +224,11 @@ impl<'a> Region<'a> {
             | Region::ExtendedXmp { segment, .. }
             | Region::Icc { segment, .. }
             | Region::Iptc { segment, .. }
-            | Region::Jumbf { segment, .. } => segment,
+            | Region::Jumbf { segment, .. }
+            | Region::EmbeddedImage { segment, .. }
+            | Region::Comment { segment, .. }
+            | Region::OtherApp { segment, .. }
+            | Region::Trailer { segment, .. } => segment,
         }
     }
 
@@ -176,7 +239,11 @@ impl<'a> Region<'a> {
             Region::ExtendedXmp { data, .. }
             | Region::Icc { data, .. }
             | Region::Iptc { data, .. }
-            | Region::Jumbf { data, .. } => data,
+            | Region::Jumbf { data, .. }
+            | Region::EmbeddedImage { data, .. }
+            | Region::Comment { data, .. }
+            | Region::OtherApp { data, .. }
+            | Region::Trailer { data, .. } => data,
         }
     }
 }
@@ -269,8 +336,16 @@ impl<'a> JpegMetadata<'a> {
 /// Walk `data` as a JPEG and extract its Exif blocks and located regions.
 /// `Err` only as for [`Jpeg::parse`] (not a JPEG at all).
 pub fn read(data: &[u8]) -> Result<JpegMetadata<'_>, Error> {
+    read_with(data, true)
+}
+
+/// [`read`] with embedded-image location switched on or off. Off, an MPF
+/// segment is an ordinary unrecognised APPn (no index is read, no issue is
+/// recorded) and the trailer is not reduced: this is how the audit looks
+/// inside an embedded image without recursing (DEC-012 section 3).
+pub(crate) fn read_with(data: &[u8], embedded: bool) -> Result<JpegMetadata<'_>, Error> {
     let jpeg = Jpeg::parse(data)?;
-    Ok(extract(jpeg))
+    Ok(extract(jpeg, data, embedded))
 }
 
 /// The extraction's mutable state. Every issue goes through
@@ -331,9 +406,74 @@ impl Extract {
         }
     }
 
-    /// Rule 5: walk the Photoshop image resource blocks of one APP13 segment
-    /// and locate every `0x0404` resource. `body` is the segment payload after
-    /// the signature; it starts at input offset `body_at`. Stops at the first
+    /// Rule 1 (DEC-012): read the MP index of one APP2 `MPF\0` segment at input
+    /// offset `at` and return the embedded images it lists as `(input offset,
+    /// bytes)`, in index order. `None`: the segment does not parse (a bad
+    /// TIFF-style header, no `0xB002` entry, an unreadable or empty index);
+    /// the caller reports it as an unrecognised APPn plus an issue.
+    ///
+    /// Index offsets are relative to the MPF header, the byte after the `MPF\0`
+    /// signature. Entry 0 is the primary image and is skipped. An entry whose
+    /// range is not inside the input, or whose bytes do not start `FF D8`, is
+    /// an issue and no image. Entries from [`MAX_MPF_IMAGES`] on are one issue
+    /// and are not examined, so the work is bounded by that constant.
+    fn mpf<'a>(
+        &mut self,
+        data: &'a [u8],
+        at: usize,
+        payload: &'a [u8],
+    ) -> Option<Vec<(usize, &'a [u8])>> {
+        let header = payload.get(SIG_MPF.len()..)?;
+        // The segment's own marker, code and length (4 bytes), then the signature.
+        let base = at.checked_add(4)?.checked_add(SIG_MPF.len())?;
+        let container = Container::parse(header).ok()?;
+        let entry = container.ifd0()?.entry(TAG_MP_ENTRY)?;
+        let index = container.payload(entry).ok()?;
+        if index.len() < MP_ENTRY_LEN {
+            return None;
+        }
+        let order = container.byte_order();
+        let mut found = Vec::new();
+        for (i, chunk) in index.as_chunks::<MP_ENTRY_LEN>().0.iter().enumerate() {
+            if i >= MAX_MPF_IMAGES {
+                self.record(
+                    Error::TooManyMpfImages {
+                        at,
+                        limit: MAX_MPF_IMAGES,
+                    },
+                    at,
+                );
+                break;
+            }
+            if i == 0 {
+                continue;
+            }
+            let (Ok(size), Ok(offset)) = (read_u32(chunk, 4, order), read_u32(chunk, 8, order))
+            else {
+                continue;
+            };
+            let range = usize::try_from(offset)
+                .ok()
+                .and_then(|o| base.checked_add(o))
+                .and_then(|start| {
+                    let len = usize::try_from(size).ok()?;
+                    let end = start.checked_add(len)?;
+                    Some((start, data.get(start..end)?))
+                });
+            match range {
+                None => self.record(Error::MpfImageOutsideInput { at, index: i }, at),
+                Some((_, bytes)) if !bytes.starts_with(&[0xFF, 0xD8]) => {
+                    self.record(Error::MpfImageNotJpeg { at, index: i }, at);
+                }
+                Some(image) => found.push(image),
+            }
+        }
+        Some(found)
+    }
+
+    /// Rule 5 (DEC-012): the segment is one `Iptc` region (its payload after
+    /// the signature), and its Photoshop image resource blocks are walked for
+    /// issues only. `body` starts at input offset `body_at`. Stops at the first
     /// fault: one issue per segment.
     fn iptc<'a>(
         &mut self,
@@ -342,6 +482,10 @@ impl Extract {
         body_at: usize,
         out: &mut Vec<Region<'a>>,
     ) {
+        out.push(Region::Iptc {
+            segment: index,
+            data: body,
+        });
         let mut pos = 0usize;
         while pos < body.len() {
             let rest = body.get(pos..).unwrap_or_default();
@@ -357,14 +501,8 @@ impl Extract {
                 return;
             }
             match parse_8bim(rest) {
-                Ok(resource) => {
-                    if resource.id == IPTC_RESOURCE_ID {
-                        out.push(Region::Iptc {
-                            segment: index,
-                            data: resource.data,
-                        });
-                    }
-                    pos = pos.saturating_add(resource.consumed);
+                Ok(consumed) => {
+                    pos = pos.saturating_add(consumed);
                 }
                 Err(need) => {
                     self.short("8BIM resource", here, need, rest.len());
@@ -375,26 +513,20 @@ impl Extract {
     }
 }
 
-/// One Photoshop image resource block.
-struct Resource<'a> {
-    id: u16,
-    data: &'a [u8],
-    /// Bytes the block occupies, including the pad byte after odd-size data
-    /// (which the last block of a segment may omit).
-    consumed: usize,
-}
-
-/// Parse one `8BIM` block at the start of `rest`: `8BIM`, a 2-byte id, a Pascal
+/// Walk one `8BIM` block at the start of `rest`: `8BIM`, a 2-byte id, a Pascal
 /// string name padded so that it occupies an even number of bytes, a 4-byte
-/// size and the data (padded to even). `Err(need)` is the number of bytes the
-/// block needs from its start when `rest` is too short to hold it.
-fn parse_8bim(rest: &[u8]) -> Result<Resource<'_>, usize> {
+/// size and the data (padded to even). `Ok(consumed)` is the bytes the block
+/// occupies, including the pad byte after odd-size data (which the last block of
+/// a segment may omit). `Err(need)` is the number of bytes the block needs from
+/// its start when `rest` is too short to hold it. The id and the data are not
+/// used: since DEC-012 every Photoshop segment is a region, so the walk only
+/// finds faults.
+fn parse_8bim(rest: &[u8]) -> Result<usize, usize> {
     const ID_AT: usize = 4;
     const NAME_AT: usize = 6;
-    let id = match rest.get(ID_AT..NAME_AT) {
-        Some(&[hi, lo]) => u16::from_be_bytes([hi, lo]),
-        _ => return Err(NAME_AT),
-    };
+    if rest.get(ID_AT..NAME_AT).is_none() {
+        return Err(NAME_AT);
+    }
     let name_len = rest
         .get(NAME_AT)
         .copied()
@@ -411,15 +543,37 @@ fn parse_8bim(rest: &[u8]) -> Result<Resource<'_>, usize> {
         _ => return Err(data_at),
     };
     let data_end = data_at.saturating_add(size);
-    let data = rest.get(data_at..data_end).ok_or(data_end)?;
-    Ok(Resource {
-        id,
-        data,
-        consumed: data_end.saturating_add(size & 1),
-    })
+    if rest.get(data_at..data_end).is_none() {
+        return Err(data_end);
+    }
+    Ok(data_end.saturating_add(size & 1))
 }
 
-fn extract(jpeg: Jpeg<'_>) -> JpegMetadata<'_> {
+/// The parts of `start..end` that none of `covered` (ranges of the input, in
+/// any order, possibly overlapping or reaching outside) accounts for, as
+/// `(start, end)` pairs in order, none empty. At most `covered.len() + 1`.
+fn uncovered(start: usize, end: usize, covered: &mut [(usize, usize)]) -> Vec<(usize, usize)> {
+    covered.sort_unstable();
+    let mut gaps = Vec::new();
+    let mut cursor = start;
+    for &(a, b) in covered.iter() {
+        let a = a.max(start);
+        let b = b.min(end);
+        if b <= a {
+            continue;
+        }
+        if a > cursor {
+            gaps.push((cursor, a));
+        }
+        cursor = cursor.max(b);
+    }
+    if cursor < end {
+        gaps.push((cursor, end));
+    }
+    gaps
+}
+
+fn extract<'a>(jpeg: Jpeg<'a>, data: &'a [u8], embedded: bool) -> JpegMetadata<'a> {
     let mut ex = Extract {
         issues: jpeg.issues().to_vec(),
         halted: jpeg.halted(),
@@ -428,6 +582,11 @@ fn extract(jpeg: Jpeg<'_>) -> JpegMetadata<'_> {
     let mut regions = Vec::new();
     let mut icc_chunks: Vec<(usize, u8, u8)> = Vec::new();
     let mut exif_seen = 0usize;
+    // Input ranges of the located embedded images (they reduce the trailer).
+    let mut covered: Vec<(usize, usize)> = Vec::new();
+    // Only the first MPF segment is read as an index; a second one cannot be a
+    // second index (the issue count stays bounded).
+    let mut mpf_seen = false;
 
     for (index, segment) in jpeg.segments().iter().enumerate() {
         let payload = segment.payload();
@@ -525,10 +684,64 @@ fn extract(jpeg: Jpeg<'_>) -> JpegMetadata<'_> {
                     ex.short("JUMBF header", at, JUMBF_HEADER, rest.len());
                 }
             }
+            // Rule 3 (DEC-012): a comment.
+            SegmentKind::Com => regions.push(Region::Comment {
+                segment: index,
+                data: payload,
+            }),
+            // The benign list: APP0 `JFIF\0` (classified as `Jfif`) and APP14
+            // `Adobe\0`. Every other APPn is unrecognised, except a parsed MPF.
+            SegmentKind::App(n) => {
+                let marker = segment.marker();
+                if n == 14 && payload.starts_with(SIG_ADOBE) {
+                    continue;
+                }
+                if n == 2 && embedded && payload.starts_with(SIG_MPF) {
+                    // The first MPF segment is read; a later one is malformed.
+                    let images = if mpf_seen {
+                        None
+                    } else {
+                        ex.mpf(data, at, payload)
+                    };
+                    mpf_seen = true;
+                    if let Some(images) = images {
+                        for (offset, bytes) in images {
+                            covered.push((offset, offset.saturating_add(bytes.len())));
+                            regions.push(Region::EmbeddedImage {
+                                segment: index,
+                                offset,
+                                data: bytes,
+                            });
+                        }
+                        continue;
+                    }
+                    ex.record(Error::MpfMalformed { at }, at);
+                }
+                regions.push(Region::OtherApp {
+                    segment: index,
+                    marker,
+                    data: payload,
+                });
+            }
             _ => {}
         }
     }
     ex.check_icc(&icc_chunks);
+
+    // Rule 2 (DEC-012): the trailer minus the embedded images, one region per
+    // contiguous remainder. Without an EOI there is no trailer.
+    if let Some(eoi) = jpeg.eoi_offset() {
+        let start = eoi.saturating_add(2);
+        for (a, b) in uncovered(start, data.len(), &mut covered) {
+            if let Some(bytes) = data.get(a..b) {
+                regions.push(Region::Trailer {
+                    segment: jpeg.segments().len(),
+                    offset: a,
+                    data: bytes,
+                });
+            }
+        }
+    }
 
     JpegMetadata {
         jpeg_issues: ex.issues,
@@ -1220,7 +1433,7 @@ mod tests {
     }
 
     #[test]
-    fn iptc_0404_resource_is_located_with_even_padding() {
+    fn every_photoshop_app13_is_an_iptc_region() {
         let mut body = Vec::new();
         // Pascal name "ab" (3 bytes, padded to 4), odd-size data (3, padded).
         body.extend_from_slice(&res(0x0408, b"ab", &[9, 9, 9]));
@@ -1232,19 +1445,31 @@ mod tests {
         let d = one(iptc_seg(&body));
         let m = read(&d).unwrap();
         assert!(m.is_clean(), "{:?}", errs(&m));
+        // DEC-012: the region is the segment (its payload after the header),
+        // whatever resources are inside it.
         let datas: Vec<&[u8]> = m.regions().iter().map(Region::data).collect();
-        assert_eq!(datas, [&[1u8, 2, 3, 4, 5][..], &[8u8, 8][..]]);
-        assert!(m
-            .regions()
-            .iter()
-            .all(|r| matches!(r, Region::Iptc { segment: 0, .. })));
+        assert_eq!(datas, [&body[..]]);
+        assert!(matches!(m.regions()[0], Region::Iptc { segment: 0, .. }));
         // The last resource may omit its trailing pad byte.
         let mut body = res(0x0404, b"", &[1, 2, 3]);
         body.pop();
         let bytes = one(iptc_seg(&body));
         let m = read(&bytes).unwrap();
         assert!(m.is_clean());
-        assert_eq!(m.regions()[0].data(), &[1u8, 2, 3][..]);
+        assert_eq!(m.regions()[0].data(), &body[..]);
+        // Every Photoshop segment is its own region, in segment order, even
+        // one with no resource at all or with no 0x0404 resource.
+        let (d, _) = jpeg_of(&[
+            iptc_seg(&res(0x0404, b"", &[1, 2])),
+            iptc_seg(b""),
+            iptc_seg(&res(0x0408, b"", &[1])),
+        ]);
+        let m = read(&d).unwrap();
+        assert!(m.is_clean(), "{:?}", errs(&m));
+        let segs: Vec<usize> = m.regions().iter().map(Region::segment).collect();
+        assert_eq!(segs, [0, 1, 2]);
+        assert!(m.regions().iter().all(|r| matches!(r, Region::Iptc { .. })));
+        assert_eq!(m.regions()[1].data(), b"");
     }
 
     #[test]
@@ -1259,8 +1484,8 @@ mod tests {
         let body = [first.clone(), second.clone(), third].concat();
         let d = one(iptc_seg(&body));
         let m = read(&d).unwrap();
-        assert_eq!(m.regions().len(), 1, "the region before it is kept");
-        assert_eq!(m.regions()[0].data(), &[1u8, 2, 3, 4][..]);
+        assert_eq!(m.regions().len(), 1, "the segment is still a region");
+        assert_eq!(m.regions()[0].data(), &body[..]);
         // segment at 2, payload at 6, then 14 signature bytes, then `first`.
         let at = 2 + 4 + 14 + first.len();
         let have = second.len() + res(0x0404, b"", &[6, 6]).len();
@@ -1278,7 +1503,7 @@ mod tests {
             let body = res(0x0404, b"", &[1, 2])[..cut].to_vec();
             let bytes = one(iptc_seg(&body));
             let m = read(&bytes).unwrap();
-            assert!(m.regions().is_empty(), "cut {cut}");
+            assert_eq!(m.regions().len(), 1, "cut {cut}: the segment is a region");
             assert!(
                 matches!(
                     errs(&m)[..],
@@ -1318,16 +1543,17 @@ mod tests {
     }
 
     #[test]
-    fn an_app13_without_a_0404_resource_yields_no_region_and_no_issue() {
+    fn a_photoshop_segment_without_a_0404_resource_is_a_region_and_no_issue() {
         let body = [res(0x0408, b"", &[1]), res(0x040B, b"url", &[2, 2])].concat();
         let bytes = one(iptc_seg(&body));
         let m = read(&bytes).unwrap();
-        assert!(m.regions().is_empty());
+        assert_eq!(m.regions().len(), 1);
         assert!(m.is_clean());
         // And an empty Photoshop segment.
         let bytes = one(iptc_seg(b""));
         let m = read(&bytes).unwrap();
-        assert!(m.regions().is_empty() && m.is_clean());
+        assert!(matches!(m.regions(), [Region::Iptc { data: b"", .. }]));
+        assert!(m.is_clean());
     }
 
     #[test]
@@ -1381,7 +1607,7 @@ mod tests {
 
     #[test]
     fn the_jpeg_layer_issue_total_never_exceeds_the_documented_constant() {
-        assert_eq!(MAX_JPEG_METADATA_ISSUES, 1025 + 4097);
+        assert_eq!(MAX_JPEG_METADATA_ISSUES, 1025 + 4097 + 16);
         let tiny = ext_xmp_seg(&[]); // a short extended-XMP header: one issue each
                                      // Not halted: 1000 stray FF00 pairs, then 3000 short segments.
         let mut d = soi();
@@ -1592,6 +1818,10 @@ mod tests {
                 Error::RegionTooShort { .. } => 20,
                 Error::IccChunkMismatch { .. } => 21,
                 Error::TooManyEntries { .. } => 22,
+                Error::MpfMalformed { .. } => 23,
+                Error::MpfImageOutsideInput { .. } => 24,
+                Error::MpfImageNotJpeg { .. } => 25,
+                Error::TooManyMpfImages { .. } => 26,
             }
         }
         let indices: Vec<usize> = errors.iter().map(index).collect();
@@ -1622,9 +1852,710 @@ mod tests {
 
     #[test]
     fn signatures_under_the_wrong_marker_yield_nothing() {
-        // `Exif\0\0` under APP2 and an XMP signature under APP2 are plain APPn.
+        // `Exif\0\0` under APP2 is a plain APPn: no Exif block, and (DEC-012)
+        // an unrecognised-APPn region.
         let d = one(seg(0xE2, b"Exif\0\0II*\0"));
         let m = read(&d).unwrap();
-        assert!(m.exif_blocks().is_empty() && m.regions().is_empty() && m.is_clean());
+        assert!(m.exif_blocks().is_empty() && m.is_clean());
+        assert!(matches!(
+            m.regions(),
+            [Region::OtherApp {
+                segment: 0,
+                marker: 0xE2,
+                ..
+            }]
+        ));
+    }
+
+    // ── DEC-012: Multi-Picture images, comments, other APPn, trailers ────────
+    //
+    // Everything below is typed from CIPA DC-007 and DEC-012, not derived from
+    // the code under test.
+
+    fn u16w(be: bool, v: u16) -> [u8; 2] {
+        if be {
+            v.to_be_bytes()
+        } else {
+            v.to_le_bytes()
+        }
+    }
+    fn u32w(be: bool, v: u32) -> [u8; 4] {
+        if be {
+            v.to_be_bytes()
+        } else {
+            v.to_le_bytes()
+        }
+    }
+
+    /// An APP2 `MPF\0` segment whose index lists `entries` as `(size, offset)`
+    /// (entry 0 first), in the byte order `be`. Layout of the MPF header (the
+    /// byte after `MPF\0`): TIFF header, one IFD of `NumberOfImages` (0xB001)
+    /// and `MPEntry` (0xB002), then the entries themselves.
+    fn mpf_seg(be: bool, entries: &[(u32, u32)]) -> Vec<u8> {
+        let mut t = if be {
+            b"MM\0*".to_vec()
+        } else {
+            b"II*\0".to_vec()
+        };
+        t.extend_from_slice(&u32w(be, 8));
+        t.extend_from_slice(&u16w(be, 2));
+        // NumberOfImages: LONG, count 1, inline.
+        t.extend_from_slice(&u16w(be, 0xB001));
+        t.extend_from_slice(&u16w(be, 4));
+        t.extend_from_slice(&u32w(be, 1));
+        t.extend_from_slice(&u32w(be, u32::try_from(entries.len()).unwrap()));
+        // MPEntry: UNDEFINED, count 16 per image, out of line after the IFD.
+        t.extend_from_slice(&u16w(be, 0xB002));
+        t.extend_from_slice(&u16w(be, 7));
+        t.extend_from_slice(&u32w(be, u32::try_from(16 * entries.len()).unwrap()));
+        t.extend_from_slice(&u32w(be, 8 + 2 + 24 + 4));
+        t.extend_from_slice(&u32w(be, 0));
+        for (i, (size, offset)) in entries.iter().enumerate() {
+            let attr: u32 = if i == 0 { 0x0003_0000 } else { 0x0000_0000 };
+            t.extend_from_slice(&u32w(be, attr));
+            t.extend_from_slice(&u32w(be, *size));
+            t.extend_from_slice(&u32w(be, *offset));
+            t.extend_from_slice(&u16w(be, 0));
+            t.extend_from_slice(&u16w(be, 0));
+        }
+        seg(0xE2, &[&b"MPF\0"[..], &t].concat())
+    }
+
+    /// A small stand-alone JPEG (SOI, optional segments, SOS, scan, EOI).
+    fn small_jpeg(segs: &[Vec<u8>]) -> Vec<u8> {
+        jpeg_of(segs).0
+    }
+
+    /// An MPO: a primary (SOI, `pre` segments, the MPF segment, SOS, scan,
+    /// EOI) followed by `after_primary` junk bytes and then each `images[i]`
+    /// back to back. Returns the file and the `(offset, len)` of each image.
+    /// The index points each secondary at its true place.
+    fn mpo(
+        be: bool,
+        pre: &[Vec<u8>],
+        junk: &[u8],
+        images: &[Vec<u8>],
+    ) -> (Vec<u8>, Vec<(usize, usize)>) {
+        let build = |entries: &[(u32, u32)]| {
+            let mut segs: Vec<Vec<u8>> = pre.to_vec();
+            segs.push(mpf_seg(be, entries));
+            jpeg_of(&segs)
+        };
+        // The segment size depends only on the entry count.
+        let placeholder: Vec<(u32, u32)> = (0..=images.len()).map(|_| (0, 0)).collect();
+        let (probe, offs) = build(&placeholder);
+        let mpf_at = *offs.last().unwrap();
+        let header_start = mpf_at + 8;
+        let primary_len = probe.len() + junk.len();
+        let mut entries = vec![(u32::try_from(probe.len()).unwrap(), 0u32)];
+        let mut at = primary_len;
+        let mut ranges = Vec::new();
+        for img in images {
+            entries.push((
+                u32::try_from(img.len()).unwrap(),
+                u32::try_from(at - header_start).unwrap(),
+            ));
+            ranges.push((at, img.len()));
+            at += img.len();
+        }
+        let (mut file, _) = build(&entries);
+        assert_eq!(file.len(), probe.len());
+        file.extend_from_slice(junk);
+        for img in images {
+            file.extend_from_slice(img);
+        }
+        (file, ranges)
+    }
+
+    fn embedded_of<'a>(m: &JpegMetadata<'a>) -> Vec<(usize, usize, usize)> {
+        m.regions()
+            .iter()
+            .filter_map(|r| match r {
+                Region::EmbeddedImage {
+                    segment,
+                    offset,
+                    data,
+                } => Some((*segment, *offset, data.len())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn trailers_of<'a>(m: &JpegMetadata<'a>) -> Vec<(usize, usize)> {
+        m.regions()
+            .iter()
+            .filter_map(|r| match r {
+                Region::Trailer { offset, data, .. } => Some((*offset, data.len())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn exif_basic() -> Vec<u8> {
+        exif_seg(&tiff(&[vec![ascii(0x010F, "DiamondCam")]]))
+    }
+
+    #[test]
+    fn mpf_index_yields_one_embedded_image_per_secondary_entry_in_order() {
+        let a = small_jpeg(&[exif_basic()]);
+        let b = small_jpeg(&[xmp_seg(b"<x/>"), icc_seg(&[1, 1, 9, 9])]);
+        let c = small_jpeg(&[]);
+        let (file, ranges) = mpo(false, &[], &[], &[a.clone(), b.clone(), c.clone()]);
+        let m = read(&file).unwrap();
+        assert!(m.is_clean(), "{:?}", errs(&m));
+        // The MPF segment is segment 0; entry 0 (the primary) is no region.
+        let got = embedded_of(&m);
+        let want: Vec<(usize, usize, usize)> =
+            ranges.iter().map(|(o, l)| (0usize, *o, *l)).collect();
+        assert_eq!(got, want);
+        assert_eq!(got.len(), 3);
+        // The bytes are the images' own, in index order.
+        let datas: Vec<&[u8]> = m.regions().iter().map(Region::data).collect();
+        assert_eq!(datas, [&a[..], &b[..], &c[..]]);
+        // Their ranges account for the whole trailer.
+        assert!(trailers_of(&m).is_empty());
+        // The inner Exif of the first image is not part of the outer.
+        assert!(m.exif_blocks().is_empty());
+    }
+
+    #[test]
+    fn mpf_big_and_little_endian_headers() {
+        for be in [false, true] {
+            let a = small_jpeg(&[exif_basic()]);
+            let (file, ranges) = mpo(be, &[], &[], &[a.clone(), small_jpeg(&[])]);
+            let m = read(&file).unwrap();
+            assert!(m.is_clean(), "be={be}: {:?}", errs(&m));
+            let got: Vec<(usize, usize)> = embedded_of(&m).iter().map(|e| (e.1, e.2)).collect();
+            assert_eq!(got, ranges, "be={be}");
+            assert_eq!(m.regions()[0].data(), &a[..], "be={be}");
+        }
+    }
+
+    #[test]
+    fn mpf_entry_outside_the_input_is_an_issue_and_no_region() {
+        let good = small_jpeg(&[]);
+        let glen = u32::try_from(good.len()).unwrap();
+        // The file is the primary (SOI, MPF, SOS, scan, EOI) plus one good
+        // image; the MPF header starts at input offset 2 + 8.
+        let layout = |entries: &[(u32, u32)]| {
+            let (mut d, _) = jpeg_of(&[mpf_seg(false, entries)]);
+            let image_at = d.len();
+            d.extend_from_slice(&good);
+            (d, image_at)
+        };
+        let (probe, image_at) = layout(&[(0, 0); 5]);
+        let rel = |abs: usize| u32::try_from(abs - 10).unwrap();
+        let entries = [
+            (u32::try_from(image_at).unwrap(), 0u32),
+            // Ends exactly one byte past the end of the input.
+            (glen, rel(probe.len() + 1 - good.len())),
+            // The offset sum overflows.
+            (glen, u32::MAX),
+            // A size of 2^32 - 1.
+            (u32::MAX, rel(image_at)),
+            // The control: exactly the image, ending at the end of the input.
+            (glen, rel(image_at)),
+        ];
+        let (file, _) = layout(&entries);
+        let m = read(&file).unwrap();
+        assert_eq!(
+            errs(&m),
+            [
+                Error::MpfImageOutsideInput { at: 2, index: 1 },
+                Error::MpfImageOutsideInput { at: 2, index: 2 },
+                Error::MpfImageOutsideInput { at: 2, index: 3 },
+            ]
+        );
+        // Only the control entry is a region.
+        assert_eq!(embedded_of(&m), [(0, image_at, good.len())]);
+        // The MPF segment itself parsed, so it is not an OtherApp.
+        assert!(!m
+            .regions()
+            .iter()
+            .any(|r| matches!(r, Region::OtherApp { .. })));
+        assert!(!m.is_clean());
+    }
+
+    #[test]
+    fn mpf_entry_not_starting_ffd8_is_an_issue_and_no_region() {
+        // Image 1 starts FF D9, image 2 is empty, image 3 is one byte (FF),
+        // image 4 is a real JPEG: only the last is a region.
+        let real = small_jpeg(&[]);
+        let notjpeg: Vec<u8> = vec![0xFF, 0xD9, 0, 0];
+        let one_byte: Vec<u8> = vec![0xFF];
+        let (file, ranges) = mpo(
+            false,
+            &[],
+            &[],
+            &[notjpeg.clone(), Vec::new(), one_byte.clone(), real.clone()],
+        );
+        let m = read(&file).unwrap();
+        assert_eq!(
+            errs(&m),
+            [
+                Error::MpfImageNotJpeg { at: 2, index: 1 },
+                Error::MpfImageNotJpeg { at: 2, index: 2 },
+                Error::MpfImageNotJpeg { at: 2, index: 3 },
+            ]
+        );
+        let got: Vec<(usize, usize)> = embedded_of(&m).iter().map(|e| (e.1, e.2)).collect();
+        assert_eq!(got, [ranges[3]]);
+        // The bytes of the bad entries stay in the trailer (nothing accounts
+        // for them).
+        let t: usize = trailers_of(&m).iter().map(|x| x.1).sum();
+        assert_eq!(t, notjpeg.len() + one_byte.len());
+    }
+
+    #[test]
+    fn mpf_seventeenth_image_is_an_issue() {
+        // DEC-012: at most 16 images, the primary included. An index of 16
+        // is clean (15 regions); the 17th entry costs one issue and is not
+        // examined, however many follow.
+        let img = small_jpeg(&[]);
+        for (total, regions, issues) in [(16usize, 15usize, 0usize), (17, 15, 1), (40, 15, 1)] {
+            let imgs: Vec<Vec<u8>> = (1..total).map(|_| img.clone()).collect();
+            let (file, _) = mpo(false, &[], &[], &imgs);
+            let m = read(&file).unwrap();
+            assert_eq!(embedded_of(&m).len(), regions, "total {total}");
+            let e = errs(&m);
+            assert_eq!(e.len(), issues, "total {total}: {e:?}");
+            if issues == 1 {
+                assert_eq!(e[0], Error::TooManyMpfImages { at: 2, limit: 16 });
+            }
+        }
+    }
+
+    #[test]
+    fn unparsable_mpf_segment_is_other_app_plus_an_issue() {
+        // Garbage after the signature, a valid TIFF header with no 0xB002, and
+        // an index shorter than one entry.
+        let no_index = {
+            let mut t = b"II*\0".to_vec();
+            t.extend_from_slice(&8u32.to_le_bytes());
+            t.extend_from_slice(&1u16.to_le_bytes());
+            t.extend_from_slice(&0xB000u16.to_le_bytes());
+            t.extend_from_slice(&7u16.to_le_bytes());
+            t.extend_from_slice(&4u32.to_le_bytes());
+            t.extend_from_slice(b"0100");
+            t.extend_from_slice(&0u32.to_le_bytes());
+            t
+        };
+        let short_index = {
+            let mut t = b"II*\0".to_vec();
+            t.extend_from_slice(&8u32.to_le_bytes());
+            t.extend_from_slice(&1u16.to_le_bytes());
+            t.extend_from_slice(&0xB002u16.to_le_bytes());
+            t.extend_from_slice(&7u16.to_le_bytes());
+            t.extend_from_slice(&3u32.to_le_bytes());
+            t.extend_from_slice(&[1, 2, 3, 0]);
+            t.extend_from_slice(&0u32.to_le_bytes());
+            t
+        };
+        for (label, body) in [
+            ("garbage", b"not a tiff header at all".to_vec()),
+            ("empty", Vec::new()),
+            ("no 0xB002", no_index),
+            ("short index", short_index),
+        ] {
+            let d = one(seg(0xE2, &[&b"MPF\0"[..], &body].concat()));
+            let m = read(&d).unwrap();
+            assert!(
+                matches!(
+                    m.regions(),
+                    [Region::OtherApp {
+                        segment: 0,
+                        marker: 0xE2,
+                        ..
+                    }]
+                ),
+                "{label}: {:?}",
+                m.regions()
+            );
+            assert_eq!(errs(&m), [Error::MpfMalformed { at: 2 }], "{label}");
+        }
+        // A truncated index: the entry count says 3 images, the segment holds
+        // two entries' worth.
+        let full = mpf_seg(false, &[(100, 0), (10, 50), (10, 60)]);
+        let cut = &full[..full.len() - 20];
+        // Re-length the segment so the walk still accepts it.
+        let d = one(seg(0xE2, &cut[4..]));
+        let m = read(&d).unwrap();
+        assert_eq!(errs(&m), [Error::MpfMalformed { at: 2 }]);
+        assert!(matches!(m.regions(), [Region::OtherApp { .. }]));
+        // A second MPF segment cannot be a second index.
+        let seg1 = mpf_seg(false, &[(10, 0), (10, 5000)]);
+        let (d, _) = jpeg_of(&[seg1.clone(), seg1]);
+        let m = read(&d).unwrap();
+        let e = errs(&m);
+        assert!(e.contains(&Error::MpfImageOutsideInput { at: 2, index: 1 }));
+        assert!(e.iter().any(|x| matches!(x, Error::MpfMalformed { .. })));
+        assert_eq!(
+            m.regions()
+                .iter()
+                .filter(|r| matches!(r, Region::OtherApp { .. }))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn hostile_mpf_is_bounded_and_total() {
+        let img = small_jpeg(&[]);
+        // (a) offsets that point into the MPF segment itself (a 2-byte file
+        // start is not reachable, an in-segment offset is): no FF D8 there.
+        let (d, _) = jpeg_of(&[mpf_seg(false, &[(100, 0), (50, 4), (50, 8), (50, 12)])]);
+        let m = read(&d).unwrap();
+        assert!(embedded_of(&m).is_empty());
+        assert_eq!(errs(&m).len(), 3);
+        // (b) 2^32 - 1 sizes and offsets.
+        let (d, _) = jpeg_of(&[mpf_seg(
+            true,
+            &[
+                (u32::MAX, 0),
+                (u32::MAX, u32::MAX),
+                (u32::MAX, 0),
+                (1, u32::MAX),
+            ],
+        )]);
+        let m = read(&d).unwrap();
+        assert!(embedded_of(&m).is_empty());
+        assert_eq!(errs(&m).len(), 3);
+        // (c) 65,535 images declared in NumberOfImages and in the entry count,
+        // with only a few entries behind: the index does not parse.
+        let mut seg_bytes = mpf_seg(false, &[(1, 0), (1, 0)]);
+        // The MPEntry count field: payload offset 4 (sig) + 8 (hdr) + 2 + 12 + 4.
+        let count_at = 4 + 4 + 8 + 2 + 12 + 4;
+        seg_bytes[count_at..count_at + 4].copy_from_slice(&(65_535u32 * 16).to_le_bytes());
+        let d = one(seg_bytes);
+        let m = read(&d).unwrap();
+        assert_eq!(errs(&m), [Error::MpfMalformed { at: 2 }]);
+        // (d) overlapping images and one pointing at another's middle: the
+        // overlap is allowed (each is a region), the work is bounded by 15.
+        let header_start = 2 + 8;
+        let len = u32::try_from(img.len()).unwrap();
+        let layout = |at: u32| {
+            let entries: Vec<(u32, u32)> = std::iter::once((len, 0))
+                .chain((0..15).map(|_| (len, at)))
+                .collect();
+            jpeg_of(&[mpf_seg(false, &entries)]).0
+        };
+        let base = layout(0).len();
+        let mut d = layout(u32::try_from(base - header_start).unwrap());
+        assert_eq!(d.len(), base);
+        d.extend_from_slice(&img);
+        let m = read(&d).unwrap();
+        assert!(m.is_clean(), "{:?}", errs(&m));
+        assert_eq!(embedded_of(&m).len(), 15);
+        // All fifteen overlap one range: the trailer is empty.
+        assert!(trailers_of(&m).is_empty());
+        // (e) cyclic: an image that is the MPF-bearing file itself (offset such
+        // that start is the file start is unreachable; the primary again at a
+        // later offset is just another region). No recursion is possible: the
+        // regions are slices, never parsed again here.
+        let (twice, _) = mpo(false, &[], &[], &[d.clone()]);
+        let m = read(&twice).unwrap();
+        assert_eq!(embedded_of(&m).len(), 1);
+    }
+
+    #[test]
+    fn a_plain_trailer_is_one_region() {
+        let mut d = one(com_seg(b"x"));
+        let end = d.len();
+        d.extend_from_slice(&[7u8; 313]);
+        let m = read(&d).unwrap();
+        assert_eq!(trailers_of(&m), [(end, 313)]);
+        let t = m
+            .regions()
+            .iter()
+            .find(|r| matches!(r, Region::Trailer { .. }))
+            .unwrap();
+        // The pseudo segment index is one past the last segment.
+        assert_eq!(t.segment(), m.jpeg().segments().len());
+        assert_eq!(t.data(), m.jpeg().trailer());
+    }
+
+    #[test]
+    fn a_zero_length_remainder_is_no_region() {
+        let d = one(com_seg(b"x"));
+        let m = read(&d).unwrap();
+        assert!(trailers_of(&m).is_empty());
+        // And no EOI at all: no trailer either.
+        let mut e = d.clone();
+        e.truncate(e.len() - 2);
+        e.extend_from_slice(&[9, 9, 9]);
+        let m = read(&e).unwrap();
+        assert!(trailers_of(&m).is_empty());
+    }
+
+    fn com_seg(text: &[u8]) -> Vec<u8> {
+        seg(0xFE, text)
+    }
+
+    #[test]
+    fn trailer_minus_embedded_images_is_the_remainder() {
+        // [junk 40][image A][image B][tail 313]: the trailer is junk and tail.
+        let a = small_jpeg(&[exif_basic()]);
+        let b = small_jpeg(&[]);
+        let junk = vec![0x11u8; 40];
+        let tail = vec![0x22u8; 313];
+        let imgs = vec![a.clone(), b.clone()];
+        let (mut file, ranges) = mpo(false, &[], &junk, &imgs);
+        let tail_at = file.len();
+        file.extend_from_slice(&tail);
+        let m = read(&file).unwrap();
+        let primary_end = ranges[0].0 - junk.len();
+        assert_eq!(trailers_of(&m), [(primary_end, 40), (tail_at, 313)]);
+        assert_eq!(embedded_of(&m).len(), 2);
+        // Trailer regions come last, after every other region.
+        let kinds: Vec<bool> = m
+            .regions()
+            .iter()
+            .map(|r| matches!(r, Region::Trailer { .. }))
+            .collect();
+        assert_eq!(kinds, [false, false, true, true]);
+    }
+
+    #[test]
+    fn a_trailer_that_is_exactly_the_mpf_images_gives_no_trailer_region() {
+        let (file, _) = mpo(
+            true,
+            &[],
+            &[],
+            &[small_jpeg(&[]), small_jpeg(&[com_seg(b"c")])],
+        );
+        let m = read(&file).unwrap();
+        assert!(!m.jpeg().trailer().is_empty());
+        assert!(trailers_of(&m).is_empty());
+        assert_eq!(embedded_of(&m).len(), 2);
+    }
+
+    #[test]
+    fn a_partly_covered_trailer_gives_the_uncovered_pieces() {
+        // The index points at the middle of the junk: [junk 30][image][junk 20]
+        // is a trailer of 30 + len + 20 bytes; the image covers only the
+        // middle, so two pieces remain, one each side.
+        let img = small_jpeg(&[]);
+        let mut tail = vec![0x33u8; 20];
+        let (mut file, ranges) = mpo(false, &[], &[0x44u8; 30], std::slice::from_ref(&img));
+        let end = file.len();
+        file.append(&mut tail);
+        let m = read(&file).unwrap();
+        let first = ranges[0].0 - 30;
+        assert_eq!(trailers_of(&m), [(first, 30), (end, 20)]);
+        // An image range inside the primary (an entry pointing at an FF D8
+        // that sits in a comment) is a region, but it is clipped away from the
+        // trailer rather than subtracting from nothing: the trailer is whole.
+        let mpf_len = mpf_seg(false, &[(0, 0), (0, 0)]).len();
+        let com_payload_at = 2 + mpf_len + 4;
+        let rel = u32::try_from(com_payload_at - 10).unwrap();
+        let mut com = vec![0xFF, 0xD8];
+        com.extend_from_slice(&[0u8; 18]);
+        let (mut d, _) = jpeg_of(&[mpf_seg(false, &[(0, 0), (20, rel)]), com_seg(&com)]);
+        let eoi_end = d.len();
+        d.extend_from_slice(&[5u8; 9]);
+        let m = read(&d).unwrap();
+        assert!(m.is_clean(), "{:?}", errs(&m));
+        assert_eq!(embedded_of(&m), [(0, com_payload_at, 20)]);
+        assert_eq!(trailers_of(&m), [(eoi_end, 9)]);
+    }
+
+    #[test]
+    fn com_segment_is_a_comment_region() {
+        let (d, offs) = jpeg_of(&[com_seg(b"hello"), com_seg(b""), exif_basic()]);
+        let m = read(&d).unwrap();
+        assert!(m.is_clean());
+        let got: Vec<(usize, &[u8])> = m
+            .regions()
+            .iter()
+            .filter_map(|r| match r {
+                Region::Comment { segment, data } => Some((*segment, *data)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(got, [(0usize, &b"hello"[..]), (1, &b""[..])]);
+        let _ = offs;
+        assert_eq!(m.regions().len(), 2);
+    }
+
+    #[test]
+    fn unrecognised_app_segments_are_other_app() {
+        for n in 0u8..=15 {
+            let marker = 0xE0 + n;
+            // A signature none of the recognised kinds uses.
+            let d = one(seg(marker, b"VendorX\0payload"));
+            let m = read(&d).unwrap();
+            assert!(
+                matches!(
+                    m.regions(),
+                    [Region::OtherApp { segment: 0, marker: mk, data }]
+                        if *mk == marker && *data == b"VendorX\0payload"
+                ),
+                "APP{n}: {:?}",
+                m.regions()
+            );
+            assert!(m.is_clean());
+        }
+        // A recognised signature under the wrong marker is unrecognised.
+        let d = one(seg(0xE4, b"ICC_PROFILE\0\x01\x01data"));
+        assert!(matches!(
+            read(&d).unwrap().regions(),
+            [Region::OtherApp { marker: 0xE4, .. }]
+        ));
+    }
+
+    #[test]
+    fn jfif_and_adobe_app14_are_benign() {
+        let jfif = seg(0xE0, b"JFIF\0\x01\x01\0\0\x01\0\x01\0\0");
+        let adobe = seg(0xEE, b"Adobe\0\x64\x80\0\0\0\0");
+        let (d, _) = jpeg_of(&[jfif, adobe]);
+        let m = read(&d).unwrap();
+        assert!(m.regions().is_empty(), "{:?}", m.regions());
+        assert!(m.is_clean());
+        // Exactly the DEC-012 signatures: `JFIF` without its NUL and `Adobe`
+        // without its NUL are unrecognised.
+        let near = one(seg(0xE0, b"JFIF-not-nul"));
+        assert!(matches!(
+            read(&near).unwrap().regions(),
+            [Region::OtherApp { marker: 0xE0, .. }]
+        ));
+        let near = one(seg(0xEE, b"Adobe"));
+        assert!(matches!(
+            read(&near).unwrap().regions(),
+            [Region::OtherApp { marker: 0xEE, .. }]
+        ));
+        // Adobe under another marker is not benign.
+        let other = one(seg(0xEC, b"Adobe\0\x64"));
+        assert!(matches!(
+            read(&other).unwrap().regions(),
+            [Region::OtherApp { marker: 0xEC, .. }]
+        ));
+    }
+
+    #[test]
+    fn jfxx_fpxr_and_arot_are_other_app() {
+        let jfxx = seg(0xE0, b"JFXX\0\x10thumb");
+        let fpxr = seg(0xE2, b"FPXR\0\0\x01\x01flashpix");
+        let arot = seg(0xEA, b"AROT\0\0\0\x01");
+        let (d, _) = jpeg_of(&[jfxx, fpxr, arot]);
+        let m = read(&d).unwrap();
+        let markers: Vec<u8> = m
+            .regions()
+            .iter()
+            .filter_map(|r| match r {
+                Region::OtherApp { marker, .. } => Some(*marker),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(markers, [0xE0, 0xE2, 0xEA]);
+        assert_eq!(m.regions().len(), 3);
+        assert!(m.is_clean());
+    }
+
+    #[test]
+    fn app13_without_the_photoshop_header_is_other_app() {
+        let d = one(seg(0xED, b"Photoshop 2.5\0 8BIM"));
+        let m = read(&d).unwrap();
+        assert!(matches!(
+            m.regions(),
+            [Region::OtherApp {
+                marker: 0xED,
+                segment: 0,
+                ..
+            }]
+        ));
+        // A bare "Photoshop 3.0" (no NUL) is not the header either.
+        let d = one(seg(0xED, b"Photoshop 3.0 8BIM"));
+        assert!(matches!(
+            read(&d).unwrap().regions(),
+            [Region::OtherApp { .. }]
+        ));
+    }
+
+    #[test]
+    fn split_app13_gives_two_iptc_regions_and_keeps_its_issues() {
+        // One resource whose data crosses the segment boundary: the first
+        // segment ends inside the data, the second continues it (no 8BIM).
+        let whole = res(0x0404, b"", &[0x1C; 40]);
+        let (head, tail) = whole.split_at(20);
+        let (d, _) = jpeg_of(&[iptc_seg(head), iptc_seg(tail)]);
+        let m = read(&d).unwrap();
+        let iptc: Vec<&[u8]> = m
+            .regions()
+            .iter()
+            .filter(|r| matches!(r, Region::Iptc { .. }))
+            .map(Region::data)
+            .collect();
+        assert_eq!(iptc, [head, tail]);
+        // The issues are the ones the resource walk always gave: the first
+        // segment's resource is short, the second's bytes are stray.
+        let e = errs(&m);
+        assert_eq!(e.len(), 2, "{e:?}");
+        assert!(matches!(
+            e[0],
+            Error::RegionTooShort {
+                what: "8BIM resource",
+                ..
+            }
+        ));
+        assert!(matches!(e[1], Error::StrayBytes { .. }));
+    }
+
+    #[test]
+    fn nested_embedded_ranges_leave_no_phantom_trailer() {
+        // Entry 1 spans A+B+C, entry 2 is B alone, inside it: the trailer is
+        // exactly accounted for, whatever order the ranges are swept in.
+        let a = small_jpeg(&[exif_basic()]);
+        let b = small_jpeg(&[xmp_seg(b"<x/>")]);
+        let c = small_jpeg(&[com_seg(b"c")]);
+        let whole = [a.clone(), b.clone(), c.clone()].concat();
+        let layout = |e1: (u32, u32), e2: (u32, u32)| {
+            let (mut d, _) = jpeg_of(&[mpf_seg(false, &[(0, 0), e1, e2])]);
+            let at = d.len();
+            d.extend_from_slice(&whole);
+            (d, at)
+        };
+        let (probe, at) = layout((0, 0), (0, 0));
+        let rel = |abs: usize| u32::try_from(abs - 10).unwrap();
+        let (file, _) = layout(
+            (u32::try_from(whole.len()).unwrap(), rel(at)),
+            (u32::try_from(b.len()).unwrap(), rel(at + a.len())),
+        );
+        assert_eq!(file.len(), probe.len());
+        let m = read(&file).unwrap();
+        assert!(m.is_clean(), "{:?}", errs(&m));
+        assert_eq!(
+            embedded_of(&m),
+            [(0, at, whole.len()), (0, at + a.len(), b.len())]
+        );
+        assert!(trailers_of(&m).is_empty(), "{:?}", trailers_of(&m));
+        // The same with the nested range listed first.
+        let (file, _) = layout(
+            (u32::try_from(b.len()).unwrap(), rel(at + a.len())),
+            (u32::try_from(whole.len()).unwrap(), rel(at)),
+        );
+        let m = read(&file).unwrap();
+        assert!(trailers_of(&m).is_empty(), "{:?}", trailers_of(&m));
+    }
+
+    #[test]
+    fn mpf_is_read_only_from_app2() {
+        // A well-formed MPF payload under APP3: an unrecognised APPn, no
+        // index read, no MPF issue, no embedded image.
+        let full = mpf_seg(false, &[(100, 0), (10, 50)]);
+        let d = one(seg(0xE3, &full[4..]));
+        let m = read(&d).unwrap();
+        assert!(
+            matches!(
+                m.regions(),
+                [Region::OtherApp {
+                    segment: 0,
+                    marker: 0xE3,
+                    ..
+                }]
+            ),
+            "{:?}",
+            m.regions().len()
+        );
+        assert!(m.is_clean(), "{:?}", errs(&m));
     }
 }

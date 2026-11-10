@@ -99,6 +99,16 @@ fn finding_line(
             None => out.push_str(" thumbnail range=none"),
         }
     }
+    if let Some(e) = f.embedded {
+        let holds: Vec<&str> = e.holds.categories().map(|c| c.name()).collect();
+        out.push_str(&format!(
+            " embedded offset={} length={} starts_with_ffd8={} holds=[{}]",
+            e.offset,
+            e.length,
+            e.starts_with_ffd8,
+            holds.join(",")
+        ));
+    }
     value_text(out, &f.at, opts);
     if let Some(d) = disposition {
         out.push_str(": ");

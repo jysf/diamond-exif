@@ -194,6 +194,41 @@ pub enum Error {
         /// The total-entry budget that was reached (`data.len() / 12`).
         limit: usize,
     },
+
+    /// An APP2 `MPF\0` segment (Multi-Picture Format, DEC-012) that does not
+    /// parse: a bad TIFF header, no readable `0xB002` index, or a second MPF
+    /// segment. The segment is reported as an unrecognised APPn instead.
+    MpfMalformed {
+        /// Input offset of the segment's own `FF` marker byte.
+        at: usize,
+    },
+
+    /// An MPF index entry whose offset and size do not lie inside the input.
+    /// No embedded image is reported for it.
+    MpfImageOutsideInput {
+        /// Input offset of the MPF segment's own `FF` marker byte.
+        at: usize,
+        /// The entry's index in the MP index (entry 0 is the primary image).
+        index: usize,
+    },
+
+    /// An MPF index entry whose bytes do not start with `FF D8`. No embedded
+    /// image is reported for it.
+    MpfImageNotJpeg {
+        /// Input offset of the MPF segment's own `FF` marker byte.
+        at: usize,
+        /// The entry's index in the MP index (entry 0 is the primary image).
+        index: usize,
+    },
+
+    /// An MPF index lists more images than the limit (the primary included);
+    /// the entries from the limit on are not examined.
+    TooManyMpfImages {
+        /// Input offset of the MPF segment's own `FF` marker byte.
+        at: usize,
+        /// The image-count limit that was reached.
+        limit: usize,
+    },
 }
 
 impl fmt::Display for Error {
@@ -294,6 +329,27 @@ impl fmt::Display for Error {
             }
             Error::IccChunkMismatch { at } => {
                 write!(f, "ICC profile chunks are inconsistent from offset {at}")
+            }
+            Error::MpfMalformed { at } => {
+                write!(f, "Multi-Picture segment at offset {at} does not parse")
+            }
+            Error::MpfImageOutsideInput { at, index } => {
+                write!(
+                    f,
+                    "Multi-Picture entry {index} (segment at offset {at}) lies outside the input"
+                )
+            }
+            Error::MpfImageNotJpeg { at, index } => {
+                write!(
+                    f,
+                    "Multi-Picture entry {index} (segment at offset {at}) does not start with FF D8"
+                )
+            }
+            Error::TooManyMpfImages { at, limit } => {
+                write!(
+                    f,
+                    "Multi-Picture segment at offset {at} lists more than {limit} images"
+                )
             }
         }
     }

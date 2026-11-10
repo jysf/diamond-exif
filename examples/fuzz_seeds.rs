@@ -17,6 +17,14 @@ use std::path::PathBuf;
 #[path = "../tests/support/report_inputs.rs"]
 mod report_inputs;
 
+// SPEC-019: the synthetic real-world shapes (MPO, split APP13, APP10, COM, a
+// trailer, a Canon-style note, a 64 KB Exif) become seeds named `shape-<name>`
+// in `jpeg_segments` and `audit`, byte-identical to the fixtures.
+#[path = "../tests/support/oracle_tiff.rs"]
+mod oracle_tiff;
+#[path = "../tests/support/real_shapes.rs"]
+mod real_shapes;
+
 const BYTE: u16 = 1;
 const ASCII: u16 = 2;
 const SHORT: u16 = 3;
@@ -1297,6 +1305,40 @@ fn render_seeds() -> Vec<(String, Vec<u8>)> {
         ),
         ("png-signature-values", render_seed(5 | VAL, b"s.png", &png)),
         ("empty-file", render_seed(1 | INV | VAL, b"empty", b"")),
+        // SPEC-019: the Multi-Picture file and the split Photoshop file under
+        // several option bytes (policies, inventory, values, failure bits).
+        (
+            "shape-mpo-all-pii-inventory-values",
+            render_seed(
+                3 | INV | VAL,
+                b"photos/nikon.mpo",
+                &real_shapes::mpo_two(false),
+            ),
+        ),
+        (
+            "shape-mpo-gps-values",
+            render_seed(1 | VAL, b"n.mpo", &real_shapes::mpo_two(true)),
+        ),
+        (
+            "shape-mpo-everything-inventory",
+            render_seed(5 | INV, b"e.mpo", &real_shapes::mpo_two(false)),
+        ),
+        (
+            "shape-mpo-custom-failure",
+            render_seed(6 | INV | 32, &[0x41], &real_shapes::mpo_two(false)),
+        ),
+        (
+            "shape-split-app13-all-inventory-values",
+            render_seed(4 | INV | VAL, b"split.jpg", &real_shapes::split_app13()),
+        ),
+        (
+            "shape-split-app13-gps",
+            render_seed(2, b"s.jpg", &real_shapes::split_app13()),
+        ),
+        (
+            "shape-trailer-no-policy-inventory",
+            render_seed(INV, b"leica.jpg", &real_shapes::trailer_313()),
+        ),
     ];
     seeds
         .into_iter()
@@ -1493,6 +1535,20 @@ fn main() {
         fs::write(rdir.join(name), bytes).expect("write seed");
     }
     println!("wrote {} seeds to {}", rseeds.len(), rdir.display());
+
+    // SPEC-019: the shape seeds, one file each, in both JPEG-reading targets.
+    for target in ["jpeg_segments", "audit"] {
+        let sdir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("fuzz/seeds")
+            .join(target);
+        for (name, bytes) in real_shapes::fixtures() {
+            fs::write(sdir.join(format!("shape-{name}")), bytes).expect("write seed");
+        }
+    }
+    println!(
+        "wrote {} shape seeds to jpeg_segments and audit",
+        real_shapes::fixtures().len()
+    );
 
     let cdir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/cli_args");
     fs::create_dir_all(&cdir).expect("create seeds dir");

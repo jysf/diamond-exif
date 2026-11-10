@@ -37,6 +37,8 @@ mod oracle;
 mod oracle_jpeg;
 #[path = "../tests/support/oracle_tiff.rs"]
 mod oracle_tiff;
+#[path = "../tests/support/real_shapes.rs"]
+mod real_shapes;
 #[path = "../tests/support/tools.rs"]
 mod tools;
 
@@ -126,6 +128,10 @@ fn main() {
             .expect("name")
             .to_string_lossy()
             .into_owned();
+        // SPEC-019: the `shape-*` seeds are recorded in the real-shapes corpus.
+        if name.starts_with(inventory_corpus::SHAPE_SEED_PREFIX) {
+            continue;
+        }
         let record = format!("jpeg-seed-{name}");
         let names = oracle::names(oracle::SELECTORS);
         let source = format!("seed jpeg_segments/{name}");
@@ -252,4 +258,63 @@ fn record_inventory(root: &std::path::Path, version: &str) {
         sections,
         distinct.len()
     );
+
+    // SPEC-019: the real-shapes corpus. Its own record, so the five above are
+    // untouched; each input is run once, alone, under the tool time limit.
+    for corpus in inventory_corpus::NEW_CORPORA {
+        let mut text = inventory::record_header(version, corpus);
+        let mut count = 0usize;
+        for input in inventory_corpus::inputs(root, corpus) {
+            let path = tools::temp_file_with_ext("inventory", input.ext(), &input.bytes)
+                .expect("write temp fixture");
+            let args: Vec<String> = inventory::COMMAND_ARGS
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+            let run = tools::run_tool("exiftool", &args, &path);
+            let _ = fs::remove_file(&path);
+            let out = run.unwrap_or_else(|e| panic!("exiftool on {}: {e}", input.key()));
+            let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+            let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+            let lines =
+                inventory::parse_stdout(&stdout).unwrap_or_else(|e| panic!("{}: {e}", input.key()));
+            let warnings = tools::warning_lines(&stderr, &path);
+            text.push_str(&inventory::section_text(
+                &input.name,
+                None,
+                &warnings,
+                &lines,
+            ));
+            count += 1;
+        }
+        fs::write(dir.join(inventory_corpus::record_file(corpus)), text)
+            .expect("write inventory record");
+        println!("oracle-record: wrote the {corpus} record ({count} sections)");
+    }
+
+    // SPEC-019: the Canon tag values of the absolute-offset MakerNote fixture
+    // and of the same Exif with the note moved (`-T -n -s3`, the usual way).
+    let all_shapes = real_shapes::fixtures();
+    for name in real_shapes::CANON_RECORDED {
+        let bytes = &all_shapes
+            .iter()
+            .find(|(n, _)| *n == name)
+            .expect("a canon fixture")
+            .1;
+        let path = tools::temp_file_with_ext(name, "jpg", bytes).expect("write temp fixture");
+        let run = tools::run_exiftool_full(&path, &real_shapes::CANON_SELECTORS);
+        let _ = fs::remove_file(&path);
+        let (stdout, stderr) = run.expect("run exiftool");
+        let warnings = tools::warning_lines(&stderr, &path);
+        let text = tools::record_text_jpeg(
+            &real_shapes::CANON_SELECTORS,
+            version,
+            &format!("fixture {name}"),
+            &warnings,
+            &stdout,
+        );
+        fs::write(dir.join(real_shapes::canon_record_file(name)), text)
+            .expect("write canon record");
+    }
+    println!("oracle-record: wrote the two Canon value records");
 }

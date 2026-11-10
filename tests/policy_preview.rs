@@ -6,6 +6,8 @@
 mod oracle_jpeg;
 #[path = "support/oracle_tiff.rs"]
 mod oracle_tiff;
+#[path = "support/real_shapes.rs"]
+mod real_shapes;
 
 use exif_core::audit::{audit, preview, Category, Disposition, FileAudit, Preview};
 use exif_core::policy::StripPolicy;
@@ -14,9 +16,9 @@ use std::path::PathBuf;
 use Category::*;
 use Disposition::{Kept, KeptUnread, Removed};
 
-/// DEC-009's preset table, typed by hand: `[Gps, GpsAndDevice, AllPii, All,
-/// Everything]`, `true` = removed.
-const REMOVED: [(Category, [bool; 5]); 13] = [
+/// DEC-009's preset table as amended by DEC-012, typed by hand: `[Gps,
+/// GpsAndDevice, AllPii, All, Everything]`, `true` = removed.
+const REMOVED: [(Category, [bool; 5]); 15] = [
     (Gps, [true, true, true, true, true]),
     (DeviceId, [false, true, true, true, true]),
     (Authorship, [false, false, true, true, true]),
@@ -30,10 +32,13 @@ const REMOVED: [(Category, [bool; 5]); 13] = [
     (Iptc, [false, false, false, true, true]),
     (Icc, [false, false, false, false, true]),
     (Jumbf, [false, false, false, false, true]),
+    (EmbeddedImage, [false, false, false, false, true]),
+    (OtherSegment, [false, false, false, false, true]),
 ];
 
-/// The SPEC-014 kept-block table, typed by hand (same column order).
-const KEPT_BLOCK: [(Category, [Disposition; 5]); 6] = [
+/// The SPEC-014 kept-block table as amended by DEC-012, typed by hand (same
+/// column order).
+const KEPT_BLOCK: [(Category, [Disposition; 5]); 8] = [
     (
         Thumbnail,
         [KeptUnread, KeptUnread, Removed, Removed, Removed],
@@ -49,6 +54,14 @@ const KEPT_BLOCK: [(Category, [Disposition; 5]); 6] = [
         [KeptUnread, KeptUnread, KeptUnread, KeptUnread, Removed],
     ),
     (Icc, [Kept, Kept, Kept, Kept, Removed]),
+    (
+        EmbeddedImage,
+        [KeptUnread, KeptUnread, KeptUnread, KeptUnread, Removed],
+    ),
+    (
+        OtherSegment,
+        [KeptUnread, KeptUnread, KeptUnread, KeptUnread, Removed],
+    ),
 ];
 
 const PRESET_NAMES: [&str; 5] = ["gps", "gps_and_device", "all_pii", "all", "everything"];
@@ -201,12 +214,34 @@ fn assert_matches_dec_009(label: &str, a: &FileAudit<'_>) {
 fn full_house_jpeg_matches_dec_009_for_every_preset() {
     let bytes = full_house_jpeg();
     let a = audit(&bytes);
-    // Premise: all 13 categories are present, and the file is reliable.
+    // Premise: the 13 DEC-008 categories are present, and the file is
+    // reliable. The two DEC-012 categories are covered by the next test.
     for c in Category::ALL {
+        if matches!(c, EmbeddedImage | OtherSegment) {
+            continue;
+        }
         assert!(categories_of(&a).contains(&c), "full house lacks {c:?}");
     }
     assert!(a.health().clean && !a.health().inventory_truncated);
     assert_matches_dec_009("full-house jpeg", &a);
+}
+
+#[test]
+fn real_shape_fixtures_match_dec_009_as_amended_for_every_preset() {
+    // Together the SPEC-019 fixtures carry both new categories and FreeText
+    // (a COM segment); each file's findings follow the hand-typed grids.
+    let mut seen: Vec<Category> = Vec::new();
+    for (name, bytes) in real_shapes::fixtures() {
+        let a = audit(&bytes);
+        if a.findings().is_empty() {
+            continue;
+        }
+        seen.extend(categories_of(&a));
+        assert_matches_dec_009(name, &a);
+    }
+    for c in [EmbeddedImage, OtherSegment, FreeText] {
+        assert!(seen.contains(&c), "the fixtures lack {c:?}");
+    }
 }
 
 #[test]
@@ -252,7 +287,8 @@ fn the_removed_categories_of_each_preview_equal_the_dec_009_column() {
         removed.dedup();
         let mut column: Vec<Category> = REMOVED
             .iter()
-            .filter(|(_, cells)| cells[col])
+            // The full house carries no embedded image and no other segment.
+            .filter(|(c, cells)| cells[col] && !matches!(c, EmbeddedImage | OtherSegment))
             .map(|(c, _)| *c)
             .collect();
         column.sort_by_key(|c| c.name());
@@ -411,8 +447,9 @@ fn all_seeds() -> (Vec<(String, Vec<u8>)>, [usize; 3]) {
 #[test]
 fn nesting_holds_on_every_committed_seed_for_every_preset() {
     let (seeds, seen) = all_seeds();
-    // The same counts audit_model.rs asserts (32 TIFF, 37 JPEG, 78 audit).
-    assert_eq!(seen, [32, 37, 78]);
+    // The same counts audit_model.rs asserts (32 TIFF, 37 JPEG, 78 audit),
+    // plus the 17 SPEC-019 `shape-*` seeds in each of the last two.
+    assert_eq!(seen, [32, 37 + 17, 78 + 17]);
     let mut with_findings = 0usize;
     for (name, data) in &seeds {
         let a = audit(data);

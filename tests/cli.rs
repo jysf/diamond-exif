@@ -12,6 +12,10 @@
 
 #[path = "support/cli_tree.rs"]
 mod cli_tree;
+#[path = "support/oracle_tiff.rs"]
+mod oracle_tiff;
+#[path = "support/real_shapes.rs"]
+mod real_shapes;
 #[path = "support/report_inputs.rs"]
 mod report_inputs;
 
@@ -1452,4 +1456,99 @@ fn no_seed_makes_the_binary_panic() {
         }
     }
     println!("{n} seeds over 9 invocations");
+}
+
+// ── SPEC-019 / DEC-012: the new structures through the binary ──────────────
+
+/// The SPEC-019 fixtures, as files: the Multi-Picture file, the split
+/// Photoshop file, an APP10 segment, a comment and a trailer. The binary prints
+/// the new regions in every format, equal to the library's own render, and the
+/// strict checkers accept the JSON and the CSV. The new findings are Medium, so
+/// the default `--fail-on high` is unaffected (exit 0) and `--fail-on medium`
+/// exits 1.
+#[test]
+fn the_new_structures_print_in_every_format_and_the_exit_codes_are_unchanged() {
+    let t = Tree::new("dec012");
+    let files: [(&str, Vec<u8>); 5] = [
+        ("a-mpo.jpg", real_shapes::mpo_two(false)),
+        ("b-split.jpg", real_shapes::split_app13()),
+        ("c-arot.jpg", real_shapes::app10_arot()),
+        ("d-com.jpg", real_shapes::com_segment()),
+        ("e-trailer.jpg", real_shapes::trailer_313()),
+    ];
+    for (name, bytes) in &files {
+        t.write(&format!("dir/{name}"), bytes);
+    }
+    let entries: Vec<(String, Exp)> = files
+        .iter()
+        .map(|(n, b)| (format!("dir/{n}"), Exp::Bytes(b.clone())))
+        .collect();
+    let list: Vec<(&str, Exp)> = entries
+        .iter()
+        .map(|(n, e)| {
+            (
+                n.as_str(),
+                match e {
+                    Exp::Bytes(b) => Exp::Bytes(b.clone()),
+                    Exp::Fail(r, d) => Exp::Fail(*r, d),
+                },
+            )
+        })
+        .collect();
+    let opts = RenderOptions {
+        policy: Some(StripPolicy::AllPii),
+        inventory: true,
+        values: false,
+    };
+    for (flag, format) in [
+        ("text", Format::Text),
+        ("json", Format::Json),
+        ("csv", Format::Csv),
+    ] {
+        let out = Cmd::new()
+            .args(["--format", flag, "--inventory", "dir"])
+            .cwd(&t.root)
+            .run();
+        // Medium findings and no failure: the default --fail-on high is 0.
+        assert_eq!(exit_of(&out), 0, "{flag}: {}", out.err_text());
+        assert_eq!(out.text(), expect(format, opts, &list), "{flag}");
+        let text = out.text();
+        for name in ["embedded_image", "other_segment"] {
+            assert!(text.contains(name), "{flag}: no {name}");
+        }
+        for region in ["trailer", "other_app", "comment"] {
+            assert!(text.contains(region), "{flag}: no {region} region");
+        }
+    }
+    // The strict checkers accept the JSON and the CSV.
+    let out = Cmd::new()
+        .args(["--json", "--inventory", "dir"])
+        .cwd(&t.root)
+        .run();
+    let j = json_of(&out);
+    assert_eq!(j.get("schema_version").and_then(J::as_uint), Some(2));
+    let out = Cmd::new()
+        .args(["--csv", "--inventory", "dir"])
+        .cwd(&t.root)
+        .run();
+    let rows = parse_csv(&out.stdout).unwrap_or_else(|e| panic!("not strict CSV: {e}"));
+    assert!(rows.iter().all(|r| r.len() == 19));
+    let regions: Vec<&str> = rows.iter().map(|r| r[11].as_str()).collect();
+    for want in ["embedded_image", "trailer", "other_app", "comment", "iptc"] {
+        assert!(
+            regions.contains(&want),
+            "no {want} in the CSV region column"
+        );
+    }
+    // The thresholds: the new findings are Medium.
+    let out = Cmd::new()
+        .args(["--fail-on", "medium", "dir"])
+        .cwd(&t.root)
+        .run();
+    assert_eq!(exit_of(&out), 1);
+    let out = Cmd::new()
+        .args(["--fail-on", "high", "dir"])
+        .cwd(&t.root)
+        .run();
+    assert_eq!(exit_of(&out), 0);
 }

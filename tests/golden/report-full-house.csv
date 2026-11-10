@@ -11,7 +11,7 @@ photos/full-house.jpg,ok,jpeg,maker_note,medium,tag,exif,1,0x927c,7,4,,,0,0,fals
 photos/full-house.jpg,ok,jpeg,gps,high,tag,gps,2,0x0001,2,2,,,0,0,false,removed,a,false
 photos/full-house.jpg,ok,jpeg,thumbnail,medium,tag,ifd1,3,0x0201,4,1,,,0,0,false,removed,\x00\x00\x00\x00,false
 photos/full-house.jpg,ok,jpeg,xmp,medium,region,,,,,,xmp,4,,1,false,kept_unread,,
-photos/full-house.jpg,ok,jpeg,iptc,medium,region,,,,,,iptc,6,,2,false,kept_unread,,
+photos/full-house.jpg,ok,jpeg,iptc,medium,region,,,,,,iptc,18,,2,false,kept_unread,,
 photos/full-house.jpg,ok,jpeg,icc,low,region,,,,,,icc,7,,3,false,kept,,
 photos/full-house.jpg,ok,jpeg,jumbf,medium,region,,,,,,jumbf,1,,4,false,kept_unread,,
 photos/screenshot.png,unsupported,png,,,,,,,,,,,,,,,,

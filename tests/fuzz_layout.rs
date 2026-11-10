@@ -7,6 +7,13 @@
 use std::fs;
 use std::path::PathBuf;
 
+// SPEC-019: the synthetic real-world shapes, to compare the committed `shape-*`
+// seeds with the builders byte for byte.
+#[path = "support/oracle_tiff.rs"]
+mod oracle_tiff;
+#[path = "support/real_shapes.rs"]
+mod real_shapes;
+
 use exif_core::jpeg::{Jpeg, SegmentKind, MAX_JPEG_ISSUES, MAX_JPEG_SEGMENTS};
 use exif_core::tiff::{Container, Entry, IfdKind, MAX_IFDS, MAX_ISSUES, MAX_TAG_VALUES};
 use exif_core::Error;
@@ -238,7 +245,8 @@ fn the_existing_63_seeds_are_byte_identical() {
             .count()
     };
     assert_eq!(count("tiff_ifd"), 32);
-    assert_eq!(count("jpeg_segments"), 37);
+    // 37 + the 15 `shape-*` seeds SPEC-019 added (none of the 37 changed).
+    assert_eq!(count("jpeg_segments"), 37 + SHAPE_SEEDS.len());
 }
 
 #[test]
@@ -657,7 +665,10 @@ fn spec_010_seeds_have_the_shapes_they_claim() {
     let m = jpeg::read(&d).unwrap();
     assert!(m.is_clean());
     assert_eq!(m.regions().len(), 1);
-    assert_eq!(m.regions()[0].data(), &[1u8, 2, 3, 4, 5][..]);
+    // DEC-012: the region is the segment's payload after the header.
+    let body = m.regions()[0].data();
+    assert!(body.starts_with(b"8BIM"));
+    assert!(body.windows(5).any(|w| w == [1u8, 2, 3, 4, 5]));
 
     let d = load("iptc-truncated-resource");
     let m = jpeg::read(&d).unwrap();
@@ -1222,7 +1233,7 @@ fn exercise_jpeg(data: &[u8]) {
 
 include!("../fuzz/shared/audit_invariants.rs");
 
-use audit_invariants::{Facts, FindingF, ItemF, ThumbF, What, CAP};
+use audit_invariants::{EmbF, Facts, FindingF, ItemF, ThumbF, What, CAP};
 
 /// All 66 seeds that existed before SPEC-012 (29 `tiff_ifd` + 37
 /// `jpeg_segments`): `(target, name, length, FNV-1a 64 of the bytes)`, taken
@@ -1360,7 +1371,7 @@ fn the_existing_66_seeds_are_byte_identical() {
             .count()
     };
     assert_eq!(count("tiff_ifd"), 32);
-    assert_eq!(count("jpeg_segments"), 37);
+    assert_eq!(count("jpeg_segments"), 37 + SHAPE_SEEDS.len());
 }
 
 #[test]
@@ -1420,6 +1431,8 @@ fn audit_seeds_are_committed_and_have_the_shapes_they_claim() {
     ] {
         want.push(format!("tiff-{n}"));
     }
+    // SPEC-019: the shape seeds, written as they are.
+    want.extend(SHAPE_SEEDS.iter().map(|n| format!("shape-{n}")));
     want.sort();
     assert_eq!(
         names, want,
@@ -1538,7 +1551,11 @@ fn audit_harness_holds_on_every_seed_and_degenerate_inputs() {
         audit_invariants::check(&data);
         seen += 1;
     }
-    assert_eq!(seen, 78, "32 TIFF + 37 JPEG + 9 new");
+    assert_eq!(
+        seen,
+        78 + 17,
+        "32 TIFF + 37 JPEG + 9 new + 17 SPEC-019 shapes"
+    );
     for data in audit_degenerate_inputs() {
         audit_invariants::check(&data);
     }
@@ -1648,7 +1665,243 @@ fn dummy_item() -> ItemF {
     }
 }
 
+/// The index of the first finding of a category.
+fn finding_of(f: &Facts, category: &str) -> usize {
+    f.findings
+        .iter()
+        .position(|x| x.category == category)
+        .unwrap_or_else(|| panic!("a {category} finding"))
+}
+
+/// SPEC-019 plants: the new region kinds, categories and the `embedded`
+/// object, each rejected by its own guard alone, in both directions (a thing
+/// expected that is missing, a thing present that was not expected).
+fn new_region_plants() -> Vec<Plant> {
+    vec![
+        // embedded: the object lost / invented (the two directions of iff).
+        Plant {
+            name: "an EmbeddedImage finding without its embedded object",
+            input: "shape-mpo-two-le",
+            guard: "embedded",
+            apply: |f| {
+                let i = finding_of(f, "EmbeddedImage");
+                f.findings[i].embedded = None;
+            },
+        },
+        Plant {
+            name: "an embedded object on a camera-model finding",
+            input: "shape-mpo-two-le",
+            guard: "embedded",
+            apply: |f| {
+                let e = f.findings[finding_of(f, "EmbeddedImage")].embedded.clone();
+                let i = finding_of(f, "CameraModel");
+                f.findings[i].embedded = e;
+            },
+        },
+        Plant {
+            name: "an embedded object on a tag finding of a TIFF",
+            input: "tiff-valid-le",
+            guard: "embedded",
+            apply: |f| {
+                let i = first_tag_finding(f);
+                f.findings[i].embedded = Some(EmbF {
+                    offset: 0,
+                    length: 0,
+                    ffd8: false,
+                    holds: vec![],
+                });
+            },
+        },
+        Plant {
+            name: "an EmbeddedImage finding dropped but its item kept",
+            input: "shape-mpo-two-le",
+            guard: "embedded",
+            apply: |f| {
+                let i = finding_of(f, "EmbeddedImage");
+                f.findings.remove(i);
+            },
+        },
+        Plant {
+            name: "an embedded range outside the input",
+            input: "shape-mpo-two-le",
+            guard: "embedded",
+            apply: |f| {
+                let i = finding_of(f, "EmbeddedImage");
+                f.findings[i].embedded.as_mut().unwrap().offset = usize::MAX - 3;
+            },
+        },
+        Plant {
+            name: "an embedded range that runs past the end",
+            input: "shape-mpo-two-le",
+            guard: "embedded",
+            apply: |f| {
+                let i = finding_of(f, "EmbeddedImage");
+                f.findings[i].embedded.as_mut().unwrap().length += 1_000_000;
+            },
+        },
+        Plant {
+            name: "the FF D8 flag flipped",
+            input: "shape-mpo-two-le",
+            guard: "embedded",
+            apply: |f| {
+                let i = finding_of(f, "EmbeddedImage");
+                let e = f.findings[i].embedded.as_mut().unwrap();
+                e.ffd8 = !e.ffd8;
+            },
+        },
+        Plant {
+            name: "holds out of table order",
+            input: "shape-mpo-two-le",
+            guard: "embedded",
+            apply: |f| {
+                let i = finding_of(f, "EmbeddedImage");
+                f.findings[i].embedded.as_mut().unwrap().holds.reverse();
+            },
+        },
+        Plant {
+            name: "holds listing EmbeddedImage",
+            input: "shape-mpo-two-le",
+            guard: "embedded",
+            apply: |f| {
+                let i = finding_of(f, "EmbeddedImage");
+                f.findings[i]
+                    .embedded
+                    .as_mut()
+                    .unwrap()
+                    .holds
+                    .push("EmbeddedImage".into());
+            },
+        },
+        // findings: holds compared with the independent derivation (both ways).
+        Plant {
+            name: "holds emptied",
+            input: "shape-mpo-two-le",
+            guard: "findings",
+            apply: |f| {
+                let i = finding_of(f, "EmbeddedImage");
+                f.findings[i].embedded.as_mut().unwrap().holds.clear();
+            },
+        },
+        Plant {
+            name: "holds with a category that is not inside",
+            input: "shape-mpo-two-le",
+            guard: "findings",
+            apply: |f| {
+                let i = finding_of(f, "EmbeddedImage");
+                f.findings[i].embedded.as_mut().unwrap().holds = vec!["Gps".into()];
+            },
+        },
+        Plant {
+            name: "an embedded image whose inner MPF is recursed into",
+            input: "shape-mpo-inner-mpf",
+            guard: "findings",
+            apply: |f| {
+                // With location on inside, the inner MPF would be an
+                // EmbeddedImage (not an OtherSegment) in `holds`.
+                let i = finding_of(f, "EmbeddedImage");
+                let e = f.findings[i].embedded.as_mut().unwrap();
+                e.holds = e
+                    .holds
+                    .iter()
+                    .map(|h| {
+                        if h == "OtherSegment" {
+                            "Gps".to_string()
+                        } else {
+                            h.clone()
+                        }
+                    })
+                    .collect();
+            },
+        },
+        // category_shape: the region-kind to category map of DEC-012.
+        Plant {
+            name: "an EmbeddedImage region categorised Xmp",
+            input: "shape-mpo-two-le",
+            guard: "category_shape",
+            apply: |f| {
+                let i = finding_of(f, "EmbeddedImage");
+                f.findings[i].category = "Xmp".into();
+            },
+        },
+        Plant {
+            name: "a Comment region categorised OtherSegment",
+            input: "shape-com-segment",
+            guard: "category_shape",
+            apply: |f| {
+                let i = finding_of(f, "FreeText");
+                f.findings[i].category = "OtherSegment".into();
+            },
+        },
+        Plant {
+            name: "an OtherApp region categorised FreeText",
+            input: "shape-app10-arot",
+            guard: "category_shape",
+            apply: |f| {
+                let i = finding_of(f, "OtherSegment");
+                f.findings[i].category = "FreeText".into();
+            },
+        },
+        Plant {
+            name: "a Trailer region categorised EmbeddedImage",
+            input: "shape-trailer-313",
+            guard: "category_shape",
+            apply: |f| {
+                let i = finding_of(f, "OtherSegment");
+                f.findings[i].category = "EmbeddedImage".into();
+            },
+        },
+        Plant {
+            name: "OtherSegment on a tag item",
+            input: "tiff-valid-le",
+            guard: "category_shape",
+            apply: |f| {
+                let i = first_tag_finding(f);
+                f.findings[i].category = "OtherSegment".into();
+            },
+        },
+        // inventory / health: the new regions are items, and issues make it unclean.
+        Plant {
+            name: "a trailer item lost",
+            input: "shape-trailer-313",
+            guard: "inventory",
+            apply: |f| {
+                f.items.pop();
+            },
+        },
+        Plant {
+            name: "an invented comment item",
+            input: "shape-com-segment",
+            guard: "inventory",
+            apply: |f| {
+                let mut it = f.items[0].clone();
+                if let What::Region { kind, .. } = &mut it.what {
+                    *kind = "Comment".into();
+                }
+                f.items.push(it);
+            },
+        },
+        Plant {
+            name: "a malformed-MPF file reported clean",
+            input: "shape-mpo-truncated-index",
+            guard: "health",
+            apply: |f| f.health.clean = true,
+        },
+        Plant {
+            name: "an MPF image outside the input forgotten in the issue count",
+            input: "shape-mpo-offset-out-of-range",
+            guard: "health",
+            apply: |f| f.health.jpeg_issues = 0,
+        },
+    ]
+}
+
 fn plants() -> Vec<Plant> {
+    let mut all = new_region_plants();
+    all.extend(plants_before_spec_019());
+    all
+}
+
+fn plants_before_spec_019() -> Vec<Plant> {
     vec![
         // kind: both directions (a supported container called another, an
         // unsupported one called a supported one).
@@ -1693,6 +1946,7 @@ fn plants() -> Vec<Plant> {
                     item: None,
                     at: dummy_item(),
                     thumb: None,
+                    embedded: None,
                 })
             },
         },
@@ -1877,6 +2131,7 @@ fn plants() -> Vec<Plant> {
                     item: Some(0),
                     at: f.items[0].clone(),
                     thumb: None,
+                    embedded: None,
                 })
             },
         },
@@ -1903,6 +2158,7 @@ fn plants() -> Vec<Plant> {
                     item: Some(0),
                     at: f.items[0].clone(),
                     thumb: None,
+                    embedded: None,
                 })
             },
         },
@@ -2142,7 +2398,7 @@ fn tiff_harness_entry_budget_invariants_hold_on_every_seed() {
             seen += 1;
         }
     }
-    assert_eq!(seen, 32 + 78);
+    assert_eq!(seen, 32 + 78 + 17);
     // The degenerate inputs too, and the generated big inventory.
     for data in audit_degenerate_inputs() {
         entry_budget_invariants::check_input(&data);
@@ -2592,7 +2848,12 @@ fn the_full_house_inputs_carry_every_category() {
     let jpeg = full_house_jpeg_bytes();
     let a = audit(&jpeg);
     let have: Vec<Category> = a.findings().iter().map(|f| f.category).collect();
+    // The 13 DEC-008 categories; the two DEC-012 categories are carried by the
+    // shape seeds (`shape_seeds_carry_the_two_dec_012_categories`).
     for c in Category::ALL {
+        if matches!(c, Category::EmbeddedImage | Category::OtherSegment) {
+            continue;
+        }
         assert!(have.contains(&c), "jpeg lacks {c:?}");
     }
     assert!(a.health().clean);
@@ -2611,7 +2872,7 @@ fn preview_guards_hold_on_every_seed_and_degenerate_inputs() {
             inputs.push((path.display().to_string(), data));
         }
     }
-    assert_eq!(inputs.len(), 32 + 37 + 78);
+    assert_eq!(inputs.len(), 32 + 37 + 78 + 17 + 17);
     for (i, d) in audit_degenerate_inputs().into_iter().enumerate() {
         inputs.push((format!("degenerate {i}"), d));
     }
@@ -2896,7 +3157,7 @@ fn render_ctx(seed: &str) -> Ctx {
 
 const SEMICOLON: &str = "render-label-semicolon-formula";
 
-const AUDIT_RENDER_SEEDS: [&str; 19] = [
+const AUDIT_RENDER_SEEDS: [&str; 26] = [
     "render-ascii-payload-300-bytes",
     "render-empty-file",
     "render-full-house-jpeg-all-pii-inventory-values",
@@ -2916,6 +3177,13 @@ const AUDIT_RENDER_SEEDS: [&str; 19] = [
     "render-label-right-to-left-override",
     "render-label-semicolon-formula",
     "render-png-signature-values",
+    "render-shape-mpo-all-pii-inventory-values",
+    "render-shape-mpo-custom-failure",
+    "render-shape-mpo-everything-inventory",
+    "render-shape-mpo-gps-values",
+    "render-shape-split-app13-all-inventory-values",
+    "render-shape-split-app13-gps",
+    "render-shape-trailer-no-policy-inventory",
 ];
 
 const HOUSE_ALL_PII: &str = "render-full-house-jpeg-all-pii-inventory-values";
@@ -3047,6 +3315,12 @@ fn the_two_full_house_inputs_are_audit_seeds() {
     let jpeg = audit_seed("audit-full-house-jpeg");
     let a = exif_core::audit::audit(&jpeg);
     for c in exif_core::audit::Category::ALL {
+        if matches!(
+            c,
+            exif_core::audit::Category::EmbeddedImage | exif_core::audit::Category::OtherSegment
+        ) {
+            continue;
+        }
         assert!(a.findings_in(c).count() > 0, "{c:?}");
     }
 }
@@ -3223,8 +3497,8 @@ fn fact_render_plants() -> Vec<RenderPlant> {
             apply: |c| {
                 rep(
                     &mut c.json,
-                    "\"schema_version\":1,",
-                    "\"schema_version\":1,\"schema_version\":1,",
+                    "\"schema_version\":2,",
+                    "\"schema_version\":2,\"schema_version\":2,",
                 )
             },
         },
@@ -3278,8 +3552,8 @@ fn fact_render_plants() -> Vec<RenderPlant> {
             apply: |c| {
                 rep(
                     &mut c.json,
-                    "\"schema_version\":1,",
-                    "\"schema_version\":1,\"extra\":0,",
+                    "\"schema_version\":2,",
+                    "\"schema_version\":2,\"extra\":0,",
                 )
             },
         },
@@ -5052,4 +5326,217 @@ fn each_cli_args_guard_goes_red_alone_when_planted() {
         "{} cli plants, each rejected by its own guard alone",
         plants.len()
     );
+}
+
+// ── SPEC-019: the real-world shapes (DEC-012) ────────────────────────────────
+
+/// The 17 `shape-*` seed names (without the prefix), typed by hand.
+const SHAPE_SEEDS: [&str; 17] = [
+    "mpo-two-le",
+    "mpo-two-be",
+    "mpo-truncated-index",
+    "mpo-offset-out-of-range",
+    "mpo-image-not-jpeg",
+    "mpo-inner-mpf",
+    "mpo-seventeen",
+    "mpo-nested-ranges",
+    "app3-mpf-signature",
+    "split-app13",
+    "app10-arot",
+    "app2-fpxr",
+    "com-segment",
+    "trailer-313",
+    "canon-style-note",
+    "canon-style-note-moved",
+    "exif-64k",
+];
+
+#[test]
+fn new_seeds_are_committed_and_have_the_shapes_they_claim() {
+    use exif_core::audit::{audit, Category, RegionKind};
+    use exif_core::jpeg::{self, Region};
+    let fixtures = real_shapes::fixtures();
+    assert_eq!(fixtures.len(), SHAPE_SEEDS.len());
+    for ((name, bytes), want) in fixtures.iter().zip(SHAPE_SEEDS) {
+        assert_eq!(*name, want, "the builders and the seed names agree");
+        // Byte for byte the builder's output, in both JPEG-reading targets.
+        for target in ["jpeg_segments", "audit"] {
+            let path = root()
+                .join("fuzz/seeds")
+                .join(target)
+                .join(format!("shape-{name}"));
+            let on_disk = fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+            assert_eq!(&on_disk, bytes, "{target}/shape-{name}");
+        }
+    }
+    let seed = |n: &str| {
+        fs::read(
+            root()
+                .join("fuzz/seeds/jpeg_segments")
+                .join(format!("shape-{n}")),
+        )
+        .unwrap()
+    };
+    let regions = |n: &str| -> Vec<&'static str> {
+        let d = seed(n);
+        let m = jpeg::read(&d).unwrap();
+        m.regions()
+            .iter()
+            .map(|r| match r {
+                Region::EmbeddedImage { .. } => "embedded",
+                Region::Comment { .. } => "comment",
+                Region::OtherApp { .. } => "other_app",
+                Region::Trailer { .. } => "trailer",
+                Region::Iptc { .. } => "iptc",
+                _ => "other",
+            })
+            .collect()
+    };
+    assert_eq!(regions("mpo-two-le"), ["embedded", "embedded"]);
+    assert_eq!(regions("mpo-two-be"), ["embedded", "embedded"]);
+    // A truncated index: the MPF segment is an unrecognised APPn.
+    assert_eq!(regions("mpo-truncated-index"), ["other_app", "trailer"]);
+    // One bad range, one good image; the bytes of the bad one stay a trailer.
+    assert_eq!(regions("mpo-offset-out-of-range"), ["embedded", "trailer"]);
+    assert_eq!(regions("mpo-image-not-jpeg"), ["embedded", "trailer"]);
+    // Only the outer image: the inner MPF belongs to it.
+    assert_eq!(regions("mpo-inner-mpf"), ["embedded"]);
+    // 17 images: 15 regions and one TooManyMpfImages issue.
+    let r17 = regions("mpo-seventeen");
+    assert_eq!(r17.iter().filter(|r| **r == "embedded").count(), 15);
+    assert_eq!(
+        r17.last(),
+        Some(&"trailer"),
+        "the 16th secondary stays a trailer"
+    );
+    let d = seed("mpo-seventeen");
+    let m = jpeg::read(&d).unwrap();
+    assert!(m
+        .jpeg_issues()
+        .iter()
+        .any(|i| matches!(i.error(), Error::TooManyMpfImages { .. })));
+    // Nested ranges: no phantom trailer. MPF only on APP2: an unrecognised APPn.
+    assert_eq!(regions("mpo-nested-ranges"), ["embedded", "embedded"]);
+    assert_eq!(regions("app3-mpf-signature"), ["other_app"]);
+    let d = seed("app3-mpf-signature");
+    assert!(jpeg::read(&d).unwrap().jpeg_issues().is_empty());
+    assert_eq!(regions("split-app13"), ["iptc", "iptc"]);
+    assert_eq!(regions("app10-arot"), ["other_app"]);
+    assert_eq!(regions("app2-fpxr"), ["other_app"]);
+    assert_eq!(regions("com-segment"), ["comment"]);
+    assert_eq!(regions("trailer-313"), ["trailer"]);
+    assert!(regions("canon-style-note").is_empty());
+    assert!(regions("exif-64k").is_empty());
+    // The Canon-style note and the 64 KB Exif parse as Exif blocks.
+    for n in ["canon-style-note", "canon-style-note-moved", "exif-64k"] {
+        let d = seed(n);
+        let m = jpeg::read(&d).unwrap();
+        assert!(m.exif().is_some(), "{n}");
+    }
+    assert!(seed("exif-64k").len() > 65_000);
+    // And the audit sees what the names say.
+    let mpo = seed("mpo-two-le");
+    let a = audit(&mpo);
+    assert_eq!(a.findings_in(Category::EmbeddedImage).count(), 2);
+    let trailer = seed("trailer-313");
+    let a = audit(&trailer);
+    let kinds: Vec<RegionKind> = a
+        .items()
+        .iter()
+        .filter_map(|i| match i.kind() {
+            exif_core::audit::ItemKind::Region { kind, .. } => Some(kind),
+            exif_core::audit::ItemKind::Tag { .. } => None,
+        })
+        .collect();
+    assert_eq!(kinds, [RegionKind::Trailer]);
+}
+
+#[test]
+fn shape_seeds_carry_the_two_dec_012_categories() {
+    use exif_core::audit::{audit, Category};
+    let mut have: Vec<Category> = Vec::new();
+    for n in SHAPE_SEEDS {
+        let d = fs::read(root().join("fuzz/seeds/audit").join(format!("shape-{n}"))).unwrap();
+        have.extend(audit(&d).findings().iter().map(|f| f.category));
+    }
+    for c in [
+        Category::EmbeddedImage,
+        Category::OtherSegment,
+        Category::FreeText,
+    ] {
+        assert!(have.contains(&c), "the shape seeds lack {c:?}");
+    }
+}
+
+#[test]
+fn existing_seeds_and_records_are_byte_identical() {
+    // The two older hash lists still hold (63 + 66 seeds); the SPEC-019 seeds
+    // only added `shape-*` files. The ExifTool records are checked by
+    // `existing_oracle_records_are_byte_identical_to_the_committed_set`.
+    the_existing_63_seeds_are_byte_identical();
+    the_existing_66_seeds_are_byte_identical();
+    // A shape seed is never among the pinned names.
+    for (target, name, _, _) in PRE_SPEC_011_SEEDS {
+        assert!(!name.starts_with("shape-"), "{target}/{name}");
+    }
+}
+
+#[test]
+fn jpeg_metadata_harness_holds_on_every_seed_and_degenerate_inputs() {
+    let dir = root().join("fuzz/seeds/jpeg_segments");
+    let mut seen = 0usize;
+    for entry in fs::read_dir(&dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display())) {
+        let path = entry.expect("entry").path();
+        let data = fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        metadata_invariants::check(&data);
+        seen += 1;
+    }
+    assert_eq!(seen, 37 + SHAPE_SEEDS.len());
+    for data in audit_degenerate_inputs() {
+        metadata_invariants::check(&data);
+    }
+    // Every prefix of the MPO and of the split file, to hit every truncation.
+    for n in ["mpo-two-le", "mpo-two-be", "split-app13", "mpo-inner-mpf"] {
+        let d = fs::read(dir.join(format!("shape-{n}"))).unwrap();
+        for k in 0..d.len() {
+            metadata_invariants::check(&d[..k]);
+        }
+    }
+}
+
+#[test]
+fn each_new_region_guard_goes_red_alone_when_planted() {
+    use exif_core::audit::audit;
+    let plants = new_region_plants();
+    // Each new-region guard has at least two plants (an iff or a two-sided
+    // bound is not tested by one).
+    for guard in [
+        "embedded",
+        "category_shape",
+        "inventory",
+        "health",
+        "findings",
+    ] {
+        let n = plants.iter().filter(|p| p.guard == guard).count();
+        assert!(n >= 2, "guard {guard} has {n} new-region plant(s)");
+    }
+    for p in &plants {
+        let data = plant_input(p.input);
+        let got = audit_invariants::facts(&audit(&data));
+        let want = audit_invariants::rederive(&data);
+        // CONTROL: the unplanted answer satisfies every guard.
+        let control = audit_invariants::violations(&data, &got, &want);
+        assert!(control.is_empty(), "{}: control: {control:?}", p.name);
+        let mut bad = got.clone();
+        (p.apply)(&mut bad);
+        assert_ne!(bad, got, "{}: the plant changed nothing", p.name);
+        let alone = audit_invariants::run_guard(p.guard, &data, &bad, &want);
+        assert!(
+            alone.is_err(),
+            "{}: guard {} did not reject the planted bug on {}",
+            p.name,
+            p.guard,
+            p.input
+        );
+    }
 }

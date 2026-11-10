@@ -16,7 +16,7 @@
 
 #![allow(dead_code)]
 
-use crate::{audit_tags, oracle_jpeg, oracle_tiff};
+use crate::{audit_tags, oracle_jpeg, oracle_tiff, real_shapes};
 use std::path::{Path, PathBuf};
 
 /// The corpora, in canonical-name order.
@@ -27,6 +27,16 @@ pub const CORPORA: [&str; 5] = [
     "seed-jpeg_segments",
     "seed-audit",
 ];
+
+/// Corpora added after SPEC-013. They are NOT in [`CORPORA`], so the 178
+/// existing results, their records and their counts cannot move; they have
+/// their own records and their own tests (SPEC-019).
+pub const NEW_CORPORA: [&str; 1] = ["real-shapes"];
+
+/// The prefix of the SPEC-019 seeds. They are byte copies of the `real-shapes`
+/// fixtures, which carry the record, so the three seed corpora skip them (their
+/// records stay byte-identical).
+pub const SHAPE_SEED_PREFIX: &str = "shape-";
 
 /// The directory of the committed inventory records, from the repo root.
 pub const RECORD_DIR: &str = "tests/oracle-fixtures/exiftool-inventory";
@@ -86,6 +96,10 @@ fn read_seeds(root: &Path, corpus: &'static str, dir: &str) -> Vec<Input> {
     paths.sort();
     paths
         .into_iter()
+        .filter(|p| {
+            !p.file_name()
+                .is_some_and(|n| n.to_string_lossy().starts_with(SHAPE_SEED_PREFIX))
+        })
         .map(|p| Input {
             corpus,
             name: p
@@ -144,6 +158,14 @@ pub fn inputs(root: &Path, corpus: &str) -> Vec<Input> {
         "seed-tiff_ifd" => read_seeds(root, "seed-tiff_ifd", "tiff_ifd"),
         "seed-jpeg_segments" => read_seeds(root, "seed-jpeg_segments", "jpeg_segments"),
         "seed-audit" => read_seeds(root, "seed-audit", "audit"),
+        "real-shapes" => real_shapes::fixtures()
+            .into_iter()
+            .map(|(name, bytes)| Input {
+                corpus: "real-shapes",
+                name: name.to_string(),
+                bytes,
+            })
+            .collect(),
         other => panic!("unknown corpus {other}"),
     }
 }

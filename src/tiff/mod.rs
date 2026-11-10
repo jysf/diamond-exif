@@ -1747,6 +1747,10 @@ mod tests {
             },
             Error::IccChunkMismatch { at: 9 },
             Error::TooManyEntries { limit: 65_536 },
+            Error::MpfMalformed { at: 3 },
+            Error::MpfImageOutsideInput { at: 3, index: 2 },
+            Error::MpfImageNotJpeg { at: 3, index: 2 },
+            Error::TooManyMpfImages { at: 3, limit: 16 },
         ];
         for e in &errors {
             assert!(!e.to_string().is_empty(), "{e:?} has an empty Display");
@@ -1781,10 +1785,14 @@ mod tests {
                 Error::RegionTooShort { .. } => 20,
                 Error::IccChunkMismatch { .. } => 21,
                 Error::TooManyEntries { .. } => 22,
+                Error::MpfMalformed { .. } => 23,
+                Error::MpfImageOutsideInput { .. } => 24,
+                Error::MpfImageNotJpeg { .. } => 25,
+                Error::TooManyMpfImages { .. } => 26,
             }
         }
         let indices: Vec<usize> = errors.iter().map(index).collect();
-        assert_eq!(indices, (0..23).collect::<Vec<usize>>());
+        assert_eq!(indices, (0..27).collect::<Vec<usize>>());
     }
 
     // ── pointer tags (SPEC-004, DEC-005) ─────────────────────────────────────

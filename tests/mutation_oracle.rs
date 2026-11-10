@@ -42,6 +42,8 @@ mod oracle_jpeg;
 mod oracle_tiff;
 #[path = "support/probe.rs"]
 mod probe;
+#[path = "support/real_shapes.rs"]
+mod real_shapes;
 #[path = "support/tools.rs"]
 mod tools;
 
@@ -1180,16 +1182,17 @@ fn jpeg_mutant_app1_marker_guard_relaxed_is_named() {
     assert!(cmp_for(&got, "jpeg-exif-basic-le").is_clean());
 }
 
-// Mutant m7. Needle (src/jpeg/metadata.rs, `iptc`): `resource.id == IPTC_RESOURCE_ID`.
-// The id compare is inverted: the 0x0404 resource is no longer located and every
-// OTHER resource is.
+// Mutant m7 (reworked by SPEC-019: DEC-012 replaced the 0x0404-resource rule
+// with "every Photoshop segment is an Iptc region"). Needle
+// (src/jpeg/metadata.rs, `iptc`): the `out.push(Region::Iptc { .. })`
+// statement. It is dropped: no Photoshop segment is located any more.
 #[test]
 fn jpeg_mutant_iptc_id_compare_wrong_is_named() {
     let inject = |src: &Path| {
         probe::inject_replace(
             &src.join("jpeg/metadata.rs"),
-            "resource.id == IPTC_RESOURCE_ID",
-            &marked("resource.id != IPTC_RESOURCE_ID"),
+            "out.push(Region::Iptc {\n            segment: index,\n            data: body,\n        });",
+            &marked("let _ = &out;"),
         );
     };
     let fixtures = ["jpeg-iptc", "jpeg-iptc-without-0404", "jpeg-exif-basic-le"];
@@ -1202,14 +1205,11 @@ fn jpeg_mutant_iptc_id_compare_wrong_is_named() {
         describe(&c.unexplained)
     );
     assert!(c.unexplained[0].ours.is_none() && c.unexplained[0].theirs.is_some());
+    // The pinned DEC-012 divergence of this fixture (ours "present", theirs
+    // nothing) stops being one: it is reported stale, in both directions.
     let c = cmp_for(&got, "jpeg-iptc-without-0404");
-    assert_eq!(
-        named(&c.unexplained),
-        vec!["IPTC:ObjectName"],
-        "{}",
-        describe(&c.unexplained)
-    );
-    assert!(c.unexplained[0].ours.is_some() && c.unexplained[0].theirs.is_none());
+    assert!(c.unexplained.is_empty(), "{}", describe(&c.unexplained));
+    assert!(!c.stale.is_empty(), "the pinned divergence goes stale");
     assert!(cmp_for(&got, "jpeg-exif-basic-le").is_clean());
 }
 
@@ -1240,9 +1240,9 @@ fn probe_build_and_run_have_a_wall_clock_limit() {
     let inject = |src: &Path| {
         probe::inject_replace(
             &src.join("jpeg/metadata.rs"),
-            "fn extract(jpeg: Jpeg<'_>) -> JpegMetadata<'_> {",
+            "fn extract<'a>(jpeg: Jpeg<'a>, data: &'a [u8], embedded: bool) -> JpegMetadata<'a> {",
             &marked(
-                "fn extract(jpeg: Jpeg<'_>) -> JpegMetadata<'_> {\n    #[allow(clippy::empty_loop)]\n    loop {}",
+                "fn extract<'a>(jpeg: Jpeg<'a>, data: &'a [u8], embedded: bool) -> JpegMetadata<'a> {\n    #[allow(clippy::empty_loop)]\n    loop {}",
             ),
         );
     };

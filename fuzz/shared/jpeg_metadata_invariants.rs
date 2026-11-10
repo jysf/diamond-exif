@@ -14,6 +14,7 @@
 mod metadata_invariants {
     use exif_core::jpeg::{
         self, AnyIssue, Jpeg, Region, SegmentKind, MAX_EXIF_BLOCKS, MAX_JPEG_METADATA_ISSUES,
+        MAX_MPF_IMAGES,
     };
     use exif_core::tiff::Container;
     use exif_core::Error;
@@ -46,6 +47,10 @@ mod metadata_invariants {
         Icc(usize, u8, u8, &'a [u8]),
         Iptc(usize, &'a [u8]),
         Jumbf(usize, u16, u32, &'a [u8]),
+        Embedded(usize, usize, &'a [u8]),
+        Comment(usize, &'a [u8]),
+        OtherApp(usize, u8, &'a [u8]),
+        Trailer(usize, usize, &'a [u8]),
     }
 
     fn reduce<'a>(r: &Region<'a>) -> Exp<'a> {
@@ -71,6 +76,22 @@ mod metadata_invariants {
                 z,
                 data,
             } => Exp::Jumbf(segment, en, z, data),
+            Region::EmbeddedImage {
+                segment,
+                offset,
+                data,
+            } => Exp::Embedded(segment, offset, data),
+            Region::Comment { segment, data } => Exp::Comment(segment, data),
+            Region::OtherApp {
+                segment,
+                marker,
+                data,
+            } => Exp::OtherApp(segment, marker, data),
+            Region::Trailer {
+                segment,
+                offset,
+                data,
+            } => Exp::Trailer(segment, offset, data),
             _ => panic!("a Region variant the harness does not know"),
         }
     }
@@ -79,10 +100,11 @@ mod metadata_invariants {
         u32::from_be_bytes([b[0], b[1], b[2], b[3]])
     }
 
-    /// The Photoshop resource walk, written out again: the located `0x0404`
-    /// data and the one fault that stopped the walk, if any.
+    /// The Photoshop resource walk, written out again: the one fault that
+    /// stopped the walk, if any. (DEC-012: the region is the whole segment,
+    /// not a resource, so the walk finds faults only.)
     fn expect_iptc(seg_off: usize, payload: &[u8]) -> (Vec<&[u8]>, Option<Error>) {
-        let mut found = Vec::new();
+        let found = Vec::new();
         let mut pos = SIG_IPTC;
         while pos < payload.len() {
             let here = seg_off + 4 + pos;
@@ -107,7 +129,6 @@ mod metadata_invariants {
             if rest.len() < 6 {
                 return (found, short(6));
             }
-            let id = u16::from_be_bytes([rest[4], rest[5]]);
             if rest.len() < 7 {
                 return (found, short(7));
             }
@@ -122,9 +143,6 @@ mod metadata_invariants {
             if rest.len() < end {
                 return (found, short(end));
             }
-            if id == 0x0404 {
-                found.push(&rest[size_at + 4..end]);
-            }
             pos += end + size % 2;
         }
         (found, None)
@@ -136,14 +154,64 @@ mod metadata_invariants {
     /// extraction issues (when the walk was not halted) and the ICC chunks
     /// `(segment offset, seq, count)`. The ICC aggregate issue is handled by
     /// the caller.
-    fn expected<'a>(jpeg: &Jpeg<'a>) -> Expected<'a> {
+    fn expected<'a>(jpeg: &Jpeg<'a>, data: &'a [u8]) -> Expected<'a> {
         let mut regions = Vec::new();
         let mut errors = Vec::new();
         let mut icc = Vec::new();
         let mut exif_seen = 0usize;
+        let mut mpf_seen = false;
+        // The ranges the embedded images take, to reduce the trailer.
+        let mut covered: Vec<(usize, usize)> = Vec::new();
         for (index, seg) in jpeg.segments().iter().enumerate() {
             let p = seg.payload();
             let at = seg.offset();
+            // DEC-012, from the marker and the bytes (not from `SegmentKind`):
+            // the unrecognised APPn and the comment.
+            if seg.marker() == 0xFE {
+                regions.push(Exp::Comment(index, p));
+            } else if (0xE0..=0xEF).contains(&seg.marker()) && !recognised(seg.marker(), p) {
+                let is_mpf = seg.marker() == 0xE2 && p.starts_with(b"MPF\0");
+                let benign = (seg.marker() == 0xE0 && p.starts_with(b"JFIF\0"))
+                    || (seg.marker() == 0xEE && p.starts_with(b"Adobe\0"));
+                if is_mpf {
+                    let images = if mpf_seen { None } else { mpf_images(p) };
+                    mpf_seen = true;
+                    match images {
+                        Some((entries, too_many)) => {
+                            for (i, size, off) in entries {
+                                let start = (at + 8) as u64 + u64::from(off);
+                                let end = start + u64::from(size);
+                                if end > data.len() as u64 {
+                                    errors.push(Error::MpfImageOutsideInput { at, index: i });
+                                } else if !data[start as usize..end as usize]
+                                    .starts_with(&[0xFF, 0xD8])
+                                {
+                                    errors.push(Error::MpfImageNotJpeg { at, index: i });
+                                } else {
+                                    covered.push((start as usize, end as usize));
+                                    regions.push(Exp::Embedded(
+                                        index,
+                                        start as usize,
+                                        &data[start as usize..end as usize],
+                                    ));
+                                }
+                            }
+                            if too_many {
+                                errors.push(Error::TooManyMpfImages {
+                                    at,
+                                    limit: MAX_MPF_IMAGES,
+                                });
+                            }
+                        }
+                        None => {
+                            errors.push(Error::MpfMalformed { at });
+                            regions.push(Exp::OtherApp(index, seg.marker(), p));
+                        }
+                    }
+                } else if !benign {
+                    regions.push(Exp::OtherApp(index, seg.marker(), p));
+                }
+            }
             match seg.kind() {
                 SegmentKind::Exif => {
                     if exif_seen > 0 {
@@ -186,8 +254,10 @@ mod metadata_invariants {
                     }
                 }
                 SegmentKind::Iptc => {
-                    let (found, fault) = expect_iptc(at, p);
-                    regions.extend(found.into_iter().map(|d| Exp::Iptc(index, d)));
+                    // Every Photoshop segment is a region: its payload after
+                    // the header, whether or not a resource parses in it.
+                    regions.push(Exp::Iptc(index, &p[SIG_IPTC..]));
+                    let (_, fault) = expect_iptc(at, p);
                     errors.extend(fault);
                 }
                 SegmentKind::Jumbf => {
@@ -211,7 +281,132 @@ mod metadata_invariants {
                 _ => {}
             }
         }
+        // The trailer minus the embedded images, one region per contiguous
+        // remainder, found byte by byte (the library sorts and sweeps).
+        if let Some(eoi) = jpeg.eoi_offset() {
+            let start = eoi + 2;
+            let mut taken = vec![false; data.len().saturating_sub(start)];
+            for &(a, b) in &covered {
+                for pos in a.max(start)..b.min(data.len()) {
+                    taken[pos - start] = true;
+                }
+            }
+            let mut pos = 0usize;
+            while pos < taken.len() {
+                if taken[pos] {
+                    pos += 1;
+                    continue;
+                }
+                let from = pos;
+                while pos < taken.len() && !taken[pos] {
+                    pos += 1;
+                }
+                regions.push(Exp::Trailer(
+                    jpeg.segments().len(),
+                    start + from,
+                    &data[start + from..start + pos],
+                ));
+            }
+        }
         (regions, errors, icc)
+    }
+
+    /// Whether an APPn segment is one of the kinds the library reads (so it is
+    /// not an "unrecognised APPn"): Exif, XMP, extended XMP, ICC, Photoshop,
+    /// JUMBF. Typed again from DEC-007 and DEC-012.
+    fn recognised(marker: u8, p: &[u8]) -> bool {
+        exif_by_signature(marker, p)
+            || (marker == 0xE1 && p.starts_with(b"http://ns.adobe.com/xap/1.0/\0"))
+            || (marker == 0xE1 && p.starts_with(b"http://ns.adobe.com/xmp/extension/\0"))
+            || (marker == 0xE2 && p.starts_with(b"ICC_PROFILE\0"))
+            || (marker == 0xED && p.starts_with(b"Photoshop 3.0\0"))
+            || (marker == 0xEB && p.starts_with(b"JP"))
+    }
+
+    /// A second, deliberately naive MPF index reader (CIPA DC-007, typed from
+    /// the layout): the `(index, size, offset)` of entries 1 to 15 of the MP
+    /// index and whether the index lists more than the limit; `None` when the
+    /// segment does not parse. Written without `Container`.
+    type MpfEntries = (Vec<(usize, u32, u32)>, bool);
+
+    fn mpf_images(payload: &[u8]) -> Option<MpfEntries> {
+        let h = &payload[4..];
+        let big = match h.get(..2)? {
+            b"II" => false,
+            b"MM" => true,
+            _ => return None,
+        };
+        let u16_at = |at: usize| -> Option<u16> {
+            let b: [u8; 2] = h.get(at..at.checked_add(2)?)?.try_into().ok()?;
+            Some(if big {
+                u16::from_be_bytes(b)
+            } else {
+                u16::from_le_bytes(b)
+            })
+        };
+        let u32_at = |at: usize| -> Option<u32> {
+            let b: [u8; 4] = h.get(at..at.checked_add(4)?)?.try_into().ok()?;
+            Some(if big {
+                u32::from_be_bytes(b)
+            } else {
+                u32::from_le_bytes(b)
+            })
+        };
+        if u16_at(2)? != 42 {
+            return None;
+        }
+        let ifd = u32_at(4)? as usize;
+        if ifd == 0 {
+            return None;
+        }
+        let count = usize::from(u16_at(ifd)?);
+        let table = ifd.checked_add(2)?;
+        let end = table.checked_add(count.checked_mul(12)?)?;
+        // The table and the 4-byte next pointer must be there.
+        h.get(table..end.checked_add(4)?)?;
+        // Every entry of the table must itself be readable (a type is not
+        // checked here, only at the one entry that is used).
+        let mut found: Option<(u16, usize, usize)> = None;
+        for i in 0..count {
+            let at = table + 12 * i;
+            if u16_at(at)? == 0xB002 {
+                found = Some((u16_at(at + 2)?, u32_at(at + 4)? as usize, at + 8));
+                break;
+            }
+        }
+        let (typ, n, field) = found?;
+        let size = match typ {
+            1 | 2 | 6 | 7 => 1usize,
+            3 | 8 => 2,
+            4 | 9 | 11 | 13 => 4,
+            5 | 10 | 12 => 8,
+            _ => return None,
+        };
+        let len = n.checked_mul(size)?;
+        let bytes = if len <= 4 {
+            h.get(field..field.checked_add(len)?)?
+        } else {
+            let off = u32_at(field)? as usize;
+            h.get(off..off.checked_add(len)?)?
+        };
+        if bytes.len() < 16 {
+            return None;
+        }
+        let whole = bytes.len() / 16;
+        let mut entries = Vec::new();
+        for i in 1..whole.min(MAX_MPF_IMAGES) {
+            let e = &bytes[16 * i..16 * i + 16];
+            let rd = |a: usize| {
+                let b = [e[a], e[a + 1], e[a + 2], e[a + 3]];
+                if big {
+                    u32::from_be_bytes(b)
+                } else {
+                    u32::from_le_bytes(b)
+                }
+            };
+            entries.push((i, rd(4), rd(8)));
+        }
+        Some((entries, whole > MAX_MPF_IMAGES))
     }
 
     /// Whether the ICC chunks are consistent, by a different route than the
@@ -296,7 +491,7 @@ mod metadata_invariants {
             .map(|i| i.error())
             .collect();
 
-        let (want_regions, want_errors, icc) = expected(&walked);
+        let (want_regions, want_errors, icc) = expected(&walked, data);
 
         // Extraction issues, iff: all of the expected ones and no other. After
         // a halt nothing at all is recorded. The ICC aggregate is separate.
@@ -331,20 +526,33 @@ mod metadata_invariants {
         let got_regions: Vec<Exp<'_>> = meta.regions().iter().map(reduce).collect();
         assert_eq!(got_regions, want_regions, "regions");
         for region in meta.regions() {
+            // A trailer has no segment: its index is one past the last.
+            if matches!(region, Region::Trailer { .. }) {
+                assert_eq!(region.segment(), segments.len(), "trailer segment index");
+                assert!(inside(data, region.data()), "region escapes the input");
+                continue;
+            }
             let seg = &segments[region.segment()];
-            let kind_ok = matches!(
-                (region, seg.kind()),
-                (Region::Xmp { .. }, SegmentKind::Xmp)
-                    | (Region::ExtendedXmp { .. }, SegmentKind::ExtendedXmp)
-                    | (Region::Icc { .. }, SegmentKind::Icc)
-                    | (Region::Iptc { .. }, SegmentKind::Iptc)
-                    | (Region::Jumbf { .. }, SegmentKind::Jumbf)
-            );
+            let kind_ok = match region {
+                Region::Xmp { .. } => seg.kind() == SegmentKind::Xmp,
+                Region::ExtendedXmp { .. } => seg.kind() == SegmentKind::ExtendedXmp,
+                Region::Icc { .. } => seg.kind() == SegmentKind::Icc,
+                Region::Iptc { .. } => seg.kind() == SegmentKind::Iptc,
+                Region::Jumbf { .. } => seg.kind() == SegmentKind::Jumbf,
+                Region::Comment { .. } => seg.kind() == SegmentKind::Com,
+                Region::OtherApp { .. } | Region::EmbeddedImage { .. } => {
+                    matches!(seg.kind(), SegmentKind::App(_))
+                }
+                _ => false,
+            };
             assert!(kind_ok, "region from a segment of the wrong kind");
-            assert!(
-                inside(seg.payload(), region.data()),
-                "region escapes its segment"
-            );
+            // An embedded image lies elsewhere in the input (that is the point).
+            if !matches!(region, Region::EmbeddedImage { .. }) {
+                assert!(
+                    inside(seg.payload(), region.data()),
+                    "region escapes its segment"
+                );
+            }
             assert!(inside(data, region.data()), "region escapes the input");
         }
         // Spot iffs the design names, restated on their own: an extended-XMP
