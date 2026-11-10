@@ -28,28 +28,6 @@ JFIF	JFIFVersion	1 1
 JFIF	ResolutionUnit	0
 JFIF	XResolution	1
 JFIF	YResolution	1
-## xmp
-ExifTool	Warning	Bad GPS directory
-File	FileType	JPEG
-File	FileTypeExtension	JPG
-File	MIMEType	image/jpeg
-File	ExifByteOrder	MM
-JFIF	JFIFVersion	1 1
-JFIF	ResolutionUnit	0
-JFIF	XResolution	1
-JFIF	YResolution	1
-IFD0	Make	CANARY-EXIF-MAKE
-## icc
-ExifTool	Warning	Bad GPS directory
-File	FileType	JPEG
-File	FileTypeExtension	JPG
-File	MIMEType	image/jpeg
-File	ExifByteOrder	MM
-JFIF	JFIFVersion	1 1
-JFIF	ResolutionUnit	0
-JFIF	XResolution	1
-JFIF	YResolution	1
-IFD0	Make	CANARY-EXIF-MAKE
 ## embedded
 ExifTool	Warning	Bad GPS directory
 File	FileType	JPEG

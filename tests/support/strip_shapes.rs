@@ -1215,7 +1215,13 @@ pub enum Expect {
         patches: Vec<(usize, Vec<u8>)>,
     },
     Unstrippable,
-    NeedsEntryEdit(StripSpec),
+    /// An Exif block that is not clean, under a partial policy; the input
+    /// offset of its segment (`BlockNotClean`).
+    Uneditable(usize),
+    /// A partial policy over Exif entries the fixture holds: the library edits
+    /// them in place; the grid checks the invariants, and the layout-record
+    /// tests (`tests/strip.rs`) compute the exact bytes.
+    EntryEdit,
     MpfNotIndexed(usize),
     Overlap(usize),
 }
@@ -1289,20 +1295,28 @@ pub fn model(shape: &Shape, spec: StripSpec) -> Expect {
             }
         }
     }
-    // Exif: all, none, or the entry edit.
-    if !exif9.is_subset_of(spec) && spec.intersects(exif9) && shape.exif.blocks > 0 {
+    // Exif: all, none, or the entry edit (a partial policy: some Exif category,
+    // or a category an Exif tag can have: Xmp, Iptc, Icc).
+    let can_occur = spec_of(&[Category::Xmp, Category::Iptc, Category::Icc]);
+    let partial = !exif9.is_subset_of(spec)
+        && (spec.intersects(exif9) || spec.intersects(can_occur))
+        && shape.exif.blocks > 0;
+    if partial {
+        if !shape.exif.readable {
+            let first = shape
+                .parts
+                .iter()
+                .find(|p| p.kind == K::Exif)
+                .map_or(0, |p| p.range.start);
+            return Expect::Uneditable(first);
+        }
         let in_spec = |name: &&str| {
             EXIF9
                 .iter()
                 .any(|c| cat_name(*c) == *name && spec.contains(*c))
         };
-        if !shape.exif.readable || shape.exif.cats.iter().any(in_spec) {
-            let cats: Vec<Category> = EXIF9
-                .iter()
-                .copied()
-                .filter(|c| spec.contains(*c))
-                .collect();
-            return Expect::NeedsEntryEdit(spec_of(&cats));
+        if shape.exif.cats.iter().any(in_spec) {
+            return Expect::EntryEdit;
         }
     }
     targets.sort_by_key(|(_, r)| (r.range.start, r.range.end));

@@ -27,6 +27,11 @@ mod real_shapes;
 // SPEC-020: the strip fixtures.
 #[path = "../tests/support/strip_shapes.rs"]
 mod strip_shapes;
+// SPEC-021: the Exif entry fixtures and leak inputs.
+#[path = "../tests/support/exif_layout.rs"]
+mod exif_layout;
+#[path = "../tests/support/exif_records.rs"]
+mod exif_records;
 
 const BYTE: u16 = 1;
 const ASCII: u16 = 2;
@@ -1539,6 +1544,9 @@ fn rewrite_seeds() -> Vec<(String, Vec<u8>)> {
     // Degenerate: a policy byte alone, and a mask cut short.
     out.push(("policy-byte-only".to_string(), vec![7]));
     out.push(("mask-cut-short".to_string(), vec![6, 0x40]));
+    // SPEC-021: the Exif entry editor. Every fixture and leak input under the
+    // three narrow presets and five custom masks; the leaks under `All` too.
+    out.extend(exif_records::entry_seeds());
     out
 }
 

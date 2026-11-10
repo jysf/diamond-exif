@@ -1,0 +1,452 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# exiftool-version: 13.55
+# fixture: exif-at-the-ceiling
+## input
+ExifTool	Warning	[minor] Unrecognized MakerNotes
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Model	CANARY-MODEL-0002
+IFD0	Software	CANARY-SOFTWARE-0003
+IFD0	ModifyDate	2031:02:03 04:05:06
+IFD0	Artist	CANARY-ARTIST-0004
+IFD0	Copyright	CANARY-COPYRIGHT-0005
+IFD0	ImageDescription	CANARY-DESCRIPTION-0006
+IFD0	Orientation	6
+IFD0	XResolution	300
+IFD0	CameraSerialNumber	CANARY-CAMSERIAL-0018
+ExifIFD	DateTimeOriginal	2032:03:04 05:06:07
+ExifIFD	ExposureTime	0.004
+ExifIFD	UserComment	CANARY-USERCOMMENT-0007
+ExifIFD	SerialNumber	CANARY-BODYSERIAL-0008
+ExifIFD	ImageUniqueID	CANARY-IMAGEUNIQUEID-0016
+ExifIFD	LensSerialNumber	CANARY-LENSSERIAL-0017
+ExifIFD	LensModel	CANARY-LENSMODEL-0009
+ExifIFD	ColorSpace	1
+InteropIFD	InteropIndex	R98
+GPS	GPSVersionID	2 3 0 0
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	1301027680.78083
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	1301959169.34972
+GPS	GPSAreaInformation	CANARY-GPSAREA-0011
+IFD1	Compression	6
+IFD1	ThumbnailOffset	942
+IFD1	ThumbnailLength	25
+IFD1	XResolution	300
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+Composite	ShutterSpeed	0.004
+Composite	GPSLatitude	1301027680.78083
+Composite	GPSLongitude	1301959169.34972
+Composite	GPSPosition	1301027680.78083 1301959169.34972
+## gps
+ExifTool	Warning	[minor] Unrecognized MakerNotes
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Model	CANARY-MODEL-0002
+IFD0	Software	CANARY-SOFTWARE-0003
+IFD0	ModifyDate	2031:02:03 04:05:06
+IFD0	Artist	CANARY-ARTIST-0004
+IFD0	Copyright	CANARY-COPYRIGHT-0005
+IFD0	ImageDescription	CANARY-DESCRIPTION-0006
+IFD0	Orientation	6
+IFD0	XResolution	300
+IFD0	CameraSerialNumber	CANARY-CAMSERIAL-0018
+ExifIFD	DateTimeOriginal	2032:03:04 05:06:07
+ExifIFD	ExposureTime	0.004
+ExifIFD	UserComment	CANARY-USERCOMMENT-0007
+ExifIFD	SerialNumber	CANARY-BODYSERIAL-0008
+ExifIFD	ImageUniqueID	CANARY-IMAGEUNIQUEID-0016
+ExifIFD	LensSerialNumber	CANARY-LENSSERIAL-0017
+ExifIFD	LensModel	CANARY-LENSMODEL-0009
+ExifIFD	ColorSpace	1
+InteropIFD	InteropIndex	R98
+IFD1	Compression	6
+IFD1	ThumbnailOffset	942
+IFD1	ThumbnailLength	25
+IFD1	XResolution	300
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+Composite	ShutterSpeed	0.004
+## gps_and_device
+ExifTool	Warning	[minor] Unrecognized MakerNotes
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Model	CANARY-MODEL-0002
+IFD0	Software	CANARY-SOFTWARE-0003
+IFD0	ModifyDate	2031:02:03 04:05:06
+IFD0	Artist	CANARY-ARTIST-0004
+IFD0	Copyright	CANARY-COPYRIGHT-0005
+IFD0	ImageDescription	CANARY-DESCRIPTION-0006
+IFD0	Orientation	6
+IFD0	XResolution	300
+ExifIFD	DateTimeOriginal	2032:03:04 05:06:07
+ExifIFD	ExposureTime	0.004
+ExifIFD	UserComment	CANARY-USERCOMMENT-0007
+ExifIFD	LensModel	CANARY-LENSMODEL-0009
+ExifIFD	ColorSpace	1
+InteropIFD	InteropIndex	R98
+IFD1	Compression	6
+IFD1	ThumbnailOffset	942
+IFD1	ThumbnailLength	25
+IFD1	XResolution	300
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+Composite	ShutterSpeed	0.004
+## all_pii
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Software	CANARY-SOFTWARE-0003
+IFD0	Orientation	6
+IFD0	XResolution	300
+ExifIFD	ExposureTime	0.004
+ExifIFD	ColorSpace	1
+InteropIFD	InteropIndex	R98
+Composite	ShutterSpeed	0.004
+## xmp
+ExifTool	Warning	[minor] Unrecognized MakerNotes
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Model	CANARY-MODEL-0002
+IFD0	Software	CANARY-SOFTWARE-0003
+IFD0	ModifyDate	2031:02:03 04:05:06
+IFD0	Artist	CANARY-ARTIST-0004
+IFD0	Copyright	CANARY-COPYRIGHT-0005
+IFD0	ImageDescription	CANARY-DESCRIPTION-0006
+IFD0	Orientation	6
+IFD0	XResolution	300
+IFD0	CameraSerialNumber	CANARY-CAMSERIAL-0018
+ExifIFD	DateTimeOriginal	2032:03:04 05:06:07
+ExifIFD	ExposureTime	0.004
+ExifIFD	UserComment	CANARY-USERCOMMENT-0007
+ExifIFD	SerialNumber	CANARY-BODYSERIAL-0008
+ExifIFD	ImageUniqueID	CANARY-IMAGEUNIQUEID-0016
+ExifIFD	LensSerialNumber	CANARY-LENSSERIAL-0017
+ExifIFD	LensModel	CANARY-LENSMODEL-0009
+ExifIFD	ColorSpace	1
+InteropIFD	InteropIndex	R98
+GPS	GPSVersionID	2 3 0 0
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	1301027680.78083
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	1301959169.34972
+GPS	GPSAreaInformation	CANARY-GPSAREA-0011
+IFD1	Compression	6
+IFD1	ThumbnailOffset	942
+IFD1	ThumbnailLength	25
+IFD1	XResolution	300
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+Composite	ShutterSpeed	0.004
+Composite	GPSLatitude	1301027680.78083
+Composite	GPSLongitude	1301959169.34972
+Composite	GPSPosition	1301027680.78083 1301959169.34972
+## software
+ExifTool	Warning	[minor] Unrecognized MakerNotes
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Model	CANARY-MODEL-0002
+IFD0	ModifyDate	2031:02:03 04:05:06
+IFD0	Artist	CANARY-ARTIST-0004
+IFD0	Copyright	CANARY-COPYRIGHT-0005
+IFD0	ImageDescription	CANARY-DESCRIPTION-0006
+IFD0	Orientation	6
+IFD0	XResolution	300
+IFD0	CameraSerialNumber	CANARY-CAMSERIAL-0018
+ExifIFD	DateTimeOriginal	2032:03:04 05:06:07
+ExifIFD	ExposureTime	0.004
+ExifIFD	UserComment	CANARY-USERCOMMENT-0007
+ExifIFD	SerialNumber	CANARY-BODYSERIAL-0008
+ExifIFD	ImageUniqueID	CANARY-IMAGEUNIQUEID-0016
+ExifIFD	LensSerialNumber	CANARY-LENSSERIAL-0017
+ExifIFD	LensModel	CANARY-LENSMODEL-0009
+ExifIFD	ColorSpace	1
+InteropIFD	InteropIndex	R98
+GPS	GPSVersionID	2 3 0 0
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	1301027680.78083
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	1301959169.34972
+GPS	GPSAreaInformation	CANARY-GPSAREA-0011
+IFD1	Compression	6
+IFD1	ThumbnailOffset	942
+IFD1	ThumbnailLength	25
+IFD1	XResolution	300
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+Composite	ShutterSpeed	0.004
+Composite	GPSLatitude	1301027680.78083
+Composite	GPSLongitude	1301959169.34972
+Composite	GPSPosition	1301027680.78083 1301959169.34972
+## timestamps+gps
+ExifTool	Warning	[minor] Unrecognized MakerNotes
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Model	CANARY-MODEL-0002
+IFD0	Software	CANARY-SOFTWARE-0003
+IFD0	Artist	CANARY-ARTIST-0004
+IFD0	Copyright	CANARY-COPYRIGHT-0005
+IFD0	ImageDescription	CANARY-DESCRIPTION-0006
+IFD0	Orientation	6
+IFD0	XResolution	300
+IFD0	CameraSerialNumber	CANARY-CAMSERIAL-0018
+ExifIFD	ExposureTime	0.004
+ExifIFD	UserComment	CANARY-USERCOMMENT-0007
+ExifIFD	SerialNumber	CANARY-BODYSERIAL-0008
+ExifIFD	ImageUniqueID	CANARY-IMAGEUNIQUEID-0016
+ExifIFD	LensSerialNumber	CANARY-LENSSERIAL-0017
+ExifIFD	LensModel	CANARY-LENSMODEL-0009
+ExifIFD	ColorSpace	1
+InteropIFD	InteropIndex	R98
+IFD1	Compression	6
+IFD1	ThumbnailOffset	942
+IFD1	ThumbnailLength	25
+IFD1	XResolution	300
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+Composite	ShutterSpeed	0.004
+## maker_note
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Model	CANARY-MODEL-0002
+IFD0	Software	CANARY-SOFTWARE-0003
+IFD0	ModifyDate	2031:02:03 04:05:06
+IFD0	Artist	CANARY-ARTIST-0004
+IFD0	Copyright	CANARY-COPYRIGHT-0005
+IFD0	ImageDescription	CANARY-DESCRIPTION-0006
+IFD0	Orientation	6
+IFD0	XResolution	300
+IFD0	CameraSerialNumber	CANARY-CAMSERIAL-0018
+ExifIFD	DateTimeOriginal	2032:03:04 05:06:07
+ExifIFD	ExposureTime	0.004
+ExifIFD	UserComment	CANARY-USERCOMMENT-0007
+ExifIFD	SerialNumber	CANARY-BODYSERIAL-0008
+ExifIFD	ImageUniqueID	CANARY-IMAGEUNIQUEID-0016
+ExifIFD	LensSerialNumber	CANARY-LENSSERIAL-0017
+ExifIFD	LensModel	CANARY-LENSMODEL-0009
+ExifIFD	ColorSpace	1
+InteropIFD	InteropIndex	R98
+GPS	GPSVersionID	2 3 0 0
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	1301027680.78083
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	1301959169.34972
+GPS	GPSAreaInformation	CANARY-GPSAREA-0011
+IFD1	Compression	6
+IFD1	ThumbnailOffset	942
+IFD1	ThumbnailLength	25
+IFD1	XResolution	300
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+Composite	ShutterSpeed	0.004
+Composite	GPSLatitude	1301027680.78083
+Composite	GPSLongitude	1301959169.34972
+Composite	GPSPosition	1301027680.78083 1301959169.34972
+## thumbnail
+ExifTool	Warning	[minor] Unrecognized MakerNotes
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Model	CANARY-MODEL-0002
+IFD0	Software	CANARY-SOFTWARE-0003
+IFD0	ModifyDate	2031:02:03 04:05:06
+IFD0	Artist	CANARY-ARTIST-0004
+IFD0	Copyright	CANARY-COPYRIGHT-0005
+IFD0	ImageDescription	CANARY-DESCRIPTION-0006
+IFD0	Orientation	6
+IFD0	XResolution	300
+IFD0	CameraSerialNumber	CANARY-CAMSERIAL-0018
+ExifIFD	DateTimeOriginal	2032:03:04 05:06:07
+ExifIFD	ExposureTime	0.004
+ExifIFD	UserComment	CANARY-USERCOMMENT-0007
+ExifIFD	SerialNumber	CANARY-BODYSERIAL-0008
+ExifIFD	ImageUniqueID	CANARY-IMAGEUNIQUEID-0016
+ExifIFD	LensSerialNumber	CANARY-LENSSERIAL-0017
+ExifIFD	LensModel	CANARY-LENSMODEL-0009
+ExifIFD	ColorSpace	1
+InteropIFD	InteropIndex	R98
+GPS	GPSVersionID	2 3 0 0
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	1301027680.78083
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	1301959169.34972
+GPS	GPSAreaInformation	CANARY-GPSAREA-0011
+Composite	ShutterSpeed	0.004
+Composite	GPSLatitude	1301027680.78083
+Composite	GPSLongitude	1301959169.34972
+Composite	GPSPosition	1301027680.78083 1301959169.34972
+## camera_model
+ExifTool	Warning	[minor] Unrecognized MakerNotes
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Software	CANARY-SOFTWARE-0003
+IFD0	ModifyDate	2031:02:03 04:05:06
+IFD0	Artist	CANARY-ARTIST-0004
+IFD0	Copyright	CANARY-COPYRIGHT-0005
+IFD0	ImageDescription	CANARY-DESCRIPTION-0006
+IFD0	Orientation	6
+IFD0	XResolution	300
+IFD0	CameraSerialNumber	CANARY-CAMSERIAL-0018
+ExifIFD	DateTimeOriginal	2032:03:04 05:06:07
+ExifIFD	ExposureTime	0.004
+ExifIFD	UserComment	CANARY-USERCOMMENT-0007
+ExifIFD	SerialNumber	CANARY-BODYSERIAL-0008
+ExifIFD	ImageUniqueID	CANARY-IMAGEUNIQUEID-0016
+ExifIFD	LensSerialNumber	CANARY-LENSSERIAL-0017
+ExifIFD	ColorSpace	1
+InteropIFD	InteropIndex	R98
+GPS	GPSVersionID	2 3 0 0
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	1301027680.78083
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	1301959169.34972
+GPS	GPSAreaInformation	CANARY-GPSAREA-0011
+IFD1	Compression	6
+IFD1	ThumbnailOffset	942
+IFD1	ThumbnailLength	25
+IFD1	XResolution	300
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+Composite	ShutterSpeed	0.004
+Composite	GPSLatitude	1301027680.78083
+Composite	GPSLongitude	1301959169.34972
+Composite	GPSPosition	1301027680.78083 1301959169.34972
+## authorship
+ExifTool	Warning	[minor] Unrecognized MakerNotes
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Model	CANARY-MODEL-0002
+IFD0	Software	CANARY-SOFTWARE-0003
+IFD0	ModifyDate	2031:02:03 04:05:06
+IFD0	ImageDescription	CANARY-DESCRIPTION-0006
+IFD0	Orientation	6
+IFD0	XResolution	300
+IFD0	CameraSerialNumber	CANARY-CAMSERIAL-0018
+ExifIFD	DateTimeOriginal	2032:03:04 05:06:07
+ExifIFD	ExposureTime	0.004
+ExifIFD	UserComment	CANARY-USERCOMMENT-0007
+ExifIFD	SerialNumber	CANARY-BODYSERIAL-0008
+ExifIFD	ImageUniqueID	CANARY-IMAGEUNIQUEID-0016
+ExifIFD	LensSerialNumber	CANARY-LENSSERIAL-0017
+ExifIFD	LensModel	CANARY-LENSMODEL-0009
+ExifIFD	ColorSpace	1
+InteropIFD	InteropIndex	R98
+GPS	GPSVersionID	2 3 0 0
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	1301027680.78083
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	1301959169.34972
+GPS	GPSAreaInformation	CANARY-GPSAREA-0011
+IFD1	Compression	6
+IFD1	ThumbnailOffset	942
+IFD1	ThumbnailLength	25
+IFD1	XResolution	300
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+Composite	ShutterSpeed	0.004
+Composite	GPSLatitude	1301027680.78083
+Composite	GPSLongitude	1301959169.34972
+Composite	GPSPosition	1301027680.78083 1301959169.34972
+## free_text+device
+ExifTool	Warning	[minor] Unrecognized MakerNotes
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Model	CANARY-MODEL-0002
+IFD0	Software	CANARY-SOFTWARE-0003
+IFD0	ModifyDate	2031:02:03 04:05:06
+IFD0	Artist	CANARY-ARTIST-0004
+IFD0	Copyright	CANARY-COPYRIGHT-0005
+IFD0	Orientation	6
+IFD0	XResolution	300
+ExifIFD	DateTimeOriginal	2032:03:04 05:06:07
+ExifIFD	ExposureTime	0.004
+ExifIFD	LensModel	CANARY-LENSMODEL-0009
+ExifIFD	ColorSpace	1
+InteropIFD	InteropIndex	R98
+GPS	GPSVersionID	2 3 0 0
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	1301027680.78083
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	1301959169.34972
+GPS	GPSAreaInformation	CANARY-GPSAREA-0011
+IFD1	Compression	6
+IFD1	ThumbnailOffset	942
+IFD1	ThumbnailLength	25
+IFD1	XResolution	300
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+Composite	ShutterSpeed	0.004
+Composite	GPSLatitude	1301027680.78083
+Composite	GPSLongitude	1301959169.34972
+Composite	GPSPosition	1301027680.78083 1301959169.34972

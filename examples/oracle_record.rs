@@ -25,6 +25,10 @@
 
 #[path = "../tests/support/audit_tags.rs"]
 mod audit_tags;
+#[path = "../tests/support/exif_layout.rs"]
+mod exif_layout;
+#[path = "../tests/support/exif_records.rs"]
+mod exif_records;
 #[path = "../tests/support/hostile.rs"]
 mod hostile;
 #[path = "../tests/support/inventory.rs"]
@@ -228,6 +232,31 @@ fn record_strip(root: &std::path::Path, version: &str) {
         fs::write(dir.join(format!("{name}.txt")), text).expect("write strip record");
     }
     println!("oracle-record: wrote {} strip records", texts.len());
+
+    // SPEC-021: the Exif entry fixtures, one file per fixture
+    // (`exif-<fixture>.txt`), the input and every policy of the grid that
+    // strips.
+    let exif: Vec<(&str, String)> = std::thread::scope(|scope| {
+        let handles: Vec<_> = exif_records::exif_fixtures()
+            .into_iter()
+            .map(|(name, layouts)| {
+                scope.spawn(move || {
+                    let jpg = exif_records::jpeg_of(&layouts, false);
+                    let text = strip_records::exif_record_text(name, &jpg, version)
+                        .unwrap_or_else(|e| panic!("{name}: {e}"));
+                    (name, text)
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("thread"))
+            .collect()
+    });
+    for (name, text) in &exif {
+        fs::write(dir.join(format!("exif-{name}.txt")), text).expect("write exif record");
+    }
+    println!("oracle-record: wrote {} exif entry records", exif.len());
 }
 
 /// SPEC-013: the inventory records (`exiftool -a -u -G1 -H -s`), one file per

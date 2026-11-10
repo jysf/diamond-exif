@@ -52,7 +52,7 @@ mod rewrite_invariants {
     use exif_core::audit::{audit, Category, FileAudit, ItemKind, RegionKind};
     use exif_core::jpeg::{Jpeg, MAX_JPEG_ISSUES, MAX_JPEG_SEGMENTS, MAX_MPF_IMAGES};
     use exif_core::policy::{StripPolicy, StripSpec};
-    use exif_core::write::{Check, RemovalKind, UnstrippableReason};
+    use exif_core::write::{Check, RemovalKind, UneditableReason, UnstrippableReason};
     use exif_core::{strip, StripError};
 
     // ── the policy byte ────────────────────────────────────────────────────
@@ -96,7 +96,11 @@ mod rewrite_invariants {
     pub struct OkFacts {
         pub bytes: Vec<u8>,
         pub removals: Vec<RemFact>,
+        /// Every patch (Multi-Picture fields, rewritten IFD tables, zeroed
+        /// ranges) as `(output offset, length)`.
         pub patches: Vec<(usize, usize)>,
+        /// The zeroed ranges as `(output offset, length)`.
+        pub scrubs: Vec<(usize, usize)>,
     }
 
     #[derive(Debug, Clone, PartialEq)]
@@ -104,7 +108,8 @@ mod rewrite_invariants {
         /// Unsupported or NotJpeg (the harness does not sniff).
         NotAJpeg,
         Unstrippable(&'static str, usize),
-        NeedsEntryEdit(Vec<Category>),
+        /// An Exif entry edit refused: the reason and the offset.
+        Uneditable(&'static str, usize),
         MpfNotIndexed(usize),
         Overlap(usize),
         VerifyFailed(&'static str),
@@ -161,9 +166,24 @@ mod rewrite_invariants {
                 },
                 *offset,
             ),
-            StripError::NeedsEntryEdit { categories } => {
-                ErrFact::NeedsEntryEdit(categories.categories().collect())
-            }
+            StripError::Uneditable { reason, offset } => ErrFact::Uneditable(
+                match reason {
+                    UneditableReason::BlockNotClean => "block-not-clean",
+                    UneditableReason::TooManyExifSegments => "too-many-exif-segments",
+                    UneditableReason::InventoryTruncated => "inventory-truncated",
+                    UneditableReason::AfterScan => "after-scan",
+                    UneditableReason::SharedBytes => "shared-bytes",
+                    UneditableReason::ThumbnailNotLocated => "thumbnail-not-located",
+                    UneditableReason::ChainAfterThumbnail => "chain-after-thumbnail",
+                    UneditableReason::PointerNotInParent => "pointer-not-in-parent",
+                    UneditableReason::EmptiedIfd => "emptied-ifd",
+                    UneditableReason::NestedIfd => "nested-ifd",
+                    UneditableReason::PayloadUnreadable => "payload-unreadable",
+                    UneditableReason::HiddenPointer => "hidden-pointer",
+                    _ => "other",
+                },
+                *offset,
+            ),
             StripError::MpfNotIndexed { offset } => ErrFact::MpfNotIndexed(*offset),
             StripError::Overlap { offset } => ErrFact::Overlap(*offset),
             StripError::VerifyFailed { check } => ErrFact::VerifyFailed(match check {
@@ -173,6 +193,8 @@ mod rewrite_invariants {
                 Check::Walk => "walk",
                 Check::Idempotent => "idempotent",
                 Check::MpfFields => "mpf-fields",
+                Check::Entries => "entries",
+                Check::Scrubbed => "scrubbed",
                 _ => "other",
             }),
             _ => panic!("a StripError the harness does not know"),
@@ -194,6 +216,7 @@ mod rewrite_invariants {
                     })
                     .collect(),
                 patches: s.patches().iter().map(|p| (p.offset, p.len)).collect(),
+                scrubs: s.scrubs().iter().map(|p| (p.offset, p.len)).collect(),
             }),
             Err(e) => Err(flatten_err(e)),
         }
@@ -241,6 +264,16 @@ mod rewrite_invariants {
         EXIF9.iter().all(|c| spec.contains(*c))
     }
 
+    /// Whether a policy names a category an Exif entry can have: the nine Exif
+    /// categories and the three the DEC-008 table files under `Xmp`, `Iptc` and
+    /// `Icc`.
+    fn exif_may_hold(spec: StripSpec) -> bool {
+        EXIF9
+            .iter()
+            .chain([Category::Xmp, Category::Iptc, Category::Icc].iter())
+            .any(|c| spec.contains(*c))
+    }
+
     /// Run the library and read its output.
     pub fn facts(input: &[u8], policy: StripPolicy) -> Facts {
         let spec = policy.spec();
@@ -275,7 +308,9 @@ mod rewrite_invariants {
     pub enum Pred {
         NotAJpeg,
         Unstrippable(&'static str, usize),
-        NeedsEntryEdit(Vec<Category>),
+        /// The naive Exif reader finds a block that is not clean, or the naive
+        /// entry rules refuse (the library must refuse too, as `Uneditable`).
+        EntryRefused,
         MpfNotIndexed(usize),
         Overlap(usize),
         /// A primary-size or offset field would go below zero.
@@ -284,6 +319,14 @@ mod rewrite_invariants {
             bytes: Vec<u8>,
             removals: Vec<RemFact>,
             patches: Vec<(usize, usize)>,
+            /// Output ranges of the Exif segments (kept, edited in place) when
+            /// the policy edits entries; empty otherwise.
+            exif_out: Vec<Range<usize>>,
+            /// The naive inventory the output's Exif blocks must have (the
+            /// input's minus the deleted entries); `None` when no entry edit.
+            inventory: Option<Vec<NKey>>,
+            /// Whether the policy edits Exif entries at all.
+            edits: bool,
         },
     }
 
@@ -540,6 +583,603 @@ mod rewrite_invariants {
         spec.categories().collect()
     }
 
+    // ── the naive TIFF reader and entry editor (SPEC-021) ──────────────────
+    //
+    // A second implementation of the tolerant walk's cleanliness rules and of
+    // the entry-deletion rules, written here from DEC-005 and DEC-013
+    // (amendment B), not from `src/tiff` or `src/write/exif.rs`. It answers:
+    // is this Exif blob clean (the walk would record no issue), what would the
+    // edit be (patches by blob offset, in the library's segmentation), and
+    // which entries does the output keep.
+
+    #[derive(Clone)]
+    struct NEnt {
+        tag: u16,
+        ty: u16,
+        count: u32,
+        /// Blob offset of the entry's 12 bytes.
+        at: usize,
+    }
+
+    #[derive(Clone)]
+    struct NIfd {
+        off: usize,
+        role: &'static str,
+        parent: Option<usize>,
+        ents: Vec<NEnt>,
+        next: u32,
+        table: Range<usize>,
+    }
+
+    struct NTiff {
+        big: bool,
+        ifds: Vec<NIfd>,
+    }
+
+    fn type_size(t: u16) -> Option<u64> {
+        match t {
+            1 | 2 | 6 | 7 => Some(1),
+            3 | 8 => Some(2),
+            4 | 9 | 11 | 13 => Some(4),
+            5 | 10 | 12 => Some(8),
+            _ => None,
+        }
+    }
+
+    fn nu16(b: &[u8], at: usize, big: bool) -> Option<u16> {
+        let s: [u8; 2] = b.get(at..at.checked_add(2)?)?.try_into().ok()?;
+        Some(if big {
+            u16::from_be_bytes(s)
+        } else {
+            u16::from_le_bytes(s)
+        })
+    }
+
+    fn nu32(b: &[u8], at: usize, big: bool) -> Option<u32> {
+        let s: [u8; 4] = b.get(at..at.checked_add(4)?)?.try_into().ok()?;
+        Some(if big {
+            u32::from_be_bytes(s)
+        } else {
+            u32::from_le_bytes(s)
+        })
+    }
+
+    fn put16(v: u16, big: bool) -> [u8; 2] {
+        if big {
+            v.to_be_bytes()
+        } else {
+            v.to_le_bytes()
+        }
+    }
+
+    /// The bytes of an entry's value: inline (at most 4) or at its offset;
+    /// `None` when the type is unknown or the range is not in the blob.
+    fn payload_bytes<'a>(blob: &'a [u8], big: bool, e: &NEnt) -> Option<&'a [u8]> {
+        let len = usize::try_from(type_size(e.ty)?.checked_mul(u64::from(e.count))?).ok()?;
+        let start = if len <= 4 {
+            e.at.checked_add(8)?
+        } else {
+            usize::try_from(nu32(blob, e.at.checked_add(8)?, big)?).ok()?
+        };
+        blob.get(start..start.checked_add(len)?)
+    }
+
+    /// The blob range of an entry's OUT-OF-LINE value, if it has one.
+    fn out_of_line(blob: &[u8], big: bool, e: &NEnt) -> Option<Range<usize>> {
+        let len = usize::try_from(type_size(e.ty)?.checked_mul(u64::from(e.count))?).ok()?;
+        if len <= 4 {
+            return None;
+        }
+        let start = usize::try_from(nu32(blob, e.at.checked_add(8)?, big)?).ok()?;
+        let end = start.checked_add(len)?;
+        blob.get(start..end)?;
+        Some(start..end)
+    }
+
+    /// DEC-005's table: whether an IFD of `role` follows pointer tag `tag`.
+    fn n_followed(role: &str, tag: u16) -> bool {
+        match tag {
+            0x8769 | 0x8825 => matches!(role, "ifd0" | "ifd1" | "chain" | "sub"),
+            0xA005 => role == "exif",
+            _ => true,
+        }
+    }
+
+    const N_POINTERS: [(u16, &str); 4] = [
+        (0x014A, "sub"),
+        (0x8769, "exif"),
+        (0x8825, "gps"),
+        (0xA005, "interop"),
+    ];
+
+    struct TWalk<'a> {
+        blob: &'a [u8],
+        big: bool,
+        ifds: Vec<NIfd>,
+        visited: Vec<u32>,
+        attempts: usize,
+        entries: usize,
+        bad: bool,
+    }
+
+    impl TWalk<'_> {
+        fn read_ifd(&self, off: u32, left: usize) -> Option<(Vec<NEnt>, u32, Range<usize>)> {
+            let at = usize::try_from(off).ok()?;
+            let count = usize::from(nu16(self.blob, at, self.big)?);
+            let first = at.checked_add(2)?;
+            let end = first.checked_add(count.checked_mul(12)?)?;
+            self.blob.get(first..end)?;
+            if count > left {
+                return None;
+            }
+            let next = nu32(self.blob, end, self.big)?;
+            let ents = (0..count)
+                .map(|i| {
+                    let e = first + 12 * i;
+                    Some(NEnt {
+                        tag: nu16(self.blob, e, self.big)?,
+                        ty: nu16(self.blob, e + 2, self.big)?,
+                        count: nu32(self.blob, e + 4, self.big)?,
+                        at: e,
+                    })
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some((ents, next, at..end + 4))
+        }
+
+        /// Record the IFD at `off`; `None` (and `bad`) when it cannot be.
+        fn follow(
+            &mut self,
+            off: u32,
+            depth: u32,
+            parent: Option<usize>,
+            role: &'static str,
+        ) -> Option<usize> {
+            self.attempts += 1;
+            if self.attempts > 512 || depth > 8 || self.visited.contains(&off) {
+                self.bad = true;
+                return None;
+            }
+            self.visited.push(off);
+            let budget = (self.blob.len() / 12).saturating_sub(self.entries);
+            let Some((ents, next, table)) = self.read_ifd(off, budget) else {
+                self.bad = true;
+                return None;
+            };
+            self.entries += ents.len();
+            self.ifds.push(NIfd {
+                off: off as usize,
+                role,
+                parent,
+                ents,
+                next,
+                table,
+            });
+            Some(self.ifds.len() - 1)
+        }
+
+        /// The offsets a pointer entry carries, or `None` (bad) if the walk
+        /// would record an issue for it.
+        fn offsets(&self, e: &NEnt, array: bool) -> Option<Vec<u32>> {
+            if array {
+                if e.count > 512 {
+                    return None;
+                }
+                let size = match e.ty {
+                    1 | 7 => 1usize,
+                    3 => 2,
+                    4 | 13 => 4,
+                    _ => return None,
+                };
+                let bytes = payload_bytes(self.blob, self.big, e)?;
+                let value = |c: &[u8]| -> u32 {
+                    let mut v = 0u32;
+                    if self.big {
+                        for b in c {
+                            v = (v << 8) | u32::from(*b);
+                        }
+                    } else {
+                        for b in c.iter().rev() {
+                            v = (v << 8) | u32::from(*b);
+                        }
+                    }
+                    v
+                };
+                return Some(bytes.chunks(size).map(value).collect());
+            }
+            if !matches!(e.ty, 4 | 13) || e.count != 1 {
+                return None;
+            }
+            Some(vec![nu32(self.blob, e.at + 8, self.big)?])
+        }
+
+        fn walk_from(&mut self, index: usize) {
+            let mut cur = index;
+            loop {
+                if self.bad {
+                    return;
+                }
+                let (role, next, parent) = {
+                    let i = &self.ifds[cur];
+                    (i.role, i.next, i.parent)
+                };
+                let depth = self.depth_of(cur);
+                for (tag, child) in N_POINTERS {
+                    if self.bad {
+                        return;
+                    }
+                    if !n_followed(role, tag) {
+                        continue;
+                    }
+                    let Some(e) = self.ifds[cur].ents.iter().find(|e| e.tag == tag).cloned() else {
+                        continue;
+                    };
+                    let Some(offs) = self.offsets(&e, tag == 0x014A) else {
+                        self.bad = true;
+                        return;
+                    };
+                    for off in offs {
+                        if self.bad {
+                            return;
+                        }
+                        if off == 0 {
+                            continue;
+                        }
+                        if let Some(c) = self.follow(off, depth + 1, Some(cur), child) {
+                            self.walk_from(c);
+                        }
+                    }
+                }
+                let next_role = match role {
+                    "ifd0" => "ifd1",
+                    "ifd1" | "chain" => "chain",
+                    "sub" => "sub",
+                    _ => return,
+                };
+                if self.bad || next == 0 {
+                    return;
+                }
+                match self.follow(next, depth, parent, next_role) {
+                    Some(n) => cur = n,
+                    None => return,
+                }
+            }
+        }
+
+        fn depth_of(&self, i: usize) -> u32 {
+            // The pointer-tag nesting depth: parents up to IFD0.
+            let mut d = 0u32;
+            let mut at = self.ifds[i].parent;
+            while let Some(p) = at {
+                d += 1;
+                at = self.ifds[p].parent;
+            }
+            d
+        }
+    }
+
+    /// Walk an Exif blob; `None` when the library's walk would not be clean.
+    fn tiff_read(blob: &[u8]) -> Option<NTiff> {
+        let big = match blob.get(..2)? {
+            b"II" => false,
+            b"MM" => true,
+            _ => return None,
+        };
+        if nu16(blob, 2, big)? != 42 {
+            return None;
+        }
+        let ifd0 = nu32(blob, 4, big)?;
+        let mut w = TWalk {
+            blob,
+            big,
+            ifds: Vec::new(),
+            visited: Vec::new(),
+            attempts: 1,
+            entries: 0,
+            bad: false,
+        };
+        if ifd0 == 0 {
+            return Some(NTiff { big, ifds: w.ifds });
+        }
+        w.visited.push(ifd0);
+        let (ents, next, table) = w.read_ifd(ifd0, blob.len() / 12)?;
+        w.entries = ents.len();
+        w.ifds.push(NIfd {
+            off: ifd0 as usize,
+            role: "ifd0",
+            parent: None,
+            ents,
+            next,
+            table,
+        });
+        w.walk_from(0);
+        (!w.bad).then_some(NTiff { big, ifds: w.ifds })
+    }
+
+    /// The naive walk of `blob` as `(role, tag, type, count)` per entry in walk
+    /// order, or `None` when it is not clean (the layout test compares it with
+    /// the library's walk).
+    #[allow(dead_code)] // used by tests/fuzz_layout.rs, which includes this file
+    pub fn naive_summary(blob: &[u8]) -> Option<Vec<(&'static str, u16, u16, u32)>> {
+        let t = tiff_read(blob)?;
+        Some(
+            t.ifds
+                .iter()
+                .flat_map(|i| i.ents.iter().map(move |e| (i.role, e.tag, e.ty, e.count)))
+                .collect(),
+        )
+    }
+
+    /// DEC-008's tag table, typed again for the naive editor.
+    fn ncat(role: &str, tag: u16, ifd1_jpeg: bool) -> Option<Category> {
+        match role {
+            "gps" => return Some(Category::Gps),
+            "interop" => return None,
+            "ifd1" if tag == 0x0201 => return Some(Category::Thumbnail),
+            "ifd1" if tag == 0x0111 && !ifd1_jpeg => return Some(Category::Thumbnail),
+            _ => {}
+        }
+        match tag {
+            0x010E | 0x9286 | 0x9C9B | 0x9C9C | 0x9C9E | 0x9C9F | 0xA436 => {
+                Some(Category::FreeText)
+            }
+            0x010F | 0x0110 | 0xA433 | 0xA434 => Some(Category::CameraModel),
+            0x0131 | 0xA439..=0xA43C => Some(Category::Software),
+            0x0132 | 0x9003 | 0x9004 | 0x9010 | 0x9011 | 0x9012 | 0x9290 | 0x9291 | 0x9292 => {
+                Some(Category::Timestamps)
+            }
+            0x013B | 0x8298 | 0xA430 | 0x9C9D | 0xA437 | 0xA438 => Some(Category::Authorship),
+            0x927C => Some(Category::MakerNote),
+            0xA420 | 0xA431 | 0xA435 | 0xC62F => Some(Category::DeviceId),
+            0x02BC => Some(Category::Xmp),
+            0x83BB | 0x8649 => Some(Category::Iptc),
+            0x8773 => Some(Category::Icc),
+            _ => None,
+        }
+    }
+
+    /// One edit of a blob: patches by blob offset (tables, then merged zero
+    /// ranges, sorted), and the entries it deletes as `(ifd index, entry
+    /// index)`, whole removed IFDs included.
+    struct NEdit {
+        patches: Vec<(usize, Vec<u8>)>,
+        deleted: Vec<(usize, usize)>,
+    }
+
+    fn overlaps(a: &Range<usize>, b: &Range<usize>) -> bool {
+        a.start < b.end && b.start < a.end
+    }
+
+    /// The edit for `spec`, or `None` where the rules refuse.
+    fn n_edit(blob: &[u8], t: &NTiff, spec: StripSpec) -> Option<NEdit> {
+        let big = t.big;
+        let ifds = &t.ifds;
+        // Pointers the walk did not follow.
+        for ifd in ifds {
+            for (tag, _) in N_POINTERS {
+                let n = ifd.ents.iter().filter(|e| e.tag == tag).count();
+                if (n_followed(ifd.role, tag) && n > 1) || (!n_followed(ifd.role, tag) && n >= 1) {
+                    return None;
+                }
+            }
+        }
+        // Tables that share bytes.
+        let mut tables: Vec<&Range<usize>> = ifds.iter().map(|i| &i.table).collect();
+        tables.sort_by_key(|r| (r.start, r.end));
+        if tables.windows(2).any(|w| overlaps(w[0], w[1])) {
+            return None;
+        }
+        let ifd1_jpeg = ifds
+            .iter()
+            .any(|i| i.role == "ifd1" && i.ents.iter().any(|e| e.tag == 0x0201));
+        // Which IFDs go whole.
+        let mut removed: Vec<usize> = Vec::new();
+        if spec.contains(Category::Gps) {
+            removed.extend((0..ifds.len()).filter(|&i| ifds[i].role == "gps"));
+        }
+        // The thumbnail's bytes, when IFD1 has them as the audit locates them.
+        let ifd1 = ifds.iter().position(|i| i.role == "ifd1");
+        let thumb: Option<Range<usize>> = ifd1.and_then(|k| {
+            let scalar = |tag: u16| -> Option<u32> {
+                let e = ifds[k].ents.iter().find(|e| e.tag == tag)?;
+                if e.count != 1 || !matches!(e.ty, 3 | 4) {
+                    return None;
+                }
+                if e.ty == 3 {
+                    nu16(blob, e.at + 8, big).map(u32::from)
+                } else {
+                    nu32(blob, e.at + 8, big)
+                }
+            };
+            let (o, l) = (scalar(0x0201)?, scalar(0x0202)?);
+            let start = usize::try_from(o).ok()?;
+            let end = start.checked_add(usize::try_from(l).ok()?)?;
+            blob.get(start..end)?;
+            Some(start..end)
+        });
+        let mut unlink: Option<usize> = None;
+        if spec.contains(Category::Thumbnail) {
+            if let Some(k) = ifd1 {
+                thumb.as_ref()?;
+                if ifds[k].next != 0 {
+                    return None;
+                }
+                let z = ifds
+                    .iter()
+                    .position(|i| i.role == "ifd0" && i.next as usize == ifds[k].off)?;
+                unlink = Some(z);
+                removed.push(k);
+            }
+        }
+        if removed
+            .iter()
+            .any(|&r| ifds.iter().any(|i| i.parent == Some(r)))
+        {
+            return None;
+        }
+        // Which entries go.
+        let mut gone: Vec<(usize, usize)> = Vec::new();
+        for (g, ifd) in ifds.iter().enumerate() {
+            if removed.contains(&g) {
+                continue;
+            }
+            for (n, e) in ifd.ents.iter().enumerate() {
+                if ncat(ifd.role, e.tag, ifd1_jpeg).is_some_and(|c| spec.contains(c)) {
+                    gone.push((g, n));
+                }
+            }
+        }
+        for &r in removed.iter().filter(|&&r| ifds[r].role == "gps") {
+            let p = ifds[r].parent?;
+            let n = ifds[p].ents.iter().position(|e| {
+                e.tag == 0x8825 && nu32(blob, e.at + 8, big) == Some(ifds[r].off as u32)
+            })?;
+            gone.push((p, n));
+        }
+        gone.sort_unstable();
+        gone.dedup();
+        // Everything deleted, for the sizes of the values and the records.
+        let mut all_deleted = gone.clone();
+        for &r in &removed {
+            all_deleted.extend((0..ifds[r].ents.len()).map(|n| (r, n)));
+        }
+        all_deleted.sort_unstable();
+        if all_deleted
+            .iter()
+            .any(|&(g, n)| type_size(ifds[g].ents[n].ty).is_none())
+        {
+            return None;
+        }
+        // Table rewrites.
+        let mut rewrite: Vec<usize> = gone.iter().map(|&(g, _)| g).collect();
+        rewrite.extend(unlink);
+        rewrite.sort_unstable();
+        rewrite.dedup();
+        let mut table_patches: Vec<(Range<usize>, Vec<u8>)> = Vec::new();
+        for g in rewrite {
+            let ifd = &ifds[g];
+            let cut = |n: usize| gone.contains(&(g, n));
+            let kept: Vec<usize> = (0..ifd.ents.len()).filter(|&n| !cut(n)).collect();
+            let mut bytes = put16(u16::try_from(kept.len()).ok()?, big).to_vec();
+            for n in &kept {
+                let at = ifd.ents[*n].at;
+                bytes.extend_from_slice(blob.get(at..at + 12)?);
+            }
+            let next_at = ifd.table.end - 4;
+            if unlink == Some(g) {
+                bytes.extend_from_slice(&[0; 4]);
+            } else {
+                bytes.extend_from_slice(blob.get(next_at..next_at + 4)?);
+            }
+            bytes.resize(ifd.table.len(), 0);
+            table_patches.push((ifd.table.clone(), bytes));
+        }
+        // Scrubs.
+        let mut scrubs: Vec<Range<usize>> = Vec::new();
+        for &(g, n) in &all_deleted {
+            scrubs.extend(out_of_line(blob, big, &ifds[g].ents[n]));
+        }
+        for &r in &removed {
+            scrubs.push(ifds[r].table.clone());
+        }
+        if unlink.is_some() {
+            scrubs.extend(thumb.clone());
+        }
+        scrubs.retain(|r| r.start < r.end);
+        scrubs.sort_by_key(|r| (r.start, r.end));
+        let mut merged: Vec<Range<usize>> = Vec::new();
+        for r in scrubs {
+            match merged.last_mut() {
+                Some(last) if r.start < last.end => last.end = last.end.max(r.end),
+                _ => merged.push(r),
+            }
+        }
+        // The bytes that must stay.
+        let mut keep: Vec<Range<usize>> = Vec::new();
+        keep.push(0..8);
+        let mut kept_tables: Vec<Range<usize>> = Vec::new();
+        for (g, ifd) in ifds.iter().enumerate() {
+            if removed.contains(&g) {
+                continue;
+            }
+            kept_tables.push(ifd.table.clone());
+            for (n, e) in ifd.ents.iter().enumerate() {
+                if !gone.contains(&(g, n)) {
+                    keep.extend(out_of_line(blob, big, e));
+                }
+            }
+        }
+        if unlink.is_none() {
+            keep.extend(thumb.clone());
+        }
+        for m in &merged {
+            if keep
+                .iter()
+                .chain(kept_tables.iter())
+                .any(|k| overlaps(m, k))
+            {
+                return None;
+            }
+        }
+        for (t, _) in &table_patches {
+            if keep.iter().any(|k| overlaps(t, k)) {
+                return None;
+            }
+        }
+        let mut patches: Vec<(usize, Vec<u8>)> = table_patches
+            .into_iter()
+            .map(|(r, b)| (r.start, b))
+            .collect();
+        patches.extend(
+            merged
+                .into_iter()
+                .map(|r| (r.start, vec![0u8; r.end - r.start])),
+        );
+        patches.sort_by_key(|p| p.0);
+        Some(NEdit {
+            patches,
+            deleted: all_deleted,
+        })
+    }
+
+    /// One tag of a naive inventory: block, IFD role, tag, type, count and the
+    /// value bytes.
+    pub type NKey = (usize, &'static str, u16, u16, u32, Option<Vec<u8>>);
+
+    /// The inventory of the Exif blocks of `d` (the naive walk of the JPEG, the
+    /// naive walk of each blob), minus the entries `drop(block, ifd, entry)`
+    /// names; `None` when a block is not clean.
+    fn n_inventory(d: &[u8], drop: &dyn Fn(usize, usize, usize) -> bool) -> Option<Vec<NKey>> {
+        let w = walk(d);
+        let mut keys = Vec::new();
+        let mut block = 0usize;
+        for s in &w.segs {
+            let p = &d[s.off + 4..s.end];
+            if !(s.marker == 0xE1 && p.len() >= 6 && p.starts_with(b"Exif\0")) {
+                continue;
+            }
+            let blob = &d[s.off + 10..s.end];
+            let t = tiff_read(blob)?;
+            for (g, ifd) in t.ifds.iter().enumerate() {
+                for (n, e) in ifd.ents.iter().enumerate() {
+                    if drop(block, g, n) {
+                        continue;
+                    }
+                    keys.push((
+                        block,
+                        ifd.role,
+                        e.tag,
+                        e.ty,
+                        e.count,
+                        payload_bytes(blob, t.big, e).map(<[u8]>::to_vec),
+                    ));
+                }
+            }
+            block += 1;
+        }
+        Some(keys)
+    }
+
     /// Predict the output of `strip` for a candidate that starts `FF D8`.
     pub fn predict(d: &[u8], spec: StripSpec) -> Pred {
         if !d.starts_with(&[0xFF, 0xD8]) {
@@ -664,11 +1304,15 @@ mod rewrite_invariants {
             }
         }
 
-        // Exif (DEC-013 part 4), over the audit's account of the blocks.
+        // Exif: removed whole (every Exif category in the policy, the category
+        // recorded from the audit's findings), edited entry by entry (the naive
+        // reader and editor, SPEC-021) or left alone.
         let exif_idx: Vec<usize> = (0..w.segs.len()).filter(|&i| typed[i] == T::Exif).collect();
+        let mut edits = false;
+        let mut exif_patches: Vec<(usize, Vec<u8>)> = Vec::new();
+        let mut inventory: Option<Vec<NKey>> = None;
         if !exif_idx.is_empty() {
             let a = audit(d);
-            let in_exif = |f: &exif_core::audit::Finding<'_>| f.at.origin().block.is_some();
             if all_exif_removed(spec) {
                 for (n, &i) in exif_idx.iter().enumerate() {
                     // The category: the first EXIF9 finding of that block.
@@ -684,32 +1328,39 @@ mod rewrite_invariants {
                         kind: "exif",
                     });
                 }
-            } else {
-                let touches_exif9 = EXIF9.iter().any(|c| spec.contains(*c));
-                // Any walk issue of any Exif block counts as "could not be read".
-                let unreadable = touches_exif9
-                    && (a.health().failed_blocks > 0
-                        || a.health().exif_issues > 0
-                        || exif_idx.len() > 16);
-                let found: Vec<Category> = Category::ALL
+            } else if exif_may_hold(spec) {
+                // Partial policy: entries are deleted in place (SPEC-021). The
+                // naive reader and editor decide, block by block, with the
+                // preconditions of rule 3 first.
+                if exif_idx.len() > 16 {
+                    return Pred::EntryRefused;
+                }
+                if exif_idx
                     .iter()
-                    .copied()
-                    .filter(|c| {
-                        spec.contains(*c)
-                            && a.findings().iter().any(|f| in_exif(f) && f.category == *c)
-                    })
-                    .collect();
-                if unreadable || !found.is_empty() {
-                    let mut cats: Vec<Category> = Category::ALL
-                        .iter()
-                        .copied()
-                        .filter(|c| {
-                            (EXIF9.contains(c) && spec.contains(*c))
-                                || (!EXIF9.contains(c) && found.contains(c))
-                        })
-                        .collect();
-                    cats.sort_by_key(|c| Category::ALL.iter().position(|x| x == c));
-                    return Pred::NeedsEntryEdit(cats);
+                    .any(|&i| w.scan_start.is_some_and(|s| w.segs[i].off > s))
+                {
+                    return Pred::EntryRefused;
+                }
+                edits = true;
+                let mut dropped: Vec<(usize, usize, usize)> = Vec::new();
+                for (n, &i) in exif_idx.iter().enumerate() {
+                    let s = &w.segs[i];
+                    let blob = &d[s.off + 10..s.end];
+                    let Some(t) = tiff_read(blob) else {
+                        return Pred::EntryRefused;
+                    };
+                    let Some(e) = n_edit(blob, &t, spec) else {
+                        return Pred::EntryRefused;
+                    };
+                    for (at, bytes) in e.patches {
+                        exif_patches.push((s.off + 10 + at, bytes));
+                    }
+                    dropped.extend(e.deleted.iter().map(|&(g, k)| (n, g, k)));
+                }
+                // The inventory the output must have: the input's, minus these.
+                inventory = n_inventory(d, &|b, g, k| dropped.contains(&(b, g, k)));
+                if inventory.is_none() {
+                    return Pred::EntryRefused;
                 }
             }
         }
@@ -867,12 +1518,37 @@ mod rewrite_invariants {
         for (at, bytes) in &patches {
             data[*at..*at + 4].copy_from_slice(bytes);
         }
+        for (at, bytes) in &exif_patches {
+            data[*at..*at + bytes.len()].copy_from_slice(bytes);
+        }
         let bytes: Vec<u8> = data
             .iter()
             .zip(&removed)
             .filter(|(_, r)| !**r)
             .map(|(b, _)| *b)
             .collect();
+        // Every patch as `(output offset, length)`, in output order.
+        let mut records: Vec<(usize, usize)> = patches
+            .iter()
+            .map(|(at, _)| (*at - removed_before(*at), 4))
+            .chain(
+                exif_patches
+                    .iter()
+                    .map(|(at, b)| (*at - removed_before(*at), b.len())),
+            )
+            .collect();
+        records.sort_unstable();
+        let exif_out: Vec<Range<usize>> = if edits {
+            exif_idx
+                .iter()
+                .map(|&i| {
+                    let s = &w.segs[i];
+                    (s.off - removed_before(s.off))..(s.end - removed_before(s.off))
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         Pred::Ok {
             bytes,
             removals: targets
@@ -884,10 +1560,10 @@ mod rewrite_invariants {
                     len: t.range.end - t.range.start,
                 })
                 .collect(),
-            patches: patches
-                .iter()
-                .map(|(at, _)| (*at - removed_before(*at), 4))
-                .collect(),
+            patches: records,
+            exif_out,
+            inventory,
+            edits,
         }
     }
 
@@ -915,9 +1591,23 @@ mod rewrite_invariants {
         VerifyAllowed,
         /// The `removals` and `patches` records agree with the bytes.
         Records,
+        /// (SPEC-021) The Exif segments of an `Ok` output equal the naive
+        /// editor's prediction byte for byte.
+        EntryPrediction,
+        /// (SPEC-021) `Ok` where the naive reader finds an Exif block that is
+        /// not clean (or the naive rules refuse) is a failure; a refusal where
+        /// the naive editor accepts is fine (fail closed).
+        LibraryOkNaiveUnclean,
+        /// (SPEC-021) Every zeroed range the library records reads zero.
+        ScrubbedZero,
+        /// (SPEC-021) The naive inventory of the output's Exif blocks is the
+        /// input's minus the entries the naive rules delete, byte for byte.
+        KeptEntriesIntact,
+        /// (SPEC-021) No segment removal means the length is the input's.
+        LengthUnchanged,
     }
 
-    pub const GUARDS: [Guard; 10] = [
+    pub const GUARDS: [Guard; 15] = [
         Guard::Prediction,
         Guard::Length,
         Guard::Scan,
@@ -928,10 +1618,29 @@ mod rewrite_invariants {
         Guard::ErrClass,
         Guard::VerifyAllowed,
         Guard::Records,
+        Guard::EntryPrediction,
+        Guard::LibraryOkNaiveUnclean,
+        Guard::ScrubbedZero,
+        Guard::KeptEntriesIntact,
+        Guard::LengthUnchanged,
     ];
 
+    /// The output equals the prediction outside the Exif segments the naive
+    /// editor rewrote (those are `EntryPrediction`'s).
     fn out_matches_pred(ok: &OkFacts, pred: &Pred) -> bool {
-        matches!(pred, Pred::Ok { bytes, .. } if *bytes == ok.bytes)
+        match pred {
+            Pred::Ok {
+                bytes, exif_out, ..
+            } => {
+                bytes.len() == ok.bytes.len()
+                    && bytes
+                        .iter()
+                        .zip(&ok.bytes)
+                        .enumerate()
+                        .all(|(i, (a, b))| a == b || exif_out.iter().any(|r| r.contains(&i)))
+            }
+            _ => false,
+        }
     }
 
     /// Whether the guard `g` holds. Each guard stands alone: it reads only its
@@ -940,9 +1649,51 @@ mod rewrite_invariants {
         match g {
             Guard::Prediction => match (&f.result, pred) {
                 (Ok(ok), Pred::Ok { .. }) => out_matches_pred(ok, pred),
+                // An `Ok` the naive Exif rules refuse is `LibraryOkNaiveUnclean`'s.
+                (Ok(_), Pred::EntryRefused) => true,
                 (Ok(_), _) => false,
                 // A refusal is judged by `ErrClass`.
                 (Err(_), _) => true,
+            },
+            Guard::EntryPrediction => match (&f.result, pred) {
+                (
+                    Ok(ok),
+                    Pred::Ok {
+                        bytes,
+                        exif_out,
+                        edits: true,
+                        ..
+                    },
+                ) => exif_out.iter().all(|r| {
+                    matches!((ok.bytes.get(r.clone()), bytes.get(r.clone())),
+                        (Some(a), Some(b)) if a == b)
+                }),
+                _ => true,
+            },
+            Guard::LibraryOkNaiveUnclean => {
+                !matches!((&f.result, pred), (Ok(_), Pred::EntryRefused))
+            }
+            Guard::ScrubbedZero => match &f.result {
+                Ok(ok) => ok.scrubs.iter().all(|&(at, len)| {
+                    at.checked_add(len)
+                        .and_then(|end| ok.bytes.get(at..end))
+                        .is_some_and(|s| s.iter().all(|b| *b == 0))
+                }),
+                Err(_) => true,
+            },
+            Guard::KeptEntriesIntact => match (&f.result, pred) {
+                (
+                    Ok(ok),
+                    Pred::Ok {
+                        inventory: Some(inv),
+                        ..
+                    },
+                ) => n_inventory(&ok.bytes, &|_, _, _| false).as_ref() == Some(inv),
+                _ => true,
+            },
+            Guard::LengthUnchanged => match &f.result {
+                Ok(ok) => !ok.removals.is_empty() || ok.bytes.len() == input.len(),
+                Err(_) => true,
             },
             Guard::Records => match (&f.result, pred) {
                 (
@@ -975,7 +1726,12 @@ mod rewrite_invariants {
                 (Err(ErrFact::Unstrippable(r, o)), Pred::Unstrippable(pr, po)) => {
                     r == pr && o == po
                 }
-                (Err(ErrFact::NeedsEntryEdit(c)), Pred::NeedsEntryEdit(pc)) => c == pc,
+                // The library refuses the Exif edit: always fine when the naive
+                // rules refuse too, and fail-closed when they accept; but the
+                // refusal comes after the walk (`Unstrippable`).
+                (Err(ErrFact::Uneditable(..)), p) => {
+                    !matches!(p, Pred::NotAJpeg | Pred::Unstrippable(..))
+                }
                 (Err(ErrFact::MpfNotIndexed(o)), Pred::MpfNotIndexed(po)) => o == po,
                 (Err(ErrFact::Overlap(o)), Pred::Overlap(po)) => o == po,
                 (Err(ErrFact::VerifyFailed(_)), _) => true,
@@ -1088,6 +1844,7 @@ mod rewrite_invariants {
                 bytes,
                 removals,
                 patches,
+                ..
             } => format!(
                 "Ok len {} removals {removals:?} patches {patches:?}",
                 bytes.len()

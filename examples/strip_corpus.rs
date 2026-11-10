@@ -62,7 +62,7 @@ fn error_kind(e: &StripError) -> String {
         StripError::Unsupported { .. } => "Unsupported".into(),
         StripError::NotJpeg => "NotJpeg".into(),
         StripError::Unstrippable { reason, .. } => format!("Unstrippable({reason:?})"),
-        StripError::NeedsEntryEdit { .. } => "NeedsEntryEdit".into(),
+        StripError::Uneditable { reason, .. } => format!("Uneditable({reason:?})"),
         StripError::Overlap { .. } => "Overlap".into(),
         StripError::MpfNotIndexed { .. } => "MpfNotIndexed".into(),
         StripError::VerifyFailed { check } => format!("VerifyFailed({check:?})"),
