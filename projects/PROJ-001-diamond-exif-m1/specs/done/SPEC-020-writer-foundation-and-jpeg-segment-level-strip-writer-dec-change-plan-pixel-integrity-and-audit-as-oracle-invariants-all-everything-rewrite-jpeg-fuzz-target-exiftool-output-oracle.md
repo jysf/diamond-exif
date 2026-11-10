@@ -6,14 +6,14 @@
 task:
   id: SPEC-020
   type: story                      # epic | story | task | bug | chore
-  cycle: verify  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
-  complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
+  complexity_actual: L              # what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: approved  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
@@ -81,9 +81,10 @@ cost:
       recorded_at: 2026-11-10
       notes: "Verdict APPROVED at 44f0bbc with two Medium follow-ups (audit-side) and Low findings. Transcribed by the orchestrator from the harness. Nothing pushed, no PR."
   totals:
-    tokens_total: 863940
-    estimated_usd: 5.70
+    tokens_total: 904003
+    estimated_usd: 5.96
     session_count: 2
+shipped_at: 2026-11-10
 ---
 
 # SPEC-020: Writer foundation and JPEG segment-level strip: writer DEC, change plan, pixel-integrity and audit-as-oracle invariants, `All`/`Everything`, `rewrite_jpeg` fuzz target, ExifTool output oracle
@@ -217,34 +218,16 @@ Named tests (a rename, fold or missing test is a deviation to report):
 
 ## Reflection
 
-*Appended during **ship**. Three questions, short answers.*
-
 1. **What would I do differently next time?**
-   — <answer>
+   — Define "unreadable" in the spec as "the tolerant walk reported any issue for the block", not as `failed_blocks`; the design text said "could not be read" and the build implemented the narrowest reading, which the verifier turned into a fail-open (a GPS IFD with a lying entry count returned `Ok` with the coordinates left in). For every fail-closed rule, write the leak input in the design and ask which counter the implementation will test.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — DEC-013 needs an amendment before SPEC-021: the pinned refusal order (`Unstrippable`, `NeedsEntryEdit`, `MpfNotIndexed`, `Overlap`, then `VerifyFailed {MpfFields}`), the four `MpfNotIndexed` extensions (a removed unindexed MPF segment is exempt; any removed byte past its end counts; a kept MPF segment behind a removed index is refused; an unlocated index entry with a removal in between is refused) and the self-check 7(b) exemption for Exif-resident findings of kept categories when the Exif segment goes whole. Not done this session; recorded as the open `dec-013-*` questions. No constraint change.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — Yes, two audit-layer items, not rework of this spec: (a) APP1 signatures that ExifTool still reads (lowercase `exif\0\0`, a garbage prefix before `Exif`, `XMP\0`) are `OtherApp` and survive `All` and `Gps` with `Ok` (question `audit-app1-signature-variants`, Medium, decide before the writer ships to users); (b) a dedicated typed refusal for the MPF primary-size underflow, decided together with `writer-stray-bytes`. SPEC-021 is next as planned.
 
-4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
-   the defect-escape distribution is greppable across specs:
-   `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
-   `none` (clean first try).
-   — <one word>
-   *(Runtime/operational defects — the escape-prone class — only exist once the
-   artifact meets its real host. `escaped` here is a signal to strengthen the
-   §12 behavioral pre-flight for that surface.)*
+4. **Where was the worst defect caught?** — verify
+   *(GPS IFD with a lying entry count: `strip(Gps)` returned `Ok` unchanged; fixed in the follow-up with a red-first test.)*
 
-5. **What can a user do now that they couldn't before?** — one sentence,
-   before → after; quote the confirming number if one exists, name the outcome
-   if not. Write `none` if this spec has no user-visible outcome — that is a
-   real, greppable result, not a blank. This is the line a downstream work-log's
-   `impact` field is transcribed from, and both halves are already written above
-   (## Context is the before, ## Goal is the after): confirm the prediction,
-   don't reconstruct it from memory.
-   — <answer | none>
+5. **What can a user do now that they couldn't before?** — A library caller can now strip a JPEG with `All` or `Everything` and get back either audited bytes or a typed refusal, never a best-effort file: on the user's own files, 13 of 13 JPEGs strip under both presets with the scan region byte-identical and the output audit clean, and the 4 Multi-Picture files keep all 3 `MPImage` groups with correct offsets under `All` (ExifTool-confirmed); `Gps` and the narrower presets refuse with `NeedsEntryEdit` where an Exif finding exists (4 of 13 for `Gps`) until SPEC-021.

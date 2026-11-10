@@ -1059,3 +1059,16 @@ questions:
       arithmetic underflows, and any other VerifyFailed only when its own prediction breaks an invariant
       of DEC-013 part 7. A dedicated variant would let "VerifyFailed is always a harness failure" hold
       without that exception.
+
+  - id: audit-app1-signature-variants
+    question: "ExifTool still reads APP1 segments whose signature is not exactly Exif\\0\\0 or the XMP namespace line (lowercase exif, a garbage prefix before Exif, XMP\\0). The audit calls them OtherApp, so All and Gps strip them with Ok and leave readable metadata. Widen the audit's APP1 recognition, or remove OtherApp APP1 under All?"
+    priority: medium
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      Found by the SPEC-020 verifier with synthetic probes against ExifTool 13.55 (5 GPS, 6 IFD0, 4 ExifIFD tags
+      read from a lowercase exif signature, with a minor warning). The writer is correct by DEC-013 part 3
+      (the audit is the single definition of what is in the file), so this is an audit gap from SPEC-019 and
+      Everything removes all three. Decide before the writer is offered to users.
