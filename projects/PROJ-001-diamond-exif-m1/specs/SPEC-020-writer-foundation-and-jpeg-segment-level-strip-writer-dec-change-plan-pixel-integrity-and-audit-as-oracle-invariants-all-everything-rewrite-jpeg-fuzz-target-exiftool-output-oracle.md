@@ -72,10 +72,18 @@ cost:
       duration_minutes: 62
       recorded_at: 2026-11-10
       notes: "tokens_total null: a sub-agent cannot see its own token count in this harness; the orchestrator transcribes the metered figure. Nothing pushed, no PR (as instructed)."
+    - cycle: verify
+      agent: claude-opus-5-5
+      interface: other
+      tokens_total: 299050
+      estimated_usd: 1.97
+      duration_minutes: 19
+      recorded_at: 2026-11-10
+      notes: "Verdict APPROVED at 44f0bbc with two Medium follow-ups (audit-side) and Low findings. tokens_total null: a sub-agent cannot see its own token count; the orchestrator transcribes the metered figure. Nothing pushed, no PR."
   totals:
-    tokens_total: 564890
-    estimated_usd: 3.73
-    session_count: 1
+    tokens_total: 863940
+    estimated_usd: 5.70
+    session_count: 2
 ---
 
 # SPEC-020: Writer foundation and JPEG segment-level strip: writer DEC, change plan, pixel-integrity and audit-as-oracle invariants, `All`/`Everything`, `rewrite_jpeg` fuzz target, ExifTool output oracle

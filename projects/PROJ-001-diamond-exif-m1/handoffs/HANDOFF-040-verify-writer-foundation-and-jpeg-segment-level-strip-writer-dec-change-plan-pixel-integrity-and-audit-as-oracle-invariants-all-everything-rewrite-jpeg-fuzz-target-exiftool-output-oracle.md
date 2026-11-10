@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: null
+  tokens_total: 299050             # final subagent_tokens, transcribed by the orchestrator
+  estimated_usd: 1.97              # 299050 x 6.60 USD per Mtok = 1.974
+  duration_minutes: 19             # 1146426 ms = 19.1 min
   branch: worktree-agent-a3cfa29f74ce0361a
   pr: null
   completed_at: 2026-11-10         # YYYY-MM-DD
-  notes: "Verdict APPROVED at 44f0bbc with two Medium follow-ups (audit-side) and Low findings. tokens_total null: a sub-agent cannot see its own token count; the orchestrator transcribes the metered figure. Nothing pushed, no PR."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "Verdict APPROVED at 44f0bbc with two Medium follow-ups (audit-side) and Low findings. The sub-agent could not see its own token count; the orchestrator transcribed the final metered figure. Nothing pushed, no PR."
+  synced_at: 2026-11-10
 ---
 
 # HANDOFF-040: Verify the writer foundation and JPEG segment-level strip (SPEC-020)
