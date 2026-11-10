@@ -74,10 +74,20 @@ cost:
       duration_minutes: 85
       recorded_at: 2026-11-10
       notes: "Cost transcribed by the orchestrator from the harness final cumulative subagent_tokens after the follow-up (782,540; 746,836 at the first build report) at 6.60 USD per Mtok = 5.16 USD. Duration is the sum of the two runs reported by the harness: 3,942,831 ms + 1,149,869 ms = 84.9 min, rounded to 85. Token cumulativity is derived (the second run added 35,704 tokens over 43 tool uses), not confirmed by the harness. Follow-up fixed the joined-stray-bytes harness over-prediction (56bd4a6, 9315047). Nothing was pushed, no PR, no cycle advanced."
+    - cycle: verify
+      handoff: HANDOFF-042
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 315410
+      estimated_usd: 2.08
+      duration_minutes: 24
+      recorded_at: 2026-11-10
+      notes: "Cost transcribed by the orchestrator from the harness final subagent_tokens 315,410 at 6.60 USD per Mtok = 2.08 USD; duration 1,434,530 ms = 23.9 min rounded to 24. Verifier cannot see its own token count; the orchestrator transcribes the metered subagent_tokens and duration from the harness. Verdict PUNCH LIST at 7697162: two High leaks on malformed input (straddling out-of-line value not scrubbed; IFD1 thumbnail bytes reachable through a second 0x0201 or through 0x0111 strips left unreferenced), one Medium test gap (rule 3 per-block refusal only tested on the first block), Lows. No code changed, nothing pushed, no cycle advanced."
   totals:
-    tokens_total: 782540
-    estimated_usd: 5.16
-    session_count: 1
+    tokens_total: 1097950
+    estimated_usd: 7.24
+    session_count: 2
 ---
 
 # SPEC-021: JPEG in-place IFD entry deletion with scrub: `Gps`, `GpsAndDevice`, `AllPii` (thumbnail and MakerNote removed whole), never grow, never relocate

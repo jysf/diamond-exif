@@ -51,14 +51,14 @@ handback:
                                    #   to_agent above is a prediction from tier_map
   verdict: punch-list              # verify handoffs: approved | punch-list | rejected
   basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: null
+  tokens_total: 315410             # REAL combined count — what cost-audit reads
+  estimated_usd: 2.08              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  duration_minutes: 24
   branch: worktree-agent-a6c98b4cf6b8abd61
   pr: null
   completed_at: 2026-11-10         # YYYY-MM-DD
-  notes: "Verifier cannot see its own token count; the orchestrator transcribes the metered subagent_tokens and duration from the harness. Verdict PUNCH LIST at 7697162: two High leaks on malformed input (straddling out-of-line value not scrubbed; IFD1 thumbnail bytes reachable through a second 0x0201 or through 0x0111 strips left unreferenced), one Medium test gap (rule 3 per-block refusal only tested on the first block), Lows. No code changed, nothing pushed, no cycle advanced."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "Cost transcribed by the orchestrator from the harness final subagent_tokens 315,410 at 6.60 USD per Mtok = 2.08 USD; duration 1,434,530 ms = 23.9 min rounded to 24. Verifier cannot see its own token count; the orchestrator transcribes the metered subagent_tokens and duration from the harness. Verdict PUNCH LIST at 7697162: two High leaks on malformed input (straddling out-of-line value not scrubbed; IFD1 thumbnail bytes reachable through a second 0x0201 or through 0x0111 strips left unreferenced), one Medium test gap (rule 3 per-block refusal only tested on the first block), Lows. No code changed, nothing pushed, no cycle advanced."
+  synced_at: 2026-11-10
 ---
 
 # HANDOFF-042: Verify JPEG in-place Exif entry deletion with scrub (SPEC-021)
