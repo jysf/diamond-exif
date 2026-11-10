@@ -257,7 +257,7 @@ fn icc_chunks() -> (Vec<u8>, Vec<u8>) {
     let mut text = b"text\0\0\0\0".to_vec();
     text.extend_from_slice(C_ICC);
     text.push(0);
-    while text.len() % 4 != 0 {
+    while (text.len() & 3) != 0 {
         text.push(0);
     }
     let size = 128 + 4 + 12 + text.len();

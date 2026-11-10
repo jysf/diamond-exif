@@ -117,11 +117,11 @@ fn stripped_policies(shape: &Shape) -> Vec<(&'static str, StripSpec)> {
         .collect()
 }
 
+/// A comparison of one output section with the table.
+type OutputCheck = dyn Fn(&Shape, &str, StripSpec, &Section, &Section) -> Result<(), String>;
+
 /// Run `check` over every (fixture, policy) of a record source.
-fn each_output(
-    source: &dyn Fn(&Shape) -> Record,
-    check: &dyn Fn(&Shape, &str, StripSpec, &Section, &Section) -> Result<(), String>,
-) -> usize {
+fn each_output(source: &dyn Fn(&Shape) -> Record, check: &OutputCheck) -> usize {
     let mut n = 0;
     for shape in shapes() {
         let record = source(&shape);
