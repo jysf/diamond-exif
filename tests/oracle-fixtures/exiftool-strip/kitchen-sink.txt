@@ -1,0 +1,396 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# exiftool-version: 13.55
+# fixture: kitchen-sink
+## input
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+File	CurrentIPTCDigest	bfbd6f9507b7f8cc11f8eca2b2f17314
+File	Comment	CANARY-COMMENT-ONE
+File	Comment	CANARY-COMMENT-TWO
+File	ImageWidth	8
+File	ImageHeight	8
+File	EncodingProcess	0
+File	BitsPerSample	8
+File	ColorComponents	1
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-EXIF-MAKE
+IFD0	Model	CANARY-EXIF-MODEL
+IFD0	Orientation	6
+IFD0	Artist	CANARY-EXIF-ARTIST
+IFD0	Software	CANARY-EXIF-SOFTWARE
+IFD0	ModifyDate	2031:02:03 04:05:06
+ExifIFD	DateTimeOriginal	2031:02:03 04:05:06
+ExifIFD	SerialNumber	CANARY-EXIF-SERIAL
+ExifIFD	UserComment	CANARY-EXIF-USERCOMMENT
+ExifIFD	MakerNoteUnknownText	CANARY-EXIF-MAKERNOTE
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	50.0666666666667
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	19.9333333333333
+GPS	GPSAreaInformation	ASCII
+IFD1	ThumbnailOffset	554
+IFD1	ThumbnailLength	25
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+JUMBF	JUMDType	6332706100110010800000aa00389b71
+JUMBF	JUMDToggles	3
+JUMBF	JUMDLabel	CANARY-JUMBF
+XMP-xmpNote	HasExtendedXMP	aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+XMP-xmp	CreatorTool	CANARY-XMP-PACKET
+XMP-xmp	Label	CANARY-XMP-EXTENDED
+ICC-header	ProfileCMMType	
+ICC-header	ProfileVersion	528
+ICC-header	ProfileClass	mntr
+ICC-header	ColorSpaceData	RGB
+ICC-header	ProfileConnectionSpace	XYZ
+ICC-header	ProfileDateTime	0000:00:00 00:00:00
+ICC-header	ProfileFileSignature	acsp
+ICC-header	PrimaryPlatform	
+ICC-header	CMMFlags	0
+ICC-header	DeviceManufacturer	
+ICC-header	DeviceModel	
+ICC-header	DeviceAttributes	0 0
+ICC-header	RenderingIntent	0
+ICC-header	ConnectionSpaceIlluminant	0 0 0
+ICC-header	ProfileCreator	
+ICC-header	ProfileID	0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ICC_Profile	ProfileCopyright	CANARY-ICC-COPYRIGHT
+IPTC	Caption-Abstract	CANARY-IPTC-ONE
+IPTC2	Caption-Abstract	CANARY-IPTC-TWO
+AROT	HDRGainCurveSize	256
+AROT	HDRGainCurve	(Binary data 53 bytes, use -b option to extract)
+Adobe	DCTEncodeVersion	0
+Adobe	APP14Flags0	25600
+Adobe	APP14Flags1	0
+Adobe	ColorTransform	0
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+Composite	GPSLatitude	50.0666666666667
+Composite	GPSLongitude	19.9333333333333
+Composite	GPSPosition	50.0666666666667 19.9333333333333
+## all
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ImageWidth	8
+File	ImageHeight	8
+File	EncodingProcess	0
+File	BitsPerSample	8
+File	ColorComponents	1
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+JUMBF	JUMDType	6332706100110010800000aa00389b71
+JUMBF	JUMDToggles	3
+JUMBF	JUMDLabel	CANARY-JUMBF
+ICC-header	ProfileCMMType	
+ICC-header	ProfileVersion	528
+ICC-header	ProfileClass	mntr
+ICC-header	ColorSpaceData	RGB
+ICC-header	ProfileConnectionSpace	XYZ
+ICC-header	ProfileDateTime	0000:00:00 00:00:00
+ICC-header	ProfileFileSignature	acsp
+ICC-header	PrimaryPlatform	
+ICC-header	CMMFlags	0
+ICC-header	DeviceManufacturer	
+ICC-header	DeviceModel	
+ICC-header	DeviceAttributes	0 0
+ICC-header	RenderingIntent	0
+ICC-header	ConnectionSpaceIlluminant	0 0 0
+ICC-header	ProfileCreator	
+ICC-header	ProfileID	0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ICC_Profile	ProfileCopyright	CANARY-ICC-COPYRIGHT
+AROT	HDRGainCurveSize	256
+AROT	HDRGainCurve	(Binary data 53 bytes, use -b option to extract)
+Adobe	DCTEncodeVersion	0
+Adobe	APP14Flags0	25600
+Adobe	APP14Flags1	0
+Adobe	ColorTransform	0
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+## everything
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ImageWidth	8
+File	ImageHeight	8
+File	EncodingProcess	0
+File	BitsPerSample	8
+File	ColorComponents	1
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+Adobe	DCTEncodeVersion	0
+Adobe	APP14Flags0	25600
+Adobe	APP14Flags1	0
+Adobe	ColorTransform	0
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+## xmp
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+File	CurrentIPTCDigest	bfbd6f9507b7f8cc11f8eca2b2f17314
+File	Comment	CANARY-COMMENT-ONE
+File	Comment	CANARY-COMMENT-TWO
+File	ImageWidth	8
+File	ImageHeight	8
+File	EncodingProcess	0
+File	BitsPerSample	8
+File	ColorComponents	1
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-EXIF-MAKE
+IFD0	Model	CANARY-EXIF-MODEL
+IFD0	Orientation	6
+IFD0	Artist	CANARY-EXIF-ARTIST
+IFD0	Software	CANARY-EXIF-SOFTWARE
+IFD0	ModifyDate	2031:02:03 04:05:06
+ExifIFD	DateTimeOriginal	2031:02:03 04:05:06
+ExifIFD	SerialNumber	CANARY-EXIF-SERIAL
+ExifIFD	UserComment	CANARY-EXIF-USERCOMMENT
+ExifIFD	MakerNoteUnknownText	CANARY-EXIF-MAKERNOTE
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	50.0666666666667
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	19.9333333333333
+GPS	GPSAreaInformation	ASCII
+IFD1	ThumbnailOffset	554
+IFD1	ThumbnailLength	25
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+JUMBF	JUMDType	6332706100110010800000aa00389b71
+JUMBF	JUMDToggles	3
+JUMBF	JUMDLabel	CANARY-JUMBF
+ICC-header	ProfileCMMType	
+ICC-header	ProfileVersion	528
+ICC-header	ProfileClass	mntr
+ICC-header	ColorSpaceData	RGB
+ICC-header	ProfileConnectionSpace	XYZ
+ICC-header	ProfileDateTime	0000:00:00 00:00:00
+ICC-header	ProfileFileSignature	acsp
+ICC-header	PrimaryPlatform	
+ICC-header	CMMFlags	0
+ICC-header	DeviceManufacturer	
+ICC-header	DeviceModel	
+ICC-header	DeviceAttributes	0 0
+ICC-header	RenderingIntent	0
+ICC-header	ConnectionSpaceIlluminant	0 0 0
+ICC-header	ProfileCreator	
+ICC-header	ProfileID	0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ICC_Profile	ProfileCopyright	CANARY-ICC-COPYRIGHT
+IPTC	Caption-Abstract	CANARY-IPTC-ONE
+IPTC2	Caption-Abstract	CANARY-IPTC-TWO
+AROT	HDRGainCurveSize	256
+AROT	HDRGainCurve	(Binary data 53 bytes, use -b option to extract)
+Adobe	DCTEncodeVersion	0
+Adobe	APP14Flags0	25600
+Adobe	APP14Flags1	0
+Adobe	ColorTransform	0
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+Composite	GPSLatitude	50.0666666666667
+Composite	GPSLongitude	19.9333333333333
+Composite	GPSPosition	50.0666666666667 19.9333333333333
+## icc
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+File	CurrentIPTCDigest	bfbd6f9507b7f8cc11f8eca2b2f17314
+File	Comment	CANARY-COMMENT-ONE
+File	Comment	CANARY-COMMENT-TWO
+File	ImageWidth	8
+File	ImageHeight	8
+File	EncodingProcess	0
+File	BitsPerSample	8
+File	ColorComponents	1
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-EXIF-MAKE
+IFD0	Model	CANARY-EXIF-MODEL
+IFD0	Orientation	6
+IFD0	Artist	CANARY-EXIF-ARTIST
+IFD0	Software	CANARY-EXIF-SOFTWARE
+IFD0	ModifyDate	2031:02:03 04:05:06
+ExifIFD	DateTimeOriginal	2031:02:03 04:05:06
+ExifIFD	SerialNumber	CANARY-EXIF-SERIAL
+ExifIFD	UserComment	CANARY-EXIF-USERCOMMENT
+ExifIFD	MakerNoteUnknownText	CANARY-EXIF-MAKERNOTE
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	50.0666666666667
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	19.9333333333333
+GPS	GPSAreaInformation	ASCII
+IFD1	ThumbnailOffset	554
+IFD1	ThumbnailLength	25
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+JUMBF	JUMDType	6332706100110010800000aa00389b71
+JUMBF	JUMDToggles	3
+JUMBF	JUMDLabel	CANARY-JUMBF
+XMP-xmpNote	HasExtendedXMP	aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+XMP-xmp	CreatorTool	CANARY-XMP-PACKET
+XMP-xmp	Label	CANARY-XMP-EXTENDED
+IPTC	Caption-Abstract	CANARY-IPTC-ONE
+IPTC2	Caption-Abstract	CANARY-IPTC-TWO
+AROT	HDRGainCurveSize	256
+AROT	HDRGainCurve	(Binary data 53 bytes, use -b option to extract)
+Adobe	DCTEncodeVersion	0
+Adobe	APP14Flags0	25600
+Adobe	APP14Flags1	0
+Adobe	ColorTransform	0
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+Composite	GPSLatitude	50.0666666666667
+Composite	GPSLongitude	19.9333333333333
+Composite	GPSPosition	50.0666666666667 19.9333333333333
+## embedded
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+File	CurrentIPTCDigest	bfbd6f9507b7f8cc11f8eca2b2f17314
+File	Comment	CANARY-COMMENT-ONE
+File	Comment	CANARY-COMMENT-TWO
+File	ImageWidth	8
+File	ImageHeight	8
+File	EncodingProcess	0
+File	BitsPerSample	8
+File	ColorComponents	1
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-EXIF-MAKE
+IFD0	Model	CANARY-EXIF-MODEL
+IFD0	Orientation	6
+IFD0	Artist	CANARY-EXIF-ARTIST
+IFD0	Software	CANARY-EXIF-SOFTWARE
+IFD0	ModifyDate	2031:02:03 04:05:06
+ExifIFD	DateTimeOriginal	2031:02:03 04:05:06
+ExifIFD	SerialNumber	CANARY-EXIF-SERIAL
+ExifIFD	UserComment	CANARY-EXIF-USERCOMMENT
+ExifIFD	MakerNoteUnknownText	CANARY-EXIF-MAKERNOTE
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	50.0666666666667
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	19.9333333333333
+GPS	GPSAreaInformation	ASCII
+IFD1	ThumbnailOffset	554
+IFD1	ThumbnailLength	25
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+JUMBF	JUMDType	6332706100110010800000aa00389b71
+JUMBF	JUMDToggles	3
+JUMBF	JUMDLabel	CANARY-JUMBF
+XMP-xmpNote	HasExtendedXMP	aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+XMP-xmp	CreatorTool	CANARY-XMP-PACKET
+XMP-xmp	Label	CANARY-XMP-EXTENDED
+ICC-header	ProfileCMMType	
+ICC-header	ProfileVersion	528
+ICC-header	ProfileClass	mntr
+ICC-header	ColorSpaceData	RGB
+ICC-header	ProfileConnectionSpace	XYZ
+ICC-header	ProfileDateTime	0000:00:00 00:00:00
+ICC-header	ProfileFileSignature	acsp
+ICC-header	PrimaryPlatform	
+ICC-header	CMMFlags	0
+ICC-header	DeviceManufacturer	
+ICC-header	DeviceModel	
+ICC-header	DeviceAttributes	0 0
+ICC-header	RenderingIntent	0
+ICC-header	ConnectionSpaceIlluminant	0 0 0
+ICC-header	ProfileCreator	
+ICC-header	ProfileID	0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ICC_Profile	ProfileCopyright	CANARY-ICC-COPYRIGHT
+IPTC	Caption-Abstract	CANARY-IPTC-ONE
+IPTC2	Caption-Abstract	CANARY-IPTC-TWO
+AROT	HDRGainCurveSize	256
+AROT	HDRGainCurve	(Binary data 53 bytes, use -b option to extract)
+Adobe	DCTEncodeVersion	0
+Adobe	APP14Flags0	25600
+Adobe	APP14Flags1	0
+Adobe	ColorTransform	0
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+Composite	GPSLatitude	50.0666666666667
+Composite	GPSLongitude	19.9333333333333
+Composite	GPSPosition	50.0666666666667 19.9333333333333
+## other
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+File	CurrentIPTCDigest	bfbd6f9507b7f8cc11f8eca2b2f17314
+File	Comment	CANARY-COMMENT-ONE
+File	Comment	CANARY-COMMENT-TWO
+File	ImageWidth	8
+File	ImageHeight	8
+File	EncodingProcess	0
+File	BitsPerSample	8
+File	ColorComponents	1
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-EXIF-MAKE
+IFD0	Model	CANARY-EXIF-MODEL
+IFD0	Orientation	6
+IFD0	Artist	CANARY-EXIF-ARTIST
+IFD0	Software	CANARY-EXIF-SOFTWARE
+IFD0	ModifyDate	2031:02:03 04:05:06
+ExifIFD	DateTimeOriginal	2031:02:03 04:05:06
+ExifIFD	SerialNumber	CANARY-EXIF-SERIAL
+ExifIFD	UserComment	CANARY-EXIF-USERCOMMENT
+ExifIFD	MakerNoteUnknownText	CANARY-EXIF-MAKERNOTE
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	50.0666666666667
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	19.9333333333333
+GPS	GPSAreaInformation	ASCII
+IFD1	ThumbnailOffset	554
+IFD1	ThumbnailLength	25
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+JUMBF	JUMDType	6332706100110010800000aa00389b71
+JUMBF	JUMDToggles	3
+JUMBF	JUMDLabel	CANARY-JUMBF
+XMP-xmpNote	HasExtendedXMP	aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+XMP-xmp	CreatorTool	CANARY-XMP-PACKET
+XMP-xmp	Label	CANARY-XMP-EXTENDED
+ICC-header	ProfileCMMType	
+ICC-header	ProfileVersion	528
+ICC-header	ProfileClass	mntr
+ICC-header	ColorSpaceData	RGB
+ICC-header	ProfileConnectionSpace	XYZ
+ICC-header	ProfileDateTime	0000:00:00 00:00:00
+ICC-header	ProfileFileSignature	acsp
+ICC-header	PrimaryPlatform	
+ICC-header	CMMFlags	0
+ICC-header	DeviceManufacturer	
+ICC-header	DeviceModel	
+ICC-header	DeviceAttributes	0 0
+ICC-header	RenderingIntent	0
+ICC-header	ConnectionSpaceIlluminant	0 0 0
+ICC-header	ProfileCreator	
+ICC-header	ProfileID	0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ICC_Profile	ProfileCopyright	CANARY-ICC-COPYRIGHT
+IPTC	Caption-Abstract	CANARY-IPTC-ONE
+IPTC2	Caption-Abstract	CANARY-IPTC-TWO
+Adobe	DCTEncodeVersion	0
+Adobe	APP14Flags0	25600
+Adobe	APP14Flags1	0
+Adobe	ColorTransform	0
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+Composite	GPSLatitude	50.0666666666667
+Composite	GPSLongitude	19.9333333333333
+Composite	GPSPosition	50.0666666666667 19.9333333333333

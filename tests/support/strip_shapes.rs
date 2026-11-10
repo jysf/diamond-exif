@@ -36,9 +36,8 @@ pub const C_COM1: &[u8] = b"CANARY-COMMENT-ONE";
 pub const C_COM2: &[u8] = b"CANARY-COMMENT-TWO";
 pub const C_APP10: &[u8] = b"CANARY-APP10-AROT";
 pub const C_TRAILER: &[u8] = b"CANARY-TRAILER-BYTES";
-/// Four bytes in the ICC header (the preferred CMM field): a kept carrier
-/// under `All`.
-pub const C_ICC: &[u8] = b"CNRY";
+/// The text of the profile's copyright tag: a kept carrier under `All`.
+pub const C_ICC: &[u8] = b"CANARY-ICC-COPYRIGHT";
 
 /// Every canary of a removed carrier (gone after `All`), and the one kept.
 pub const REMOVED_CANARIES: &[&[u8]] = &[
@@ -216,12 +215,23 @@ fn scan() -> Vec<u8> {
 }
 
 fn xmp_seg(extra: &[u8]) -> Vec<u8> {
+    xmp_seg_with(extra, None)
+}
+
+/// The main XMP packet; with a GUID it also names the extended packet.
+fn xmp_seg_with(extra: &[u8], ext_guid: Option<&[u8]>) -> Vec<u8> {
     let mut packet = b"<?xpacket begin=\"\xEF\xBB\xBF\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n\
         <x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF \
         xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\
-        <rdf:Description rdf:about=\"\" xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\">\
-        <xmp:CreatorTool>"
+        <rdf:Description rdf:about=\"\" xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\" \
+        xmlns:xmpNote=\"http://ns.adobe.com/xmp/note/\">"
         .to_vec();
+    if let Some(guid) = ext_guid {
+        packet.extend_from_slice(b"<xmpNote:HasExtendedXMP>");
+        packet.extend_from_slice(guid);
+        packet.extend_from_slice(b"</xmpNote:HasExtendedXMP>");
+    }
+    packet.extend_from_slice(b"<xmp:CreatorTool>");
     packet.extend_from_slice(extra);
     packet.extend_from_slice(
         b"</xmp:CreatorTool></rdf:Description></rdf:RDF></x:xmpmeta>\n<?xpacket end=\"w\"?>",
@@ -234,6 +244,7 @@ fn xmp_seg(extra: &[u8]) -> Vec<u8> {
 
 fn ext_xmp_seg(guid_fill: u8, full: u32, offset: u32, data: &[u8]) -> Vec<u8> {
     let mut p = b"http://ns.adobe.com/xmp/extension/\0".to_vec();
+    // The GUID is 32 ASCII hex digits.
     p.extend_from_slice(&[guid_fill; 32]);
     p.extend_from_slice(&full.to_be_bytes());
     p.extend_from_slice(&offset.to_be_bytes());
@@ -242,16 +253,28 @@ fn ext_xmp_seg(guid_fill: u8, full: u32, offset: u32, data: &[u8]) -> Vec<u8> {
 }
 
 fn icc_chunks() -> (Vec<u8>, Vec<u8>) {
+    // Header, a one-entry tag table (copyright), the text tag.
+    let mut text = b"text\0\0\0\0".to_vec();
+    text.extend_from_slice(C_ICC);
+    text.push(0);
+    while text.len() % 4 != 0 {
+        text.push(0);
+    }
+    let size = 128 + 4 + 12 + text.len();
     let mut profile = vec![0u8; 128];
-    profile[0..4].copy_from_slice(&132u32.to_be_bytes());
-    profile[4..8].copy_from_slice(C_ICC);
+    profile[0..4].copy_from_slice(&u32::try_from(size).unwrap().to_be_bytes());
     profile[8..12].copy_from_slice(&[2, 0x10, 0, 0]);
     profile[12..16].copy_from_slice(b"mntr");
     profile[16..20].copy_from_slice(b"RGB ");
     profile[20..24].copy_from_slice(b"XYZ ");
     profile[36..40].copy_from_slice(b"acsp");
-    profile.extend_from_slice(&0u32.to_be_bytes());
-    let (a, b) = profile.split_at(70);
+    profile.extend_from_slice(&1u32.to_be_bytes());
+    profile.extend_from_slice(b"cprt");
+    profile.extend_from_slice(&144u32.to_be_bytes());
+    profile.extend_from_slice(&u32::try_from(text.len()).unwrap().to_be_bytes());
+    profile.extend_from_slice(&text);
+    // Two chunks, split inside the tag table.
+    let (a, b) = profile.split_at(136);
     let mk = |seq: u8, d: &[u8]| rs::seg(0xE2, &[&b"ICC_PROFILE\0"[..], &[seq, 2][..], d].concat());
     (mk(1, a), mk(2, b))
 }
@@ -272,12 +295,24 @@ fn iptc_seg(caption: &[u8]) -> Vec<u8> {
 }
 
 fn jumbf_seg() -> Vec<u8> {
+    // A superbox holding one description box (a 16-byte type, a toggles byte
+    // and a NUL-terminated label).
+    let mut label = C_JUMBF.to_vec();
+    label.push(0);
+    let jumd_len = 8 + 16 + 1 + label.len();
+    let jumb_len = 8 + jumd_len;
     let mut p = b"JP".to_vec();
     p.extend_from_slice(&[0, 1]);
     p.extend_from_slice(&1u32.to_be_bytes());
-    p.extend_from_slice(&[0, 0, 0, 24]);
+    p.extend_from_slice(&u32::try_from(jumb_len).unwrap().to_be_bytes());
     p.extend_from_slice(b"jumb");
-    p.extend_from_slice(C_JUMBF);
+    p.extend_from_slice(&u32::try_from(jumd_len).unwrap().to_be_bytes());
+    p.extend_from_slice(b"jumd");
+    p.extend_from_slice(&[
+        0x63, 0x32, 0x70, 0x61, 0, 0x11, 0, 0x10, 0x80, 0, 0, 0xAA, 0, 0x38, 0x9B, 0x71,
+    ]);
+    p.push(3);
+    p.extend_from_slice(&label);
     rs::seg(0xEB, &p)
 }
 
@@ -405,20 +440,32 @@ fn sink(name: &'static str, with_exif: bool) -> Shape {
         facts.blocks = 1;
         facts.cats = FULL_CATS.to_vec();
     }
-    b.push(K::Xmp, &xmp_seg(C_XMP));
-    // Two chunks of one extended packet; each carries the canary.
-    let full = u32::try_from(2 * C_XMPEXT.len()).unwrap();
-    b.push(K::ExtXmp, &ext_xmp_seg(7, full, 0, C_XMPEXT));
+    // ExifTool reads a JUMBF segment only before the Photoshop one (measured).
+    b.push(K::Jumbf, &jumbf_seg());
+    let guid = [b'a'; 32];
+    b.push(K::Xmp, &xmp_seg_with(C_XMP, Some(&guid)));
+    // One extended packet in two chunks, split after the canary.
+    let ext = [
+        &b"<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF \
+        xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\
+        <rdf:Description rdf:about=\"\" xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\">\
+        <xmp:Label>"[..],
+        C_XMPEXT,
+        &b"</xmp:Label></rdf:Description></rdf:RDF></x:xmpmeta>"[..],
+    ]
+    .concat();
+    let cut = ext.len() - 20;
+    let full = u32::try_from(ext.len()).unwrap();
+    b.push(K::ExtXmp, &ext_xmp_seg(guid[0], full, 0, &ext[..cut]));
     b.push(
         K::ExtXmp,
-        &ext_xmp_seg(7, full, u32::try_from(C_XMPEXT.len()).unwrap(), C_XMPEXT),
+        &ext_xmp_seg(guid[0], full, u32::try_from(cut).unwrap(), &ext[cut..]),
     );
     let (i1, i2) = icc_chunks();
     b.push(K::Icc, &i1);
     b.push(K::Icc, &i2);
     b.push(K::Iptc, &iptc_seg(C_IPTC1));
     b.push(K::Iptc, &iptc_seg(C_IPTC2));
-    b.push(K::Jumbf, &jumbf_seg());
     b.push(K::Com, &com_seg(C_COM1));
     b.push(K::Com, &com_seg(C_COM2));
     b.push(K::OtherApp, &arot_seg());

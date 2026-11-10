@@ -1,0 +1,85 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# exiftool-version: 13.55
+# fixture: missing-sos
+## input
+ExifTool	Warning	JPEG format error
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	Comment	CANARY-COMMENT-ONE
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+XMP-xmp	CreatorTool	CANARY-XMP-PACKET
+## all
+ExifTool	Warning	JPEG format error
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+## everything
+ExifTool	Warning	JPEG format error
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+## xmp
+ExifTool	Warning	JPEG format error
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	Comment	CANARY-COMMENT-ONE
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+## icc
+ExifTool	Warning	JPEG format error
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	Comment	CANARY-COMMENT-ONE
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+XMP-xmp	CreatorTool	CANARY-XMP-PACKET
+## embedded
+ExifTool	Warning	JPEG format error
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	Comment	CANARY-COMMENT-ONE
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+XMP-xmp	CreatorTool	CANARY-XMP-PACKET
+## other
+ExifTool	Warning	JPEG format error
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	Comment	CANARY-COMMENT-ONE
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+XMP-xmp	CreatorTool	CANARY-XMP-PACKET
+## iptc+free_text
+ExifTool	Warning	JPEG format error
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+XMP-xmp	CreatorTool	CANARY-XMP-PACKET

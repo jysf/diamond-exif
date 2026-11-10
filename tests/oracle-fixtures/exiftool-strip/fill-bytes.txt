@@ -1,0 +1,95 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# exiftool-version: 13.55
+# fixture: fill-bytes
+## input
+ExifTool	Warning	[minor] Skipped unknown 3 bytes after JPEG APP0 segment
+ExifTool	Warning	[minor] Skipped unknown 1 bytes after JPEG APP1 segment
+ExifTool	Warning	[minor] Skipped unknown 2 bytes after JPEG COM segment
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	Comment	CANARY-COMMENT-ONE
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+XMP-xmp	CreatorTool	CANARY-XMP-PACKET
+## all
+ExifTool	Warning	[minor] Skipped unknown 6 bytes after JPEG APP0 segment
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+## everything
+ExifTool	Warning	[minor] Skipped unknown 6 bytes after JPEG APP0 segment
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+## xmp
+ExifTool	Warning	[minor] Skipped unknown 4 bytes after JPEG APP0 segment
+ExifTool	Warning	[minor] Skipped unknown 2 bytes after JPEG COM segment
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	Comment	CANARY-COMMENT-ONE
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+## icc
+ExifTool	Warning	[minor] Skipped unknown 3 bytes after JPEG APP0 segment
+ExifTool	Warning	[minor] Skipped unknown 1 bytes after JPEG APP1 segment
+ExifTool	Warning	[minor] Skipped unknown 2 bytes after JPEG COM segment
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	Comment	CANARY-COMMENT-ONE
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+XMP-xmp	CreatorTool	CANARY-XMP-PACKET
+## embedded
+ExifTool	Warning	[minor] Skipped unknown 3 bytes after JPEG APP0 segment
+ExifTool	Warning	[minor] Skipped unknown 1 bytes after JPEG APP1 segment
+ExifTool	Warning	[minor] Skipped unknown 2 bytes after JPEG COM segment
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	Comment	CANARY-COMMENT-ONE
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+XMP-xmp	CreatorTool	CANARY-XMP-PACKET
+## other
+ExifTool	Warning	[minor] Skipped unknown 3 bytes after JPEG APP0 segment
+ExifTool	Warning	[minor] Skipped unknown 1 bytes after JPEG APP1 segment
+ExifTool	Warning	[minor] Skipped unknown 2 bytes after JPEG COM segment
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	Comment	CANARY-COMMENT-ONE
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+XMP-xmp	CreatorTool	CANARY-XMP-PACKET
+## iptc+free_text
+ExifTool	Warning	[minor] Skipped unknown 3 bytes after JPEG APP0 segment
+ExifTool	Warning	[minor] Skipped unknown 3 bytes after JPEG APP1 segment
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+XMP-xmp	CreatorTool	CANARY-XMP-PACKET
