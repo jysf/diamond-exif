@@ -201,7 +201,6 @@ mod rewrite_invariants {
                 ItemKind::Tag { ifd, tag, .. } => {
                     keys.push(format!("{:?}/{ifd:?}/{tag}", f.category))
                 }
-                _ => keys.push(format!("{:?}/?", f.category)),
             }
         }
         keys.sort();
@@ -274,7 +273,6 @@ mod rewrite_invariants {
         off: usize,
         marker: u8,
         end: usize,
-        after_scan: bool,
     }
 
     struct NWalk {
@@ -380,7 +378,6 @@ mod rewrite_invariants {
                         off: p,
                         marker: m,
                         end,
-                        after_scan: w.scan_start.is_some(),
                     });
                     if m == 0xDA {
                         w.scan_start.get_or_insert(p);
@@ -943,13 +940,13 @@ mod rewrite_invariants {
                 }
                 Err(_) => true,
             },
-            Guard::Scan => f.out.as_ref().map_or(true, |o| o.scan_same),
+            Guard::Scan => f.out.as_ref().is_none_or(|o| o.scan_same),
             Guard::RemovedCategories => f
                 .out
                 .as_ref()
-                .map_or(true, |o| o.categories.iter().all(|c| !spec.contains(*c))),
-            Guard::KeptFindings => f.out.as_ref().map_or(true, |o| o.kept_in == o.kept_out),
-            Guard::Idempotent => f.out.as_ref().map_or(true, |o| o.idempotent),
+                .is_none_or(|o| o.categories.iter().all(|c| !spec.contains(*c))),
+            Guard::KeptFindings => f.out.as_ref().is_none_or(|o| o.kept_in == o.kept_out),
+            Guard::Idempotent => f.out.as_ref().is_none_or(|o| o.idempotent),
             Guard::Deterministic => f.deterministic,
             Guard::ErrClass => match (&f.result, pred) {
                 (Ok(_), _) => true,

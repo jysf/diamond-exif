@@ -102,20 +102,30 @@ fn main() {
     walk(Path::new(dir), &mut files);
 
     if let Some((hash, which)) = emit {
+        // The file is named by the short hash the counts print, never by path.
+        // POLICY `none` writes the input as it is (for a before/after read).
         for path in &files {
             let Ok(bytes) = std::fs::read(path) else {
                 continue;
             };
             if bytes.starts_with(&[0xFF, 0xD8]) && short(&bytes).starts_with(&hash) {
-                let policy = policies
-                    .iter()
-                    .find(|(n, _)| *n == which)
-                    .map(|(_, p)| *p)
-                    .expect("policy all or everything");
-                let out = strip(&bytes, policy).expect("the file strips");
-                std::io::stdout()
-                    .write_all(out.bytes())
-                    .expect("write stdout");
+                let out = if which == "none" {
+                    bytes.clone()
+                } else {
+                    let policy = policies
+                        .iter()
+                        .find(|(n, _)| *n == which)
+                        .map(|(_, p)| *p)
+                        .expect("policy all, everything or none");
+                    strip(&bytes, policy).expect("the file strips").into_bytes()
+                };
+                // A reader that stops early (`head -c2`) is not an error.
+                if let Err(e) = std::io::stdout().write_all(&out) {
+                    if e.kind() != std::io::ErrorKind::BrokenPipe {
+                        eprintln!("write stdout: {e}");
+                        std::process::exit(1);
+                    }
+                }
                 return;
             }
         }

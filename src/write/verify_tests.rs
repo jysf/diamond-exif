@@ -98,6 +98,16 @@ fn a_plan_that_cuts_the_scan_fails_check_scan() {
         verify(&input, &out, spec(&[Category::Xmp])),
         Err(Check::Scan)
     );
+    // The same length, one byte of the scan changed: a length comparison
+    // would miss it.
+    let out = apply(&input, |p| {
+        p.remove(x..x + xmp().len());
+        p.patch(scan_byte, &[0xEE]);
+    });
+    assert_eq!(
+        verify(&input, &out, spec(&[Category::Xmp])),
+        Err(Check::Scan)
+    );
 }
 
 #[test]
