@@ -39,8 +39,10 @@ pub const UNMODELLED_GROUPS: [&str; 2] = ["JFIF", "Photoshop"];
 /// ExifTool groups that exist only on the SPEC-019 real-shape fixtures and that
 /// the audit model has no item for: the Apple `AROT` APP10 segment (ExifTool
 /// decodes `HDRGainCurveSize` from it; the audit reports the segment as an
-/// unrecognised APPn). Named, never dropped silently (SPEC-019).
-pub const SHAPE_ONLY_GROUPS: [&str; 1] = ["AROT"];
+/// unrecognised APPn) and the `Canon` MakerNote group (the audit reports the
+/// MakerNote as one block and does not parse it, DEC-001). Named, never dropped
+/// silently (SPEC-019).
+pub const SHAPE_ONLY_GROUPS: [&str; 2] = ["AROT", "Canon"];
 
 /// Region kinds the audit reports that ExifTool has no reliable counterpart
 /// for (SPEC-019 class S: audit-only region kinds). On the existing inputs they
@@ -1148,3 +1150,24 @@ pub const KNOWN_DIVERGENCES: &[Divergence] = &[
         "ExifTool lists no XMP group for the minimal XMP payloads",
     ),
 ];
+
+// ── SPEC-019: the Multi-Picture relation ─────────────────────────────────────
+
+/// The relation on a well-formed Multi-Picture file: ExifTool lists one
+/// `MPImage<n>` group per index entry, the primary (`MPImage1`) included, so
+/// the number of groups is the number of our `EmbeddedImage` regions plus
+/// `offset` ([`MPIMAGE_PRIMARY_OFFSET`]). `Err` names the disagreement.
+pub fn check_embedded_relation(ours: usize, groups: usize, offset: usize) -> Result<(), String> {
+    let want = ours.saturating_add(offset);
+    if groups == want {
+        Ok(())
+    } else if groups < want {
+        Err(format!(
+            "an embedded image we list that ExifTool does not: {ours} regions, {groups} MPImage groups (want {want})"
+        ))
+    } else {
+        Err(format!(
+            "an MPImage group we do not list: {ours} regions, {groups} MPImage groups (want {want})"
+        ))
+    }
+}

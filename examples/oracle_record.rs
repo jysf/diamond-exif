@@ -276,10 +276,15 @@ fn record_inventory(root: &std::path::Path, version: &str) {
             let out = run.unwrap_or_else(|e| panic!("exiftool on {}: {e}", input.key()));
             let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
             let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-            let lines = inventory::parse_stdout(&stdout)
-                .unwrap_or_else(|e| panic!("{}: {e}", input.key()));
+            let lines =
+                inventory::parse_stdout(&stdout).unwrap_or_else(|e| panic!("{}: {e}", input.key()));
             let warnings = tools::warning_lines(&stderr, &path);
-            text.push_str(&inventory::section_text(&input.name, None, &warnings, &lines));
+            text.push_str(&inventory::section_text(
+                &input.name,
+                None,
+                &warnings,
+                &lines,
+            ));
             count += 1;
         }
         fs::write(dir.join(inventory_corpus::record_file(corpus)), text)

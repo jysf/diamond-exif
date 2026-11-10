@@ -411,7 +411,10 @@ fn theirs_parser_rejects_an_unknown_group() {
     );
     assert!(err.to_string().contains("UNMODELLED_GROUPS"), "{err}");
     // Not a silent drop even when it is the only line of a file.
-    assert!(theirs("[Canon] 0x0001 Foo : 1").is_err());
+    assert!(theirs("[Nikon] 0x0001 Foo : 1").is_err());
+    // The two SPEC-019 shape-only groups are named, so they are accepted.
+    assert!(theirs("[Canon] 0x0001 Foo : 1").is_ok());
+    assert!(theirs("[AROT] 0x0006 HDRGainCurveSize : 256").is_ok());
     // A bad id is its own error.
     assert!(matches!(
         theirs("[IFD0] zzz Make : x"),
@@ -1576,4 +1579,275 @@ fn truncating_between_app1_and_sos_leaves_the_inventory_unchanged() {
     // And the committed record of the hand-built truncated shape agrees.
     let (mine, their) = control("fixtures/jpeg-truncated-between-app1-and-sos");
     assert!(diff(&mine, &their).is_empty());
+}
+
+// ── SPEC-019: the real-shapes corpus ─────────────────────────────────────────
+//
+// The new fixtures have their own record (`real-shapes.txt`), so the five
+// older records, their counts (249 inputs, 180 distinct) and their pinned
+// divergences stay exactly as they were; the two Photoshop-rule pins above are
+// the only change to the old table, and they are DEC-012's.
+
+fn shape_record() -> inventory::RecordFile {
+    let path = root()
+        .join(inventory_corpus::RECORD_DIR)
+        .join(inventory_corpus::record_file("real-shapes"));
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+        panic!(
+            "cannot read {}: {e} (run `just oracle-record`)",
+            path.display()
+        )
+    });
+    inventory::parse_record(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+fn shape_bytes(name: &str) -> Vec<u8> {
+    real_shapes::fixtures()
+        .into_iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, b)| b)
+        .unwrap_or_else(|| panic!("no shape {name}"))
+}
+
+fn shape_lines(name: &str) -> Vec<Line> {
+    shape_record()
+        .sections
+        .into_iter()
+        .find(|s| s.name == name)
+        .unwrap_or_else(|| panic!("no section {name}"))
+        .lines
+}
+
+/// The one pinned difference of the real-shapes corpus: ExifTool decodes a
+/// Canon MakerNote into its own `Canon` group and lists no `0x927c` entry; the
+/// audit lists the entry (the MakerNote is one block, DEC-008, never parsed).
+const SHAPE_PINS: [(&str, &str, u16); 2] = [
+    ("canon-style-note", "ExifIFD", 0x927c),
+    ("canon-style-note-moved", "ExifIFD", 0x927c),
+];
+
+/// The relation on every fixture: `(name, our regions, ExifTool MPImage
+/// groups)`. Well-formed files follow `groups == regions + 1`; for the damaged
+/// ones ExifTool still names every index entry, so the pair is pinned as
+/// measured.
+const MPIMAGE_PINNED: [(&str, usize, usize); 4] = [
+    ("mpo-truncated-index", 0, 0),
+    ("mpo-offset-out-of-range", 1, 3),
+    ("mpo-image-not-jpeg", 1, 3),
+    ("mpo-seventeen", 15, 17),
+];
+const MPO_WELL_FORMED: [&str; 3] = ["mpo-two-le", "mpo-two-be", "mpo-inner-mpf"];
+
+#[test]
+fn mpimage_group_count_equals_embedded_image_regions_on_the_mpo_fixtures() {
+    // ExifTool counts the primary: MPImage1 is the primary image, so the
+    // groups are our regions plus one (recorded as a constant).
+    assert_eq!(inventory::MPIMAGE_PRIMARY_OFFSET, 1);
+    // Replay.
+    for name in MPO_WELL_FORMED {
+        let ours_n = inventory::embedded_regions(&audit(&shape_bytes(name)));
+        let groups = inventory::mpimage_groups(&shape_lines(name));
+        assert!(ours_n >= 1, "{name}");
+        inventory::check_embedded_relation(ours_n, groups, inventory::MPIMAGE_PRIMARY_OFFSET)
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
+    }
+    for (name, regions, groups) in MPIMAGE_PINNED {
+        assert_eq!(
+            inventory::embedded_regions(&audit(&shape_bytes(name))),
+            regions,
+            "{name}: our regions"
+        );
+        assert_eq!(
+            inventory::mpimage_groups(&shape_lines(name)),
+            groups,
+            "{name}: ExifTool's groups"
+        );
+    }
+    // Every other fixture has no Multi-Picture image on either side.
+    for (name, bytes) in real_shapes::fixtures() {
+        if name.starts_with("mpo-") {
+            continue;
+        }
+        assert_eq!(inventory::embedded_regions(&audit(&bytes)), 0, "{name}");
+        assert_eq!(inventory::mpimage_groups(&shape_lines(name)), 0, "{name}");
+    }
+    // Live.
+    if !live_gate("mpimage_group_count_equals_embedded_image_regions_on_the_mpo_fixtures") {
+        return;
+    }
+    for name in MPO_WELL_FORMED
+        .iter()
+        .copied()
+        .chain(MPIMAGE_PINNED.iter().map(|p| p.0))
+    {
+        let bytes = shape_bytes(name);
+        let input = Input {
+            corpus: "real-shapes",
+            name: name.to_string(),
+            bytes: bytes.clone(),
+        };
+        let (_, lines) = live_lines(&input);
+        let groups = inventory::mpimage_groups(&lines);
+        if MPO_WELL_FORMED.contains(&name) {
+            let n = inventory::embedded_regions(&audit(&bytes));
+            inventory::check_embedded_relation(n, groups, inventory::MPIMAGE_PRIMARY_OFFSET)
+                .unwrap_or_else(|e| panic!("live {name}: {e}"));
+        } else {
+            let pinned = MPIMAGE_PINNED.iter().find(|p| p.0 == name).unwrap();
+            assert_eq!(groups, pinned.2, "live {name}");
+        }
+    }
+}
+
+#[test]
+fn class_s_region_kinds_are_excluded_exactly_and_the_existing_pins_are_unchanged() {
+    use exif_core::audit::RegionKind as K;
+    // The exclusion is an exact list: three audit-only kinds, and nothing else.
+    assert_eq!(
+        inventory::CLASS_S_KINDS,
+        [K::Comment, K::OtherApp, K::Trailer]
+    );
+    assert!(
+        !inventory::CLASS_S_KINDS.contains(&K::Iptc),
+        "Iptc is compared"
+    );
+    assert!(!inventory::CLASS_S_KINDS.contains(&K::EmbeddedImage));
+    // A file with only class S kinds has an empty region set on our side; a
+    // file with an Iptc region keeps it.
+    for name in ["com-segment", "app10-arot", "app2-fpxr", "trailer-313"] {
+        let inv = ours(&audit(&shape_bytes(name)));
+        assert!(inv.regions.is_empty(), "{name}: {:?}", inv.regions);
+    }
+    let split = ours(&audit(&shape_bytes("split-app13")));
+    assert_eq!(
+        split.regions,
+        [RegionKind::Iptc].into_iter().collect::<BTreeSet<_>>()
+    );
+    // The five old corpora are the five old corpora, with their old counts.
+    assert_eq!(inventory_corpus::CORPORA.len(), 5);
+    assert_eq!(all_inputs().len(), 249);
+    assert_eq!(distinct_inputs().len(), 180);
+    // The pinned table: the same rows as before plus DEC-012's one new row
+    // (`fixtures/jpeg-iptc-without-0404`); the seed row that gained `Iptc` is
+    // the other change. Counted by class.
+    let by_class = |c: Class| divergences_of(c).len();
+    assert_eq!(
+        [
+            by_class(Class::A),
+            by_class(Class::B),
+            by_class(Class::C),
+            by_class(Class::D),
+            by_class(Class::E),
+            by_class(Class::F),
+            by_class(Class::R),
+        ],
+        [5, 2, 1, 4, 1, 6, 15]
+    );
+    let iptc_rows: Vec<&str> = KNOWN_DIVERGENCES
+        .iter()
+        .filter(|k| k.regions_ours_only.contains(&RegionKind::Iptc))
+        .map(|k| k.fixture)
+        .collect();
+    assert_eq!(
+        iptc_rows,
+        [
+            "seed-jpeg_segments/icc-iptc-jumbf",
+            "fixtures/jpeg-iptc-without-0404",
+            "seed-jpeg_segments/iptc-8bim",
+            "seed-jpeg_segments/iptc-truncated-resource",
+        ]
+    );
+    // And the whole old corpus still replays against the table.
+    assert!(replay_all().is_empty());
+}
+
+#[test]
+fn new_fixture_records_replay_and_reproduce() {
+    let rec = shape_record();
+    assert_eq!(rec.corpus, "real-shapes");
+    assert_eq!(rec.command, inventory::command_line());
+    let names: Vec<&str> = rec.sections.iter().map(|s| s.name.as_str()).collect();
+    let want: Vec<&str> = real_shapes::fixtures().iter().map(|f| f.0).collect();
+    assert_eq!(names, want, "one section per fixture, in order");
+    // Replay: each fixture agrees with its record, but for the pinned rows.
+    for (name, bytes) in real_shapes::fixtures() {
+        let a = audit(&bytes);
+        let d = diff(
+            &ours(&a),
+            &inventory_of(&shape_lines(name)).expect("groups"),
+        );
+        let pin = SHAPE_PINS.iter().find(|p| p.0 == name);
+        match pin {
+            None => assert!(d.is_empty(), "{name}: unexplained difference\n{d}"),
+            Some((_, group, id)) => {
+                let want: Multiset = [(((*group).to_string(), *id), 1)].into_iter().collect();
+                assert_eq!(d.ours_only, want, "{name}");
+                assert!(d.theirs_only.is_empty());
+                assert!(d.regions_ours_only.is_empty() && d.regions_theirs_only.is_empty());
+            }
+        }
+    }
+    // Reproduce: ExifTool prints exactly what was recorded.
+    if !live_gate("new_fixture_records_replay_and_reproduce") {
+        return;
+    }
+    for (name, bytes) in real_shapes::fixtures() {
+        let input = Input {
+            corpus: "real-shapes",
+            name: name.to_string(),
+            bytes,
+        };
+        let (_, lines) = live_lines(&input);
+        assert_eq!(lines, shape_lines(name), "{name}: live equals the record");
+    }
+}
+
+#[test]
+fn comparator_is_red_when_an_embedded_image_is_dropped_added_or_the_primary_miscounted() {
+    let name = "mpo-two-le";
+    let ours_n = inventory::embedded_regions(&audit(&shape_bytes(name)));
+    let groups = inventory::mpimage_groups(&shape_lines(name));
+    let offset = inventory::MPIMAGE_PRIMARY_OFFSET;
+    // Control first: the true counts satisfy the relation.
+    inventory::check_embedded_relation(ours_n, groups, offset).expect("control is clean");
+    // An embedded image dropped from our side: named.
+    let e = inventory::check_embedded_relation(ours_n - 1, groups, offset).unwrap_err();
+    assert!(e.contains("MPImage group we do not list"), "{e}");
+    // A phantom one added: named.
+    let e = inventory::check_embedded_relation(ours_n + 1, groups, offset).unwrap_err();
+    assert!(
+        e.contains("embedded image we list that ExifTool does not"),
+        "{e}"
+    );
+    // The primary miscounted (taken as not counted by ExifTool): named.
+    let e = inventory::check_embedded_relation(ours_n, groups, 0).unwrap_err();
+    assert!(e.contains("MPImage group we do not list"), "{e}");
+    let e = inventory::check_embedded_relation(ours_n, groups, 2).unwrap_err();
+    assert!(
+        e.contains("embedded image we list that ExifTool does not"),
+        "{e}"
+    );
+    // The same, one level up: a record with an MPImage group removed or added
+    // disagrees with our regions (the record is what ExifTool said).
+    let mut lines = shape_lines(name);
+    let at = lines
+        .iter()
+        .position(|l| l.group == "MPImage3")
+        .expect("a third image group");
+    lines.retain(|l| l.group != "MPImage3");
+    assert!(
+        inventory::check_embedded_relation(ours_n, inventory::mpimage_groups(&lines), offset)
+            .is_err()
+    );
+    let extra = Line {
+        group: "MPImage4".to_string(),
+        id: Some(4),
+        name: "MPImageLength".to_string(),
+    };
+    let mut lines = shape_lines(name);
+    lines.insert(at, extra);
+    assert!(
+        inventory::check_embedded_relation(ours_n, inventory::mpimage_groups(&lines), offset)
+            .is_err()
+    );
 }
