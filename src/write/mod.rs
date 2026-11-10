@@ -200,7 +200,10 @@ impl fmt::Display for StripError {
             }
             StripError::NotJpeg => write!(f, "not a JPEG"),
             StripError::Unstrippable { reason, offset } => {
-                write!(f, "the JPEG cannot be cut safely ({reason:?} at offset {offset})")
+                write!(
+                    f,
+                    "the JPEG cannot be cut safely ({reason:?} at offset {offset})"
+                )
             }
             StripError::NeedsEntryEdit { categories } => write!(
                 f,

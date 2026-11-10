@@ -44,9 +44,7 @@ pub(super) struct Planned {
 }
 
 fn exif9() -> StripSpec {
-    EXIF9
-        .iter()
-        .fold(StripSpec::none(), |s, c| s.include(*c))
+    EXIF9.iter().fold(StripSpec::none(), |s, c| s.include(*c))
 }
 
 /// One thing the plan removes.
@@ -68,7 +66,7 @@ pub(super) fn plan(data: &[u8], spec: StripSpec) -> Result<Planned, StripError> 
     targets.sort_by_key(|t| (t.range.start, t.range.end));
 
     let removals_merged = merge_ranges(targets.iter().map(|t| t.range.clone()).collect());
-    mpf_not_indexed(&meta, &targets, &removals_merged)?;
+    mpf_not_indexed(data, &meta, spec, &targets, &removals_merged)?;
     overlap(data, &meta, &targets, &removals_merged)?;
 
     let mut plan = EditPlan::new();
@@ -186,11 +184,7 @@ fn exif_targets(
         audited
             .findings()
             .iter()
-            .find(|f| {
-                block.is_some()
-                    && f.at.origin().block == block
-                    && all9.contains(f.category)
-            })
+            .find(|f| block.is_some() && f.at.origin().block == block && all9.contains(f.category))
             .map_or(Category::Thumbnail, |f| f.category)
     };
 
@@ -254,7 +248,9 @@ fn region_targets(
                     kind: RemovalKind::Trailer,
                 });
             }
-            Region::EmbeddedImage { offset, data, .. } if spec.contains(Category::EmbeddedImage) => {
+            Region::EmbeddedImage { offset, data, .. }
+                if spec.contains(Category::EmbeddedImage) =>
+            {
                 out.push(Target {
                     range: offset..offset.saturating_add(data.len()),
                     category: Category::EmbeddedImage,
@@ -300,11 +296,45 @@ fn unindexed_mpf(meta: &JpegMetadata<'_>) -> Vec<(usize, usize, usize)> {
 /// Extension: when the real index is removed, the first remaining `MPF\0`
 /// segment after it becomes the index the next reader finds, so a kept one
 /// after the removed index is refused too.
+///
+/// Second extension: an index entry the audit could not locate as an image
+/// (not `FF D8`, outside the input) is never patched, so it must keep meaning
+/// what it meant. If it points inside the input and a removal lies between the
+/// index header and the byte it points at (inclusive), the output would read
+/// it as something else (a stale offset can land on another image), and the
+/// index is reported as `MpfNotIndexed` at the index segment.
 fn mpf_not_indexed(
+    data: &[u8],
     meta: &JpegMetadata<'_>,
+    spec: StripSpec,
     targets: &[Target],
     removals: &[Range<usize>],
 ) -> Result<(), StripError> {
+    if let (Some(index), false) = (meta.mpf(), spec.contains(Category::EmbeddedImage)) {
+        for entry in index.entries() {
+            if entry.index() == 0 || entry.region().is_some() {
+                continue;
+            }
+            let Some(pointed) = usize::try_from(entry.offset())
+                .ok()
+                .and_then(|o| index.header_start().checked_add(o))
+            else {
+                continue;
+            };
+            let moved = pointed < data.len()
+                && removals
+                    .iter()
+                    .any(|r| r.start <= pointed && r.end > index.header_start());
+            if moved {
+                let offset = meta
+                    .jpeg()
+                    .segments()
+                    .get(index.segment())
+                    .map_or(0, |s| s.offset());
+                return Err(StripError::MpfNotIndexed { offset });
+            }
+        }
+    }
     let index_removed = meta.mpf().is_some_and(|m| {
         meta.jpeg()
             .segments()

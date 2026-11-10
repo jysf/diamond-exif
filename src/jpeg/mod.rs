@@ -174,7 +174,10 @@ impl<'a> Segment<'a> {
     /// payload.len()`). `None` if that end overflows `usize`. This is the
     /// range a writer removes to delete the segment (DEC-013 part 3).
     pub fn range(&self) -> Option<core::ops::Range<usize>> {
-        let end = self.offset.checked_add(4)?.checked_add(self.payload.len())?;
+        let end = self
+            .offset
+            .checked_add(4)?
+            .checked_add(self.payload.len())?;
         Some(self.offset..end)
     }
 }

@@ -168,3 +168,7 @@ fn mpf_fields(input: &[u8], output: &[u8], spec: StripSpec) -> Result<(), Check>
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "verify_tests.rs"]
+mod tests;

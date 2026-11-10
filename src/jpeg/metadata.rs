@@ -515,12 +515,7 @@ impl Extract {
     /// range is not inside the input, or whose bytes do not start `FF D8`, is
     /// an issue and no image. Entries from [`MAX_MPF_IMAGES`] on are one issue
     /// and are not examined, so the work is bounded by that constant.
-    fn mpf<'a>(
-        &mut self,
-        data: &'a [u8],
-        at: usize,
-        payload: &'a [u8],
-    ) -> Option<MpfRead<'a>> {
+    fn mpf<'a>(&mut self, data: &'a [u8], at: usize, payload: &'a [u8]) -> Option<MpfRead<'a>> {
         let header = payload.get(SIG_MPF.len()..)?;
         // The segment's own marker, code and length (4 bytes), then the signature.
         let base = at.checked_add(4)?.checked_add(SIG_MPF.len())?;

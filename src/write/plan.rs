@@ -68,7 +68,10 @@ impl fmt::Display for PlanError {
                 write!(f, "removal range {start}..{end} ends before it starts")
             }
             PlanError::OutsideInput { start, len } => {
-                write!(f, "edit at offset {start} is not inside the {len}-byte input")
+                write!(
+                    f,
+                    "edit at offset {start} is not inside the {len}-byte input"
+                )
             }
             PlanError::PatchInsideRemoval { offset } => {
                 write!(f, "patch at offset {offset} overlaps a removal")
@@ -399,7 +402,13 @@ mod tests {
     #[test]
     fn patch_inside_a_removal_is_rejected() {
         let before = input();
-        for (rem, at, len) in [(4..10, 4, 1), (4..10, 9, 1), (4..10, 3, 2), (4..10, 9, 3), (4..10, 0, 20)] {
+        for (rem, at, len) in [
+            (4..10, 4, 1),
+            (4..10, 9, 1),
+            (4..10, 3, 2),
+            (4..10, 9, 3),
+            (4..10, 0, 20),
+        ] {
             let mut plan = EditPlan::new();
             plan.remove(rem.clone());
             plan.patch(at, &vec![0u8; len]);
@@ -413,7 +422,10 @@ mod tests {
         let mut plan = EditPlan::new();
         plan.patch(4, &[1, 2, 3]);
         plan.patch(6, &[9, 9]);
-        assert_eq!(plan.validate(32), Err(PlanError::PatchesOverlap { offset: 6 }));
+        assert_eq!(
+            plan.validate(32),
+            Err(PlanError::PatchesOverlap { offset: 6 })
+        );
         assert_eq!(before, input());
     }
 
@@ -421,13 +433,22 @@ mod tests {
     fn range_outside_the_input_is_rejected() {
         let mut plan = EditPlan::new();
         plan.remove(30..33);
-        assert!(matches!(plan.validate(32), Err(PlanError::OutsideInput { .. })));
+        assert!(matches!(
+            plan.validate(32),
+            Err(PlanError::OutsideInput { .. })
+        ));
         let mut plan = EditPlan::new();
         plan.patch(31, &[1, 2]);
-        assert!(matches!(plan.validate(32), Err(PlanError::OutsideInput { .. })));
+        assert!(matches!(
+            plan.validate(32),
+            Err(PlanError::OutsideInput { .. })
+        ));
         let mut plan = EditPlan::new();
-        plan.remove(9..4);
-        assert_eq!(plan.validate(32), Err(PlanError::InvertedRange { start: 9, end: 4 }));
+        plan.remove(Range { start: 9, end: 4 });
+        assert_eq!(
+            plan.validate(32),
+            Err(PlanError::InvertedRange { start: 9, end: 4 })
+        );
         // Exactly the end is inside.
         let mut plan = EditPlan::new();
         plan.remove(30..32);
@@ -545,7 +566,7 @@ mod tests {
             assert!(plan.apply(&data).is_err());
             assert_eq!(plan.output_offset(data.len(), usize::MAX), None);
         }
-        assert_eq!(removed_in(&[0..usize::MAX], 0..usize::MAX), usize::MAX);
+        assert_eq!(removed_in(&[Range { start: 0, end: usize::MAX }], 0..usize::MAX), usize::MAX);
         assert_eq!(
             merge_ranges(vec![usize::MAX - 1..usize::MAX, 0..usize::MAX - 1]),
             vec![0..usize::MAX]
