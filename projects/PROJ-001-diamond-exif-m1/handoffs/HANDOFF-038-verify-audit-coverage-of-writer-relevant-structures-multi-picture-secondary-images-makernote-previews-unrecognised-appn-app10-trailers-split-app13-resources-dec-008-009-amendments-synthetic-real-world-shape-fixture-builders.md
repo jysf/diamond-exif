@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: 95
+  tokens_total: 267284             # orchestrator-recorded: final subagent_tokens
+  estimated_usd: 1.76              # 267,284 tokens x 6.60 USD per Mtok
+  duration_minutes: 41
   branch: worktree-agent-ac9dd68660a4c9cb4
   pr: null
   completed_at: 2026-11-09         # YYYY-MM-DD
-  notes: "verify verdict APPROVED at 86ca32e (code at 75d8fdc); tokens null: the verifier cannot see its meter, the orchestrator transcribes it"
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "verify verdict APPROVED at 86ca32e (code at 75d8fdc), two Low test gaps closed by a builder follow-up (88ab933); metered 267,284 tokens, 100 tool uses, 2,464,082 ms (interim 239,997/241,770/249,206 not used); the verifier's own 95-minute estimate is not used; transcribed by the orchestrator"
+  synced_at: 2026-11-10
 ---
 
 # HANDOFF-038: Verify audit coverage of writer-relevant structures

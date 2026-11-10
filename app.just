@@ -22,6 +22,7 @@ test:
 # Format check + clippy
 lint:
     cargo fmt --all -- --check
+    rustfmt --check --edition 2021 fuzz/shared/*.rs
     cargo clippy --all-targets -- -D warnings
 
 # License policy (permissive-only dependencies)

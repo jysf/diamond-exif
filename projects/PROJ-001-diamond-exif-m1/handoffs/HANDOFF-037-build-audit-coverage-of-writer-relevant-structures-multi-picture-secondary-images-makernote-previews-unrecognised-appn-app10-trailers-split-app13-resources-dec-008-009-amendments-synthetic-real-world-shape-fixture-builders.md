@@ -43,13 +43,13 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: 652194             # orchestrator-recorded from the metered sub-agent result (subagent_tokens)
-  estimated_usd: 4.30              # 652,194 tokens x 6.60 USD per Mtok
-  duration_minutes: 67
+  tokens_total: 666589             # orchestrator-recorded: final cumulative subagent_tokens (build 652,194 then follow-up)
+  estimated_usd: 4.40              # 666,589 tokens x 6.60 USD per Mtok
+  duration_minutes: 129
   branch: worktree-agent-aecfa9c13e2f2cda7
   pr: null
   completed_at: 2026-11-09         # YYYY-MM-DD
-  notes: "subagent_tokens 652,194, 304 tool uses, 4,019,473 ms; transcribed by the orchestrator."
+  notes: "build run 652,194 tokens, 304 tool uses, 4,019,473 ms; resumed once for the verify Low-findings follow-up; final cumulative 666,589 tokens, 324 tool uses, 7,753,770 ms (interim cumulative figures were not used); transcribed by the orchestrator"
   synced_at: 2026-11-09
 ---
 

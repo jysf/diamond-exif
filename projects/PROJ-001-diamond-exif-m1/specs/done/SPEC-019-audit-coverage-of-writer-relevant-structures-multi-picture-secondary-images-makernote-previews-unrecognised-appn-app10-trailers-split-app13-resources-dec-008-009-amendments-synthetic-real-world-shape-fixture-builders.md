@@ -6,14 +6,14 @@
 task:
   id: SPEC-019
   type: story                      # epic | story | task | bug | chore
-  cycle: verify  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
-  complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
+  complexity_actual: L              # what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: approved  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
@@ -67,15 +67,24 @@ cost:
     - cycle: build
       agent: claude-sonnet-5-5
       interface: other
-      tokens_total: 652194
-      estimated_usd: 4.30
-      duration_minutes: 67
+      tokens_total: 666589
+      estimated_usd: 4.40
+      duration_minutes: 129
       recorded_at: 2026-11-09
-      notes: "subagent_tokens 652,194, 304 tool uses, 4,019,473 ms; transcribed by the orchestrator."
+      notes: "build 652,194 tokens + verify-follow-up; final cumulative 666,589 tokens, 324 tool uses, 7,753,770 ms; transcribed by the orchestrator."
+    - cycle: verify
+      agent: claude-opus-5-5
+      interface: other
+      tokens_total: 267284
+      estimated_usd: 1.76
+      duration_minutes: 41
+      recorded_at: 2026-11-10
+      notes: "verify verdict APPROVED at 86ca32e (code at 75d8fdc), two Low test gaps closed by a builder follow-up (88ab933); metered 267,284 tokens, 100 tool uses, 2,464,082 ms (interim 239,997/241,770/249,206 not used); the verifier's own 95-minute estimate is not used; transcribed by the orchestrator"
   totals:
-    tokens_total: 652194
-    estimated_usd: 4.30
-    session_count: 1
+    tokens_total: 933873
+    estimated_usd: 6.16
+    session_count: 2
+shipped_at: 2026-11-10
 ---
 
 # SPEC-019: Audit coverage of writer-relevant structures: Multi-Picture secondary images, MakerNote previews, unrecognised APPn, trailers, split APP13; DEC-008/009 amendments; synthetic real-world-shape fixtures
@@ -199,22 +208,19 @@ Named tests (a rename, fold or missing test is a deviation to report):
 *Appended during **ship**. Three questions, short answers.*
 
 1. **What would I do differently next time?**
-   — <answer>
+   — Nothing structural. The fixture-first order (builders and the ExifTool MPF-primary measurement before any rule) worked; the designed claim "the 178 existing results are unchanged" was wrong by two inputs because DEC-012's Photoshop rule is not class S. Next time check each "unchanged" claim against the rule that could move it before writing it into the spec.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — DEC-012 amended with rulings on the four build doubts (image bound counts the primary, no trailer cap, Photoshop rule moves two inputs, MPF parse edges). `just lint` now also checks `fuzz/shared/*.rs` with rustfmt (signal `fuzz-shared-files-outside-the-fmt-gate`). No constraint change.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — No new spec. SPEC-020 to SPEC-022 (writer) must expect two allowed outcomes the verifier noted: `holds` is `[]` both for an inner image with no metadata and one that does not parse, and an embedded range can overlap other regions of the primary (an FFD8 inside a COM payload). Put both in the SPEC-020 design.
 
 4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
    the defect-escape distribution is greppable across specs:
    `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
    `none` (clean first try).
-   — <one word>
+   — verify
    *(Runtime/operational defects — the escape-prone class — only exist once the
    artifact meets its real host. `escaped` here is a signal to strengthen the
    §12 behavioral pre-flight for that surface.)*
@@ -226,4 +232,4 @@ Named tests (a rename, fold or missing test is a deviation to report):
    `impact` field is transcribed from, and both halves are already written above
    (## Context is the before, ## Goal is the after): confirm the prediction,
    don't reconstruct it from memory.
-   — <answer | none>
+   — A user can now see, in `exif-audit` and the library audit, every Multi-Picture secondary image, comment, unrecognised APPn segment, trailer and split Photoshop block of a JPEG, each with a policy disposition (kept_unread under every preset but Everything): on the user's own files, 4 MPF JPEGs now report 8 embedded images, 2 AROT files and 1 trailer that the audit previously did not name, with offsets equal to ExifTool's.

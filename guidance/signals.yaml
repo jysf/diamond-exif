@@ -218,3 +218,15 @@ signals:
     last_touched: 2026-11-06
     raised_by: claude
     notes: "At N=1. Walk at STAGE-003 close."
+
+  - id: fuzz-shared-files-outside-the-fmt-gate
+    type: process-debt
+    summary: "fuzz/shared/*.rs are included by path into the fuzz crate, so `cargo fmt --all` never checks them; an unformatted harness file shipped from a build and was caught only by an ad-hoc rustfmt line in the orchestrator's gate script."
+    evidence: "SPEC-019 ship gates: rustfmt --check failed on fuzz/shared/jpeg_metadata_invariants.rs and render_invariants.rs after a green build handback. Fixed in the same ship by adding `rustfmt --check --edition 2021 fuzz/shared/*.rs` to `just lint` (app.just). N=1."
+    bar: "N=1 fixed"
+    status: watch
+    disposition_at: project-close
+    first_flagged: 2026-11-10
+    last_touched: 2026-11-10
+    raised_by: claude
+    notes: "Closed in practice by the app.just change; walk at STAGE-004 close and drop if no recurrence."
