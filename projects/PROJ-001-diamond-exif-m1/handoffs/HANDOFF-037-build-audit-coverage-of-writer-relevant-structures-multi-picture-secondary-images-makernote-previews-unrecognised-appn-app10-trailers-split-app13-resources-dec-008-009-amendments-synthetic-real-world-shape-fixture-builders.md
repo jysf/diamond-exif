@@ -157,3 +157,9 @@ Control green first. Caught by: 1 `mpf_index_yields_one_embedded_image_per_secon
 1. **What was unclear in the spec or handoff that slowed you down?** — The 16 versus 15 image limit, and "existing 178 results unchanged" against the Photoshop rule that necessarily moves two.
 2. **Was there a constraint or decision that should have been listed but wasn't?** — The record directory and seed-count pins in older tests (`budget_oracle`, `fuzz_layout`, `audit_model`, `policy_preview`) that any new seed touches.
 3. **If you did this task again, what would you do differently?** — Decide the new-seed naming (`shape-` prefix, skipped by old corpora) first, and write the mutants as compiling edits from the start.
+
+### Follow-up after verify (two Low findings, test-only)
+
+- Added fixtures `mpo-nested-ranges` (entry 1 spans A+B+C, entry 2 is B alone) and `app3-mpf-signature` (well-formed MPF payload under APP3) as builders, `shape-*` seeds in `jpeg_segments` and `audit` (17 shape seeds each now; accounting updated in `fuzz_layout`, `budget_oracle`, `audit_model`, `policy_preview`), and new sections in the `real-shapes` record only. Unit tests `nested_embedded_ranges_leave_no_phantom_trailer` and `mpf_is_read_only_from_app2`.
+- Mutant 29 (`cursor = b` in `uncovered()`) red: that unit test, `new_seeds_are_committed_and_have_the_shapes_they_claim`, the jpeg harness (regions). Mutant 30 (no `n == 2` on the MPF branch) red: `mpf_is_read_only_from_app2`, the seed-shape test, the jpeg harness (extraction issues). Both reverted, diff empty.
+- Gates re-run green: rustfmt of `fuzz/shared/*.rs`, `cargo fmt`, lint, lint-fuzz, cargo test with the REQUIRE env vars, oracle-record clean; fuzz-smoke jpeg_segments 102,548 runs (cov 1849), audit 45,478 runs (cov 2307).
