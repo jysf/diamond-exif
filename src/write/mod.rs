@@ -244,6 +244,13 @@ pub fn strip(data: &[u8], policy: StripPolicy) -> Result<Stripped, StripError> {
     }
     let spec = policy.spec();
     let planned = jpeg::plan(data, spec)?;
+    finish(data, spec, planned)
+}
+
+/// Apply a plan, run the self-check (always, an empty plan included: the
+/// output is then the input, and it must still satisfy the policy) and build
+/// the result.
+fn finish(data: &[u8], spec: StripSpec, planned: jpeg::Planned) -> Result<Stripped, StripError> {
     let bytes = planned
         .plan
         .apply(data)
@@ -269,4 +276,48 @@ pub fn strip(data: &[u8], policy: StripPolicy) -> Result<Stripped, StripError> {
 /// [`strip`], returning only the new bytes.
 pub fn sanitize(data: &[u8], policy: StripPolicy) -> Result<Vec<u8>, StripError> {
     strip(data, policy).map(Stripped::into_bytes)
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic,
+    clippy::arithmetic_side_effects
+)]
+mod tests {
+    use super::*;
+
+    fn seg(marker: u8, payload: &[u8]) -> Vec<u8> {
+        let mut v = vec![0xFF, marker];
+        v.extend_from_slice(&u16::try_from(payload.len() + 2).unwrap().to_be_bytes());
+        v.extend_from_slice(payload);
+        v
+    }
+
+    /// v06: the self-check is not skipped for an empty plan. DEC-013 part 7 and
+    /// rule 9 say it runs before any byte is returned, and rule 8 only says the
+    /// empty plan returns the input; so an empty plan for an input that still
+    /// holds a finding of a removed category is `VerifyFailed {Preview}`, and
+    /// no bytes.
+    #[test]
+    fn v06_an_empty_plan_is_still_checked() {
+        let mut d = vec![0xFF, 0xD8];
+        d.extend_from_slice(&seg(0xE1, b"http://ns.adobe.com/xap/1.0/\0<x/>"));
+        d.extend_from_slice(&seg(0xDA, &[1, 1, 0, 0, 0x3F, 0]));
+        d.extend_from_slice(&[1, 2, 0xFF, 0xD9]);
+        let spec =
+            StripPolicy::Custom(StripSpec::none().include(crate::audit::Category::Xmp)).spec();
+        // A planner that missed the XMP segment: an empty plan.
+        let planned = jpeg::Planned::empty();
+        assert_eq!(
+            finish(&d, spec, planned).unwrap_err(),
+            StripError::VerifyFailed {
+                check: Check::Preview
+            }
+        );
+        // The real planner removes it.
+        assert!(strip(&d, StripPolicy::Custom(spec)).is_ok());
+    }
 }

@@ -43,6 +43,18 @@ pub(super) struct Planned {
     pub patches: Vec<(usize, usize)>,
 }
 
+impl Planned {
+    /// A plan with no edit and no record.
+    #[cfg(test)]
+    pub(super) fn empty() -> Planned {
+        Planned {
+            plan: EditPlan::new(),
+            removals: Vec::new(),
+            patches: Vec::new(),
+        }
+    }
+}
+
 fn exif9() -> StripSpec {
     EXIF9.iter().fold(StripSpec::none(), |s, c| s.include(*c))
 }

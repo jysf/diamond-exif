@@ -698,6 +698,28 @@ fn removal_after_the_index_patches_secondary_offsets_and_primary_size() {
 }
 
 #[test]
+fn v03b_the_primary_size_is_patched_even_when_it_was_already_wrong() {
+    // The index says the primary is 7 bytes longer than it is. The field is
+    // still patchable (7 + the file's length is above the removed bytes), and
+    // DEC-013 part 5 says it becomes `size - removed(0, primary_end)`, right or
+    // wrong; a writer that patches it only when it was right would leave the
+    // stale value.
+    let s = strip_shapes::mpo_late_xmp(false);
+    let m = s.mpf.as_ref().unwrap();
+    let mut bytes = s.bytes.clone();
+    let wrong = m.entries[0].0 + 7;
+    bytes[m.fields[0].0..m.fields[0].0 + 4].copy_from_slice(&wrong.to_le_bytes());
+    let out = strip(&bytes, StripPolicy::All).unwrap();
+    let exif_len = s.parts_of(K::Exif)[0].len();
+    let late = s.parts_of(K::Xmp)[0].len() + s.parts_of(K::Com)[0].len();
+    let at = m.fields[0].0 - exif_len;
+    let got = u32::from_le_bytes(out.bytes()[at..at + 4].try_into().unwrap());
+    assert_eq!(got, wrong - (exif_len + late) as u32);
+    // The secondaries are patched as before (3 patches in all).
+    assert_eq!(out.patches().len(), 3);
+}
+
+#[test]
 fn removing_trailer_gaps_patches_later_image_offsets() {
     let s = shape("mpo-trailer-gaps");
     let out = check_ok(&s, "other");
