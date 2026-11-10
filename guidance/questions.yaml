@@ -901,3 +901,53 @@ questions:
       StrayBytes issues and no IPTC region, while ExifTool lists 2 IPTC datasets. The audit reports
       `issues` (not clean), so it is flagged, but the IPTC finding is missing. A segment-level
       writer must remove every APP13 segment regardless.
+
+  - id: dec-012-mpf-image-limit-reading
+    question: "DEC-012 says 'at most 16 EmbeddedImage regions' and 'the 17th and later entries are an issue'; does the 16 count the primary (so at most 15 regions) or the secondaries (16 regions)?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-09
+    assigned_to: null
+    notes: |
+      SPEC-019 build. The two sentences cannot both hold with 16 secondaries. Implemented: the limit is
+      16 images in the MP index, the primary included (MAX_MPF_IMAGES = 16): entries 1..=15 are regions,
+      the 17th entry (index 16) and later cost one TooManyMpfImages issue and are not examined. So a
+      file holds at most 15 EmbeddedImage regions and the 16th secondary stays in the trailer.
+      Alternative reading: 16 secondaries (17 entries). One constant and three tests change.
+
+  - id: dec-012-trailer-piece-bound
+    question: "DEC-012 rule 2 says a partly covered trailer gives at most 16 pieces; 15 located images can leave 16 pieces and 16 images 17, so is the bound 16 or a natural one?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-09
+    assigned_to: null
+    notes: |
+      Implemented: no cap beyond the natural one (at most embedded images + 1 pieces, so at most 16
+      with the 15-region limit). Capping would drop uncovered bytes silently, which a strip must not.
+
+  - id: dec-012-photoshop-rule-moves-two-existing-inventory-results
+    question: "DEC-012 section 1 makes every Photoshop 3.0 APP13 segment an Iptc region; two existing inventory inputs (fixtures/jpeg-iptc-without-0404 and seed icc-iptc-jumbf) now list an Iptc region ExifTool does not. Accept the new pins?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-09
+    assigned_to: null
+    notes: |
+      The spec said the existing 178 results are unchanged; class S exclusion is exact, but the Photoshop
+      rule is not class S (ExifTool lists IPTC). Pinned as Class R rows (34 rows now, was 33, plus one
+      row that gained Iptc), and one jpeg_oracle divergence (jpeg-iptc-without-0404, IPTC:ObjectName
+      presence). Mutation test m7 was reworked because the 0x0404 compare no longer exists.
+
+  - id: dec-012-mpf-parse-edges
+    question: "Which MPF index shapes are 'does not parse' (OtherApp plus MpfMalformed)? NumberOfImages (0xB001) is ignored and a trailing partial entry is ignored."
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-09
+    assigned_to: null
+    notes: |
+      Implemented as malformed: bad TIFF header or version, IFD0 absent or unreadable, no 0xB002, an
+      unreadable payload (a truncated index), fewer than 16 bytes, and any second MPF segment (only
+      the first is read). The count is the whole 16-byte entries of the 0xB002 payload.

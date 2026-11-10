@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-09
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-019
@@ -42,14 +42,14 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
+  status: completed                # completed | blocked | rejected
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # tokens_total × your rate, or your harness's number
   duration_minutes: null
-  branch: null
+  branch: worktree-agent-aecfa9c13e2f2cda7
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # one line if unusual (rework, no meter, etc.)
+  completed_at: 2026-11-09         # YYYY-MM-DD
+  notes: "tokens_total null: the implementer cannot see its own meter; the orchestrator transcribes the metered figure."
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -91,63 +91,69 @@ Constraints: `panic-free-library` (five-lint deny set: no unchecked `+`, `*`, `<
 ## Return Criteria — how to hand back
 
 **Completing this handoff means filling in the `handback:` front-matter block
-above AND the `## Handback` section below.** An unfilled handback is an
-incomplete cycle, and `just handback-sync` will tell the orchestrator so.
-
-On success:
-1. Fill the `handback:` front-matter — **including a real `tokens_total`**.
-2. Fill the `## Handback` section (the reflection is part of it, not optional).
-3. Set `handoff.status` → `completed` and `handback.status` → `completed`.
-4. Open a PR (build) or return your verdict (verify).
-
-If you cannot complete the task:
-1. Fill the `## Handback` section with what was done and what blocked you.
-2. Set `handoff.status` → `rejected`, `handback.status` → `blocked`.
-3. **Still report your token usage** — blocked work costs money too.
-4. Set the spec's `task.blocked: true` and add a question to
-   `/guidance/questions.yaml`.
-
----
-
-## Handback
-
-*Filled in by the receiving agent. The orchestrator does not reconstruct any of
-this — it transcribes it. The reflection questions are part of completion.*
+above AND the `## Handback
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `worktree-agent-aecfa9c13e2f2cda7`, no PR (not pushed, per the brief). The brief commit was not a fast-forward of this worktree's branch, so I used `git merge claude/rust-exif-metadata-6351d5` (a merge commit).
+- **Completed at:** 2026-11-09
+- **All acceptance criteria met?** Yes, with the deviations below. Every named test exists under its name except where listed.
 
-### Cost self-report
+### What was built
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
+- JPEG layer: `Region` gains `EmbeddedImage`, `Comment`, `OtherApp`, `Trailer`; every Photoshop APP13 segment is an `Iptc` region; four typed MPF issues (`MpfMalformed`, `MpfImageOutsideInput`, `MpfImageNotJpeg`, `TooManyMpfImages`); `read_with(data, embedded)` is crate-private (location off for the inner audit).
+- Audit: two categories, four region kinds, `Finding.embedded` (`EmbeddedSummary` with `holds: StripSpec`), policy rows and may-hold rows, `schema_version` 2, text prints `holds`.
+- Fixtures `tests/support/real_shapes.rs` (15 builders), `tests/real_shapes.rs`, 30 `shape-*` seeds (15 in `jpeg_segments`, 15 in `audit`) plus 7 `audit_render` seeds, new records `real-shapes.txt` and two Canon value records, harness extensions (independent second MPF parser, benign list, Photoshop rule, `holds`, byte-by-byte trailer), 21 new-region plants.
 
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+### How ExifTool counts the MPF primary
+
+It counts it: one `MPImage<n>` group per index entry, `MPImage1` being the primary. So `groups == our EmbeddedImage regions + 1` (constant `MPIMAGE_PRIMARY_OFFSET = 1` in the comparator). For damaged files ExifTool still names every entry (offset-out-of-range and not-JPEG: 3 groups, we list 1; 17-entry file: 17 groups, we list 15; truncated index: 0 groups, 0 regions); those pairs are pinned.
+
+### Golden diff summary (regenerated once, every line reviewed)
+
+JSON: `schema_version` 1 to 2; `by_category` gains `embedded_image:0`, `other_segment:0`; every finding gains `"embedded":null` after `thumbnail`; the iptc region `len` 6 to 18. Text and CSV: only the iptc region `len` 6 to 18 (DEC-012: the region is the segment payload after the header, 12 bytes of 8BIM header plus 6 data). The full-house inputs are seeds and did not change.
+
+### Mutants (28, each applied by hand through a script, reverted, `git diff` empty after each)
+
+Control green first. Caught by: 1 `mpf_index_yields_one_embedded_image_per_secondary_entry_in_order`, `mpf_entry_outside_the_input_is_an_issue_and_no_region`, `hostile_mpf_is_bounded_and_total`; 2 `mpf_index_yields_one_embedded_image_per_secondary_entry_in_order` (entry 0 gives `MpfImageNotJpeg`/extra region), `mpf_seventeenth_image_is_an_issue`; 3 `mpf_index_yields_...`, `trailer_minus_embedded_images_is_the_remainder`; 4 `mpf_big_and_little_endian_headers`, harness extraction-issue iff; 5 `mpf_entry_not_starting_ffd8_is_an_issue_and_no_region`, harness; 6 `mpf_entry_outside_the_input_is_an_issue_and_no_region`, jpeg harness; 7 `mpf_seventeenth_image_is_an_issue`; 8 `a_trailer_that_is_exactly_the_mpf_images_gives_no_trailer_region`, `trailer_minus_...`; 9 `new_region_kinds_map_to_the_dec_012_categories`, `a_comment_is_a_free_text_finding`, `comment_findings_follow_free_text`; 10 `jfif_and_adobe_app14_are_benign`; 11 `jfif_and_adobe_app14_are_benign`, `the_arot_fpxr_com_and_trailer_...`; 12 `jfxx_fpxr_and_arot_are_other_app`; 13 `app13_without_the_photoshop_header_is_other_app`; 14 `every_photoshop_app13_is_an_iptc_region`, `split_app13_gives_two_iptc_regions_and_keeps_its_issues`; 15 `an_inner_mpf_does_not_recurse`, guard `findings` (real-shapes plants); 16 `holds_is_the_inner_audit_with_embedded_location_off`, `embedded_image_finding_carries_range_ffd8_flag_and_holds`; 17 and 18 `embedded_image_and_other_segment_are_removed_only_by_everything` / `..._kept_unread_under_the_other_four`, `each_preset_spec_equals_its_dec_009_column_as_amended`; 19 `makernote_may_hold_embedded_image`, `may_hold_equals_the_dec_012_table`; 20 `may_hold_equals_the_dec_012_table`; 21 `new_categories_are_medium_and_blocks`; 22 `category_all_has_fifteen_entries_and_the_two_new_names_are_pinned`, `by_category_has_fifteen_keys_in_order`; 23 `schema_version_is_two_and_the_embedded_key_is_pinned`, `json_has_the_pinned_key_order_at_every_level`; 24 same two; 25 `by_category_has_fifteen_keys_in_order`; 26 `each_new_region_guard_goes_red_alone_when_planted` (plants whose counts stay equal); 27 `class_s_region_kinds_are_excluded_exactly_and_the_existing_pins_are_unchanged`, `replay_every_corpus_is_clean_except_pinned_divergences`; 28 `an_inner_mpf_does_not_recurse`. Mutants 22 and 27 were first written so that they did not compile; they were rewritten to compile and then caught.
+
+### Local corpus (read in place, nothing copied, counts and category names only)
+
+`_incoming0`: 21 entries (13 JPEG, 5 TIFF-family incl. DNG read as TIFF, 3 unsupported). 4 JPEGs have an MPF index with 2 embedded images each (8 `embedded_image` findings); ExifTool shows 3 `MPImage` groups on each (regions + 1). `holds`: three Nikon-style files, both extras `[]` (their inner Exif holds only ExifImageWidth/Height, which ExifTool also shows: no DEC-008 category); one iPhone-style file, `[xmp]` and `[xmp, icc]` (matches ExifTool's groups on the extracted images). 2 files carry APP10 `AROT` and report `other_segment` (ExifTool shows the AROT group on both). The Leica file with the trailer reports 1 `trailer` region (`other_segment`). The two Nikon MPOs also report 2 trailer pieces each. Overall `other_segment` findings: 10 across 6 files. Public sets (scratchpad `public/A,B,C`, still present): the Exiv2 split-APP13 sample gives 2 `iptc` regions, status `issues` (ExifTool lists 2 IPTC datasets); no MPF or AROT there.
+
+### Gates run
+
+`cargo test --no-fail-fast` with `DIAMOND_EXIF_REQUIRE_ORACLE=1 DIAMOND_EXIF_REQUIRE_CLI_FS=1` on stable (1.99) and on `+1.90.0`: green. `just lint`, `lint-fuzz`, `lint-no-allow`, `lint-red-proof`, `lint-fuzz-red-proof`, `deny`, `deny-fuzz`, `validate`, `decisions-audit` (0 errors), `cost-audit`, `cargo rustc -F unsafe_code` on lib and bin: green. `just oracle-record`: empty `git status --porcelain` afterwards.
+
+### Fuzz
+
+`just fuzz-smoke` 60 s each, all exit 0: `jpeg_segments` 166,704 runs, cov 1826, ft 8010, corpus 669; `audit` 54,242 runs, cov 2290, ft 8987, corpus 705; `audit_render` 34,726 runs, cov 5142, ft 16002, corpus 1018. Plant found by the real libFuzzer `audit` target: mutant 16 (holds always empty) in the library made it crash within 30 s from the committed seeds, guard `findings` ("audit invariants violated ... EmbeddedImage ... embedded"); reverted.
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
+- **New decisions emitted:** none.
 - **Deviations from spec:**
-  - [list]
-- **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - Existing results moved: DEC-012's Photoshop rule changes two existing inventory inputs (`fixtures/jpeg-iptc-without-0404`, seed `icc-iptc-jumbf`) and one jpeg_oracle comparison; pinned as new Class R rows (34 rows, was 33) and one `oracle::KNOWN_DIVERGENCES` entry. Test pins changed: row count 33 to 34, class R 14 to 15, `regions_agree_...` case moved, `jpeg_oracle` `iptc_without_0404_...` and `signatures_under_the_wrong_marker...`; mutation test m7 reworked (its needle no longer exists). The 5 old corpora keep 249 inputs / 180 distinct; the new fixtures are a separate corpus `real-shapes` (not in `CORPORA`), and the `shape-*` seeds are skipped by the three seed corpora and by the JPEG recorder/replay so no old record changed bytes.
+  - Image limit: implemented as 16 images including the primary (15 regions) because the spec text cannot hold both "16 regions" and "17th entry is an issue" (question `dec-012-mpf-image-limit-reading`). `MAX_JPEG_METADATA_ISSUES` gains `+ MAX_MPF_IMAGES`.
+  - Trailer pieces: no cap of 16 (a cap would drop bytes); the natural bound is regions + 1.
+  - Only the first MPF segment is read as an index; a second one is `OtherApp` plus `MpfMalformed`.
+  - `NumberOfImages` (0xB001) is ignored; the count is the whole 16-byte entries of 0xB002.
+  - `embedded` is `Option<EmbeddedSummary>` on `Finding` (public field added); `holds` is a `StripSpec`.
+  - The full-house seed inputs are unchanged (they are existing seeds), so they carry the 13 DEC-008 categories only; the two new categories are covered by the shape seeds and `real_shape_fixtures_match_dec_009_as_amended_for_every_preset`. Tests that required "every category" in the full house were narrowed accordingly.
+  - Spec test names `container_independence_still_holds_for_every_oracle_fixture` and `audit_is_total_on_every_new_shape`: not added under those names. Container independence is the existing `container_independence_audit_of_every_oracle_fixture_bare_and_in_jpeg` (still green); totality is covered by `every_builder_is_deterministic_and_parses`, the harness runs on every shape seed and all prefixes of four shapes. `audit_harness_holds_...` kept its existing name (extended).
+  - `existing_seeds_and_records_are_byte_identical` covers seeds (63 + 66 hash lists); the records are covered by the existing `existing_oracle_records_are_byte_identical_to_the_committed_set`.
+  - The ExifTool Canon values test uses two `-T -n -s3` records written next to the inventory records (`real-shapes-<name>-values.txt`).
+- **Follow-up work identified:** none beyond the four questions added to `guidance/questions.yaml` (`dec-012-mpf-image-limit-reading`, `dec-012-trailer-piece-bound`, `dec-012-photoshop-rule-moves-two-existing-inventory-results`, `dec-012-mpf-parse-edges`). Observation for the architect: both Nikon MPOs in the local corpus leave 2 trailer pieces after the located images (the index does not tile the file); worth a look when the writer decides what to do with trailers.
 
-### Reflection (3 questions, short answers)
+### Cost self-report
 
-1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+- **Tokens (total):** null (the implementer cannot see its meter)
+- **Estimated USD:** null
+- **Duration (minutes):** not measured
+- **Source of the number:** none available; the orchestrator transcribes the metered figure.
 
-2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+### Reflection
 
-3. **If you did this task again, what would you do differently?**
-   — <answer>
+1. **What was unclear in the spec or handoff that slowed you down?** — The 16 versus 15 image limit, and "existing 178 results unchanged" against the Photoshop rule that necessarily moves two.
+2. **Was there a constraint or decision that should have been listed but wasn't?** — The record directory and seed-count pins in older tests (`budget_oracle`, `fuzz_layout`, `audit_model`, `policy_preview`) that any new seed touches.
+3. **If you did this task again, what would you do differently?** — Decide the new-seed naming (`shape-` prefix, skipped by old corpora) first, and write the mutants as compiling edits from the start.
