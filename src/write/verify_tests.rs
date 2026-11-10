@@ -141,6 +141,64 @@ fn a_non_idempotent_result_fails_check_idempotent() {
     );
 }
 
+/// An extended-XMP segment with a well-formed header (32-byte GUID, full length,
+/// offset) and `data`.
+fn ext_xmp(data: &[u8]) -> Vec<u8> {
+    let mut p = b"http://ns.adobe.com/xmp/extension/\0".to_vec();
+    p.extend_from_slice(&[b'a'; 32]);
+    p.extend_from_slice(&u32::try_from(data.len()).unwrap().to_be_bytes());
+    p.extend_from_slice(&0u32.to_be_bytes());
+    p.extend_from_slice(data);
+    seg(0xE1, &p)
+}
+
+#[test]
+fn v05_self_check_b_compares_the_region_kind() {
+    // An XMP and an extended-XMP segment are both category Xmp. The plan turns
+    // the extended one into a plain XMP segment (patch the length word and the
+    // signature, remove the six bytes by which the signatures differ): the
+    // categories and their counts are the same, only the region kinds differ.
+    let input = jpeg(&[jfif(), xmp(), ext_xmp(b"<x/>")]);
+    let e = at(&input, &ext_xmp(b"<x/>"));
+    let old_len = u16::from_be_bytes([input[e + 2], input[e + 3]]);
+    let sig = b"http://ns.adobe.com/xap/1.0/\0";
+    let out = apply(&input, |p| {
+        p.patch(e + 2, &(old_len - 6).to_be_bytes());
+        p.patch(e + 4, sig);
+        p.remove(e + 4 + sig.len()..e + 4 + 35);
+    });
+    // Control: the output reads as two Xmp regions and nothing is wrong with it.
+    let m = crate::jpeg::read(&out).unwrap();
+    assert!(m
+        .regions()
+        .iter()
+        .all(|r| matches!(r, crate::jpeg::Region::Xmp { .. })));
+    assert_eq!(
+        verify(&input, &out, spec(&[Category::FreeText])),
+        Err(Check::Kept)
+    );
+}
+
+#[test]
+fn v10_mpf_fields_compares_the_output_images_with_the_input_images() {
+    // Remove the COM after the index and patch ONLY the primary's size: the
+    // primary is right, the entry count is the same, but the secondary offset
+    // is stale, so the image the index finds is not the input's image.
+    let input = mpo();
+    let c = at(&input, &com());
+    let size_at = 10 + (8 + 2 + 24 + 4) + 4;
+    let word = u32::from_le_bytes(input[size_at..size_at + 4].try_into().unwrap());
+    let gone = u32::try_from(com().len()).unwrap();
+    let out = apply(&input, |p| {
+        p.remove(c..c + com().len());
+        p.patch(size_at, &(word - gone).to_le_bytes());
+    });
+    assert_eq!(
+        verify(&input, &out, spec(&[Category::FreeText])),
+        Err(Check::MpfFields)
+    );
+}
+
 /// A little-endian MPF segment with `entries` as `(size, offset)`, entry 0
 /// first.
 fn mpf(entries: &[(u32, u32)]) -> Vec<u8> {

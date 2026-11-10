@@ -543,6 +543,30 @@ fn an_unreadable_exif_block_needs_entry_edit_for_partial_policies() {
 }
 
 #[test]
+fn a_block_with_a_walk_issue_needs_entry_edit_for_partial_policies() {
+    // Found by the verifier: a GPS IFD declaring 0xFFFF entries gives no GPS
+    // finding and no failed block, only a TIFF-layer issue, yet the latitude
+    // and longitude bytes are in the file.
+    let s = shape("gps-count-overflow");
+    assert!(contains(&s.bytes, strip_shapes::C_GPSNUM));
+    assert_eq!(audit(&s.bytes).findings_in(Category::Gps).count(), 0);
+    for p in [
+        StripPolicy::Gps,
+        StripPolicy::GpsAndDevice,
+        StripPolicy::AllPii,
+    ] {
+        assert!(
+            matches!(strip(&s.bytes, p), Err(StripError::NeedsEntryEdit { .. })),
+            "{p:?}"
+        );
+    }
+    // A policy with no Exif category does not care; All removes the block whole.
+    assert!(strip(&s.bytes, policy("xmp")).is_ok());
+    let out = strip(&s.bytes, StripPolicy::All).unwrap();
+    assert!(!contains(out.bytes(), strip_shapes::C_GPSNUM));
+}
+
+#[test]
 fn all_removes_every_exif_block_including_the_extra_ones() {
     let s = shape("two-exif-blocks");
     let out = check_ok(&s, "all");
@@ -671,6 +695,28 @@ fn removal_after_the_index_patches_secondary_offsets_and_primary_size() {
             "be={be}"
         );
     }
+}
+
+#[test]
+fn v03b_the_primary_size_is_patched_even_when_it_was_already_wrong() {
+    // The index says the primary is 7 bytes longer than it is. The field is
+    // still patchable (7 + the file's length is above the removed bytes), and
+    // DEC-013 part 5 says it becomes `size - removed(0, primary_end)`, right or
+    // wrong; a writer that patches it only when it was right would leave the
+    // stale value.
+    let s = strip_shapes::mpo_late_xmp(false);
+    let m = s.mpf.as_ref().unwrap();
+    let mut bytes = s.bytes.clone();
+    let wrong = m.entries[0].0 + 7;
+    bytes[m.fields[0].0..m.fields[0].0 + 4].copy_from_slice(&wrong.to_le_bytes());
+    let out = strip(&bytes, StripPolicy::All).unwrap();
+    let exif_len = s.parts_of(K::Exif)[0].len();
+    let late = s.parts_of(K::Xmp)[0].len() + s.parts_of(K::Com)[0].len();
+    let at = m.fields[0].0 - exif_len;
+    let got = u32::from_le_bytes(out.bytes()[at..at + 4].try_into().unwrap());
+    assert_eq!(got, wrong - (exif_len + late) as u32);
+    // The secondaries are patched as before (3 patches in all).
+    assert_eq!(out.patches().len(), 3);
 }
 
 #[test]

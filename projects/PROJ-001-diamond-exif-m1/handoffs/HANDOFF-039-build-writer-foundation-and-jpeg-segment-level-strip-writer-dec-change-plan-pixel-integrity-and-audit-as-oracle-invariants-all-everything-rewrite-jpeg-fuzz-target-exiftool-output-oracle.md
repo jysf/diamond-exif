@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: 564890             # final subagent_tokens from the harness, transcribed by the orchestrator
-  estimated_usd: 3.73              # 564890 x 6.60 USD per Mtok = 3.728
-  duration_minutes: 62             # 3736155 ms = 62.3 min
+  tokens_total: 604953             # final cumulative subagent_tokens (build 564890 + verify follow-up 40063), transcribed by the orchestrator
+  estimated_usd: 3.99              # 604953 x 6.60 USD per Mtok = 3.993
+  duration_minutes: 77             # 3736155 + 877668 ms = 76.9 min
   branch: worktree-agent-ab1583ad50d48c7a4
   pr: null
   completed_at: 2026-11-10         # YYYY-MM-DD
-  notes: "The sub-agent could not see its own token count; the orchestrator transcribed the final metered figure. Nothing pushed, no PR (as instructed)."
-  synced_at: 2026-11-10
+  notes: "Cumulative figure for the build and its verify follow-up, transcribed by the orchestrator from the harness (the sub-agent could not see its own count). Build alone was 564890 tokens, 62 min. Nothing pushed, no PR."
+  synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
 # HANDOFF-039: Writer foundation and JPEG segment-level strip (SPEC-020)
@@ -105,7 +105,7 @@ above AND the `## Handback
 
 ### Cost self-report
 
-- **Tokens (total):** null. The harness does not show a token count to a sub-agent; the orchestrator transcribes the metered figure.
+- **Tokens (total):** 564890 (corrected: the build agent reported null because it cannot see its own count; this is the metered figure).
 - **Estimated USD:** null
 - **Duration (minutes):** not measured (several hours of wall clock, of which about 25 minutes were the 30-mutant runs and about 6 minutes the five fuzz smokes)
 - **Source of the number:** none available
@@ -123,7 +123,7 @@ above AND the `## Handback
   6. Self-check order is Preview, MpfFields, Kept, Scan, Walk, Idempotent (MpfFields second, so a stale field is reported as stale and not as a lost image). `MpfFields` compares the located embedded images' bytes in order, the entry count, and that the primary's size field still equals the primary's length when it did in the input. (d) compares walker AND extraction issue kinds. (e) re-runs the planner on the output.
   7. `Overlap {offset}` is the first byte that is both removed and kept (for a COM over a kept image: the image's first byte). The primary's end for entry 0 is EOI + 2, or the input length when there is no EOI. More than 16 Exif segments (the audit parses 16) count as unreadable for partial policies.
   8. The oracle command is `exiftool -a -u -G1 -s -t -n` (tab-separated, raw numbers so `MPImageStart` is an integer) rather than the plain `-s` listing; records have an `## input` section and one section per recorded policy that strips, `# stderr:` lines per section. Warning comparison normalises digit runs (removing a segment can merge two runs of skipped bytes: "Skipped unknown 3 bytes" becomes "... 6 ...", measured on the fill-bytes fixture). The live strip oracle runs one thread per fixture (about 1 s for 22 fixtures and 7 policies).
-  9. The fuzz harness takes the Exif blocks' findings and the failed-block count from `audit(input)` (everything else, including segments, regions, MPF, overlap and arithmetic, is the independent naive code); the audit target already fuzzes that part. `VerifyFailed` is a harness failure except when the naive arithmetic underflows an MPF field (`MpfFields`) or the harness's own checks find the naive prediction breaking an invariant (question `dec-013-mpf-primary-size-underflow`).
+  9. The fuzz harness calls these library functions and no others besides `strip` and the public result and error types: `audit(input)` inside `predict` for the Exif blocks only (their findings, `failed_blocks`, and since the follow-up `exif_issues`); `audit(input)` and `audit(output)` in `facts` and in `predicted_output_breaks`; `Jpeg::parse` for the scan regions; `jpeg::read(..).jpeg_issues()` inside `predicted_output_breaks`; the caps `MAX_JPEG_ISSUES`, `MAX_JPEG_SEGMENTS`, `MAX_MPF_IMAGES`; `Category::ALL`, `StripPolicy`, `StripSpec`. The walk, the MPF read, segment typing, targets, overlap, MpfNotIndexed and the field arithmetic are the harness's own. `VerifyFailed` is excused in two cases: the naive arithmetic underflows an MPF field (`MpfFields` expected), or the independent prediction itself breaks an invariant of DEC-013 part 7 as judged by `predicted_output_breaks` (a removed category left, kept findings changed, scan changed, a new issue kind, or a non-idempotent prediction); question `dec-013-mpf-primary-size-underflow`.
   10. Mutant 3 is applied as "Software replaced by Gps in the EXIF9 array" (dropping the element does not compile: fixed-size array). Mutant 30 ("the input slice mutated before the copy") cannot be written against `&[u8]`; applied as "when patches exist, `apply` returns the input copy unchanged".
   11. A fixture count of 24 builders (`strip_shapes::all()`, 22 with records; `bad-length` and `halted-walk` are refusals), plus the corpus example `--emit HASH all|everything|none` selects by the short content hash and never by path.
 - **Follow-up work identified:** the five questions above; SPEC-021 should decide the Exif-resident Xmp/Iptc/Icc tags together with the entry edit; a `RegionKind::Exif` (or the `RemovalKind` I added) should be reconciled with the audit's kinds when SPEC-021 needs per-entry removal records.
@@ -222,3 +222,33 @@ An earlier `rewrite_jpeg` run (79,027 runs, cov 3431, ft 13516) was clean after 
 
 3. **If you did this task again, what would you do differently?**
    — Build the naive predictor and the model before the planner (they disagreed on the order of two checks, and each fixture shape that exposed a real rule was found by running the seeds, not by reading); and keep the mutant script from the start so each rule gets its mutant while its test is fresh.
+
+
+### Verify follow-up (after the verifier approved at 44f0bbc)
+
+Commits on this branch, in order, each separate: the failing test; the fix; seeds and the new record; the four mutant tests; the doc fix. Nothing pushed; `decisions/`, `scripts/` and dependencies untouched.
+
+**1. Fix: an Exif block with ANY walk issue is unreadable for partial policies.**
+- New fixture `gps-count-overflow` (`strip_shapes::gps_count_overflow`): a big-endian Exif whose GPS IFD declares 0xFFFF entries, with canary numerators `CANA` in the latitude rationals. Test `a_block_with_a_walk_issue_needs_entry_edit_for_partial_policies` asserts the canary is in the file, `audit` has 0 GPS findings, `Gps`, `GpsAndDevice` and `AllPii` give `NeedsEntryEdit`, `{Xmp}` still strips, and `All` removes the block whole (canary gone).
+- RED on 25b2b37 (commit "test(write): a GPS IFD with 0xFFFF entries ..."): `strip(Gps)` returned Ok with the file unchanged (panic message `Gps`). GREEN after the fix.
+- Fix (`src/write/jpeg.rs`): `unreadable` is now `failed_blocks > 0 || exif_issues > 0 || more than 16 Exif segments` (`exif_issues` is the audit's sum of TIFF-layer issues over the readable blocks, so it is true when the tolerant walk reported any issue for any block). The harness's naive Exif rule was changed the same way. `All` and `Everything` are unchanged (Exif removed whole; the new test and the existing grid show it).
+- Effect on existing outcomes: none. Every existing fixture, every committed seed (`no_fixture_or_seed_gives_verify_failed` runs `jpeg_segments` and `audit` seeds under 13 policies) and the 22 existing ExifTool strip records gave the same result; `just oracle-record` changed only by adding `gps-count-overflow.txt`. (The kitchen-sink Exif and the other fixtures walk without issues.)
+- The mutant "fix reverted" (drop the `exif_issues` term) fails 4 tests: the new test, `output_equals_the_input_minus_the_listed_removals_plus_the_listed_patches`, `rewrite_jpeg_harness_holds_on_every_seed_and_degenerate_inputs`, `strip_records_replay_and_reproduce`.
+- 60 s smokes after the fix: `rewrite_jpeg` 49,094 runs, cov 3477, ft 14656, exit 0; `audit` 129,069 runs, cov 2343, ft 10233, exit 0.
+
+**2. Tests for the surviving mutants** (each shown red against its mutant, then `git checkout -- src`; `git diff --stat -- src` empty after each revert):
+
+| mutant | test | result |
+|---|---|---|
+| v03b primary size patched only when it was already right | `v03b_the_primary_size_is_patched_even_when_it_was_already_wrong` (tests/strip.rs; the index says the primary is 7 bytes longer than it is; the field must become `size - removed`) | red under the mutant (1 failing), green otherwise |
+| v05 self-check (b) ignores the region kind | `v05_self_check_b_compares_the_region_kind` (verify_tests.rs; a plan that turns an extended-XMP segment into a plain XMP segment by two patches and a removal: same category, same count, other kind; expects `Check::Kept`) | red (1 failing) |
+| v06 self-check skipped on an empty plan | `v06_an_empty_plan_is_still_checked` (src/write/mod.rs; `strip` now calls a private `finish(data, spec, planned)` so a planner that wrongly returns an empty plan can be simulated) | red (1 failing) |
+| v10 MpfFields compares input images with input images | `v10_mpf_fields_compares_the_output_images_with_the_input_images` (verify_tests.rs; the COM is removed and only the primary size patched, so the secondary offset is stale and the primary is right) | red (1 failing; without the fix `Kept` is reported instead of `MpfFields`) |
+
+- v06, as the spec states it: rule 9 says the checks run before any byte is returned, and rule 8 only says an empty plan returns the input; so an empty plan for an input that still holds a finding of a removed category is `VerifyFailed {Preview}` and no bytes. Through `strip` this is unreachable (the planner removes every such segment), hence the `finish` split.
+
+**3. Seeds.** `fuzz/seeds/rewrite_jpeg` is regenerated by `examples/fuzz_seeds.rs` (186 files, was 129; nothing else changed): byte 3 (the All preset) now has the `allpreset-` family for all 42 inputs (17 shapes and 25 strip fixtures); bytes 0 (`Gps`) and 1 (`GpsAndDevice`) cover `mpo-plain`, `two-exif-blocks`, `exif-without-gps`, `com-over-embedded`, `unindexed-mpf` and the new `gps-count-overflow`, on top of the kitchen sink; bytes 2 and 5 stay kitchen-sink only (not asked). `tests/fuzz_layout.rs` pins 186, requires the `allpreset-` family, policy byte 3 and the narrow-preset names.
+
+**4. Docs.** The harness header in `fuzz/shared/rewrite_invariants.rs` and deviation 9 above now list the library calls exactly and the two excused `VerifyFailed` cases. The token count is corrected to 564890 here and in the front matter.
+
+**Gates after the follow-up (all green):** `cargo fmt --all -- --check`; `rustfmt --check --edition 2021 fuzz/shared/*.rs`; `just lint`; `just lint-fuzz`; `just lint-no-allow`; `just lint-red-proof`; `just lint-fuzz-red-proof`; `cargo test --no-fail-fast` with `DIAMOND_EXIF_REQUIRE_ORACLE=1 DIAMOND_EXIF_REQUIRE_CLI_FS=1`: 762 passed, 0 failed, 9 ignored on stable and on 1.90.0; `-F unsafe_code` on lib and bin; `just deny`, `just deny-fuzz`; `just validate`; `just decisions-audit`; `just cost-audit`; `just oracle-record` leaves `git status --porcelain` empty (23 strip records); release build of `exif-audit`; the two fuzz smokes above. The local-photo run was not repeated (the fix only affects partial policies; `All` and `Everything` are unchanged); no real-photo data was read or written in this follow-up.

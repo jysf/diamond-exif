@@ -546,6 +546,52 @@ pub fn two_exif_blocks() -> Shape {
     )
 }
 
+/// Numerators of the GPS rationals of `gps_count_overflow`: four ASCII letters
+/// each, so the canary is a plain byte search.
+pub const C_GPSNUM: &[u8] = b"CANA";
+
+/// A big-endian Exif whose GPS IFD declares 0xFFFF entries: the tolerant walk
+/// reports an issue, finds no GPS entry (so no GPS finding) and the block is
+/// still readable (IFD0 parses). The latitude and longitude bytes are in the
+/// file. (Found by the verifier of SPEC-020.)
+pub fn gps_count_overflow() -> Shape {
+    let tiff = t::assemble(
+        true,
+        &[
+            t::ifd(vec![
+                t::ascii(t::T_MAKE, &z(C_MAKE)),
+                t::ptr(t::T_GPS_IFD, 1),
+            ]),
+            t::ifd(vec![
+                t::ascii(t::T_GPS_LAT_REF, b"N\0"),
+                t::rational(
+                    true,
+                    t::T_GPS_LAT,
+                    &[(0x4341_4E41, 1), (0x4341_4E41, 1), (0x4341_4E41, 1)],
+                ),
+            ]),
+        ],
+    );
+    // IFD0 is at 8: find the GPS pointer and set the count at its target.
+    let mut tiff = tiff;
+    let n = usize::from(u16::from_be_bytes([tiff[8], tiff[9]]));
+    let at = (0..n)
+        .map(|i| 10 + 12 * i)
+        .find(|&e| u16::from_be_bytes([tiff[e], tiff[e + 1]]) == t::T_GPS_IFD)
+        .unwrap();
+    let gps = u32::from_be_bytes(tiff[at + 8..at + 12].try_into().unwrap()) as usize;
+    tiff[gps..gps + 2].copy_from_slice(&0xFFFFu16.to_be_bytes());
+    small(
+        "gps-count-overflow",
+        &[(K::Jfif, jfif()), (K::Exif, exif_seg(&tiff))],
+        ExifFacts {
+            blocks: 1,
+            readable: false,
+            cats: vec![],
+        },
+    )
+}
+
 pub fn unreadable_exif() -> Shape {
     small(
         "unreadable-exif",
@@ -1068,6 +1114,7 @@ pub fn all() -> Vec<Shape> {
         exif_without_gps(),
         two_exif_blocks(),
         unreadable_exif(),
+        gps_count_overflow(),
         comment_only(),
         mpo_late_xmp(false),
         mpo_late_xmp(true),
