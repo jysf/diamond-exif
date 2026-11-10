@@ -61,81 +61,29 @@ handback:
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
-# HANDOFF-043: <Task Title — same as the spec's title>
+# HANDOFF-043: Re-verify JPEG in-place Exif entry deletion with scrub (SPEC-021, round 2)
 
 ## Delegation Summary
 
-One sentence: `<from_agent>` (acting as `<from_role>`) hands `SPEC-021`
-to `<to_agent>` (acting as `<to_role>`) for the **`<cycle>`** cycle.
+`claude-opus-5-5` (architect) hands `SPEC-021` to `claude-opus-5-5` (verifier, a fresh cold agent with no memory of round 1) for a second **verify** cycle after a punch list.
 
 ## Context the Receiving Agent Needs
 
-The receiving agent MUST read these before starting work. Keep the
-list tight, but don't omit anything necessary.
-
-### Primary
-
-- **Project brief:** `./projects/PROJ-001-<slug>/brief.md`
-- **Stage:** `./projects/PROJ-001-<slug>/stages/STAGE-004-<slug>.md`
-- **Spec:** `./projects/PROJ-001-<slug>/specs/SPEC-021-<slug>.md`
-- **Reviewer brief (OPTIONAL, verify handoffs):** `./guidance/agents/<lens>.md` —
-  pick a lens if this review should look at one thing hard. Omit for a
-  general review; see `./guidance/agents/README.md`.
-- **Toolchain brief:** `./guidance/toolchain-brief.md` — this repo's test
-  framework, lint quirks, runtime globals and gotchas. Read it; it exists so a
-  cold agent doesn't rediscover them (DEC-004 rule 5).
-
-### Decisions that apply
-
-- `DEC-NNN` — <one-line summary of why this matters here>
-- `DEC-MMM` — <one-line summary>
-
-### Constraints that apply
-
-Check `./guidance/constraints.yaml` for full text. These constraints
-apply to the paths touched by this task:
-
-- `constraint-id-1` — <one-line summary>
-- `constraint-id-2` — <one-line summary>
-
-### Prior related work
-
-- `HANDOFF-YYY` — <one-line summary, if relevant>
-- `PR #NNN` — <link, if relevant>
+- Everything in `HANDOFF-042-verify-*.md` still applies (spec, DEC-013 with its 2026-11-10 amendment, gates, privacy rule for `_incoming0`: read in place, copy nothing, write no derived file, pipes only, counts and 8-hex hashes only, never values or paths; host traps; do not fix code, push, open a PR or advance cycles). Read it, including the round-1 verdict in its Handback.
+- **Round 1 (PUNCH LIST at 7697162)** found: H1 (a deleted entry's out-of-line value running past the blob end was left unscrubbed, `Ok` with the canary in the output); H2 (thumbnail removal scrubbed only the first 0x0201/0x0202 range, leaving a second pair or strip data); M1 (the per-block refusal loop was tested only on the first Exif block); Lows L1 to L5. The fixes are `git diff 7697162..HEAD` (commit `1cf8bd1` and its WIP commits; the follow-up for the stray-bytes harness crash is earlier, `56bd4a6`, `9315047`). Review the fixes as a new reader, not as a diff checklist.
+- **Do not anchor on round 1.** H1 and H2 were the same class (the planner assumed a range or locator it had not proved). Hunt for siblings by reading `src/write/exif.rs` and `src/tiff/mod.rs` accessors for every place that takes `None`, `first`, `get(..)`, a count, a pointer or a length and acts as if the answer were complete. Specifically try: entries whose type size times count overflows or wraps; counts above the blob; value offsets in the header or inside another IFD's table; two IFDs sharing a value; a thumbnail range inside a kept IFD or a MakerNote; 0x0201 with count != 1 or a non-LONG type; 0x0117 without 0x0111; GPS and thumbnail entries of unknown field types; a SubIFD (0x014A) pointing at the GPS IFD or IFD1; Interop pointing into a removed IFD; IFD1 reached from a SubIFD chain; truncated entries at the blob end; both byte orders for each; and Exif segments that differ (two blocks, one clean, one not; the second block holding the only GPS).
+- **Judge the L4 widening.** The harness excuse `walks_as_other_segments` now covers `VerifyFailed` checks `mpf-fields`, `walk` and `entries` (the spec asked for the first two; the builder added `entries` after a 60 s smoke failed on a 4.4 KB input, now seed `crash-entries-joined-stray`, claiming the same stray-bytes class by structure, not verified at byte level). Establish at byte level why the library returns `VerifyFailed{Entries}` there: is it truly the joined-stray class, or a planner bug that `Entries` caught? If a planner bug, that is at least High.
+- Orchestrator's own gate run at `1cf8bd1` (all steps exit 0; 2577 tests passed, 0 failed over three runs; five 60 s smokes clean) is evidence, not a substitute: re-run everything in HANDOFF-042's gate list, plus `rewrite_jpeg` for 5 minutes.
+- Re-run mutants V04, V05, V08, V11 (round 1 survivors) and the builder's new ones from the HANDOFF-041 Handback addendum; write at least six mutants of your own aimed at the H1/H2 fixes (e.g. the straddle test using `>` instead of `>=`; H2 counting only 0x0201; H2 skipping 0x0117; the mirror in the harness removed; the later-block loop checking only the last block) and name the test or guard that catches each.
+- Re-run the local corpus counts (expected: `Gps` 13 Ok, `GpsAndDevice` 13 Ok, `AllPii` 12 Ok + 1 `Uneditable(ChainAfterThumbnail)` on hash `a3b66f84`, `All` 13 Ok, `Everything` 13 Ok; 21 files, 13 JPEGs, 4 with Multi-Picture) and pipe a few outputs to `exiftool -` as in round 1.
 
 ## Expected Deliverables
 
-*(For a `verify` handoff, replace this block with the verify contract below.)*
-
-- Code changes implementing SPEC-021's Acceptance Criteria.
-- All failing tests in SPEC-021 now passing.
-- Any new tests required to cover edge cases.
-- A PR against `main` from branch `feat/spec-XXX-<slug>`.
-- PR description referencing: this handoff ID, the spec ID, the stage
-  ID, the project ID, all referenced `DEC-*`, and any new `DEC-*`
-  created during implementation.
-
-### If `cycle: verify` — the verify contract
-
-You are **not** the agent that implemented this. Review it cold.
-
-- Acceptance criteria met? Tests actually pass? Build reflection answered
-  honestly (*"nothing was unclear"* is suspicious)?
-- Decision drift — run `just decisions-audit --changed`.
-- Constraint violations; non-trivial choices missing a `DEC-*`.
-- For any criterion claiming **runtime behavior** (a component registers, a hook
-  fires, a binary resolves on PATH, a config takes effect), confirm the
-  *behavioral* surface was exercised — not just the shape validated. That is the
-  defect class that escapes (AGENTS.md §12).
-- Output exactly ONE of: ✅ APPROVED / ⚠ PUNCH LIST / ❌ REJECTED.
+Output exactly ONE of APPROVED / PUNCH LIST / REJECTED at a commit SHA, with findings by severity and concrete reproducers, mutant results, local-corpus counts, and a verdict on each open builder question in `guidance/questions.yaml`. Fill the HANDOFF-043 handback front matter (`tokens_total: null` with a note; the orchestrator transcribes the metered figure).
 
 ## Out of Scope
 
-Explicit list of what this handoff does NOT include. If the receiving agent
-thinks any of these need to happen, they should create a new spec in
-the stage's backlog, not expand this handoff.
-
-- ...
+- Implementing fixes; TIFF/DNG (SPEC-022); `strip-keeps-orientation`; changing DEC-013.
 
 ## Return Criteria — how to hand back
 
