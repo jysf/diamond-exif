@@ -67,11 +67,11 @@ cost:
     - cycle: build
       agent: claude-sonnet-5-5
       interface: other
-      tokens_total: 564890
-      estimated_usd: 3.73
-      duration_minutes: 62
+      tokens_total: 604953
+      estimated_usd: 3.99
+      duration_minutes: 77
       recorded_at: 2026-11-10
-      notes: "tokens_total null: a sub-agent cannot see its own token count in this harness; the orchestrator transcribes the metered figure. Nothing pushed, no PR (as instructed)."
+      notes: "Cumulative for the build (564,890 tokens, 62 min) plus its verify follow-up (40,063 tokens, 15 min; derived as the final cumulative 604,953 minus the build's 564,890). Transcribed by the orchestrator; the sub-agent cannot see its own count. Nothing pushed, no PR."
     - cycle: verify
       agent: claude-opus-5-5
       interface: other
@@ -79,7 +79,7 @@ cost:
       estimated_usd: 1.97
       duration_minutes: 19
       recorded_at: 2026-11-10
-      notes: "Verdict APPROVED at 44f0bbc with two Medium follow-ups (audit-side) and Low findings. tokens_total null: a sub-agent cannot see its own token count; the orchestrator transcribes the metered figure. Nothing pushed, no PR."
+      notes: "Verdict APPROVED at 44f0bbc with two Medium follow-ups (audit-side) and Low findings. Transcribed by the orchestrator from the harness. Nothing pushed, no PR."
   totals:
     tokens_total: 863940
     estimated_usd: 5.70
