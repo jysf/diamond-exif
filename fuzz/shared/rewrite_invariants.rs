@@ -9,12 +9,27 @@
 // list and category mapping typed from DEC-012/013, the second MPF reader of
 // the SPEC-019 harness (extended with the field positions), and its own
 // overlap and removed-byte arithmetic (boolean masks, no ranges). It never
-// calls into `exif_core::write`. It predicts the exact output, or the exact
-// refusal, for the policy, and the library's answer is compared with it. The
-// one thing it borrows from the library is the audit's account of what the Exif
-// blocks hold (an Exif block is the TIFF engine's business, covered by the
-// `audit` target): `audit(input)` supplies the findings and the failed-block
-// count of Exif blocks, nothing else.
+// calls into `exif_core::write` except `strip` itself and the public result
+// and error types it flattens. It predicts the exact output, or the exact
+// refusal, for the policy, and the library's answer is compared with it.
+//
+// What the harness DOES call in the library, exactly:
+//   * `audit(input)` inside `predict`, for the Exif blocks only (their
+//     findings, `failed_blocks` and `exif_issues`; an Exif block is the TIFF
+//     engine's business, covered by the `audit` target);
+//   * `audit(output)` and `audit(input)` in `facts` and in
+//     `predicted_output_breaks` (the checks on the library's output and on the
+//     independent prediction);
+//   * `Jpeg::parse` (the scan region of input and output) in `facts` and in
+//     `predicted_output_breaks`;
+//   * `jpeg::read(..).jpeg_issues()` inside `predicted_output_breaks` (new
+//     issue kinds);
+//   * the constants `MAX_JPEG_ISSUES`, `MAX_JPEG_SEGMENTS`, `MAX_MPF_IMAGES`
+//     (the walk's and the index's caps), and `Category::ALL`, `StripPolicy`,
+//     `StripSpec`.
+// The segment walk, the MPF index read, the typing of segments, the targets,
+// the overlap and MpfNotIndexed rules and the field arithmetic are the
+// harness's own.
 //
 // Input layout: byte 0 selects the policy (0..=4 the presets in
 // `StripPolicy::PRESETS` order, 5 `Custom(none)`, 6 `Custom` from the 16-bit
@@ -24,9 +39,12 @@
 // Every guard is its own function over `Facts` (the library's answer, flattened)
 // and the prediction, so a planted bug in the flattened answer turns exactly its
 // guard red (see `tests/fuzz_layout.rs`). Every rule that is an iff is checked in
-// BOTH directions. `VerifyFailed` is a harness failure unless the naive
-// prediction itself breaks an invariant (then the self-check was right to
-// refuse) or the naive arithmetic underflows an MPF field (`MpfFields`).
+// BOTH directions. `VerifyFailed` is a harness failure EXCEPT when the
+// independent prediction itself breaks an invariant of DEC-013 part 7 (judged
+// by `predicted_output_breaks`: a removed category left, kept findings changed,
+// the scan changed, a new issue kind, or a prediction that is not idempotent;
+// the self-check was then right to refuse), or when the naive arithmetic
+// underflows an MPF field (then `MpfFields` is the expected check).
 
 mod rewrite_invariants {
     use std::ops::Range;
