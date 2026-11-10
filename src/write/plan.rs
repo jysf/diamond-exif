@@ -566,7 +566,16 @@ mod tests {
             assert!(plan.apply(&data).is_err());
             assert_eq!(plan.output_offset(data.len(), usize::MAX), None);
         }
-        assert_eq!(removed_in(&[Range { start: 0, end: usize::MAX }], 0..usize::MAX), usize::MAX);
+        assert_eq!(
+            removed_in(
+                &[Range {
+                    start: 0,
+                    end: usize::MAX
+                }],
+                0..usize::MAX
+            ),
+            usize::MAX
+        );
         assert_eq!(
             merge_ranges(vec![usize::MAX - 1..usize::MAX, 0..usize::MAX - 1]),
             vec![0..usize::MAX]
