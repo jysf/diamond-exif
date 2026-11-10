@@ -33,23 +33,31 @@ repo:
 # Filled in by the EXECUTING AGENT before it reports done. This is a required
 # part of completing the handoff, not a courtesy.
 #
-# `tokens_total` is the one field the cost gate reads. Report the REAL number
-# from your own interface:
-#   Claude Code   → run `/cost`
-#   API           → the `usage` object (input + output, summed)
+# `tokens_total` is the one field the cost gate reads. Report the REAL number,
+# and say in `basis` how you got it:
+#   Claude Code   → your session transcript, measured per docs/cost-tracking.md
+#                   "Measuring a cycle": count each message.id once, take its
+#                   largest output_tokens, include subagents/ (basis: transcript).
+#                   Summing every line over-counts ~2×. `/cost` in the desktop
+#                   Code tab reports context size, not spend.
+#   API           → the `usage` objects, summed (basis: api-usage)
 #   another agent → whatever your harness reports as total tokens
 # If your platform genuinely exposes NO token count, set tokens_total: null AND
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: null                     # completed | blocked | rejected
+  agent: null                      # the model that ACTUALLY ran (message.model) —
+                                   #   to_agent above is a prediction from tier_map
+  verdict: null                    # verify handoffs: approved | punch-list | rejected
+  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
   tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
+  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
   branch: null
   pr: null
   completed_at: null               # YYYY-MM-DD
-  notes: null                      # one line if unusual (rework, no meter, etc.)
+  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 

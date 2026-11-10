@@ -3,13 +3,15 @@
 #
 # Surfaces three things `just status` deliberately doesn't:
 #   1. In-flight specs (cycle ≠ ship/archived) grouped by cycle, scoped
-#      to the active stage by default.
-#   2. Stage backlog bullets that haven't been promoted to specs yet —
-#      the `(not yet written)` rows in the active stage's `## Spec
-#      Backlog`. This is the main new value vs. status.
+#      to the active stage(s) by default. A project can run several at once.
+#   2. Stage backlog bullets that haven't been promoted to specs yet — open
+#      `- [ ]` rows in each active stage's `## Spec Backlog` that do not lead
+#      with a spec id (extract_unpromoted_bullets). The main value vs. status.
 #   3. Counts (not contents) of un-promoted bullets in upcoming stages.
+#   4. Counts for `proposed` projects: the next waves, whose filed work was
+#      invisible here before (54 items in crustyimg).
 #
-# `--all` expands #1 and #2 to non-active stages too.
+# `--all` expands #1 and #2 to non-active stages too, and #4 to per-stage rows.
 #
 # Read-only. No writes.
 
@@ -40,48 +42,58 @@ EOF
     esac
 done
 
+# STAGE-NNN from a stage file path.
+stage_id_of() { basename "$1" .md | sed -E 's/^(STAGE-[0-9]+).*/\1/'; }
+# True when a STAGE-NNN is one of the active stages.
+is_active_stage() { case " ${ACTIVE_STAGE_IDS} " in *" $1 "*) return 0 ;; esac; return 1; }
+
 ACTIVE_PROJECT=$(get_active_project)
 ACTIVE_DIR="${REPO_ROOT}/projects/${ACTIVE_PROJECT}"
 STAGES_DIR="${ACTIVE_DIR}/stages"
 SPECS_DIR="${ACTIVE_DIR}/specs"
 
-ACTIVE_STAGE_FILE=$(get_active_stage_file "$ACTIVE_DIR" || true)
-ACTIVE_STAGE_ID=""
-ACTIVE_STAGE_NAME=""
-if [ -n "$ACTIVE_STAGE_FILE" ]; then
-    ACTIVE_STAGE_NAME=$(basename "$ACTIVE_STAGE_FILE" .md)
-    ACTIVE_STAGE_ID=$(echo "$ACTIVE_STAGE_NAME" | sed -E 's/^(STAGE-[0-9]+).*/\1/')
-fi
+# Every active stage (crustyimg ran three at once; showing only the first hid a
+# spec mid-build in the second). ACTIVE_STAGE_ID stays the first, for --json's
+# `active_stage`; ACTIVE_STAGE_IDS holds them all, space-separated.
+ACTIVE_STAGE_FILES=()
+while IFS= read -r f; do
+    [ -n "$f" ] && ACTIVE_STAGE_FILES+=("$f")
+done <<EOF
+$(get_active_stage_files "$ACTIVE_DIR" || true)
+EOF
+ACTIVE_STAGE_IDS=""
+ACTIVE_STAGE_NAMES=""
+for f in ${ACTIVE_STAGE_FILES[@]+"${ACTIVE_STAGE_FILES[@]}"}; do
+    n=$(basename "$f" .md)
+    ACTIVE_STAGE_NAMES="${ACTIVE_STAGE_NAMES:+${ACTIVE_STAGE_NAMES}, }${n}"
+    ACTIVE_STAGE_IDS="${ACTIVE_STAGE_IDS:+${ACTIVE_STAGE_IDS} }$(stage_id_of "$f")"
+done
+ACTIVE_STAGE_ID="${ACTIVE_STAGE_IDS%% *}"
 
 # --- Helpers --------------------------------------------------------
 
 # get_spec_complexity lives in _lib.sh — the expected size it reads is the same
 # one `just calibration` compares against the actual.
 
-# Read project.stage from a spec.
-get_spec_stage_id() {
-    awk '
-        /^---$/ { fm = !fm; next }
-        !fm { exit }
-        /^project:/ { in_p = 1; next }
-        in_p && /^[a-zA-Z_]/ { in_p = 0 }
-        in_p && /^[[:space:]]+stage:/ { print $2; exit }
-    ' "$1"
+# get_spec_stage (project.stage) and extract_unpromoted_bullets live in _lib.sh.
+# frame-stage promotes the marked subset of these bullets and names the rest.
+
+# A bullet's text without the checkbox or a leading "(not yet written…)"
+# marker. The dash separator is matched as alternatives, not inside a bracket
+# expression: an em dash in [—-] breaks into a bad byte range when the locale
+# is unset (crustyimg 6b26006 saw mojibake from exactly that).
+strip_bullet_marker() {
+    printf '%s' "$1" \
+        | sed -E 's/^[[:space:]]*-[[:space:]]*\[[ x~?]\][[:space:]]*//' \
+        | sed -E 's/^\(not yet written[^)]*\)[[:space:]]*(—|-)?[[:space:]]*//'
 }
 
-# extract_unpromoted_bullets lives in _lib.sh — `just frame-stage` promotes
-# exactly the lines this view lists, so both read the backlog the same way.
-
-# Trim a bullet line to "summary [complexity]" form. Strips the
-# leading `- [ ] (not yet written) — ` and surfaces a complexity
+# Trim a bullet line to "summary [complexity]" form, surfacing a complexity
 # tag if present. Best-effort; the convention isn't enforced.
 format_unpromoted_bullet() {
     local line="$1"
     local summary
-    summary=$(echo "$line" \
-        | sed -E 's/^[[:space:]]*-[[:space:]]*\[[ x~?]\][[:space:]]*//' \
-        | sed -E 's/\(not yet written\)[[:space:]]*—[[:space:]]*//' \
-        | sed -E 's/\(not yet written\)[[:space:]]*-[[:space:]]*//')
+    summary=$(strip_bullet_marker "$line")
     # Best-effort complexity extraction: a bracketed S/M/L token.
     local complexity=""
     if [[ "$summary" =~ \[([SML])\] ]]; then
@@ -96,9 +108,29 @@ format_unpromoted_bullet() {
     fi
 }
 
-# Count un-promoted bullets in a stage file.
-count_unpromoted_bullets() {
-    extract_unpromoted_bullets "$1" | wc -l | tr -d ' '
+# count_unpromoted_bullets lives in _lib.sh, shared with roadmap and
+# specs-by-stage so the three can no longer disagree.
+
+# Projects whose brief says `status: proposed`, one dir per line, in id order.
+proposed_project_dirs() {
+    local d
+    find "${REPO_ROOT}/projects" -maxdepth 1 -type d -name 'PROJ-*' 2>/dev/null | sort \
+        | while IFS= read -r d; do
+            [ "$(get_project_status "$d")" = proposed ] && printf '%s\n' "$d"
+        done || true
+}
+
+# "<stage count>|<backlog count>" for a project's non-shipped stages.
+project_backlog_totals() {
+    local s st n_st=0 n_b=0
+    for s in "$1"/stages/STAGE-*.md; do
+        [ -f "$s" ] || continue
+        st=$(get_stage_status "$s")
+        { [ "$st" = shipped ] || [ "$st" = cancelled ]; } && continue
+        n_st=$((n_st + 1))
+        n_b=$((n_b + $(count_unpromoted_bullets "$s")))
+    done
+    printf '%d|%d\n' "$n_st" "$n_b"
 }
 
 # --- JSON output (DEC-001 §2) ---------------------------------------
@@ -111,8 +143,8 @@ if [ "$JSON_OUT" = 1 ]; then
             [ -f "$f" ] || continue
             cycle=$(get_spec_cycle "$f")
             case "$cycle" in frame|design|build|verify|ship) ;; *) continue ;; esac
-            stage_id=$(get_spec_stage_id "$f")
-            if [ "$SHOW_ALL" = 1 ] || [ "$stage_id" = "$ACTIVE_STAGE_ID" ]; then
+            stage_id=$(get_spec_stage "$f")
+            if [ "$SHOW_ALL" = 1 ] || is_active_stage "$stage_id"; then
                 sid=$(basename "$f" | sed -E 's/^(SPEC-[0-9]+).*/\1/')
                 cx=$(get_spec_complexity "$f"); [ -n "$cx" ] || cx="?"
                 inflight_json+=("$(json_obj "task.id" "$(json_qs "$sid")" "task.cycle" "$(json_qs "$cycle")" \
@@ -126,7 +158,7 @@ if [ "$JSON_OUT" = 1 ]; then
         local sf="$1" sidp="$2" line summary complexity
         while IFS= read -r line; do
             [ -n "$line" ] || continue
-            summary=$(printf '%s' "$line" | sed -E 's/^[[:space:]]*-[[:space:]]*\[[ x~?]\][[:space:]]*//; s/\(not yet written\)[[:space:]]*[—-][[:space:]]*//')
+            summary=$(strip_bullet_marker "$line")
             complexity=null
             if [[ "$summary" =~ \[([SML])\] ]]; then
                 complexity=$(json_qs "${BASH_REMATCH[1]}")
@@ -142,16 +174,18 @@ if [ "$JSON_OUT" = 1 ]; then
                 [ -f "$s" ] || continue
                 emit_bullets_for "$s" "$(basename "$s" .md | sed -E 's/^(STAGE-[0-9]+).*/\1/')"
             done
-        elif [ -n "$ACTIVE_STAGE_FILE" ]; then
-            emit_bullets_for "$ACTIVE_STAGE_FILE" "$ACTIVE_STAGE_ID"
+        else
+            for s in ${ACTIVE_STAGE_FILES[@]+"${ACTIVE_STAGE_FILES[@]}"}; do
+                emit_bullets_for "$s" "$(stage_id_of "$s")"
+            done
         fi
     fi
 
     if [ -d "$STAGES_DIR" ]; then
         for s in "${STAGES_DIR}"/STAGE-*.md; do
             [ -f "$s" ] || continue
-            sid=$(basename "$s" .md | sed -E 's/^(STAGE-[0-9]+).*/\1/')
-            [ "$sid" = "$ACTIVE_STAGE_ID" ] && continue
+            sid=$(stage_id_of "$s")
+            is_active_stage "$sid" && continue
             status=$(get_stage_status "$s")
             { [ "$status" = shipped ] || [ "$status" = cancelled ]; } && continue
             cnt=$(count_unpromoted_bullets "$s")
@@ -159,14 +193,28 @@ if [ "$JSON_OUT" = 1 ]; then
         done
     fi
 
+    active_ids_json=()
+    for sid in $ACTIVE_STAGE_IDS; do active_ids_json+=("$(json_qs "$sid")"); done
+    proposed_json=()
+    while IFS= read -r d; do
+        [ -n "$d" ] || continue
+        t=$(project_backlog_totals "$d")
+        proposed_json+=("$(json_obj project "$(json_qs "$(basename "$d")")" \
+            stages "${t%%|*}" backlog_count "${t#*|}")")
+    done <<EOF
+$(proposed_project_dirs)
+EOF
+
     mkarr() { if [ "$#" -gt 0 ] && [ -n "${1:-}" ]; then json_arr "$@"; else printf '[]'; fi; }
     data=$(json_obj \
         active_project "$(json_qs "$ACTIVE_PROJECT")" \
         active_stage "$([ -n "$ACTIVE_STAGE_ID" ] && json_qs "$ACTIVE_STAGE_ID" || printf null)" \
+        active_stages "$(mkarr "${active_ids_json[@]:-}")" \
         scope "$(json_qs "$scope")" \
         in_flight "$(mkarr "${inflight_json[@]:-}")" \
         unpromoted "$(mkarr "${unpromoted_json[@]:-}")" \
-        upcoming "$(mkarr "${upcoming_json[@]:-}")")
+        upcoming "$(mkarr "${upcoming_json[@]:-}")" \
+        proposed_projects "$(mkarr "${proposed_json[@]:-}")")
     json_emit backlog "$data"
     exit 0
 fi
@@ -174,8 +222,10 @@ fi
 # --- Output ---------------------------------------------------------
 
 echo "${BOLD}Backlog for ${ACTIVE_PROJECT}${RESET}"
-if [ -n "$ACTIVE_STAGE_NAME" ]; then
-    echo "  ${DIM}Active stage:${RESET} ${ACTIVE_STAGE_NAME}"
+if [ "${#ACTIVE_STAGE_FILES[@]}" -gt 1 ]; then
+    echo "  ${DIM}Active stages:${RESET} ${ACTIVE_STAGE_NAMES}"
+elif [ -n "$ACTIVE_STAGE_NAMES" ]; then
+    echo "  ${DIM}Active stage:${RESET} ${ACTIVE_STAGE_NAMES}"
 else
     echo "  ${DIM}(no active stage in this project yet)${RESET}"
 fi
@@ -192,8 +242,8 @@ if [ -d "$SPECS_DIR" ]; then
         # archived specs live in done/ and we already excluded that.
         case "$cycle" in
             frame|design|build|verify|ship)
-                stage_id=$(get_spec_stage_id "$f")
-                if [ "$SHOW_ALL" = "1" ] || [ "$stage_id" = "$ACTIVE_STAGE_ID" ]; then
+                stage_id=$(get_spec_stage "$f")
+                if [ "$SHOW_ALL" = "1" ] || is_active_stage "$stage_id"; then
                     name=$(basename "$f" .md)
                     complexity=$(get_spec_complexity "$f")
                     in_flight+=("$cycle|$name|${complexity:-?}|$stage_id")
@@ -247,16 +297,19 @@ if [ -d "$STAGES_DIR" ]; then
         done
         if [ "$any" = "0" ]; then echo "  ${DIM}(none)${RESET}"; fi
     else
-        if [ -n "$ACTIVE_STAGE_FILE" ]; then
-            bullets=$(extract_unpromoted_bullets "$ACTIVE_STAGE_FILE")
-            if [ -n "$bullets" ]; then
-                echo "  ${DIM}— ${ACTIVE_STAGE_ID}${RESET}"
-                while IFS= read -r line; do
-                    echo "    $(format_unpromoted_bullet "$line")"
-                done <<< "$bullets"
-            else
-                echo "  ${DIM}(no un-promoted bullets in ${ACTIVE_STAGE_ID})${RESET}"
-            fi
+        if [ "${#ACTIVE_STAGE_FILES[@]}" -gt 0 ]; then
+            for s in "${ACTIVE_STAGE_FILES[@]}"; do
+                sid=$(stage_id_of "$s")
+                bullets=$(extract_unpromoted_bullets "$s")
+                if [ -n "$bullets" ]; then
+                    echo "  ${DIM}— ${sid}${RESET}"
+                    while IFS= read -r line; do
+                        echo "    $(format_unpromoted_bullet "$line")"
+                    done <<< "$bullets"
+                else
+                    echo "  ${DIM}(no un-promoted bullets in ${sid})${RESET}"
+                fi
+            done
         else
             echo "  ${DIM}(no active stage)${RESET}"
         fi
@@ -273,8 +326,8 @@ if [ -d "$STAGES_DIR" ]; then
     for s in "${STAGES_DIR}"/STAGE-*.md; do
         [ -f "$s" ] || continue
         sid=$(basename "$s" .md | sed -E 's/^(STAGE-[0-9]+).*/\1/')
-        # Skip the active stage and shipped stages.
-        if [ "$sid" = "$ACTIVE_STAGE_ID" ]; then continue; fi
+        # Skip the active stage(s) and shipped stages.
+        if is_active_stage "$sid"; then continue; fi
         status=$(get_stage_status "$s")
         if [ "$status" = "shipped" ] || [ "$status" = "cancelled" ]; then continue; fi
         sname=$(basename "$s" .md)
@@ -286,3 +339,26 @@ if [ -d "$STAGES_DIR" ]; then
 else
     echo "  ${DIM}(no stages/ directory yet)${RESET}"
 fi
+echo ""
+
+# 4) Proposed projects ------------------------------------------------
+# The next waves. Counts only; --all breaks each into its stages.
+echo "${BOLD}Proposed projects (counts only)${RESET}"
+proposed_any=0
+while IFS= read -r d; do
+    [ -n "$d" ] || continue
+    proposed_any=1
+    t=$(project_backlog_totals "$d")
+    printf "  %-44s %d stage%s · %d backlog item%s\n" "$(basename "$d")" \
+        "${t%%|*}" "$([ "${t%%|*}" = 1 ] && echo "" || echo "s")" \
+        "${t#*|}" "$([ "${t#*|}" = 1 ] && echo "" || echo "s")"
+    if [ "$SHOW_ALL" = 1 ]; then
+        for s in "$d"/stages/STAGE-*.md; do
+            [ -f "$s" ] || continue
+            printf "      %-40s %d\n" "$(basename "$s" .md)" "$(count_unpromoted_bullets "$s")"
+        done
+    fi
+done <<EOF
+$(proposed_project_dirs)
+EOF
+if [ "$proposed_any" = 0 ]; then echo "  ${DIM}(none)${RESET}"; fi

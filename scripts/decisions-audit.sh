@@ -87,25 +87,9 @@ get_top_scalar() {
     ' "$file"
 }
 
-# affected_scope — a YAML list of globs at the top level. One glob per
-# line on stdout. Empty if the key is absent or `[]`.
-get_affected_scope() {
-    awk '
-        /^---$/ { f = !f; next }
-        !f { exit }
-        /^affected_scope:/ { s = 1; next }
-        s && /^[a-zA-Z_]/ { s = 0 }
-        s && /^[[:space:]]*-[[:space:]]/ {
-            v = $0
-            sub(/^[[:space:]]*-[[:space:]]*/, "", v)
-            sub(/[[:space:]]*#.*$/, "", v)       # strip trailing comment
-            sub(/^"/, "", v); sub(/"$/, "", v)   # strip double quotes
-            sub(/^'\''/, "", v); sub(/'\''$/, "", v)  # strip single quotes
-            sub(/[[:space:]]+$/, "", v)
-            if (v != "" && v != "null") print v
-        }
-    ' "$1"
-}
+# affected_scope globs, one per line: the shared reader in _lib.sh, which also
+# reads the inline `[a, b]` form this private copy silently dropped.
+get_affected_scope() { get_dec_affected_scope "$1"; }
 
 # ---------------------------------------------------------------------
 # Glob helpers.
@@ -198,6 +182,33 @@ if [ "${1:-}" = "--changed" ]; then
             git ls-files --others --exclude-standard
         } 2>/dev/null | sort -u )
         scope_desc="your uncommitted changes"
+
+        # A clean tree has no uncommitted changes, so a bare `--changed` used to
+        # report "nothing in scope" and exit 0 — a green that could not go red.
+        # A verify cycle runs in exactly that state (a fresh checkout of the
+        # branch under review) and AGENTS.md tells it to run this command, so
+        # every such audit checked nothing (crustyimg 67cd4f6). Fall back to the
+        # default branch, and say so. `|| true` on each probe: under `set -e` a
+        # failed `x=$(git …)` would end the script silently.
+        if [ "${#CHANGED[@]}" -eq 0 ]; then
+            fallback=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
+            if [ -z "$fallback" ]; then
+                for cand in main master; do
+                    if git rev-parse --verify -q "$cand" >/dev/null 2>&1; then
+                        fallback="$cand"; break
+                    fi
+                done
+            fi
+            if [ -n "$fallback" ] && ! git diff --quiet "${fallback}...HEAD" 2>/dev/null; then
+                while IFS= read -r p; do
+                    [ -n "$p" ] && CHANGED+=("$p")
+                done < <(git diff --name-only "${fallback}...HEAD" 2>/dev/null | sort -u)
+                warn "Working tree is clean, so there are no uncommitted changes to audit."
+                warn "Falling back to ${fallback}...HEAD. Pass a base ref to be explicit:"
+                warn "  just decisions-audit --changed ${fallback}"
+                scope_desc="changes in ${fallback}...HEAD (fell back: working tree is clean)"
+            fi
+        fi
     fi
 
     if [ "${#CHANGED[@]}" -eq 0 ]; then
@@ -213,11 +224,9 @@ if [ "${1:-}" = "--changed" ]; then
         is_active "$file" || continue
         id=$(get_insight_id "$file")
         # The markdown H1 title; anchored to `# DEC-` so it can't pick
-        # up a `#`-prefixed YAML comment inside the front-matter. `|| true`
-        # guards the grep: a DEC missing its `# DEC-` H1 is a zero-match, which
-        # under set -e/pipefail would otherwise abort the whole lint with no
-        # `die` — a gate dying mutely (SPEC-023, §16 rule 3). A missing title
-        # then falls through as empty, which the warn line below renders plainly.
+        # up a `#`-prefixed YAML comment inside the front-matter.
+        # `|| true`: a DEC with no H1 makes grep match nothing, and under
+        # pipefail that ended the whole audit silently (irradiance SPEC-023).
         title=$(grep -m1 '^# DEC-' "$file" | sed -E 's/^# //' || true)
         globs=()
         while IFS= read -r g; do
@@ -397,11 +406,15 @@ done
 # affected_scope hygiene: a bare name (no path separator AND no wildcard) almost
 # never matches a nested repo path, so the decision silently governs nothing —
 # false confidence, worse than noise (zany harvest: `['_headers']` never matched
-# the real `public/_headers`).
+# the real `public/_headers`). Globs match repo-relative paths, so a bare name
+# that exists at the repo root (AGENTS.md, justfile, Cargo.toml) does match and
+# is not warned about — process decisions govern exactly those files, and a
+# permanent false warning trains people to ignore the audit (irradiance).
 for file in "${ACTIVE_FILES[@]}"; do
     idc=$(get_insight_id "$file")
     while IFS= read -r g; do
         [ -n "$g" ] || continue
+        [ -e "${REPO_ROOT}/${g}" ] && continue
         case "$g" in
             *[/*?]*) : ;;   # has a path separator or a wildcard — fine
             *) warn "${idc}: affected_scope '${g}' has no path separator or wildcard — it likely matches nothing (did you mean 'dir/${g}' or '**/${g}'?)"

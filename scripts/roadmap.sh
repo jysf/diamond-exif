@@ -49,16 +49,9 @@ count_in_flight_for_stage() {
     echo "$n"
 }
 
-# Count un-promoted "(not yet written)" bullets in a stage file.
-count_backlog_bullets() {
-    local f="$1"
-    awk '
-        /^## Spec Backlog/ { in_b = 1; next }
-        in_b && /^## / { in_b = 0 }
-        in_b && /\(not yet written\)/ { count++ }
-        END { print count+0 }
-    ' "$f"
-}
+# Un-written backlog bullets in a stage file. One shared counter in _lib.sh
+# (this private copy matched only the literal "(not yet written)").
+count_backlog_bullets() { count_unpromoted_bullets "$1"; }
 
 # Emit the planned-but-unframed rows from the brief's ## Stage Plan:
 # those with no matching STAGE-*.md file yet. Output is one

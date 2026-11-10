@@ -27,56 +27,11 @@ default:
 # ONE-TIME SETUP
 # ----------------------------------------------------------------------------
 
+# `just init` asks, then confirms; `just init claude-only` (or
+# claude-plus-agents) runs without prompting. See scripts/init.sh.
 # Initialize the repo: pick a variant and scaffold files to the root.
-init:
-    @echo "Spec-driven repo template — init"
-    @echo ""
-    @if [ -f AGENTS.md ]; then \
-        echo "⚠  Already initialized (AGENTS.md exists at repo root)."; \
-        echo "   Init is one-shot: it consumes variants/ when it runs."; \
-        echo "   To start over, restore the repo from git or re-clone."; \
-        exit 1; \
-    fi
-    @if [ ! -d variants ]; then \
-        echo "⚠  variants/ directory is missing."; \
-        echo "   This repo was already initialized (or the template was"; \
-        echo "   modified). Restore from git or re-clone to re-init."; \
-        exit 1; \
-    fi
-    @echo "Pick a variant:"
-    @echo "  1) claude-only         (Claude plays every role; simpler)"
-    @echo "  2) claude-plus-agents  (Claude architects, separate agent implements)"
-    @echo ""
-    @printf "Enter 1 or 2: "
-    @read variant_choice && \
-    if [ "$variant_choice" = "1" ]; then \
-        VARIANT="claude-only"; \
-    elif [ "$variant_choice" = "2" ]; then \
-        VARIANT="claude-plus-agents"; \
-    else \
-        echo "Invalid choice: $variant_choice"; exit 1; \
-    fi && \
-    echo "" && \
-    echo "Scaffolding $VARIANT to repo root..." && \
-    cp -r "variants/$VARIANT/." . && \
-    rm -rf variants/ && \
-    echo "$VARIANT" > .variant && \
-    ./scripts/scaffold-clean.sh && \
-    echo "" && \
-    echo "✓ Done. Your variant: $VARIANT" && \
-    echo "" && \
-    { printf "Start with a fresh git history? (removes template history) [y/N]: "; read fresh_choice || true; } && \
-    if [ "${fresh_choice:-}" = "y" ] || [ "${fresh_choice:-}" = "Y" ]; then \
-        ./scripts/fresh-history.sh -y; \
-    else \
-        echo "  (kept existing git history — run 'just fresh-start' later to reset)"; \
-    fi && \
-    echo "" && \
-    echo "Next steps:" && \
-    echo "  1. Open GETTING_STARTED.md" && \
-    echo "  2. Work through the PROJECT FRAME prompt in FIRST_SESSION_PROMPTS.md" && \
-    echo "  3. Commit your work (skip if you reset history above — that already" && \
-    echo "     made the first commit):  git add . && git commit -m 'chore: scaffold'"
+init variant="":
+    @./scripts/init.sh {{quote(variant)}}
 
 # Start a fresh git history for a NEW project (discards the template's history,
 # stamps provenance). Run once after init if you cloned rather than used
@@ -299,6 +254,12 @@ decisions-audit *FLAGS:
 decisions-index *FLAGS:
     @./scripts/decisions-index.sh {{FLAGS}}
 
+# Find artifact ids used twice: one SPEC/STAGE/PATCH/SPIKE/HANDOFF/DEC number
+# given to two different artifacts across this checkout, other worktrees, and
+# local branches. Run after `git fetch` to include pushed work. `--json`.
+id-audit *FLAGS:
+    @./scripts/id-audit.sh {{FLAGS}}
+
 # Fail if any shipped spec is missing real build/verify cost data
 # (AGENTS.md §4 / docs/cost-tracking.md). Same check the CI `cost-data`
 # job runs; also surfaced in `just status` and `just report-weekly`.
@@ -343,3 +304,11 @@ build-info *ARGS:
 # Maintainer self-test of the template itself (the app keeps `just test`).
 template-selftest:
     @./scripts/test.sh
+
+# Maintainers, from the template repo: bring an instance's template-managed
+# files up to this template's version (a three-way update per file, based on
+# the instance's VERSION). Dry run by default; --apply writes, --take PATH
+# accepts the template's copy of a reviewed conflict. See CONTRIBUTING.md.
+# Update an instance's template files to this version (template repo only).
+template-update *ARGS:
+    @./scripts/template-update.sh {{ARGS}}

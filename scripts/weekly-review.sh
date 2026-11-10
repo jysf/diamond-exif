@@ -52,12 +52,12 @@ if [ -d "${ACTIVE_PROJECT_DIR}/specs/done" ]; then
     if [ "$(uname)" = "Darwin" ]; then
         find "${ACTIVE_PROJECT_DIR}/specs/done" -name "SPEC-*.md" -print0 2>/dev/null \
             | xargs -0 stat -f "%m %N" 2>/dev/null \
-            | sort -rn | head -n 10 \
+            | sort -rn | sed -n 1,10p \
             | awk '{ $1=""; print substr($0, 2) }' \
             | sed "${rel_prefix}; s|^|- |"
     else
         find "${ACTIVE_PROJECT_DIR}/specs/done" -name "SPEC-*.md" -printf '%T@ %p\n' 2>/dev/null \
-            | sort -rn | head -n 10 \
+            | sort -rn | sed -n 1,10p \
             | awk '{ $1=""; print substr($0, 2) }' \
             | sed "${rel_prefix}; s|^|- |"
     fi

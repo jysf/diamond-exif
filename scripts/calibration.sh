@@ -18,20 +18,30 @@
 #   just calibration                 # active project
 #   just calibration --all           # every project
 #   just calibration PROJ-002        # a specific project
+#   just calibration --basis transcript   # only specs measured one way
 #   just calibration --json
+#
+# Bands are only as comparable as their measurements. Each spec's cost basis
+# (docs/cost-tracking.md "Basis") is shown, and a band built from more than one
+# basis is flagged: an Agent result and a transcript sum for the same cycle were
+# measured 26× apart, so averaging them builds a band from two different
+# quantities.
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/_lib.sh"
 require_initialized
 
-SCOPE="active"; TARGET=""; JSON_OUT=0
-for arg in "$@"; do
+SCOPE="active"; TARGET=""; JSON_OUT=0; BASIS_FILTER=""
+while [ "$#" -gt 0 ]; do
+    arg="$1"; shift
     case "$arg" in
         --all)              SCOPE="all" ;;
         --active|--current) SCOPE="active" ;;
         --json)             JSON_OUT=1 ;;
-        --*)                usage_error "Unknown flag: $arg (use --all, --active, --json, or a PROJ-NNN id)" ;;
+        --basis)            BASIS_FILTER="${1:-}"; [ -n "$BASIS_FILTER" ] || usage_error "--basis needs a value (e.g. transcript)"; shift ;;
+        --basis=*)          BASIS_FILTER="${arg#--basis=}" ;;
+        --*)                usage_error "Unknown flag: $arg (use --all, --active, --basis B, --json, or a PROJ-NNN id)" ;;
         *)                  SCOPE="one"; TARGET="$arg" ;;
     esac
 done
@@ -40,7 +50,7 @@ PROJECTS=()
 if [ "$SCOPE" = "active" ]; then
     PROJECTS+=("$(get_active_project)")
 elif [ "$SCOPE" = "one" ]; then
-    dir=$(find "${REPO_ROOT}/projects" -maxdepth 1 -type d -name "${TARGET}*" 2>/dev/null | sort | head -n1)
+    dir=$(find "${REPO_ROOT}/projects" -maxdepth 1 -type d -name "${TARGET}*" 2>/dev/null | sort | sed -n 1p)
     [ -n "$dir" ] || die "No project matching '${TARGET}' under projects/."
     PROJECTS+=("$(basename "$dir")")
 else
@@ -48,7 +58,9 @@ else
         < <(find "${REPO_ROOT}/projects" -maxdepth 1 -type d -name 'PROJ-*' 2>/dev/null | sort)
 fi
 
-# One row per shipped spec: proj|id|title|expected|actual|verdict|est_tokens|act_tokens
+# One row per shipped spec: proj|id|expected|actual|verdict|est_tokens|act_tokens|basis|title
+# The title is LAST so `read` hands any `|` inside it to the final variable
+# (bragfile's SPEC-014 title has one; it shifted every field after it).
 ROWS=()
 for proj in "${PROJECTS[@]}"; do
     pdir="${REPO_ROOT}/projects/${proj}"
@@ -72,11 +84,18 @@ for proj in "${PROJECTS[@]}"; do
         fi
         est=$(get_tokens_estimate "$f")
         actual_tok=$(sum_cost_tokens_for_spec "$f")
-        ROWS+=("${proj}|${id}|$(get_spec_title "$f")|${exp:-?}|${act:-?}|${verdict}|${est:-}|${actual_tok:-0}")
+        basis=$(get_spec_cost_basis "$f"); [ -n "$basis" ] || basis="-"
+        if [ -n "$BASIS_FILTER" ] && [ "$basis" != "$BASIS_FILTER" ]; then continue; fi
+        ROWS+=("${proj}|${id}|${exp:-?}|${act:-?}|${verdict}|${est:-}|${actual_tok:-0}|${basis}|$(get_spec_title "$f")")
     done < <(find_all_specs "$pdir")
 done
 
 TOTAL=${#ROWS[@]}
+if [ "$TOTAL" = "0" ] && [ "$JSON_OUT" = "0" ] && [ -n "$BASIS_FILTER" ]; then
+    echo "${DIM}No shipped spec has cost basis '${BASIS_FILTER}'.${RESET}"
+    echo "Specs record it per cost session (\`basis:\`); see docs/cost-tracking.md \"Basis\"."
+    exit 0
+fi
 if [ "$TOTAL" = "0" ] && [ "$JSON_OUT" = "0" ]; then
     echo "${DIM}No shipped specs yet — nothing to calibrate against.${RESET}"
     echo "Calibration needs history: it compares what you predicted at design"
@@ -89,9 +108,10 @@ fi
 # "SIZE:tok SIZE:tok" string is enough at these volumes.
 under=0; over=0; on=0; unrecorded=0
 BAND_DATA=""
+BAND_BASES=""   # one word per spec that fed a band, for the mixed-basis check
 tok_under=0; tok_over=0; tok_on=0
 for row in ${ROWS[@]+"${ROWS[@]}"}; do
-    IFS='|' read -r _p _id _t exp _act verdict est atok <<EOF
+    IFS='|' read -r _p _id exp _act verdict est atok rbasis _t <<EOF
 $row
 EOF
     case "$verdict" in
@@ -100,6 +120,8 @@ EOF
     esac
     if [ "$(size_rank "$exp")" != "0" ] && [ "${atok:-0}" -gt 0 ]; then
         BAND_DATA="${BAND_DATA}${exp}:${atok} "
+        BAND_BASES="${BAND_BASES}${rbasis}
+"
     fi
     # Token estimate accuracy: within ±25% counts as on-target.
     if [ -n "$est" ] && [ "$est" -gt 0 ] && [ "${atok:-0}" -gt 0 ]; then
@@ -117,24 +139,40 @@ band_for() {
     [ -n "$vals" ] || return 1
     n=$(printf '%s\n' "$vals" | wc -l | tr -d ' ')
     printf '%s|%s|%s|%s' \
-        "$(printf '%s\n' "$vals" | head -n1)" \
+        "$(printf '%s\n' "$vals" | sed -n 1p)" \
         "$(printf '%s\n' "$vals" | awk -v n="$n" 'NR == int((n+1)/2) { print; exit }')" \
         "$(printf '%s\n' "$vals" | tail -n1)" \
         "$n"
 }
 
+# How many specs fed the bands under each basis ("transcript 12", …).
+BAND_BASIS_TALLY=$(printf '%s' "$BAND_BASES" | grep . | sort | uniq -c | awk '{ print $2, $1 }' || true)
+BAND_BASIS_COUNT=$(printf '%s' "$BAND_BASIS_TALLY" | grep -c . || true)
+band_bases_json() {
+    local b n parts=()
+    while read -r b n; do
+        [ -n "$b" ] || continue
+        [ "$b" = "-" ] && b="none"
+        parts+=("$b" "$n")
+    done <<TALLY
+${BAND_BASIS_TALLY}
+TALLY
+    if [ "${#parts[@]}" -gt 0 ]; then json_obj "${parts[@]}"; else echo "{}"; fi
+}
+
 if [ "$JSON_OUT" = "1" ]; then
     specs_json=""
     for row in ${ROWS[@]+"${ROWS[@]}"}; do
-        IFS='|' read -r p id t exp act verdict est atok <<EOF
+        IFS='|' read -r p id exp act verdict est atok rbasis t <<EOF
 $row
 EOF
         [ -z "$specs_json" ] || specs_json="${specs_json},"
+        bj="null"; [ "$rbasis" = "-" ] || bj=$(json_qs "$rbasis")
         specs_json="${specs_json}$(json_obj \
             project "$(json_qs "$p")" id "$(json_qs "$id")" title "$(json_qs "$t")" \
             expected_size "$(json_qs "$exp")" actual_size "$(json_qs "$act")" \
             size_verdict "$(json_qs "$verdict")" \
-            tokens_estimate "${est:-null}" tokens_actual "${atok:-0}")"
+            tokens_estimate "${est:-null}" tokens_actual "${atok:-0}" cost_basis "$bj")"
     done
     bands_json=""
     for s in XS S M L XL XXL; do
@@ -152,16 +190,18 @@ EOF
         size_drift "$(json_obj under "$under" over "$over" on_target "$on" unrecorded "$unrecorded")" \
         token_drift "$(json_obj under "$tok_under" over "$tok_over" on_target "$tok_on")" \
         observed_token_bands "[${bands_json}]" \
+        band_bases "$(band_bases_json)" bands_mix_bases "$([ "$BAND_BASIS_COUNT" -gt 1 ] && echo true || echo false)" \
+        basis_filter "$([ -n "$BASIS_FILTER" ] && json_qs "$BASIS_FILTER" || echo null)" \
         specs "[${specs_json}]")"
     exit 0
 fi
 
 echo "${BOLD}Calibration — expected vs actual${RESET} ${DIM}(${TOTAL} shipped spec(s))${RESET}"
 echo ""
-printf "  ${DIM}%-10s %-5s %-7s %-8s %10s %11s${RESET}\n" \
-    "SPEC" "EXP" "ACTUAL" "VERDICT" "EST TOK" "ACTUAL TOK"
+printf "  ${DIM}%-10s %-5s %-7s %-8s %10s %11s %-12s${RESET}\n" \
+    "SPEC" "EXP" "ACTUAL" "VERDICT" "EST TOK" "ACTUAL TOK" "BASIS"
 for row in ${ROWS[@]+"${ROWS[@]}"}; do
-    IFS='|' read -r _p id title exp act verdict est atok <<EOF
+    IFS='|' read -r _p id exp act verdict est atok rbasis title <<EOF
 $row
 EOF
     # Pad the label BEFORE colouring it — printf widths count escape bytes.
@@ -171,8 +211,8 @@ EOF
         on)    mark="${GREEN}$(printf '%-8s' on)${RESET}" ;;
         *)     mark="${DIM}$(printf '%-8s' 'not set')${RESET}" ;;
     esac
-    printf "  %-10s %-5s %-7s %s %10s %11s  ${DIM}%s${RESET}\n" \
-        "$id" "$exp" "$act" "$mark" "${est:--}" "${atok:-0}" "$title"
+    printf "  %-10s %-5s %-7s %s %10s %11s %-12s ${DIM}%s${RESET}\n" \
+        "$id" "$exp" "$act" "$mark" "${est:--}" "${atok:-0}" "$rbasis" "$title"
 done
 
 echo ""
@@ -200,4 +240,19 @@ done
 if [ "$BANDS_SHOWN" = "1" ]; then
     echo "${DIM}Treat a band as a real estimate only once n is big enough to trust —"
     echo "it's your repo's history, not a rule.${RESET}"
+    if [ "$BAND_BASIS_COUNT" -gt 1 ]; then
+        echo ""
+        warn "These bands mix cost measured different ways:"
+        printf '%s\n' "$BAND_BASIS_TALLY" | while read -r b n; do
+            [ "$b" = "-" ] && b="(no basis)"
+            [ "$b" = "unrecorded" ] && b="unrecorded (a metered session names no basis)"
+            [ "$b" = "mixed" ] && b="mixed (one spec's sessions disagree)"
+            printf "    %-50s %s spec(s)\n" "$b" "$n"
+        done
+        echo "  ${DIM}An Agent result and a transcript sum for one cycle were measured 26× apart."
+        echo "  Compare within one: just calibration --basis transcript (docs/cost-tracking.md \"Basis\").${RESET}"
+    elif [ "$BAND_BASIS_COUNT" = 1 ] && printf '%s' "$BAND_BASIS_TALLY" | grep -qE '^(unrecorded|-) '; then
+        echo "${DIM}No spec in these bands records how its cost was measured (cost session \`basis:\`),"
+        echo "so nothing here can tell a transcript sum from an Agent result.${RESET}"
+    fi
 fi

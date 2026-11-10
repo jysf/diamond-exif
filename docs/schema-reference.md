@@ -132,7 +132,7 @@ value_contribution: { advances ◦, delivers[] ◦, explicitly_does_not[] ◦ }
 ```
 task: { id ✅, type ✅ enum{epic,story,task,bug,chore,release}, cycle ✅ enum{frame,design,build,verify,ship},
         blocked ◦, priority ◦, complexity ✅ enum{XS,S,M,L,XL,XXL}, complexity_actual ◦,
-        verify_verdict ◦ enum{approved,punch-list,rejected} }
+        verify_verdict ◦ enum{approved,punch-list,rejected}, verify_rounds[] ◦ same enum }
 project: { id ✅, stage ✅ }            repo.id ✅
 agents: { architect ◦, implementer ◦, created_at ◦ }
 references: { decisions[] ◦, constraints[] ◦, related_specs[] ◦ }
@@ -154,6 +154,11 @@ verify, in either direction:
 | `verify → build` (or `design`/`frame`) | `punch-list` |
 | either, with `--verdict rejected` | `rejected` |
 
+Each outcome is also appended to `verify_rounds` (`[punch-list, approved]`),
+because `verify_verdict` keeps only the last: a spec sent back and then approved
+reads as plain `approved` there. `just dash defects` counts pushback from the
+rounds (irradiance: the last-verdict field showed 1 pushback, its handoffs 5).
+
 Stamping only on the way to `ship` would record approvals and silently drop
 every rejection — which is the number actually worth having. The destination
 can't distinguish `punch-list` from `rejected` (both go back to build), so that
@@ -169,7 +174,9 @@ ever *pushed back*.
 **In this variant the verdict is the delegated verifier's**, returned via the
 `HANDOFF-*` for the verify cycle. Stamp it from the handback, not from your own
 reading of the work — an orchestrator that grades the verify it commissioned is
-the failure this split exists to prevent.
+the failure this split exists to prevent. The verifier writes it to
+`handback.verdict`; `just dash defects` reads that per handoff, so each round
+counts even before the spec's own fields are stamped.
 
 The **required structural set** `just validate` enforces: `task.id`,
 `task.type`, `task.cycle` (valid enum), `task.complexity` (valid enum),
@@ -217,8 +224,9 @@ cost:
     - cycle: <frame|design|build|verify|ship>
       agent: <model id>
       interface: <claude-code|claude-ai|api|ollama|other>
+      basis: <transcript|agent-result|slash-cost|api-usage|estimate>   # open set
       tokens_total: <int>                # ONE combined count (real on build/verify)
-      estimated_usd: <float>             # order-of-magnitude estimate
+      estimated_usd: <float>             # per component (docs/cost-tracking.md)
       duration_minutes: <number>
       recorded_at: <YYYY-MM-DD>
       notes: <string>

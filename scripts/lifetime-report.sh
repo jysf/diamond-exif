@@ -86,12 +86,12 @@ emit_data() {
     # --- Git span ---
     if command -v git >/dev/null 2>&1 && [ -d "${REPO_ROOT}/.git" ]; then
         echo "## Git span"
-        # `|| true`: `git log | head -1` SIGPIPEs git once its output exceeds the
-        # pipe buffer; without this, `set -euo pipefail` aborts before the status /
-        # specs-by-stage aggregates below — the core of the report.
+        # `sed -n 1p`, not `head -1`: head exits early and SIGPIPEs git once the log
+        # outgrows the pipe buffer, and `set -euo pipefail` then aborted before the
+        # status / specs-by-stage aggregates below. `|| true` covers a git error.
         local first last count
-        first=$(git -C "$REPO_ROOT" log --reverse --format='%ad' --date=short 2>/dev/null | head -1) || true
-        last=$(git  -C "$REPO_ROOT" log          --format='%ad' --date=short 2>/dev/null | head -1) || true
+        first=$(git -C "$REPO_ROOT" log --reverse --format='%ad' --date=short 2>/dev/null | sed -n 1p) || true
+        last=$(git  -C "$REPO_ROOT" log -1       --format='%ad' --date=short 2>/dev/null) || true
         count=$(git -C "$REPO_ROOT" rev-list --count HEAD 2>/dev/null)
         echo "- first commit: ${first:-?}   last commit: ${last:-?}   (${count:-?} commits)"
         echo "  (note: project dates in briefs predate the git history if the repo was re-inited)"
@@ -123,8 +123,8 @@ emit_glance() {
     n_releases=$(grep -cE '^## ' "${REPO_ROOT}/CHANGELOG.md" 2>/dev/null || echo 0)
     echo "## Lifetime at a glance"
     if command -v git >/dev/null 2>&1 && [ -d "${REPO_ROOT}/.git" ]; then
-        first=$(git -C "$REPO_ROOT" log --reverse --format='%ad' --date=short 2>/dev/null | head -1) || true
-        last=$(git  -C "$REPO_ROOT" log          --format='%ad' --date=short 2>/dev/null | head -1) || true
+        first=$(git -C "$REPO_ROOT" log --reverse --format='%ad' --date=short 2>/dev/null | sed -n 1p) || true
+        last=$(git  -C "$REPO_ROOT" log -1       --format='%ad' --date=short 2>/dev/null) || true
         count=$(git -C "$REPO_ROOT" rev-list --count HEAD 2>/dev/null)
         echo "- Lifespan:   ${first:-?} → ${last:-?}   (${count:-?} commits)"
     fi
