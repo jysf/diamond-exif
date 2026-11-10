@@ -76,10 +76,11 @@ The design and porting brief are complete and carry named failure modes. The fir
 - [x] STAGE-002 (shipped on 2026-11-05) — M1b JPEG container read parity: segment walker + `jpeg_segments` fuzz, Exif and located regions, ExifTool parity and JPEG red-proofs
 - [ ] (not yet defined) — PNG and WebP readers with their fuzz targets and oracle rows (M1b rest)
 - [x] STAGE-003 (shipped on 2026-11-06) — `exif-audit` CLI: audit model, inventory parity, strip-policy preview, renderers + fuzz, the incremental report builder, the binary
-- [ ] (not yet defined) — writer and strip policies (M1c, M1d)
+- [ ] STAGE-004 (active) — M1c JPEG and TIFF writer: audit coverage of writer-relevant structures, segment-level strip, in-place IFD strip, TIFF/DNG strip (SPIKE-001 is the evidence)
+- [ ] (not yet defined) — M1d: PNG and WebP readers and writers, `set` operations, MakerNote rules
 - [ ] (not yet defined) — M1e/M1f: HEIC read, IPTC/ICC passthrough, 24 h fuzz gate, publish
 
-**Count:** 3 shipped / 0 active / 3 pending
+**Count:** 3 shipped / 1 active / 3 pending
 
 ## Dependencies
 

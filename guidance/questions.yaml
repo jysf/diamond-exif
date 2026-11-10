@@ -832,3 +832,72 @@ questions:
       scanning host, and --values excerpts are capped at 64 bytes. The verifier measured 18 of
       1,500 racing runs auditing a file outside the tree. A std-only (dev, ino) comparison is
       the portable fix. Decide if exif-audit is ever run on untrusted shared trees.
+
+  - id: audit-embedded-images-and-unrecognised-segments
+    question: "Should the audit report Multi-Picture Format secondary images, preview JPEGs inside MakerNotes, unrecognised APPn segments (APP10 AROT) and trailer data, as new DEC-008 categories or region kinds?"
+    priority: high
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-09
+    assigned_to: null
+    notes: |
+      SPIKE-001 (real files): 4 of 11 JPEGs have MPF secondary images (387 KB to 915 KB; Nikon
+      extras carry their own Exif, iPhone extras carry XMP and ICC); Nikon, Fuji and Leica
+      MakerNotes hold preview JPEGs; 2 of 11 JPEGs have proprietary APP10 `AROT` segments; 1 of
+      11 has a 313-byte trailer. The audit sees none of them, so a preview that says a policy
+      leaves "nothing" can be false. First spec of the writer stage; a DEC-008 amendment.
+
+  - id: writer-in-place-delete-and-scrub
+    question: "Is the writer's rule 'delete IFD entries in place, scrub their value bytes and dead space, never relocate a MakerNote, never grow an Exif block' the right design?"
+    priority: high
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-09
+    assigned_to: null
+    notes: |
+      SPIKE-001: Exif APP1 segments of 65,468 and 65,534 bytes exist (the ceiling); MakerNote
+      relocation inside the block kept ExifTool's view identical for Nikon and Apple notes but
+      was untestable for Fuji, Leica and large Nikon notes. Removing an entry without zeroing its
+      out-of-line value leaves the data in the file. Decide in the writer stage's first DEC.
+      Second pass (2026-11-09): moving a MakerNote inside the Exif block broke 4 of 7 Canon and Sony
+      notes (and left 3 identical), so relocation is unsafe in general: never relocate.
+
+  - id: real-corpus-more-types
+    question: "Which further real files should a second parity pass use: Canon and Sony JPEG, Samsung or Pixel motion photo, Photoshop or Lightroom edit (APP13, extended XMP), plain TIFF scan, HEIC, WebP?"
+    priority: medium
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-09
+    assigned_to: null
+    notes: |
+      SPIKE-001 covered Nikon, Fuji, Leica, an iPhone-class JPEG, DNGs and one PNG. Absolute-offset
+      MakerNotes (Canon, Sony) are the classic relocation hazard and were not available.
+      Second pass (2026-11-09): Canon, Sony, Samsung, Photoshop-edited (APP13/IPTC, extended XMP), TIFF
+      scans and two WebP files now covered from the user's folder and approved public samples. Still
+      missing: a Samsung or Pixel motion photo (large trailer) and HEIC/WebP breadth for the later stage.
+
+  - id: comparator-directory-valued-real-files
+    question: "Should the SPEC-013 comparator's DIRECTORY_VALUED set learn 0x927C (MakerNote) and 0xC4A5 (PrintIM)?"
+    priority: low
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-09
+    assigned_to: null
+    notes: |
+      On real files ExifTool prints no line for these tags when it expands them into vendor groups
+      (SPIKE-001: ours-only in 8 of 15 files). The committed fixtures hold 0x927C as an undecoded
+      payload, so changing the set needs the oracle suite re-run; test-code change only.
+      Second pass: also IFD0 0x87AF, 0x87B0, 0x87B1 (GeoTIFF keys, expanded by ExifTool into its GeoTiff group).
+
+  - id: iptc-photoshop-resources-across-app13-segments
+    question: "Should the JPEG layer join Photoshop image resources that span two or more APP13 segments, so IPTC is located and a strip removes all of them?"
+    priority: medium
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-09
+    assigned_to: null
+    notes: |
+      SPIKE-001 second pass: a 32,016-byte plus 4,036-byte APP13 pair gives RegionTooShort and
+      StrayBytes issues and no IPTC region, while ExifTool lists 2 IPTC datasets. The audit reports
+      `issues` (not clean), so it is flagged, but the IPTC finding is missing. A segment-level
+      writer must remove every APP13 segment regardless.
