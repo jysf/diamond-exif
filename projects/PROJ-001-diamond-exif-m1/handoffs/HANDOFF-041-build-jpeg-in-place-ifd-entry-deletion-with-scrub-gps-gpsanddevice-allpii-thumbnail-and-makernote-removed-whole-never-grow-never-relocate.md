@@ -51,14 +51,14 @@ handback:
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
   basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: 746836             # REAL combined count — what cost-audit reads
-  estimated_usd: 4.93              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: 66
+  tokens_total: 782540             # REAL combined count — what cost-audit reads
+  estimated_usd: 5.16              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  duration_minutes: 85
   branch: worktree-agent-a4c6983a1eacb858d
   pr: null
   completed_at: 2026-11-10         # YYYY-MM-DD
-  notes: "Cost transcribed by the orchestrator from the harness final cumulative subagent_tokens (746,836) at 6.60 USD per Mtok = 4.93 USD; duration 3,942,831 ms = 65.7 min, rounded to 66. Nothing was pushed, no PR, no cycle advanced."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "Cost transcribed by the orchestrator from the harness final cumulative subagent_tokens after the follow-up (782,540; 746,836 at the first build report) at 6.60 USD per Mtok = 5.16 USD. Duration is the sum of the two runs reported by the harness: 3,942,831 ms + 1,149,869 ms = 84.9 min, rounded to 85. Token cumulativity is derived (the second run added 35,704 tokens over 43 tool uses), not confirmed by the harness. Follow-up fixed the joined-stray-bytes harness over-prediction (56bd4a6, 9315047). Nothing was pushed, no PR, no cycle advanced."
+  synced_at: 2026-11-10
 ---
 
 # HANDOFF-041: JPEG in-place Exif entry deletion with scrub (SPEC-021)

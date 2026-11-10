@@ -6,7 +6,7 @@
 task:
   id: SPEC-021
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: verify  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -63,11 +63,21 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: 1100000
-  sessions: []
+  sessions:
+    - cycle: build
+      handoff: HANDOFF-041
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 782540
+      estimated_usd: 5.16
+      duration_minutes: 85
+      recorded_at: 2026-11-10
+      notes: "Cost transcribed by the orchestrator from the harness final cumulative subagent_tokens after the follow-up (782,540; 746,836 at the first build report) at 6.60 USD per Mtok = 5.16 USD. Duration is the sum of the two runs reported by the harness: 3,942,831 ms + 1,149,869 ms = 84.9 min, rounded to 85. Token cumulativity is derived (the second run added 35,704 tokens over 43 tool uses), not confirmed by the harness. Follow-up fixed the joined-stray-bytes harness over-prediction (56bd4a6, 9315047). Nothing was pushed, no PR, no cycle advanced."
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 782540
+    estimated_usd: 5.16
+    session_count: 1
 ---
 
 # SPEC-021: JPEG in-place IFD entry deletion with scrub: `Gps`, `GpsAndDevice`, `AllPii` (thumbnail and MakerNote removed whole), never grow, never relocate
