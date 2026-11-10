@@ -440,8 +440,7 @@ pub const KNOWN_DIVERGENCES: &[Divergence] = &[
         measured_stdout: "all 22 fields are '-' (ExifTool prints no IPTC group for it); \
                       exif-core now locates the segment as an Iptc region, so the region \
                       presence selector reads 'present'.",
-        right_side:
-            "exif-core, by DEC-012: a Photoshop block is a block the writer must handle \
+        right_side: "exif-core, by DEC-012: a Photoshop block is a block the writer must handle \
                  whatever it holds (SPIKE-001 found one split across two segments), so every \
                  Photoshop segment is a region; this is a presence difference, not a decode.",
         question_id: "iptc-photoshop-resources-across-app13-segments",

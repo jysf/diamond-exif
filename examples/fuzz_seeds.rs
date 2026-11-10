@@ -1309,7 +1309,11 @@ fn render_seeds() -> Vec<(String, Vec<u8>)> {
         // several option bytes (policies, inventory, values, failure bits).
         (
             "shape-mpo-all-pii-inventory-values",
-            render_seed(3 | INV | VAL, b"photos/nikon.mpo", &real_shapes::mpo_two(false)),
+            render_seed(
+                3 | INV | VAL,
+                b"photos/nikon.mpo",
+                &real_shapes::mpo_two(false),
+            ),
         ),
         (
             "shape-mpo-gps-values",

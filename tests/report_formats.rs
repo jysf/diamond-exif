@@ -9,12 +9,12 @@
 //! the private layers: the JSON string writer, the CSV field and row writers)
 //! are unit tests in `src/report/`.
 
+#[path = "support/report_inputs.rs"]
+mod inputs;
 #[path = "support/oracle_tiff.rs"]
 mod oracle_tiff;
 #[path = "support/real_shapes.rs"]
 mod real_shapes;
-#[path = "support/report_inputs.rs"]
-mod inputs;
 
 include!("../fuzz/shared/render_check.rs");
 
@@ -1234,11 +1234,17 @@ fn new_region_and_category_names_are_pinned_in_every_format() {
     let text = render_text(&files, &on);
     assert!(text.contains("embedded_image [medium]"), "{text}");
     assert!(text.contains("other_segment [medium]"), "{text}");
-    assert!(text.contains("region=embedded_image") || text.contains("embedded_image"), "{text}");
+    assert!(
+        text.contains("region=embedded_image") || text.contains("embedded_image"),
+        "{text}"
+    );
     let rows = csv(&files, &on);
     let all: String = rows.iter().flatten().cloned().collect::<Vec<_>>().join("|");
     assert!(all.contains("embedded_image"), "{all}");
-    assert!(all.contains("other_segment") && all.contains("trailer"), "{all}");
+    assert!(
+        all.contains("other_segment") && all.contains("trailer"),
+        "{all}"
+    );
     // The other two region names: a comment and an unrecognised APPn.
     let other = real_shapes::app10_arot();
     let files = one_file(&other);
@@ -1263,8 +1269,7 @@ fn text_prints_holds() {
     // The Nikon-style extra holds Exif (camera model, timestamps); the
     // iPhone-style one holds XMP and ICC.
     assert!(
-        text.contains("holds=[timestamps,camera_model]")
-            || text.contains("holds=[xmp,"),
+        text.contains("holds=[timestamps,camera_model]") || text.contains("holds=[xmp,"),
         "{text}"
     );
     assert!(text.contains("holds=[xmp,icc]"), "{text}");

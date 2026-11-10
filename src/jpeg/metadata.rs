@@ -434,7 +434,7 @@ impl Extract {
         }
         let order = container.byte_order();
         let mut found = Vec::new();
-        for (i, chunk) in index.chunks_exact(MP_ENTRY_LEN).enumerate() {
+        for (i, chunk) in index.as_chunks::<MP_ENTRY_LEN>().0.iter().enumerate() {
             if i >= MAX_MPF_IMAGES {
                 self.record(
                     Error::TooManyMpfImages {
@@ -1892,7 +1892,11 @@ mod tests {
     /// byte after `MPF\0`): TIFF header, one IFD of `NumberOfImages` (0xB001)
     /// and `MPEntry` (0xB002), then the entries themselves.
     fn mpf_seg(be: bool, entries: &[(u32, u32)]) -> Vec<u8> {
-        let mut t = if be { b"MM\0*".to_vec() } else { b"II*\0".to_vec() };
+        let mut t = if be {
+            b"MM\0*".to_vec()
+        } else {
+            b"II*\0".to_vec()
+        };
         t.extend_from_slice(&u32w(be, 8));
         t.extend_from_slice(&u16w(be, 2));
         // NumberOfImages: LONG, count 1, inline.
@@ -2206,7 +2210,12 @@ mod tests {
         // (b) 2^32 - 1 sizes and offsets.
         let (d, _) = jpeg_of(&[mpf_seg(
             true,
-            &[(u32::MAX, 0), (u32::MAX, u32::MAX), (u32::MAX, 0), (1, u32::MAX)],
+            &[
+                (u32::MAX, 0),
+                (u32::MAX, u32::MAX),
+                (u32::MAX, 0),
+                (1, u32::MAX),
+            ],
         )]);
         let m = read(&d).unwrap();
         assert!(embedded_of(&m).is_empty());
@@ -2308,7 +2317,12 @@ mod tests {
 
     #[test]
     fn a_trailer_that_is_exactly_the_mpf_images_gives_no_trailer_region() {
-        let (file, _) = mpo(true, &[], &[], &[small_jpeg(&[]), small_jpeg(&[com_seg(b"c")])]);
+        let (file, _) = mpo(
+            true,
+            &[],
+            &[],
+            &[small_jpeg(&[]), small_jpeg(&[com_seg(b"c")])],
+        );
         let m = read(&file).unwrap();
         assert!(!m.jpeg().trailer().is_empty());
         assert!(trailers_of(&m).is_empty());
@@ -2322,7 +2336,7 @@ mod tests {
         // middle, so two pieces remain, one each side.
         let img = small_jpeg(&[]);
         let mut tail = vec![0x33u8; 20];
-        let (mut file, ranges) = mpo(false, &[], &vec![0x44u8; 30], &[img.clone()]);
+        let (mut file, ranges) = mpo(false, &[], &[0x44u8; 30], std::slice::from_ref(&img));
         let end = file.len();
         file.append(&mut tail);
         let m = read(&file).unwrap();

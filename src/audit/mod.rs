@@ -1484,10 +1484,7 @@ mod tests {
         // The inner image has a comment, an APP10 segment, a GPS-bearing Exif
         // and a 5-byte trailer: FreeText, OtherSegment (twice over) and Gps.
         let gps = build(
-            &[
-                (vec![ptr(0x8825, 1)], None),
-                (vec![ascii(1, b"N")], None),
-            ],
+            &[(vec![ptr(0x8825, 1)], None), (vec![ascii(1, b"N")], None)],
             &[],
         );
         let mut inner = jpeg(&[
@@ -1530,14 +1527,11 @@ mod tests {
         // past its end): with location off that segment is an OtherSegment and
         // the GPS image is neither located nor looked into.
         let gps = build(
-            &[
-                (vec![ptr(0x8825, 1)], None),
-                (vec![ascii(1, b"N")], None),
-            ],
+            &[(vec![ptr(0x8825, 1)], None), (vec![ascii(1, b"N")], None)],
             &[],
         );
         let deep = jpeg(&[exif_seg(&gps)]);
-        let inner = mpo(&[], &[deep.clone()]);
+        let inner = mpo(&[], std::slice::from_ref(&deep));
         // The inner file really does hold a GPS image of its own.
         assert_eq!(embedded_findings(&audit(&inner)).len(), 1);
         let outer = mpo(&[], &[inner]);
@@ -1581,7 +1575,14 @@ mod tests {
         let eoi_end = v.len();
         v.extend_from_slice(&[9u8; 313]);
         let a = audit(&v);
-        assert_eq!(cats(&a), vec![Category::OtherSegment, Category::FreeText, Category::OtherSegment]);
+        assert_eq!(
+            cats(&a),
+            vec![
+                Category::OtherSegment,
+                Category::FreeText,
+                Category::OtherSegment
+            ]
+        );
         let kinds: Vec<RegionKind> = a
             .items()
             .iter()
@@ -1592,7 +1593,11 @@ mod tests {
             .collect();
         assert_eq!(
             kinds,
-            vec![RegionKind::OtherApp, RegionKind::Comment, RegionKind::Trailer]
+            vec![
+                RegionKind::OtherApp,
+                RegionKind::Comment,
+                RegionKind::Trailer
+            ]
         );
         // The trailer lies after the scan; its pseudo segment is one past the
         // last real one.
@@ -1613,7 +1618,10 @@ mod tests {
     fn a_bare_tiff_has_none_of_the_new_regions() {
         let t = build(&[(vec![ascii(0x010F, b"Cam")], None)], &[]);
         let a = audit(&t);
-        assert!(a.items().iter().all(|i| matches!(i.kind(), ItemKind::Tag { .. })));
+        assert!(a
+            .items()
+            .iter()
+            .all(|i| matches!(i.kind(), ItemKind::Tag { .. })));
         for c in [Category::EmbeddedImage, Category::OtherSegment] {
             assert!(a.findings_in(c).next().is_none());
         }

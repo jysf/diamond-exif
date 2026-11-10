@@ -327,7 +327,9 @@ mod metadata_invariants {
     /// the layout): the `(index, size, offset)` of entries 1 to 15 of the MP
     /// index and whether the index lists more than the limit; `None` when the
     /// segment does not parse. Written without `Container`.
-    fn mpf_images(payload: &[u8]) -> Option<(Vec<(usize, u32, u32)>, bool)> {
+    type MpfEntries = (Vec<(usize, u32, u32)>, bool);
+
+    fn mpf_images(payload: &[u8]) -> Option<MpfEntries> {
         let h = &payload[4..];
         let big = match h.get(..2)? {
             b"II" => false,

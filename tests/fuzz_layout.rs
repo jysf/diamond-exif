@@ -1551,7 +1551,11 @@ fn audit_harness_holds_on_every_seed_and_degenerate_inputs() {
         audit_invariants::check(&data);
         seen += 1;
     }
-    assert_eq!(seen, 78 + 15, "32 TIFF + 37 JPEG + 9 new + 15 SPEC-019 shapes");
+    assert_eq!(
+        seen,
+        78 + 15,
+        "32 TIFF + 37 JPEG + 9 new + 15 SPEC-019 shapes"
+    );
     for data in audit_degenerate_inputs() {
         audit_invariants::check(&data);
     }
@@ -1799,7 +1803,13 @@ fn new_region_plants() -> Vec<Plant> {
                 e.holds = e
                     .holds
                     .iter()
-                    .map(|h| if h == "OtherSegment" { "Gps".to_string() } else { h.clone() })
+                    .map(|h| {
+                        if h == "OtherSegment" {
+                            "Gps".to_string()
+                        } else {
+                            h.clone()
+                        }
+                    })
                     .collect();
             },
         },
@@ -5357,7 +5367,14 @@ fn new_seeds_are_committed_and_have_the_shapes_they_claim() {
             assert_eq!(&on_disk, bytes, "{target}/shape-{name}");
         }
     }
-    let seed = |n: &str| fs::read(root().join("fuzz/seeds/jpeg_segments").join(format!("shape-{n}"))).unwrap();
+    let seed = |n: &str| {
+        fs::read(
+            root()
+                .join("fuzz/seeds/jpeg_segments")
+                .join(format!("shape-{n}")),
+        )
+        .unwrap()
+    };
     let regions = |n: &str| -> Vec<&'static str> {
         let d = seed(n);
         let m = jpeg::read(&d).unwrap();
@@ -5385,7 +5402,11 @@ fn new_seeds_are_committed_and_have_the_shapes_they_claim() {
     // 17 images: 15 regions and one TooManyMpfImages issue.
     let r17 = regions("mpo-seventeen");
     assert_eq!(r17.iter().filter(|r| **r == "embedded").count(), 15);
-    assert_eq!(r17.last(), Some(&"trailer"), "the 16th secondary stays a trailer");
+    assert_eq!(
+        r17.last(),
+        Some(&"trailer"),
+        "the 16th secondary stays a trailer"
+    );
     let d = seed("mpo-seventeen");
     let m = jpeg::read(&d).unwrap();
     assert!(m
@@ -5405,7 +5426,7 @@ fn new_seeds_are_committed_and_have_the_shapes_they_claim() {
         let m = jpeg::read(&d).unwrap();
         assert!(m.exif().is_some(), "{n}");
     }
-    assert_eq!(seed("exif-64k").len() > 65_000, true);
+    assert!(seed("exif-64k").len() > 65_000);
     // And the audit sees what the names say.
     let mpo = seed("mpo-two-le");
     let a = audit(&mpo);
@@ -5431,7 +5452,11 @@ fn shape_seeds_carry_the_two_dec_012_categories() {
         let d = fs::read(root().join("fuzz/seeds/audit").join(format!("shape-{n}"))).unwrap();
         have.extend(audit(&d).findings().iter().map(|f| f.category));
     }
-    for c in [Category::EmbeddedImage, Category::OtherSegment, Category::FreeText] {
+    for c in [
+        Category::EmbeddedImage,
+        Category::OtherSegment,
+        Category::FreeText,
+    ] {
         assert!(have.contains(&c), "the shape seeds lack {c:?}");
     }
 }
@@ -5478,7 +5503,13 @@ fn each_new_region_guard_goes_red_alone_when_planted() {
     let plants = new_region_plants();
     // Each new-region guard has at least two plants (an iff or a two-sided
     // bound is not tested by one).
-    for guard in ["embedded", "category_shape", "inventory", "health", "findings"] {
+    for guard in [
+        "embedded",
+        "category_shape",
+        "inventory",
+        "health",
+        "findings",
+    ] {
         let n = plants.iter().filter(|p| p.guard == guard).count();
         assert!(n >= 2, "guard {guard} has {n} new-region plant(s)");
     }

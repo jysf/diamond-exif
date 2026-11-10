@@ -25,10 +25,10 @@ mod inventory_corpus;
 mod mutate;
 #[path = "support/oracle_jpeg.rs"]
 mod oracle_jpeg;
-#[path = "support/real_shapes.rs"]
-mod real_shapes;
 #[path = "support/oracle_tiff.rs"]
 mod oracle_tiff;
+#[path = "support/real_shapes.rs"]
+mod real_shapes;
 #[path = "support/tools.rs"]
 mod tools;
 

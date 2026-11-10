@@ -87,7 +87,10 @@ fn xmp_seg() -> Vec<u8> {
         <rdf:Description rdf:about=\"\" xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\">\
         <xmp:CreatorTool>ShapeTool</xmp:CreatorTool></rdf:Description></rdf:RDF>\
         </x:xmpmeta>\n<?xpacket end=\"w\"?>";
-    seg(0xE1, &[&b"http://ns.adobe.com/xap/1.0/\0"[..], packet].concat())
+    seg(
+        0xE1,
+        &[&b"http://ns.adobe.com/xap/1.0/\0"[..], packet].concat(),
+    )
 }
 
 /// One ICC chunk (`seq` 1 of 1) around a tiny 128-byte header and an empty tag
@@ -263,7 +266,17 @@ pub fn mpo_with(
 
 /// A well-formed MPO with the true index.
 pub fn mpo(be: bool, images: &[Vec<u8>]) -> Vec<u8> {
-    mpo_with(be, &[exif_app1(&camera_tiff(be, b"NIKON CORPORATION", b"NIKON D-SHAPE"))], images, &Tweak::none()).0
+    mpo_with(
+        be,
+        &[exif_app1(&camera_tiff(
+            be,
+            b"NIKON CORPORATION",
+            b"NIKON D-SHAPE",
+        ))],
+        images,
+        &Tweak::none(),
+    )
+    .0
 }
 
 /// A Nikon file: the primary has Exif and two extras, one with its own Exif,
@@ -307,12 +320,7 @@ pub fn mpo_offset_out_of_range() -> Vec<u8> {
 /// Secondary 0 is not a JPEG: the bytes the index points at start `FF D9`.
 pub fn mpo_image_not_jpeg() -> Vec<u8> {
     let not_jpeg = vec![0xFF, 0xD9, 1, 2, 3, 4, 5, 6];
-    let (f, _) = mpo_with(
-        false,
-        &[],
-        &[not_jpeg, iphone_extra()],
-        &Tweak::none(),
-    );
+    let (f, _) = mpo_with(false, &[], &[not_jpeg, iphone_extra()], &Tweak::none());
     f
 }
 
@@ -332,7 +340,10 @@ pub fn mpo_seventeen() -> Vec<u8> {
 /// A JPEG with a plain trailer of `TRAILER_LEN` bytes after EOI (the Leica
 /// shape: not Exif, not a JPEG).
 pub fn trailer_313() -> Vec<u8> {
-    let mut f = jpeg_of(&[jfif(), exif_app1(&camera_tiff(false, b"LEICA CAMERA AG", b"LEICA D-SHAPE"))]);
+    let mut f = jpeg_of(&[
+        jfif(),
+        exif_app1(&camera_tiff(false, b"LEICA CAMERA AG", b"LEICA D-SHAPE")),
+    ]);
     f.extend((0..TRAILER_LEN).map(|i| 0x41 + (i % 23) as u8));
     f
 }
@@ -370,7 +381,10 @@ pub fn split_app13() -> Vec<u8> {
 pub fn app10_arot() -> Vec<u8> {
     jpeg_of(&[
         jfif(),
-        seg(0xEA, &[&b"AROT\0"[..], &[0, 0, 0, 1, 0, 0, 0, 0][..]].concat()),
+        seg(
+            0xEA,
+            &[&b"AROT\0"[..], &[0, 0, 0, 1, 0, 0, 0, 0][..]].concat(),
+        ),
     ])
 }
 
@@ -378,7 +392,10 @@ pub fn app10_arot() -> Vec<u8> {
 pub fn app2_fpxr() -> Vec<u8> {
     jpeg_of(&[
         jfif(),
-        seg(0xE2, &[&b"FPXR\0"[..], &[0, 1, 0, 0, 0, 0, 0, 0, 0, 0][..]].concat()),
+        seg(
+            0xE2,
+            &[&b"FPXR\0"[..], &[0, 1, 0, 0, 0, 0, 0, 0, 0, 0][..]].concat(),
+        ),
     ])
 }
 
@@ -447,7 +464,7 @@ fn canon_tiff(shift: usize) -> (Vec<u8>, usize, usize) {
     out.extend_from_slice(&le16(1));
     entry(&mut out, 0x927C, 7, note_len, le32(note_at));
     out.extend_from_slice(&le32(0));
-    out.extend(std::iter::repeat(0u8).take(shift));
+    out.extend(std::iter::repeat_n(0u8, shift));
     assert_eq!(out.len(), note_at);
     // The note: offsets absolute from the TIFF header, and computed for the
     // note's UNSHIFTED place, so a shifted note keeps stale offsets.
@@ -511,6 +528,22 @@ pub fn exif_at_64k() -> Vec<u8> {
     let seg_bytes = exif_app1(&tiff);
     assert_eq!(seg_bytes.len(), 4 + MAX_APP_PAYLOAD);
     jpeg_of(&[seg_bytes])
+}
+
+/// The Canon tags the relocation test asks ExifTool for (`-T -n -s3`).
+pub const CANON_SELECTORS: [&str; 3] = [
+    "Canon:CanonImageType",
+    "Canon:CanonFirmwareVersion",
+    "Canon:OwnerName",
+];
+
+/// The two fixtures whose Canon tags are recorded, and the record file of each
+/// (under `tests/oracle-fixtures/exiftool-inventory/`).
+pub const CANON_RECORDED: [&str; 2] = ["canon-style-note", "canon-style-note-moved"];
+
+/// The record file name of a recorded Canon fixture.
+pub fn canon_record_file(name: &str) -> String {
+    format!("real-shapes-{name}-values.txt")
 }
 
 /// The named fixtures, in a fixed order. Names are the record section names.

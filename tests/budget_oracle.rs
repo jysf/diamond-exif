@@ -122,6 +122,25 @@ fn fnv1a_64(bytes: &[u8]) -> u64 {
     h
 }
 
+/// The SPEC-019 seed names (typed by hand, without the `shape-` prefix).
+const SHAPE_NAMES: [&str; 15] = [
+    "mpo-two-le",
+    "mpo-two-be",
+    "mpo-truncated-index",
+    "mpo-offset-out-of-range",
+    "mpo-image-not-jpeg",
+    "mpo-inner-mpf",
+    "mpo-seventeen",
+    "split-app13",
+    "app10-arot",
+    "app2-fpxr",
+    "com-segment",
+    "trailer-313",
+    "canon-style-note",
+    "canon-style-note-moved",
+    "exif-64k",
+];
+
 /// Every file of `dir` named in `old` must have exactly its recorded hash;
 /// `extra` lists the only files allowed besides them.
 fn check_dir(dir: &str, old: &[(&str, u64)], extra: &[&str]) {
@@ -166,9 +185,12 @@ fn existing_records_and_seeds_are_byte_identical() {
         "overlapping-subifds",
     ];
     check_dir("fuzz/seeds/tiff_ifd", &OLD_TIFF_SEEDS, &new_tiff);
-    check_dir("fuzz/seeds/jpeg_segments", &OLD_JPEG_SEEDS, &[]);
+    // SPEC-019: the fifteen `shape-*` seeds are the only additions.
+    let shapes: Vec<String> = SHAPE_NAMES.iter().map(|n| format!("shape-{n}")).collect();
+    let shape_refs: Vec<&str> = shapes.iter().map(String::as_str).collect();
+    check_dir("fuzz/seeds/jpeg_segments", &OLD_JPEG_SEEDS, &shape_refs);
     // The audit directory copies each `tiff_ifd` seed under a `tiff-` prefix.
-    let new_audit = [
+    let mut new_audit = vec![
         "tiff-entry-budget-exact",
         "tiff-entry-budget-over",
         "tiff-overlapping-subifds",
@@ -176,6 +198,7 @@ fn existing_records_and_seeds_are_byte_identical() {
         "audit-full-house-tiff",
         "audit-full-house-jpeg",
     ];
+    new_audit.extend(shape_refs.iter().copied());
     check_dir("fuzz/seeds/audit", &OLD_AUDIT_SEEDS, &new_audit);
 }
 

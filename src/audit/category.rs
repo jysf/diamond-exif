@@ -470,10 +470,7 @@ mod tests {
             region_category(RegionKind::OtherApp),
             Category::OtherSegment
         );
-        assert_eq!(
-            region_category(RegionKind::Trailer),
-            Category::OtherSegment
-        );
+        assert_eq!(region_category(RegionKind::Trailer), Category::OtherSegment);
     }
 
     #[test]

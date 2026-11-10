@@ -1,0 +1,4 @@
+# command: exiftool -T -n -s3 -Canon:CanonImageType -Canon:CanonFirmwareVersion -Canon:OwnerName <file>
+# exiftool-version: 13.55
+# source: fixture canon-style-note-moved
+-	-	Canon EOS DIAMOND SHAPE
