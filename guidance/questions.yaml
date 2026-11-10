@@ -994,7 +994,7 @@ questions:
   - id: dec-013-exif-resident-xmp-iptc-icc-tags
     question: "An Exif IFD can hold the tags DEC-008 files under Xmp (0x02BC), Iptc (0x83BB, 0x8649) and Icc (0x8773), which are not in EXIF9; what should a segment-level strip do with them?"
     priority: medium
-    status: open
+    status: answered
     raised_by: claude-sonnet-5-5
     raised_at: 2026-11-10
     assigned_to: null
@@ -1006,11 +1006,12 @@ questions:
       the self-check would return VerifyFailed). When every EXIF9 category is removed the Exif segments go
       whole, and the self-check (7b) does not count the Exif-resident findings of the kept categories as
       lost (an Icc-category tag inside a removed Exif segment is gone with it). Confirm or amend part 4.
+      Answered 2026-11-10 in DEC-013 amendment 2026-11-10 (A and B): ratified as built / resolved by entry editing.
 
   - id: dec-013-unlocated-mpf-entries
     question: "An MPF index entry the audit could not locate (outside the input, or not FF D8) is never patched; if a removal lies between the index header and the byte it points at, it would silently point at other bytes. Refuse (MpfNotIndexed at the index segment, as built) or patch it too?"
     priority: medium
-    status: open
+    status: answered
     raised_by: claude-sonnet-5-5
     raised_at: 2026-11-10
     assigned_to: null
@@ -1021,11 +1022,12 @@ questions:
       "no VerifyFailed on any seed" forbids. Built: MpfNotIndexed {offset of the index segment} when the
       entry points inside the input and a removal intersects [header start, pointed-at byte]. Entries that
       point outside the input stay unpatched and unrefused (they stay outside).
+      Answered 2026-11-10 in DEC-013 amendment 2026-11-10 (A and B): ratified as built / resolved by entry editing.
 
   - id: dec-013-mpf-segment-after-a-removed-index
     question: "When the real MP index is removed (EmbeddedImage in the policy) and another APP2 MPF segment stays behind it, the next reader takes that segment for the index; DEC-013 part 5 does not say. Refuse as built?"
     priority: low
-    status: open
+    status: answered
     raised_by: claude-sonnet-5-5
     raised_at: 2026-11-10
     assigned_to: null
@@ -1034,11 +1036,12 @@ questions:
       images through it (a second, formerly ignored index becomes the first). Also built: an unindexed MPF
       segment that is itself removed (OtherSegment in the policy) is exempt from the "removal at or after
       its end offset" rule, since nothing is left to be wrong.
+      Answered 2026-11-10 in DEC-013 amendment 2026-11-10 (A and B): ratified as built / resolved by entry editing.
 
   - id: dec-013-removable-segment-after-the-first-scan
     question: "A removable segment that lies after the first SOS (inside the scan region, e.g. an Exif or XMP segment between two progressive scans) makes the strip refuse with Overlap; should such segments be removable?"
     priority: low
-    status: open
+    status: answered
     raised_by: claude-sonnet-5-5
     raised_at: 2026-11-10
     assigned_to: null
@@ -1046,6 +1049,7 @@ questions:
       Rule 7 protects the scan region from SOS through EOI, and the walk puts a segment found between
       scans inside it. A strip of the committed seeds exif-after-scan and app-after-scan therefore returns
       Overlap. No file in the local corpus hits it (counts in the HANDOFF-039 handback).
+      Answered 2026-11-10 in DEC-013 amendment 2026-11-10 (A and B): ratified as built / resolved by entry editing.
 
   - id: dec-013-mpf-primary-size-underflow
     question: "A primary-size field smaller than the bytes removed from the primary cannot be patched (it would go below zero); the spec says VerifyFailed {MpfFields}. Prefer a dedicated typed refusal?"
