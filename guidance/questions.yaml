@@ -1076,3 +1076,73 @@ questions:
       read from a lowercase exif signature, with a minor warning). The writer is correct by DEC-013 part 3
       (the audit is the single definition of what is in the file), so this is an audit gap from SPEC-019 and
       Everything removes all three. Decide before the writer is offered to users.
+
+  - id: allpii-refuses-ifd1-with-a-following-ifd
+    question: "One of the 13 local JPEGs (short hash a3b66f84) has IFD0, IFD1 (a thumbnail) and a third IFD behind IFD1 in the top-level chain; AllPii and any set naming Thumbnail refuse it as Uneditable ChainAfterThumbnail (rule 7). Is the refusal acceptable, or should a thumbnail be removable when a chain IFD follows IFD1?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      Found by the SPEC-021 corpus run (counts only: Gps and GpsAndDevice 13 of 13 Ok, AllPii 12 Ok and
+      1 Uneditable ChainAfterThumbnail). The structure is Ifd0(next) | Exif | Interop | Ifd1(next) | Chain.
+      DEC-013 amendment B.4 refuses it on purpose: splicing IFD0's next word past IFD1 would make the
+      audit call the third IFD `Ifd1` (the walk assigns kinds by position), changing what it reports.
+      Options: keep the refusal (fail closed; the other 12 strip), or define a rule that removes IFD1's
+      entries and thumbnail but keeps an empty IFD1 in the chain (count 0, next kept). The second keeps the
+      chain and the kinds; it needs ExifTool measured on an empty IFD1 with a following IFD.
+
+  - id: writer-self-check-fires-on-segments-joined-by-stray-bytes
+    question: "A longer fuzz run of rewrite_jpeg (about 4 minutes, from the committed seeds) found an input where `All` returns VerifyFailed {MpfFields} and the harness's prediction says Ok. It reproduces on the SPEC-020 library (commit 6518356), so it is not from SPEC-021. Should the harness accept it, or should the writer refuse earlier with a typed error?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      The input (a 2.2 KB policy-byte-7 JPEG; libFuzzer artifact crash-14382fe9, not committed) has 13 Exif
+      segments, 16 COM segments, runs of stray bytes between them, an APP2 `MPF\0` index whose entry 0 size
+      is 14,352,128 and no SOS or EOI. Removing the Exif segments (EXIF9 alone is enough; so is `All`)
+      leaves the output walk without the index it had, so the self-check's MpfFields refuses (correct,
+      fail closed). The cause is the open question writer-stray-bytes: bytes the walk skipped are kept, and
+      once the segments between them are removed they can join and read as a segment header. The
+      harness excuses VerifyFailed only when the naive prediction breaks an invariant it checks (kept
+      findings, scan, new issue kinds, idempotence) or an MPF field underflows; "the output walks as a
+      different set of segments" is not one of them. Not fixed here (out of SPEC-021's scope); the 60 s smokes
+      pass. The 24 h gate would hit it.
+
+  - id: writer-refusals-beyond-the-spec
+    question: "The build added three Uneditable reasons the spec did not list: HiddenPointer, NestedIfd, PayloadUnreadable. Ratify them in the DEC-013 amendment?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      HiddenPointer: an Exif block with a pointer tag (SubIFDs, Exif, GPS, Interop) that the walk did not
+      follow: a second entry with the tag (the walk takes the first), or one in an IFD kind that does not
+      follow it. What it points to was never audited, so a GPS IFD behind `0x8825` = 0 plus a second `0x8825`
+      would survive `Gps` with the audit seeing nothing. The spec's leak input gps_pointer_missing_in_parent
+      cannot be built through the walk (a GPS IFD is found only through its pointer), so this is the form
+      that exists; it refuses with HiddenPointer, not PointerNotInParent (which stays for the unit-level
+      case of a pointer that stops naming the IFD).
+      NestedIfd: a removed IFD (GPS, IFD1) that has IFDs of its own (the walk follows SubIFDs from any IFD).
+      PayloadUnreadable: a deleted entry of an unknown field type, whose value cannot be sized to zero.
+      Also built beyond the spec: the check that no two IFD tables overlap runs for every partial policy
+      whether or not anything is edited (the harness guard LibraryOkNaiveUnclean names it).
+
+  - id: partial-policy-refuses-unreadable-exif-for-xmp-icc-iptc
+    question: "Custom sets that name only Xmp, Iptc or Icc are now partial (those tags can sit in an Exif IFD), so an Exif block with a walk issue refuses them as Uneditable; under SPEC-020 they returned Ok. Intended?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      DEC-013 amendment B calls a policy partial when it holds Xmp, Iptc or Icc and the Exif blocks carry
+      those tags, and rule 3 refuses an unclean block for every partial policy. The planner cannot tell
+      whether an unreadable block carries them, so it refuses. Consequence: strip of unreadable-exif and
+      gps-count-overflow under {Xmp}, {Icc} and {FreeText} changed from Ok to Uneditable (the SPEC-020 grid
+      tests and their ExifTool records were updated). Policies with no category an Exif entry can have
+      (Jumbf, EmbeddedImage, OtherSegment) still return Ok on those files.

@@ -1758,7 +1758,7 @@ fn the_output_equals_the_input_outside_the_recorded_patches_and_removals() {
 }
 
 #[test]
-fn scan_region_and_kept_segments_are_byte_identical_after_an_entry_edit() {
+fn scan_region_and_kept_segments_are_byte_identical() {
     for (name, j, pname, _cats, p) in exif_runs(true) {
         let Ok(out) = strip(&j.bytes, p) else {
             continue;
