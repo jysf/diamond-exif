@@ -6,7 +6,7 @@
 task:
   id: SPEC-020
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: verify  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -63,11 +63,19 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: 1000000
-  sessions: []
+  sessions:
+    - cycle: build
+      agent: claude-sonnet-5-5
+      interface: other
+      tokens_total: 564890
+      estimated_usd: 3.73
+      duration_minutes: 62
+      recorded_at: 2026-11-10
+      notes: "tokens_total null: a sub-agent cannot see its own token count in this harness; the orchestrator transcribes the metered figure. Nothing pushed, no PR (as instructed)."
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 564890
+    estimated_usd: 3.73
+    session_count: 1
 ---
 
 # SPEC-020: Writer foundation and JPEG segment-level strip: writer DEC, change plan, pixel-integrity and audit-as-oracle invariants, `All`/`Everything`, `rewrite_jpeg` fuzz target, ExifTool output oracle
