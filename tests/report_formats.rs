@@ -9,6 +9,10 @@
 //! the private layers: the JSON string writer, the CSV field and row writers)
 //! are unit tests in `src/report/`.
 
+#[path = "support/oracle_tiff.rs"]
+mod oracle_tiff;
+#[path = "support/real_shapes.rs"]
+mod real_shapes;
 #[path = "support/report_inputs.rs"]
 mod inputs;
 
@@ -147,7 +151,8 @@ fn json_has_the_pinned_key_order_at_every_level() {
         &["schema_version", "policy", "options", "summary", "files"],
         "top",
     );
-    assert_eq!(j.get("schema_version").unwrap().as_uint(), Some(1));
+    // DEC-010 amendment (DEC-012): schema 2.
+    assert_eq!(j.get("schema_version").unwrap().as_uint(), Some(2));
     assert_eq!(j.get("policy").unwrap().as_str(), Some("all_pii"));
     keys_are(
         j.get("options").unwrap(),
@@ -189,6 +194,8 @@ fn json_has_the_pinned_key_order_at_every_level() {
             "camera_model",
             "software",
             "icc",
+            "embedded_image",
+            "other_segment",
         ],
         "by_category",
     );
@@ -247,6 +254,7 @@ fn json_has_the_pinned_key_order_at_every_level() {
         "after_scan",
         "disposition",
         "thumbnail",
+        "embedded",
         "value",
     ];
     let findings = f.get("findings").unwrap().as_arr().unwrap();
@@ -1115,4 +1123,151 @@ fn excerpt_content_is_the_expected_escaped_text_in_every_format() {
     assert_eq!(rows[1][17], "y".repeat(64));
     assert_eq!(rows[1][18], "false");
     assert!(render_text(&files, &o).contains(&format!(" value=\"{}\"\n", "y".repeat(64))));
+}
+
+// ── SPEC-019 / DEC-012: schema 2, the `embedded` object, the new names ──────
+
+/// The names, typed by hand from DEC-012 section 4 and 7.
+const CATEGORY_NAMES_15: [&str; 15] = [
+    "gps",
+    "device_id",
+    "authorship",
+    "free_text",
+    "thumbnail",
+    "maker_note",
+    "xmp",
+    "iptc",
+    "jumbf",
+    "timestamps",
+    "camera_model",
+    "software",
+    "icc",
+    "embedded_image",
+    "other_segment",
+];
+
+fn one_file<'a>(bytes: &'a [u8]) -> Vec<FileEntry<'a>> {
+    vec![FileEntry {
+        label: b"x.jpg",
+        result: FileResult::Audited(audit(bytes)),
+    }]
+}
+
+#[test]
+fn schema_version_is_two_and_the_embedded_key_is_pinned() {
+    let mpo = real_shapes::mpo_two(false);
+    let files = one_file(&mpo);
+    let j = json(&files, &opts(None, false, false));
+    assert_eq!(j.get("schema_version").unwrap().as_uint(), Some(2));
+    let f = &j.get("files").unwrap().as_arr().unwrap()[0];
+    let findings = f.get("findings").unwrap().as_arr().unwrap();
+    let mut embedded = 0;
+    for fi in findings {
+        // `embedded` follows `thumbnail` and precedes `value`.
+        let keys = fi.keys();
+        let at = keys.iter().position(|k| *k == "embedded").unwrap();
+        assert_eq!(keys[at - 1], "thumbnail");
+        assert_eq!(keys[at + 1], "value");
+        let e = fi.get("embedded").unwrap();
+        if fi.get("category").unwrap().as_str() == Some("embedded_image") {
+            keys_are(
+                e,
+                &["offset", "length", "starts_with_ffd8", "holds"],
+                "embedded",
+            );
+            assert_eq!(e.get("starts_with_ffd8").unwrap().as_bool(), Some(true));
+            let holds: Vec<&str> = e
+                .get("holds")
+                .unwrap()
+                .as_arr()
+                .unwrap()
+                .iter()
+                .map(|h| h.as_str().unwrap())
+                .collect();
+            // In Category::ALL order, names from DEC-012.
+            let order = |n: &str| CATEGORY_NAMES_15.iter().position(|c| *c == n).unwrap();
+            assert!(holds.windows(2).all(|w| order(w[0]) < order(w[1])));
+            embedded += 1;
+        } else {
+            assert!(e.is_null());
+        }
+    }
+    assert_eq!(embedded, 2);
+}
+
+#[test]
+fn by_category_has_fifteen_keys_in_order() {
+    let mpo = real_shapes::mpo_two(true);
+    let files = one_file(&mpo);
+    let j = json(&files, &opts(None, false, false));
+    keys_are(
+        j.get("summary").unwrap().get("by_category").unwrap(),
+        &CATEGORY_NAMES_15,
+        "by_category",
+    );
+    // The two new counts are the findings of the file.
+    let bc = j.get("summary").unwrap().get("by_category").unwrap();
+    assert_eq!(bc.get("embedded_image").unwrap().as_uint(), Some(2));
+    assert_eq!(bc.get("other_segment").unwrap().as_uint(), Some(0));
+}
+
+#[test]
+fn new_region_and_category_names_are_pinned_in_every_format() {
+    // One file with all four new region kinds: an MPF image, a comment, an
+    // APP10 segment and a trailer.
+    let mut mpo = real_shapes::mpo_two(false);
+    mpo.extend_from_slice(&[0x55; 9]);
+    let files = one_file(&mpo);
+    let on = opts(Some(StripPolicy::Gps), true, false);
+    let j = json(&files, &on);
+    let f = &j.get("files").unwrap().as_arr().unwrap()[0];
+    let regions: std::collections::BTreeSet<String> = f
+        .get("inventory")
+        .unwrap()
+        .as_arr()
+        .unwrap()
+        .iter()
+        .filter_map(|i| i.get("at").unwrap().get("region"))
+        .map(|r| r.as_str().unwrap().to_string())
+        .collect();
+    assert!(regions.contains("embedded_image") && regions.contains("trailer"));
+    let text = render_text(&files, &on);
+    assert!(text.contains("embedded_image [medium]"), "{text}");
+    assert!(text.contains("other_segment [medium]"), "{text}");
+    assert!(text.contains("region=embedded_image") || text.contains("embedded_image"), "{text}");
+    let rows = csv(&files, &on);
+    let all: String = rows.iter().flatten().cloned().collect::<Vec<_>>().join("|");
+    assert!(all.contains("embedded_image"), "{all}");
+    assert!(all.contains("other_segment") && all.contains("trailer"), "{all}");
+    // The other two region names: a comment and an unrecognised APPn.
+    let other = real_shapes::app10_arot();
+    let files = one_file(&other);
+    assert!(render_text(&files, &on).contains("other_app"));
+    let com = real_shapes::com_segment();
+    let files = one_file(&com);
+    assert!(render_text(&files, &on).contains("comment"));
+    // Every category name, from the 15-key summary.
+    let j = json(&one_file(&com), &on);
+    keys_are(
+        j.get("summary").unwrap().get("by_category").unwrap(),
+        &CATEGORY_NAMES_15,
+        "by_category",
+    );
+}
+
+#[test]
+fn text_prints_holds() {
+    let mpo = real_shapes::mpo_two(false);
+    let files = one_file(&mpo);
+    let text = render_text(&files, &opts(None, false, false));
+    // The Nikon-style extra holds Exif (camera model, timestamps); the
+    // iPhone-style one holds XMP and ICC.
+    assert!(
+        text.contains("holds=[timestamps,camera_model]")
+            || text.contains("holds=[xmp,"),
+        "{text}"
+    );
+    assert!(text.contains("holds=[xmp,icc]"), "{text}");
+    assert!(text.contains("holds=[timestamps,camera_model]"), "{text}");
+    assert!(text.contains("starts_with_ffd8=true"), "{text}");
 }

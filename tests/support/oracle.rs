@@ -428,6 +428,24 @@ pub const KNOWN_DIVERGENCES: &[Divergence] = &[
                  reads each block on its own by design.",
         question_id: "exiftool-composite-gps-across-exif-blocks",
     },
+    // ── SPEC-019 / DEC-012 section 1: every `Photoshop 3.0` APP13 segment is an
+    // `Iptc` region. ───────────────────────────────────────────────────────────
+    Divergence {
+        fixture: "jpeg-iptc-without-0404",
+        selector: "IPTC:ObjectName",
+        command: "exiftool -T -n -s3 <the 22 selectors of oracle::jpeg_names()> \
+              jpeg-iptc-without-0404 (one Photoshop 3.0 APP13 segment holding a single \
+              0x0405 resource, no 0x0404)",
+        exiftool_version: "13.55",
+        measured_stdout: "all 22 fields are '-' (ExifTool prints no IPTC group for it); \
+                      exif-core now locates the segment as an Iptc region, so the region \
+                      presence selector reads 'present'.",
+        right_side:
+            "exif-core, by DEC-012: a Photoshop block is a block the writer must handle \
+                 whatever it holds (SPIKE-001 found one split across two segments), so every \
+                 Photoshop segment is a region; this is a presence difference, not a decode.",
+        question_id: "iptc-photoshop-resources-across-app13-segments",
+    },
 ];
 
 /// For a fixture covered by an [`EXIF_ANY`] divergence: the committed record of

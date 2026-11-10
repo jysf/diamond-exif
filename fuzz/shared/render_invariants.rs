@@ -51,7 +51,7 @@ mod render_invariants {
     // ── DEC-010 and the SPEC-015 schema, typed again ────────────────────────
 
     /// `Debug` name and report name of every category, in `Category::ALL` order.
-    pub const CATS: [(&str, &str); 13] = [
+    pub const CATS: [(&str, &str); 15] = [
         ("Gps", "gps"),
         ("DeviceId", "device_id"),
         ("Authorship", "authorship"),
@@ -65,6 +65,8 @@ mod render_invariants {
         ("CameraModel", "camera_model"),
         ("Software", "software"),
         ("Icc", "icc"),
+        ("EmbeddedImage", "embedded_image"),
+        ("OtherSegment", "other_segment"),
     ];
 
     pub const STATUSES: [&str; 5] = ["failed", "unsupported", "unreadable", "issues", "ok"];
@@ -75,7 +77,35 @@ mod render_invariants {
     pub const IFDS: [&str; 8] = [
         "ifd0", "ifd1", "chain", "sub", "exif", "gps", "interop", "other",
     ];
-    pub const REGIONS: [&str; 5] = ["xmp", "extended_xmp", "iptc", "icc", "jumbf"];
+    pub const REGIONS: [&str; 9] = [
+        "xmp",
+        "extended_xmp",
+        "iptc",
+        "icc",
+        "jumbf",
+        "embedded_image",
+        "comment",
+        "other_app",
+        "trailer",
+    ];
+
+    /// A region kind's report name (DEC-010 as amended by DEC-012), typed by
+    /// hand from the library's `Debug` names.
+    fn region_name(kind: &str) -> String {
+        match kind {
+            "Xmp" => "xmp",
+            "ExtendedXmp" => "extended_xmp",
+            "Iptc" => "iptc",
+            "Icc" => "icc",
+            "Jumbf" => "jumbf",
+            "EmbeddedImage" => "embedded_image",
+            "Comment" => "comment",
+            "OtherApp" => "other_app",
+            "Trailer" => "trailer",
+            other => return format!("?{other}"),
+        }
+        .to_string()
+    }
     pub const DISPS: [&str; 3] = ["removed", "kept", "kept_unread"];
     pub const SEVS: [&str; 3] = ["low", "medium", "high"];
     pub const POLICY_NAMES: [&str; 6] = [
@@ -135,7 +165,7 @@ mod render_invariants {
         "reliable_files",
         "unreliable_files",
     ];
-    const FINDING_KEYS: [&str; 9] = [
+    const FINDING_KEYS: [&str; 10] = [
         "category",
         "severity",
         "at",
@@ -144,6 +174,7 @@ mod render_invariants {
         "after_scan",
         "disposition",
         "thumbnail",
+        "embedded",
         "value",
     ];
     const ITEM_KEYS: [&str; 6] = ["at", "block", "segment", "after_scan", "category", "value"];
@@ -694,6 +725,20 @@ mod render_invariants {
                 null_or_uint(req(t, "length")?, "thumbnail.length")?;
                 boolean(req(t, "starts_with_ffd8")?, "thumbnail.starts_with_ffd8")?;
             }
+            let e = req(fi, "embedded")?;
+            if !e.is_null() {
+                keys_exact(
+                    e,
+                    &["offset", "length", "starts_with_ffd8", "holds"],
+                    "embedded",
+                )?;
+                uint(req(e, "offset")?, "embedded.offset")?;
+                uint(req(e, "length")?, "embedded.length")?;
+                boolean(req(e, "starts_with_ffd8")?, "embedded.starts_with_ffd8")?;
+                for h in req(e, "holds")?.as_arr().ok_or("embedded.holds: not an array")? {
+                    in_set(h, &CATS.map(|c| c.1), "embedded.holds")?;
+                }
+            }
             value_shape(req(fi, "value")?)?;
         }
         let inv = req(f, "inventory")?;
@@ -734,8 +779,8 @@ mod render_invariants {
             &["schema_version", "policy", "options", "summary", "files"],
             "top level",
         )?;
-        if uint(req(&j, "schema_version")?, "schema_version")? != 1 {
-            return Err("schema_version is not 1".to_string());
+        if uint(req(&j, "schema_version")?, "schema_version")? != 2 {
+            return Err("schema_version is not 2".to_string());
         }
         null_or_in(req(&j, "policy")?, &POLICY_NAMES, "policy")?;
         let o = req(&j, "options")?;
@@ -787,10 +832,7 @@ mod render_invariants {
                 }
             }
             What::Region { kind, segment, len } => {
-                let want_kind = match kind.as_str() {
-                    "ExtendedXmp" => "extended_xmp".to_string(),
-                    k => lower(k),
-                };
+                let want_kind = region_name(kind);
                 if string(req(at, "kind")?, "kind")? != "region"
                     || string(req(at, "region")?, "region")? != want_kind
                     || uint(req(at, "segment")?, "segment")? != *segment as u64
@@ -1003,6 +1045,29 @@ mod render_invariants {
                 }
                 _ => return Err(format!("finding {i}: thumbnail {t:?}, want {:?}", fw.thumb)),
             }
+            // DEC-012: the `embedded` object, null exactly when the audit has none.
+            let e = req(fj, "embedded")?;
+            match (&fw.embedded, e.is_null()) {
+                (None, true) => {}
+                (Some(ew), false) => {
+                    let holds: Vec<String> = req(e, "holds")?
+                        .as_arr()
+                        .ok_or("embedded.holds: not an array")?
+                        .iter()
+                        .map(|h| string(h, "holds").map(|s| s.to_string()))
+                        .collect::<Result<_, _>>()?;
+                    let want_holds: Vec<String> =
+                        ew.holds.iter().map(|n| snake(n).to_string()).collect();
+                    if uint(req(e, "offset")?, "embedded.offset")? != ew.offset as u64
+                        || uint(req(e, "length")?, "embedded.length")? != ew.length as u64
+                        || boolean(req(e, "starts_with_ffd8")?, "embedded.ffd8")? != ew.ffd8
+                        || holds != want_holds
+                    {
+                        return Err(format!("finding {i}: embedded {e:?}, want {ew:?}"));
+                    }
+                }
+                _ => return Err(format!("finding {i}: embedded {e:?}, want {:?}", fw.embedded)),
+            }
             // A finding without an item (past the inventory cap) has no
             // re-derived payload here; its value is only checked for shape.
             if fw.item.is_some() {
@@ -1149,10 +1214,7 @@ mod render_invariants {
                 }
                 What::Region { kind, len, .. } => {
                     r[5] = "region".to_string();
-                    r[11] = match kind.as_str() {
-                        "ExtendedXmp" => "extended_xmp".to_string(),
-                        k => lower(k),
-                    };
+                    r[11] = region_name(kind);
                     r[12] = len.to_string();
                 }
             }

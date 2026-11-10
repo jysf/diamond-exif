@@ -82,12 +82,23 @@ mod audit_invariants {
         pub ffd8: bool,
     }
 
+    /// What an embedded image holds (DEC-012 section 3), flattened: `holds` is
+    /// the category names in DEC-008/DEC-012 table order.
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct EmbF {
+        pub offset: usize,
+        pub length: usize,
+        pub ffd8: bool,
+        pub holds: Vec<String>,
+    }
+
     #[derive(Clone, Debug, PartialEq)]
     pub struct FindingF {
         pub category: String,
         pub item: Option<usize>,
         pub at: ItemF,
         pub thumb: Option<ThumbF>,
+        pub embedded: Option<EmbF>,
     }
 
     #[derive(Clone, Debug, PartialEq)]
@@ -155,6 +166,12 @@ mod audit_invariants {
                     thumb: f.thumbnail.map(|t| ThumbF {
                         range: t.range,
                         ffd8: t.starts_with_ffd8,
+                    }),
+                    embedded: f.embedded.map(|e| EmbF {
+                        offset: e.offset,
+                        length: e.length,
+                        ffd8: e.starts_with_ffd8,
+                        holds: e.holds.categories().map(|c| format!("{c:?}")).collect(),
                     }),
                 })
                 .collect(),
@@ -253,9 +270,8 @@ mod audit_invariants {
     pub fn severity_of(category: &str) -> &'static str {
         match category {
             "Gps" | "DeviceId" => "High",
-            "Authorship" | "FreeText" | "Thumbnail" | "MakerNote" | "Xmp" | "Iptc" | "Jumbf" => {
-                "Medium"
-            }
+            "Authorship" | "FreeText" | "Thumbnail" | "MakerNote" | "Xmp" | "Iptc" | "Jumbf"
+            | "EmbeddedImage" | "OtherSegment" => "Medium",
             _ => "Low",
         }
     }
@@ -278,6 +294,16 @@ mod audit_invariants {
 
     impl Acc {
         fn push(&mut self, at: ItemF, category: Option<&'static str>, thumb: Option<ThumbF>) {
+            self.push_emb(at, category, thumb, None);
+        }
+
+        fn push_emb(
+            &mut self,
+            at: ItemF,
+            category: Option<&'static str>,
+            thumb: Option<ThumbF>,
+            embedded: Option<EmbF>,
+        ) {
             let index = if self.items.len() < CAP {
                 self.items.push(at.clone());
                 Some(self.items.len() - 1)
@@ -292,11 +318,17 @@ mod audit_invariants {
             }
             if self.findings.len() < CAP {
                 let thumb = if category == "Thumbnail" { thumb } else { None };
+                let embedded = if category == "EmbeddedImage" {
+                    embedded
+                } else {
+                    None
+                };
                 self.findings.push(FindingF {
                     category: category.to_string(),
                     item: index,
                     at,
                     thumb,
+                    embedded,
                 });
             } else {
                 self.truncated = true;
@@ -398,6 +430,54 @@ mod audit_invariants {
         }
     }
 
+    /// Every category by `Debug` name, in table order, typed again.
+    const ORDER_15: [&str; 15] = [
+        "Gps",
+        "DeviceId",
+        "Authorship",
+        "FreeText",
+        "Thumbnail",
+        "MakerNote",
+        "Xmp",
+        "Iptc",
+        "Jumbf",
+        "Timestamps",
+        "CameraModel",
+        "Software",
+        "Icc",
+        "EmbeddedImage",
+        "OtherSegment",
+    ];
+
+    /// DEC-012 section 3, re-derived: the categories of the ordinary audit of an
+    /// embedded image's bytes with embedded-image location OFF. The public
+    /// audit locates embedded images, so the difference is applied by hand: an
+    /// inner file with an APP2 `MPF\0` segment has that segment as an unrecognised
+    /// APPn (an `OtherSegment`), and its own `EmbeddedImage` findings are not
+    /// there. Everything else is identical with location on and off.
+    fn inner_holds(bytes: &[u8]) -> Vec<String> {
+        let inner = rederive(bytes);
+        let has_mpf = jpeg::Jpeg::parse(bytes).is_ok_and(|j| {
+            j.segments()
+                .iter()
+                .any(|s| s.marker() == 0xE2 && s.payload().starts_with(b"MPF\0"))
+        });
+        ORDER_15
+            .iter()
+            .filter(|name| {
+                tick(1);
+                if **name == "EmbeddedImage" {
+                    return false;
+                }
+                if **name == "OtherSegment" && has_mpf {
+                    return true;
+                }
+                inner.findings.iter().any(|f| f.category == **name)
+            })
+            .map(|n| n.to_string())
+            .collect()
+    }
+
     /// The expected audit of `data`, from scratch.
     pub fn rederive(data: &[u8]) -> Facts {
         let kind = kind_label(data);
@@ -446,19 +526,35 @@ mod audit_invariants {
                             Region::Icc { .. } => ("Icc", "Icc"),
                             Region::Iptc { .. } => ("Iptc", "Iptc"),
                             Region::Jumbf { .. } => ("Jumbf", "Jumbf"),
+                            // DEC-012 section 4, typed again.
+                            Region::EmbeddedImage { .. } => ("EmbeddedImage", "EmbeddedImage"),
+                            Region::Comment { .. } => ("Comment", "FreeText"),
+                            Region::OtherApp { .. } => ("OtherApp", "OtherSegment"),
+                            Region::Trailer { .. } => ("Trailer", "OtherSegment"),
                             _ => panic!("a Region variant the harness does not know"),
                         };
+                        // A trailer lies after the scan whatever the segments say.
+                        let trailing = matches!(r, Region::Trailer { .. });
                         let at = ItemF {
                             block: None,
                             segment: Some(r.segment()),
-                            after_scan: after(r.segment()),
+                            after_scan: trailing || after(r.segment()),
                             what: What::Region {
                                 kind: name.to_string(),
                                 segment: r.segment(),
                                 len: r.data().len(),
                             },
                         };
-                        acc.push(at, Some(category), None);
+                        let embedded = match r {
+                            Region::EmbeddedImage { offset, data, .. } => Some(EmbF {
+                                offset: *offset,
+                                length: data.len(),
+                                ffd8: data.starts_with(&[0xFF, 0xD8]),
+                                holds: inner_holds(data),
+                            }),
+                            _ => None,
+                        };
+                        acc.push_emb(at, Some(category), None, embedded);
                     }
                 }
             },
@@ -594,6 +690,9 @@ mod audit_invariants {
                         "Iptc" => "Iptc",
                         "Icc" => "Icc",
                         "Jumbf" => "Jumbf",
+                        "EmbeddedImage" => "EmbeddedImage",
+                        "Comment" => "FreeText",
+                        "OtherApp" | "Trailer" => "OtherSegment",
                         other => return Err(format!("finding {n}: unknown region kind {other}")),
                     };
                     if f.category != want {
@@ -606,6 +705,10 @@ mod audit_invariants {
                 What::Tag { .. } => {
                     if f.category == "Jumbf" {
                         return Err(format!("finding {n}: Jumbf on a tag item"));
+                    }
+                    // The two DEC-012 categories exist only on regions.
+                    if f.category == "EmbeddedImage" || f.category == "OtherSegment" {
+                        return Err(format!("finding {n}: {} on a tag item", f.category));
                     }
                 }
             }
@@ -728,6 +831,76 @@ mod audit_invariants {
         Ok(())
     }
 
+    /// DEC-012 section 3: the `embedded` object accompanies exactly the
+    /// EmbeddedImage findings (both directions); its range lies inside the
+    /// input and its flag says what the bytes say; `holds` is in table order
+    /// without repeats and never lists EmbeddedImage itself.
+    fn g_embedded(data: &[u8], got: &Facts, _: &Facts) -> Result<(), String> {
+        for (n, f) in got.findings.iter().enumerate() {
+            tick(1);
+            let is_embedded = f.category == "EmbeddedImage";
+            match (&f.embedded, is_embedded) {
+                (Some(_), false) => {
+                    return Err(format!("finding {n}: an embedded object on {}", f.category))
+                }
+                (None, true) => {
+                    return Err(format!("finding {n}: an EmbeddedImage finding without one"))
+                }
+                (None, false) => continue,
+                (Some(e), true) => {
+                    let end = e.offset.checked_add(e.length);
+                    let Some(bytes) = end.and_then(|end| data.get(e.offset..end)) else {
+                        return Err(format!(
+                            "finding {n}: range ({}, {}) outside {} bytes",
+                            e.offset,
+                            e.length,
+                            data.len()
+                        ));
+                    };
+                    tick(1);
+                    if bytes.starts_with(&[0xFF, 0xD8]) != e.ffd8 {
+                        return Err(format!("finding {n}: FF D8 flag disagrees with the bytes"));
+                    }
+                    // The item is the region of that length.
+                    if !matches!(&f.at.what, What::Region { kind, len, .. }
+                        if kind == "EmbeddedImage" && *len == e.length)
+                    {
+                        return Err(format!("finding {n}: embedded length is not the item's"));
+                    }
+                    let pos = |name: &String| ORDER_15.iter().position(|c| c == name);
+                    let mut last: Option<usize> = None;
+                    for h in &e.holds {
+                        tick(1);
+                        let Some(p) = pos(h) else {
+                            return Err(format!("finding {n}: unknown holds name {h}"));
+                        };
+                        if h == "EmbeddedImage" {
+                            return Err(format!("finding {n}: holds lists EmbeddedImage"));
+                        }
+                        if last.is_some_and(|l| l >= p) {
+                            return Err(format!("finding {n}: holds is out of table order"));
+                        }
+                        last = Some(p);
+                    }
+                }
+            }
+        }
+        // Counts: the number of embedded objects equals the number of
+        // EmbeddedImage region items (both directions).
+        let objects = got.findings.iter().filter(|f| f.embedded.is_some()).count();
+        let regions = got
+            .items
+            .iter()
+            .filter(|i| matches!(&i.what, What::Region { kind, .. } if kind == "EmbeddedImage"))
+            .count();
+        if objects != regions {
+            return Err(format!(
+                "{objects} embedded objects for {regions} EmbeddedImage items"
+            ));
+        }
+        Ok(())
+    }
+
     fn g_health(_: &[u8], got: &Facts, want: &Facts) -> Result<(), String> {
         if got.health != want.health {
             return Err(format!("health {:?}, want {:?}", got.health, want.health));
@@ -825,12 +998,14 @@ mod audit_invariants {
                 "Iptc",
                 "Icc",
                 "Jumbf",
+                "EmbeddedImage",
+                "OtherSegment",
             ],
         ),
     ];
 
     /// Every category, by `Debug` name.
-    pub const H_ALL: [&str; 13] = [
+    pub const H_ALL: [&str; 15] = [
         "Gps",
         "DeviceId",
         "Authorship",
@@ -844,14 +1019,58 @@ mod audit_invariants {
         "Iptc",
         "Icc",
         "Jumbf",
+        "EmbeddedImage",
+        "OtherSegment",
     ];
 
-    /// The six block categories.
-    const H_BLOCKS: [&str; 6] = ["Thumbnail", "MakerNote", "Xmp", "Iptc", "Jumbf", "Icc"];
+    /// The eight block categories (DEC-009 and DEC-012).
+    const H_BLOCKS: [&str; 8] = [
+        "Thumbnail",
+        "MakerNote",
+        "Xmp",
+        "Iptc",
+        "Jumbf",
+        "Icc",
+        "EmbeddedImage",
+        "OtherSegment",
+    ];
 
-    /// DEC-009's may-hold table.
+    /// DEC-009's may-hold table as amended by DEC-012.
     fn h_may_hold(block: &str) -> &'static [&'static str] {
         match block {
+            // DEC-012 section 5: every category except itself.
+            "EmbeddedImage" => &[
+                "Gps",
+                "DeviceId",
+                "Authorship",
+                "FreeText",
+                "Timestamps",
+                "CameraModel",
+                "Thumbnail",
+                "MakerNote",
+                "Software",
+                "Xmp",
+                "Iptc",
+                "Icc",
+                "Jumbf",
+                "OtherSegment",
+            ],
+            "OtherSegment" => &[
+                "Gps",
+                "DeviceId",
+                "Authorship",
+                "FreeText",
+                "Timestamps",
+                "CameraModel",
+                "Thumbnail",
+                "MakerNote",
+                "Software",
+                "Xmp",
+                "Iptc",
+                "Icc",
+                "Jumbf",
+                "EmbeddedImage",
+            ],
             "Thumbnail" | "Xmp" | "Jumbf" => &[
                 "Gps",
                 "DeviceId",
@@ -861,7 +1080,14 @@ mod audit_invariants {
                 "CameraModel",
                 "Software",
             ],
-            "MakerNote" => &["Gps", "DeviceId", "CameraModel", "Timestamps", "Software"],
+            "MakerNote" => &[
+                "Gps",
+                "DeviceId",
+                "CameraModel",
+                "Timestamps",
+                "Software",
+                "EmbeddedImage",
+            ],
             "Iptc" => &["Authorship", "FreeText", "Timestamps"],
             _ => &[],
         }
@@ -1190,7 +1416,7 @@ mod audit_invariants {
     }
 
     /// Every guard, by name. Each one runs alone through [`run_guard`].
-    pub const GUARDS: [(&str, Guard); 11] = [
+    pub const GUARDS: [(&str, Guard); 12] = [
         ("kind", g_kind),
         ("unsupported", g_unsupported),
         ("caps", g_caps),
@@ -1200,6 +1426,7 @@ mod audit_invariants {
         ("findings", g_findings),
         ("gps_iff", g_gps_iff),
         ("thumbnail", g_thumbnail),
+        ("embedded", g_embedded),
         ("health", g_health),
         ("max_severity", g_max),
     ];

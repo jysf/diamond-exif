@@ -862,10 +862,23 @@ fn iptc_without_0404_and_xmp_in_wrong_marker_are_absent_on_both_sides() {
         );
         let bytes = fixture(name);
         let meta = jpeg::read(&bytes).expect("a JPEG");
+        if name == "jpeg-iptc-without-0404" {
+            // DEC-012 section 1 (SPEC-019): every Photoshop segment is a
+            // region now, so ours is "present" here and a known divergence.
+            assert!(
+                matches!(meta.regions(), [jpeg::Region::Iptc { .. }]),
+                "{name}: one Iptc region: {:?}",
+                meta.regions()
+            );
+            assert!(meta.exif_blocks().is_empty());
+            continue;
+        }
+        // DEC-012: an XMP signature under APP2 is an unrecognised APPn (an
+        // audit-only region kind, no ExifTool counterpart: class S).
         assert!(
-            meta.regions().is_empty(),
-            "{name}: no region: {:?}",
-            meta.regions()
+            matches!(meta.regions(), [jpeg::Region::OtherApp { marker: 0xE2, .. }]),
+            "{name}: one OtherApp region: {:?}",
+            meta.regions().len()
         );
         assert!(meta.exif_blocks().is_empty());
         let ours = ours_fixture(&bytes);
