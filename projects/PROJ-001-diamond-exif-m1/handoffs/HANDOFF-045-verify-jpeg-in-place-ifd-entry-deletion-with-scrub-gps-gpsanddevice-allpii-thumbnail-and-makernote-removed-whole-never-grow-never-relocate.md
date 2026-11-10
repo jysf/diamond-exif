@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: verifier             # implementer | verifier
   created_at: 2026-11-10
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-021
@@ -46,18 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                # completed | blocked | rejected
+  agent: claude-opus-5-5           # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
-  verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
+  verdict: punch-list              # verify handoffs: approved | punch-list | rejected
+  basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
-  branch: null
+  branch: worktree-agent-a24756c36e015cd68
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-10         # YYYY-MM-DD
+  notes: "tokens_total, estimated_usd and duration_minutes left null on purpose: the verifier cannot see its own token count; the orchestrator transcribes the harness's metered subagent_tokens and duration. Verdict PUNCH LIST at dbf3567 (code c1958b2): one High (IFD pointer tags that ExifTool follows but the walk and the HiddenPointer guard do not know, 0x0190 GlobalParametersIFD first; a GPS IFD behind it survives Gps and AllPii with ExifTool still printing GPS:GPSLatitude), one Medium (category tags inside the Interop IFD; ExifTool prints InteropIFD:Artist after an Authorship strip; DEC-008 scope), Lows (target of a removed GPS IFD's next-word left; kept-target protection by tag only; five surviving mutants). No code changed, nothing pushed, no cycle advanced."
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -114,38 +114,129 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** worktree branch `worktree-agent-a24756c36e015cd68`, fast-forwarded to dbf3567 (code c1958b2). Only this handback is committed on top. No PR, nothing pushed.
+- **Completed at:** 2026-11-10
+- **All acceptance criteria met?** No. ExifTool agreement at tag level fails on a crafted input: a GPS IFD reached through an IFD pointer tag that the walk does not follow is still printed by ExifTool as `GPS:GPSLatitude` after an `Ok` `Gps` strip (H4).
+- **For `verify`:** ⚠ PUNCH LIST at dbf3567 (code c1958b2).
+
+**Gates (re-run by the verifier; all exit 0).** fmt (library, fuzz graph, `rustfmt --check --edition 2021 fuzz/shared/*.rs`), `just lint`, `lint-fuzz`, `lint-no-allow`, `lint-red-proof`, `lint-fuzz-red-proof`, `forbid-unsafe`, `deny`, `deny-fuzz`, `validate`, `decisions-audit`, `cost-audit`, release build of `exif-audit` on 1.90.0, then `just oracle-record`, after which `git status --porcelain` was empty. `cargo test --no-fail-fast` with `DIAMOND_EXIF_REQUIRE_ORACLE=1 DIAMOND_EXIF_REQUIRE_CLI_FS=1` gave 870 passed, 0 failed, 9 ignored on both stable (Homebrew 1.99.1) and `+1.90.0`, with no SKIP line. Fuzz from the committed seeds, no crash in any run: `rewrite_jpeg` 301 s (292,577 runs), `tiff_ifd` 61 s (1,006,503), and 60 s each of `jpeg_segments` (105,164), `audit` (60,913), `audit_render` (25,766) and `cli_args` (1,754,686). `decisions/`, `scripts/` and every manifest and lock file are unchanged since e4062f3. The library diff adds no `unwrap`, `expect`, `allow` or `unsafe`.
+
+**Findings.**
+- **H4 (High; fails open, and ExifTool can see the result; rare in practice): ExifTool follows IFD pointer tags that the walk does not, and the `HiddenPointer` guard knows only the four DEC-005 tags.** I scanned every tag 0x0000 to 0xFFFF as a LONG pointer in IFD0, the Exif IFD and IFD1 against ExifTool 13.55. Besides 0x014A, 0x8769, 0x8825 and 0xA005, ExifTool opens four more as IFDs: 0x0190 GlobalParametersIFD (read with the Exif main table, so it includes `GPSInfo`), 0x888A LeafSubIFD, 0x8290 KodakIFD and 0xFE00 KDC_IFD. From inside a GPS IFD it opens none. The walk follows none of the four, the audit reports nothing under them, and `plan_block` refuses only `POINTER_TAGS`. Reproducers, in both byte orders:
+  - (a) IFD0 = {0x0112; 0x0190 LONG → 40}; IFD at 40 = {0x8825 → 60}; GPS IFD at 60 = {0x0001 ASCII "N"; 0x0002 RATIONAL 3 → 120}. ExifTool prints `GPS:GPSLatitudeRef` and `GPS:GPSLatitude` for the input. `strip(.., Gps)` and `strip(.., AllPii)` both return `Ok` with 0 entries and 0 scrubs, and ExifTool prints the same GPS tags from the output. `All` is correct (the whole segment goes).
+  - (b) IFD0 = {0x0112; 0x0190 → IFD{0x013B ASCII 16 → canary}}. After `Custom{Authorship}` and after `AllPii` the result is `Ok`, and ExifTool still prints `GlobParamIFD:Artist`. The same holds through 0x8290 and 0xFE00, printed as `Kodak_IFD_0x013b` and `Kodak_KDC_IFD_0x013b`, and through 0x888A (`LeafSubIFD`). A type-13 0x0190 behaves the same way.
+
+  This is the round-4 sibling: the writer acted as if it knew every pointer that a kept structure holds. It is a guard gap, because the audit misses the data in the input too (read-parity since SPEC-019). Fix: add 0x0190, 0x888A, 0x8290 and 0xFE00, in any IFD kind and of any type, to the `HiddenPointer` refusal for partial policies, and mirror it in the harness. Better still, record the ExifTool subdirectory set in a DEC-005 note, so the audit can name the gap. Add (a) and (b) to the leak inputs and the seeds. Local corpus: 0 of 550 entries use these tags. I graded this High rather than Medium because the leaked tag is GPS under its standard group name and is visible to the spec's own oracle after an `Ok`.
+- **M4 (Medium; DEC-008 scope, same "reachable by a reader" class): category tags inside the Interop IFD.** IFD0 {0x0112, 0x8769 → Exif{0xA005 → Interop{0x0001 "R98", 0x013B ASCII 16 → canary}}}. ExifTool prints `InteropIFD:Artist`. `categorize(Interop, _)` is `None` by DEC-008, so `Custom{Authorship}` and `AllPii` return `Ok` with the Artist intact and still printed by ExifTool. This is pinned behaviour, not a regression. Decide it in DEC-008 (categorise by id in Interop as in the other IFD kinds), or have the writer refuse a partial strip when Interop holds an id in a removed category. Corpus: 0 such tags.
+- **L13 (Low): the target of a removed GPS IFD's next-word stays.** GPS IFD at 40 with next = 70; at 70 an IFD {0x0002 RATIONAL 3 → canary}. `Gps` and `AllPii` return `Ok` and scrub the GPS table (its next-word too), but the IFD at 70 and its value remain, now unreferenced. Neither ExifTool nor the walk reads that next-word (DEC-005), so this differs from IFD1, whose next-word is followed and therefore refused as `ChainAfterThumbnail`. Corpus: 0 of 4 GPS IFDs, and 0 Exif or Interop IFDs, have a non-zero next-word, so a refusal would cost nothing on real files. Either refuse it, or state in the DEC-013 note that B.3 does not cover a leaf IFD's next-word.
+- **L14 (Low, kept-side integrity, sibling of L9): kept-target protection is by tag (`OFFSET_TAGS`).** IFD0 {0x0112; 0x013B ASCII 16 → 120; 0xC634 LONG 1 → 120 (DNGPrivateData-style)}. `Custom{Authorship}` returns `Ok`, and the bytes the kept 0xC634 names are zeroed. The same applies to a kept 0x0190, 0x8290, 0xFE00 or 0x888A that points at a deleted value. Nothing leaks. Record it with L9 in the DEC-013 note.
+- **L15 (Low, test gaps; mutants that survive):**
+  - MB: type 129 accepted. Equivalent today, because the unknown-size refusal backstops it.
+  - ML: MPF located-image ranges not forbidden. Reproducer: an MPF whose secondary entry (size 42, offset 50) names an `FF D8 .. FF D9` range at header+50 to 92 that contains the MP entry array, with the primary size field at header+62, under `All`. The real code returns `MpfNotIndexed`; the mutant returns `VerifyFailed{MpfFields}`.
+  - MN: MPF header not forbidden. The shape is an MPEntry value at header offset 0, so the size field lands on the IFD0-offset word. I did not build it.
+  - MS: GPS pointer entries no longer exempt from the type rule. Reproducer: IFD0 {0x0112, 0x8825 type 13 → GPS{0x0002 RATIONAL 3}} under `Gps`. The real code returns `Ok` with the canary gone; the mutant returns `PayloadUnreadable`, a false refusal.
+  - MT: a kept type-13 entry protects only 4 bytes. The shape is a kept 0xABCD type 13 → D with a deleted value at D+8 (the real code returns `SharedBytes`). I did not build it.
+
+  All five fail closed or are integrity-only, so this is test pinning only.
+- **Notes.**
+  - A thumbnail whose 0x0202 understates the JPEG keeps the bytes past the declared length (`P4`: `Ok`, tail canary left). This is by design, since no reader references those bytes. Corpus: all 5 IFD1 thumbnails end in `FF D9` exactly at the declared length.
+  - With two MPF APP2 segments, the second index is not patched.
+  - An MP attribute IFD, or an ImageUIDList, that overlaps the MP entry array is patched with `Ok`.
+
+  All three are integrity-only on crafted input.
+
+**My differential** (scratch crate `v45/diff`, a path dependency on this worktree, public `strip`/`audit` only). Its generator, category table and byte model are my own, and it shares no code with v44 or the harness. It builds 1 or 2 Exif blocks, LE or BE, with random IFD0/Exif/GPS/Interop/IFD1/Chain/Sub structures. Extras include hidden GPS pointers in Exif, GPS from IFD1 and Sub, IFD1 extras (Software, Artist, Make, DateTime, strips, tiles, 0x0207, a second 0x0201, a GPS pointer), and type-13 extras. Types are mutated to 1-12, 13, 18, 129, 99, 16, 17 and 0, counts go up to 0xFFFF, and IFD entry counts are set to 0xFFFF. Retargets point into the header, other blocks, other tables, blob end - 2, past the end and 0xFFFFFFF0. The JPEG wrapper adds XMP, IPTC, ICC and COM canaries, an MPF index with an indexed secondary, and 17 Exif segments.
+
+Each fixture runs under all 4,096 masks of the 12 categories. For every `Ok` it checks:
+- no removed-reference canary byte is non-zero;
+- no kept-only canary byte changes;
+- removed IFD tables are zero;
+- no byte outside `patches()` changes, after mapping through `removals()`;
+- the length is the input minus removals;
+- the output audit has no finding in a removed category;
+- kept-category finding counts are equal;
+- segment canaries are present exactly when kept;
+- the MPF index still points at the secondary;
+- under whole-Exif policies, no Exif token survives.
+
+Results: 8,000 fixtures (seeds 1-2000 and 100000-105999), 32,768,000 strips, 10,505,135 `Ok`, **0 violations**. Errors were all typed `Uneditable` (`SharedBytes`, `PayloadUnreadable`, `ThumbnailNotLocated`, `BlockNotClean`, `HiddenPointer`, `ChainAfterThumbnail`, `NestedIfd`, `TooManyExifSegments`), with no `VerifyFailed`. The checker has teeth: against mutant MA (type 13 accepted) it reports 4,642 canary leaks.
+
+**What it did NOT cover:**
+- pointer tags outside the four DEC-005 tags, and category tags in Interop as an assertion (H4 and M4 came from targeted probes and the ExifTool scan, not from the generator);
+- leaf next-words (L13);
+- MakerNote-internal offsets;
+- hostile MPF indexes (its MPF is always well-formed, so `MpfNotIndexed` never fires; the MPF overlap code was probed by hand);
+- Exif after the scan, and APP1 segments over 64 KB;
+- thumbnails in IFD2 or SubIFDs as a category;
+- type 18 targets as a modelled reference.
+
+**Mutants** (scratch copy `v45/mut` = `git archive c1958b2`; exact text replacements; `cargo test --lib --test strip --test fuzz_layout --test strip_oracle`, plus my differential on 400 fixtures; restored and diffed clean). Caught:
+- MA type 13 accepted, MC type rule off for deleted entries, MD type rule off for removed IFDs: `m3_an_entry_of_an_offset_type_is_refused_when_deleted_or_removed`, `leak_inputs_refuse_with_the_named_reason_and_offset`, `no_leak_input_is_ok_with_a_canary_left_under_any_policy`, the seed sweep, and the differential (V1).
+- ME kept type-13 unprotected: `m3_the_target_of_a_kept_offset_typed_entry_is_protected`.
+- MF offset targets not kept: `l9_the_targets_of_kept_offset_tags_are_protected`, `leak_inputs_...`, the seed sweep.
+- MG no tiles, MH first value only, MI first entry only: `l9_...`.
+- MJ kept IFD1 tags ignored: `l10_a_removed_ifd1_with_a_kept_category_tag_is_thumbnail_not_located`, `leak_inputs_...`, the seed sweep.
+- MK kept IFD1 tags not collected: `leak_inputs_...`, the seed sweep.
+- MM MPF table not forbidden, MO MPF check off: `a_removal_that_joins_stray_bytes_into_a_marker_is_refused_and_excused_exactly`, the seed sweep.
+- MP harness early exit removed: the same two.
+- MQ library and harness type rule off: `m3_...`, `leak_inputs_...`, `no_leak_input_...`, the differential.
+- MR library and harness kept targets off: `l9_...`, `leak_inputs_...`.
+- MU harness MPF forbidden off, MV library and harness MPF off: the stray-bytes test and the seed sweep.
+- MW library and harness kept-IFD1 rule off: `l10_...`, `leak_inputs_...`.
+
+Survived: MB, ML, MN, MS, MT (L15).
+
+**Local corpus (`_incoming0`; read in place, pipes only, nothing written; counts and short hashes only).** 21 files, 13 JPEGs, 4 with Multi-Picture.
+
+| Policy | Result | Bytes removed | Bytes patched | Entries |
+|---|---|---|---|---|
+| `Gps` | 13 Ok | 0 | 1,035 | 22 |
+| `GpsAndDevice` | 13 Ok | 0 | 1,968 | 24 |
+| `AllPii` | 12 Ok + 1 `Uneditable(ChainAfterThumbnail)` on `a3b66f84` | 0 | 100,969 | 154 |
+| `All` | 13 Ok, including all 4 Multi-Picture files (the MPF overlap refusal does not fire on real files) | 313,995 | 16 | |
+| `Everything` | 13 Ok | 3,352,855 | | |
+
+Under the three partial policies every `Ok` had an identical scan, a clean audit, the same length and zero values (13/13, 13/13, 12/12). `Custom{Thumbnail}` gave 11 Ok, 1 `ChainAfterThumbnail` (`a3b66f84`) and 1 `ThumbnailNotLocated` (`8a083030`), all as expected.
+
+Over 124 sampled masks × 13 files: 1,530 Ok, 55 `ChainAfterThumbnail`, 27 `ThumbnailNotLocated`, 0 `VerifyFailed`, 0 `Ok` with a removed-category finding left, and 0 length mismatches. Structure counts:
+- 550 entries;
+- 0 entries of a type outside 1-12;
+- 0 entries with the H4 pointer tags;
+- 0 category tags in Interop;
+- 0 non-zero next-words in a GPS, Exif or Interop IFD.
+
+ExifTool by pipe on the 4 Multi-Picture files under `none`, `gps`, `all_pii` and `all`: the `GPS` group goes under every policy; `IFD1` is kept under `gps` and gone under `all_pii`; `MPImage` groups stay at 3 everywhere; the Orientation count is unchanged under the partial policies; 0 warnings.
+
+**Questions.**
+- `makernote-internal-offsets`: safe to ship with the DEC-013 note as proposed. It is the same class as L13 and L14 (data named by a structure the planner does not parse); list all three in the one note.
+- `preview-outside-ifd1-not-thumbnail`: safe to ship with a DEC-008 note. Decide it together with M4, since both are audit-scope gaps that the writer inherits.
+- `field-type-129-utf8`: safe to ship as refused, with a DEC note; pin it with a test (MB survives).
+- `writer-refusals-beyond-the-spec`: ratify them, but H4 must change first. `HiddenPointer` needs the ExifTool subdirectory tags.
+- `allpii-refuses-ifd1-with-a-following-ifd`: fails closed. Safe to ship with a DEC note; decide before SPEC-022.
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null. The verifier cannot see its own token count; the orchestrator transcribes the harness's metered `subagent_tokens`.
+- **Estimated USD:** null (follows the tokens).
+- **Duration (minutes):** null (the harness reports it).
+- **Source of the number:** harness report, to be transcribed.
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
-- **Deviations from spec:**
-  - [list]
+- **New decisions emitted:** none.
+- **Deviations from spec:** none by the verifier. The full-mask corpus run was cut to 124 sampled masks per file for time; the preset and `Custom{Thumbnail}` runs are complete.
 - **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - A builder follow-up for H4, L13, L15 and the leak inputs and seeds for each.
+  - A DEC-005 or DEC-008 decision for M4 and the ExifTool subdirectory set.
+  - The DEC-013 note covering MakerNote offsets, L13 and L14.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — Whether "ExifTool agreement" covers data that the audit never sees. The writer's contract is relative to the audit, but `HiddenPointer` exists precisely to close what the walk skips. I treated the guard as the contract.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — DEC-005's pointer set is narrower than ExifTool's subdirectory set, and no record says so. DEC-008's "Interop yields nothing" hides an ExifTool-visible tag.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Start with the exhaustive ExifTool tag scan (65,536 tags in 164 files, about a minute). It found H4 directly, which the random differential could not, because both of its models share the walk's view of which pointers exist.
