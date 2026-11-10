@@ -127,3 +127,7 @@ Revisit when a real-world file shows personal data in a tag the table lists as i
 - Related specs: SPEC-012 (implements), SPEC-013 (inventory parity), SPEC-014 (policy presets derive from this table)
 - Related decisions: DEC-005 (pointer tags), DEC-006 (regions)
 - External: Exif 2.32 / 3.0 tag tables (ids), TIFF 6.0 tags 700, 33723, 34377, 34675; design `docs/exif-core-design.md` section 5
+
+## Amendment (2026-11-09, DEC-012)
+
+Two categories are added: `EmbeddedImage` (Medium) and `OtherSegment` (Medium), both block categories; a `COM` segment is a `FreeText` finding. The table above is otherwise unchanged. See DEC-012.

@@ -106,3 +106,7 @@ Revisit when a consumer needs streaming output, when a decoded value view is spe
 - Related specs: SPEC-015 (implements), SPEC-016 (consumes status and summary), SPEC-012, SPEC-014
 - Related decisions: DEC-008 (categories, severity), DEC-009 (dispositions, `reliable`)
 - External: RFC 8259 (JSON), RFC 4180 (CSV), OWASP "CSV Injection"
+
+## Amendment (2026-11-09, DEC-012)
+
+`schema_version` becomes 2: the finding object gains `embedded` (after `thumbnail`), `by_category` has 15 keys, and the category and region enumerations gain the DEC-012 names. CSV columns are unchanged. See DEC-012 section 7.
