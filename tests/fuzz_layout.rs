@@ -5996,12 +5996,12 @@ fn rewrite_guards_are_not_constant() {
 #[test]
 fn rewrite_seeds_are_committed_and_cover_every_fixture_and_policy_class() {
     let seeds = rewrite_seed_files();
-    assert_eq!(seeds.len(), 129, "the rewrite_jpeg seed count is pinned");
+    assert_eq!(seeds.len(), 186, "the rewrite_jpeg seed count is pinned");
     let names: Vec<&str> = seeds.iter().map(|(n, _)| n.as_str()).collect();
     // Every SPEC-019 shape and every strip fixture, under All, Everything and a
     // custom mask.
     for (n, _) in real_shapes::fixtures() {
-        for prefix in ["all-", "everything-", "mask"] {
+        for prefix in ["all-", "allpreset-", "everything-", "mask"] {
             assert!(
                 names
                     .iter()
@@ -6011,7 +6011,7 @@ fn rewrite_seeds_are_committed_and_cover_every_fixture_and_policy_class() {
         }
     }
     for s in strip_shapes::all() {
-        for prefix in ["all-", "everything-", "mask"] {
+        for prefix in ["all-", "allpreset-", "everything-", "mask"] {
             assert!(
                 names
                     .iter()
@@ -6027,8 +6027,24 @@ fn rewrite_seeds_are_committed_and_cover_every_fixture_and_policy_class() {
         .iter()
         .filter_map(|(_, d)| d.first().copied())
         .collect();
-    for h in [0u8, 1, 2, 4, 5, 6, 7] {
+    for h in [0u8, 1, 2, 3, 4, 5, 6, 7] {
         assert!(heads.contains(&h), "no seed starts with policy byte {h}");
+    }
+    // The narrow presets cover the named classes.
+    for class in [
+        "mpo-plain",
+        "two-exif-blocks",
+        "exif-without-gps",
+        "com-over-embedded",
+        "unindexed-mpf",
+        "gps-count-overflow",
+    ] {
+        for prefix in ["gps-strip-", "gps_and_device-strip-"] {
+            assert!(
+                names.contains(&format!("{prefix}{class}").as_str()),
+                "{prefix}{class}"
+            );
+        }
     }
     // Every shape of the audit's refusal classes is in there: a bad length, a
     // halted walk, an overlap, an unindexed MPF, a needs-entry-edit file.

@@ -1497,6 +1497,8 @@ fn rewrite_seeds() -> Vec<(String, Vec<u8>)> {
             out.push((format!("{label}-{name}"), v));
         };
         with("all".to_string(), vec![7]);
+        // The All preset by its own byte (3), the same inputs.
+        with("allpreset".to_string(), vec![3]);
         with("everything".to_string(), vec![4]);
         let m = mask.to_le_bytes();
         with(format!("mask{mask:04x}"), vec![6, m[0], m[1]]);
@@ -1511,6 +1513,28 @@ fn rewrite_seeds() -> Vec<(String, Vec<u8>)> {
         let mut v = head;
         v.extend_from_slice(&sink);
         out.push((format!("{label}-strip-kitchen-sink"), v));
+    }
+    // The narrow presets (Gps 0, GpsAndDevice 1) on more classes: the
+    // Multi-Picture, two-Exif, Exif-without-GPS, comment-over-image and
+    // unindexed-MPF shapes, and the GPS count overflow.
+    for class in [
+        "mpo-plain",
+        "two-exif-blocks",
+        "exif-without-gps",
+        "com-over-embedded",
+        "unindexed-mpf",
+        "gps-count-overflow",
+    ] {
+        let bytes = &inputs
+            .iter()
+            .find(|(n, _)| *n == format!("strip-{class}"))
+            .expect("a strip fixture")
+            .1;
+        for (label, head) in [("gps", 0u8), ("gps_and_device", 1)] {
+            let mut v = vec![head];
+            v.extend_from_slice(bytes);
+            out.push((format!("{label}-strip-{class}"), v));
+        }
     }
     // Degenerate: a policy byte alone, and a mask cut short.
     out.push(("policy-byte-only".to_string(), vec![7]));
