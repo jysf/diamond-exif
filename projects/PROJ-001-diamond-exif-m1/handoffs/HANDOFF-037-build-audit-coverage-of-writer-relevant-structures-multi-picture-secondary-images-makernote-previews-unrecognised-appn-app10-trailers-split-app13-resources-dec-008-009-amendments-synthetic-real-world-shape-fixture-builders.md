@@ -43,14 +43,14 @@ repo:
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
   status: completed                # completed | blocked | rejected
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # tokens_total × your rate, or your harness's number
-  duration_minutes: null
+  tokens_total: 652194             # orchestrator-recorded from the metered sub-agent result (subagent_tokens)
+  estimated_usd: 4.30              # 652,194 tokens x 6.60 USD per Mtok
+  duration_minutes: 67
   branch: worktree-agent-aecfa9c13e2f2cda7
   pr: null
   completed_at: 2026-11-09         # YYYY-MM-DD
-  notes: "tokens_total null: the implementer cannot see its own meter; the orchestrator transcribes the metered figure."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "subagent_tokens 652,194, 304 tool uses, 4,019,473 ms; transcribed by the orchestrator."
+  synced_at: 2026-11-09
 ---
 
 # HANDOFF-037: Audit coverage of writer-relevant structures (SPEC-019)

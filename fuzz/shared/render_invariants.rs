@@ -735,7 +735,10 @@ mod render_invariants {
                 uint(req(e, "offset")?, "embedded.offset")?;
                 uint(req(e, "length")?, "embedded.length")?;
                 boolean(req(e, "starts_with_ffd8")?, "embedded.starts_with_ffd8")?;
-                for h in req(e, "holds")?.as_arr().ok_or("embedded.holds: not an array")? {
+                for h in req(e, "holds")?
+                    .as_arr()
+                    .ok_or("embedded.holds: not an array")?
+                {
                     in_set(h, &CATS.map(|c| c.1), "embedded.holds")?;
                 }
             }
@@ -1066,7 +1069,12 @@ mod render_invariants {
                         return Err(format!("finding {i}: embedded {e:?}, want {ew:?}"));
                     }
                 }
-                _ => return Err(format!("finding {i}: embedded {e:?}, want {:?}", fw.embedded)),
+                _ => {
+                    return Err(format!(
+                        "finding {i}: embedded {e:?}, want {:?}",
+                        fw.embedded
+                    ))
+                }
             }
             // A finding without an item (past the inventory cap) has no
             // re-derived payload here; its value is only checked for shape.

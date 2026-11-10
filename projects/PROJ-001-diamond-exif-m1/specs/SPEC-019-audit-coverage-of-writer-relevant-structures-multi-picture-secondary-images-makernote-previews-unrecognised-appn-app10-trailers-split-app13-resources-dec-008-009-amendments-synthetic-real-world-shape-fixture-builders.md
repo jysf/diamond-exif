@@ -6,7 +6,7 @@
 task:
   id: SPEC-019
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: verify  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -63,11 +63,19 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: 800000
-  sessions: []
+  sessions:
+    - cycle: build
+      agent: claude-sonnet-5-5
+      interface: other
+      tokens_total: 652194
+      estimated_usd: 4.30
+      duration_minutes: 67
+      recorded_at: 2026-11-09
+      notes: "subagent_tokens 652,194, 304 tool uses, 4,019,473 ms; transcribed by the orchestrator."
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 652194
+    estimated_usd: 4.30
+    session_count: 1
 ---
 
 # SPEC-019: Audit coverage of writer-relevant structures: Multi-Picture secondary images, MakerNote previews, unrecognised APPn, trailers, split APP13; DEC-008/009 amendments; synthetic real-world-shape fixtures

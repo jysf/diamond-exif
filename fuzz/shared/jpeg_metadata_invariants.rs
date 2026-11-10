@@ -338,11 +338,19 @@ mod metadata_invariants {
         };
         let u16_at = |at: usize| -> Option<u16> {
             let b: [u8; 2] = h.get(at..at.checked_add(2)?)?.try_into().ok()?;
-            Some(if big { u16::from_be_bytes(b) } else { u16::from_le_bytes(b) })
+            Some(if big {
+                u16::from_be_bytes(b)
+            } else {
+                u16::from_le_bytes(b)
+            })
         };
         let u32_at = |at: usize| -> Option<u32> {
             let b: [u8; 4] = h.get(at..at.checked_add(4)?)?.try_into().ok()?;
-            Some(if big { u32::from_be_bytes(b) } else { u32::from_le_bytes(b) })
+            Some(if big {
+                u32::from_be_bytes(b)
+            } else {
+                u32::from_le_bytes(b)
+            })
         };
         if u16_at(2)? != 42 {
             return None;
@@ -390,7 +398,11 @@ mod metadata_invariants {
             let e = &bytes[16 * i..16 * i + 16];
             let rd = |a: usize| {
                 let b = [e[a], e[a + 1], e[a + 2], e[a + 3]];
-                if big { u32::from_be_bytes(b) } else { u32::from_le_bytes(b) }
+                if big {
+                    u32::from_be_bytes(b)
+                } else {
+                    u32::from_le_bytes(b)
+                }
             };
             entries.push((i, rd(4), rd(8)));
         }

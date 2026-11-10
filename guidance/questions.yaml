@@ -905,7 +905,7 @@ questions:
   - id: dec-012-mpf-image-limit-reading
     question: "DEC-012 says 'at most 16 EmbeddedImage regions' and 'the 17th and later entries are an issue'; does the 16 count the primary (so at most 15 regions) or the secondaries (16 regions)?"
     priority: medium
-    status: open
+    status: answered
     raised_by: claude-sonnet-5-5
     raised_at: 2026-11-09
     assigned_to: null
@@ -919,7 +919,7 @@ questions:
   - id: dec-012-trailer-piece-bound
     question: "DEC-012 rule 2 says a partly covered trailer gives at most 16 pieces; 15 located images can leave 16 pieces and 16 images 17, so is the bound 16 or a natural one?"
     priority: low
-    status: open
+    status: answered
     raised_by: claude-sonnet-5-5
     raised_at: 2026-11-09
     assigned_to: null
@@ -930,7 +930,7 @@ questions:
   - id: dec-012-photoshop-rule-moves-two-existing-inventory-results
     question: "DEC-012 section 1 makes every Photoshop 3.0 APP13 segment an Iptc region; two existing inventory inputs (fixtures/jpeg-iptc-without-0404 and seed icc-iptc-jumbf) now list an Iptc region ExifTool does not. Accept the new pins?"
     priority: medium
-    status: open
+    status: answered
     raised_by: claude-sonnet-5-5
     raised_at: 2026-11-09
     assigned_to: null
@@ -943,7 +943,7 @@ questions:
   - id: dec-012-mpf-parse-edges
     question: "Which MPF index shapes are 'does not parse' (OtherApp plus MpfMalformed)? NumberOfImages (0xB001) is ignored and a trailing partial entry is ignored."
     priority: low
-    status: open
+    status: answered
     raised_by: claude-sonnet-5-5
     raised_at: 2026-11-09
     assigned_to: null

@@ -106,3 +106,12 @@ Revisit when a real file shows a benign segment flagged as `OtherSegment` often 
 - Related decisions: DEC-006 (regions; amended: the Photoshop rule), DEC-008 (categories; amended), DEC-009 (presets and may-hold; amended), DEC-010 (report; schema_version 2)
 - Evidence: SPIKE-001 (archived), questions `audit-embedded-images-and-unrecognised-segments`, `iptc-photoshop-resources-across-app13-segments`
 - External: CIPA DC-007 (Multi-Picture Format), Photoshop file format specification (image resource blocks)
+
+## Amendment (2026-11-09, from the SPEC-019 build)
+
+Rulings on the build's four doubts (questions `dec-012-*`). Only item 1 and item 3 change what the text says.
+
+1. **The 16-image bound counts the index, primary included.** At most 16 images are read from the MPF index (entry 0 is the primary), so at most **15** `EmbeddedImage` regions; entry 17 and later cost one typed issue and are not examined. The "at most 16 regions" in part 2 is read this way. A sixteenth secondary is not lost: its bytes stay in the `Trailer` region, so the strip still sees them.
+2. **No cap on trailer pieces.** The remainder after embedded images has at most (regions + 1) pieces, so at most 16. A cap would drop uncovered bytes silently, which a strip must not do.
+3. **The Photoshop rule moves two existing inventory results** (`fixtures/jpeg-iptc-without-0404`, seed `icc-iptc-jumbf`): they now list an `Iptc` region that ExifTool does not name. This is the intended effect of part 1 ("every APP13 `Photoshop 3.0` segment is a region"); the two are pinned as class R rows and one `KNOWN_DIVERGENCES` entry. The Iptc region data is the payload after the `Photoshop 3.0\0` header, so the golden region length for the full-house fixture is 18 (12-byte 8BIM header + 6), not 6.
+4. **MPF parse edges.** Malformed (`OtherApp` plus a typed issue): bad TIFF header or version, IFD0 absent or unreadable, no `0xB002`, a truncated index, fewer than 16 bytes, and any second MPF segment (only the first is read). `NumberOfImages` (0xB001) is ignored; the count is the whole 16-byte entries of the `0xB002` payload and a trailing partial entry is ignored.
