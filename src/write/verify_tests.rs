@@ -387,6 +387,19 @@ fn a_plan_that_deletes_a_kept_entry_fails_check_entries() {
 }
 
 #[test]
+fn a_plan_that_deletes_a_kept_exif_finding_fails_check_kept() {
+    // The Artist (Authorship, not the policy's) goes with the Make: the audit
+    // sees a kept finding lost. The exemption of check (b) is for a removed
+    // Exif segment only, never for an entry edit.
+    let (input, at) = exif_input();
+    let out = exif_output(&input, at, &[0, 3], Some(66..72), |_| {});
+    assert_eq!(
+        super::verify(&input, &out, make_spec(), &[(at + 66, 6)]),
+        Err(Check::Kept)
+    );
+}
+
+#[test]
 fn a_plan_that_leaves_a_deleted_entry_fails_check_preview() {
     let (input, at) = exif_input();
     let out = exif_output(&input, at, &[], None, |_| {});
