@@ -1740,12 +1740,41 @@ mod rewrite_invariants {
             Guard::VerifyAllowed => match &f.result {
                 Err(ErrFact::VerifyFailed(check)) => match pred {
                     Pred::MpfUnderflow => *check == "mpf-fields",
-                    Pred::Ok { bytes, .. } => predicted_output_breaks(input, spec, bytes),
+                    Pred::Ok {
+                        bytes, removals, ..
+                    } => {
+                        predicted_output_breaks(input, spec, bytes)
+                            || walks_as_other_segments(input, removals, bytes)
+                    }
                     _ => false,
                 },
                 _ => true,
             },
         }
+    }
+
+    /// Whether the naive prediction `out` re-walks as a different set of
+    /// segments than the plan assumed: the input's segments less the removed
+    /// ones, each as `(marker, payload length)`, in order. Bytes the walk skips
+    /// between segments (stray runs) are kept, so removing a segment can leave
+    /// fill bytes `FF FF` in front of stray bytes that were skipped before;
+    /// together they read as a marker with a length, which swallows or splits
+    /// the segments behind it. The self-check is then right to refuse (the
+    /// output is not the input minus the targets); the excuse is exactly this
+    /// difference in the segment list, and nothing else.
+    fn walks_as_other_segments(input: &[u8], removals: &[RemFact], out: &[u8]) -> bool {
+        let shape = |w: &NWalk, d: &[u8], skip: &dyn Fn(usize) -> bool| -> Vec<(u8, usize)> {
+            w.segs
+                .iter()
+                .filter(|s| !skip(s.off))
+                .map(|s| (s.marker, d.len().min(s.end) - (s.off + 4).min(s.end)))
+                .collect()
+        };
+        let expected = shape(&walk(input), input, &|off| {
+            removals.iter().any(|r| r.offset == off)
+        });
+        let got = shape(&walk(out), out, &|_| false);
+        expected != got
     }
 
     /// Whether the naive prediction `out` itself breaks an invariant of

@@ -306,7 +306,51 @@ pub fn entry_seeds() -> Vec<(String, Vec<u8>)> {
         add("leak", name, &bytes, &SEED_HEADS);
         add("leak", name, &bytes, &[("allpreset", &[3])]);
     }
+    out.extend(stray_seeds());
     out
+}
+
+/// The seeds of the joined-stray-bytes class (found by the 60 s smoke).
+pub fn stray_seeds() -> Vec<(String, Vec<u8>)> {
+    let mut built = vec![6, 0x40, 0x00];
+    built.extend_from_slice(&joined_stray_bytes_input());
+    vec![
+        ("mask0040-joined-stray-bytes".to_string(), built),
+        (
+            "crash-mpf-fields-joined-stray".to_string(),
+            CRASH_MPF_FIELDS.to_vec(),
+        ),
+    ]
+}
+
+/// The crash the 60 s smoke found (policy byte 6, mask 0x1140, then a 1,032
+/// byte JPEG), verbatim.
+pub const CRASH_MPF_FIELDS: &[u8] = include_bytes!("crash_mpf_fields.bin");
+
+/// The same shape built by hand: fill bytes, an XMP segment, stray bytes that
+/// start with a non-marker byte, an MPF index and a segment that runs past the
+/// end. The stray bytes are skipped while the XMP segment stands; once it is
+/// removed the fill bytes in front of it meet them and `FF FF 41 7F FF` reads
+/// as a marker of length 32767, which swallows the index.
+pub fn joined_stray_bytes_input() -> Vec<u8> {
+    let mut v = vec![0xFF, 0xD8];
+    v.extend_from_slice(&real_shapes::seg(0xE0, b"JFIF\0\x01\x01\0\0\x01\0\x01\0\0"));
+    v.extend_from_slice(&[0xFF, 0xFF]);
+    v.extend_from_slice(&real_shapes::seg(
+        0xE1,
+        b"http://ns.adobe.com/xap/1.0/\0<x:xmpmeta/>",
+    ));
+    v.extend_from_slice(&[0x41, 0x7F]);
+    v.extend_from_slice(&real_shapes::mpf_segment(
+        false,
+        &[(0x2003_0000, 100, 0), (0, 10, 50)],
+        32,
+        true,
+    ));
+    // The input already has a `Truncated` issue (a segment that runs past the
+    // end), so the output's one is not a new kind of issue.
+    v.extend_from_slice(&[0xFF, 0xE3, 0xFF, 0xF0, 0x01]);
+    v
 }
 
 /// The refusal the model expects, if any: IFD1 followed by a third IFD cannot

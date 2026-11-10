@@ -6315,8 +6315,73 @@ fn rewrite_seeds_are_committed_and_cover_every_fixture_and_policy_class() {
     }));
 }
 
-/// SPEC-020's 186 seeds plus SPEC-021's 198 entry seeds.
-const REWRITE_SEEDS: usize = 384;
+use exif_records::joined_stray_bytes_input;
+
+#[test]
+fn a_removal_that_joins_stray_bytes_into_a_marker_is_refused_and_excused_exactly() {
+    let input = joined_stray_bytes_input();
+    // Control: the input walks as JFIF, XMP, MPF; removing the XMP leaves
+    // fill bytes in front of the stray ones.
+    let m = exif_core::jpeg::read(&input).unwrap();
+    assert_eq!(m.jpeg().segments().len(), 3);
+    assert!(m.mpf().is_some());
+    // The library refuses (fail closed): the output would walk without the
+    // index it had.
+    let xmp = exif_core::StripPolicy::Custom(
+        exif_core::StripSpec::none().include(exif_core::audit::Category::Xmp),
+    );
+    assert!(matches!(
+        exif_core::strip(&input, xmp),
+        Err(exif_core::StripError::VerifyFailed { .. })
+    ));
+    // The harness: the naive prediction is Ok, but its output walks as a
+    // different set of segments than the input's minus the removed one, so
+    // the refusal is excused (only then).
+    let mut seed = vec![6, 0x40, 0x00];
+    seed.extend_from_slice(&input);
+    rewrite_invariants::check(&seed);
+    // The committed seed is this input.
+    let committed = rewrite_seed_files()
+        .into_iter()
+        .find(|(n, _)| n == "mask0040-joined-stray-bytes")
+        .expect("the seed is committed");
+    assert_eq!(committed.1, seed);
+    // The crash as found, verbatim, is a seed too, and the harness holds on it.
+    let crash = rewrite_seed_files()
+        .into_iter()
+        .find(|(n, _)| n == "crash-mpf-fields-joined-stray")
+        .expect("the crash seed is committed");
+    assert_eq!(crash.1, exif_records::CRASH_MPF_FIELDS);
+    rewrite_invariants::check(&crash.1);
+    assert!(matches!(
+        exif_core::strip(
+            rewrite_invariants::decode(&crash.1).1,
+            rewrite_invariants::decode(&crash.1).0
+        ),
+        Err(exif_core::StripError::VerifyFailed { .. })
+    ));
+    // Strictness: the excuse is not a blanket one. The same input with the
+    // refusal planted on a policy that removes nothing joined is rejected.
+    let policy = exif_core::StripPolicy::Custom(
+        exif_core::StripSpec::none().include(exif_core::audit::Category::Icc),
+    );
+    let spec = policy.spec();
+    let pred = rewrite_invariants::predict(&input, spec);
+    let mut f = rewrite_invariants::facts(&input, policy);
+    f.result = Err(rewrite_invariants::ErrFact::VerifyFailed("mpf-fields"));
+    f.out = None;
+    assert!(!rewrite_invariants::holds(
+        rewrite_invariants::Guard::VerifyAllowed,
+        &input,
+        spec,
+        &f,
+        &pred
+    ));
+}
+
+/// SPEC-020's 186 seeds plus SPEC-021's 198 entry seeds plus the two
+/// joined-stray seeds.
+const REWRITE_SEEDS: usize = 386;
 
 #[test]
 fn seed_count_is_pinned() {

@@ -1094,23 +1094,26 @@ questions:
       chain and the kinds; it needs ExifTool measured on an empty IFD1 with a following IFD.
 
   - id: writer-self-check-fires-on-segments-joined-by-stray-bytes
-    question: "A longer fuzz run of rewrite_jpeg (about 4 minutes, from the committed seeds) found an input where `All` returns VerifyFailed {MpfFields} and the harness's prediction says Ok. It reproduces on the SPEC-020 library (commit 6518356), so it is not from SPEC-021. Should the harness accept it, or should the writer refuse earlier with a typed error?"
+    question: "Removing a segment can join the fill bytes in front of it with stray bytes behind it into a marker that swallows later segments; the self-check then refuses (VerifyFailed). Is the refusal the right answer?"
     priority: medium
-    status: open
+    status: answered
     raised_by: claude-sonnet-5-5
     raised_at: 2026-11-10
     assigned_to: null
     notes: |
-      The input (a 2.2 KB policy-byte-7 JPEG; libFuzzer artifact crash-14382fe9, not committed) has 13 Exif
-      segments, 16 COM segments, runs of stray bytes between them, an APP2 `MPF\0` index whose entry 0 size
-      is 14,352,128 and no SOS or EOI. Removing the Exif segments (EXIF9 alone is enough; so is `All`)
-      leaves the output walk without the index it had, so the self-check's MpfFields refuses (correct,
-      fail closed). The cause is the open question writer-stray-bytes: bytes the walk skipped are kept, and
-      once the segments between them are removed they can join and read as a segment header. The
-      harness excuses VerifyFailed only when the naive prediction breaks an invariant it checks (kept
-      findings, scan, new issue kinds, idempotence) or an MPF field underflows; "the output walks as a
-      different set of segments" is not one of them. Not fixed here (out of SPEC-021's scope); the 60 s smokes
-      pass. The 24 h gate would hit it.
+      Found by a 270 s and then by the coordinator's 60 s rewrite_jpeg run; it reproduces on the SPEC-020
+      library (6518356). Root cause: the walk skips bytes between segments (stray runs) and keeps them.
+      In the crash, `FF FF` fill precedes an XMP segment and the 67 stray bytes behind it start with a
+      non-marker byte. With the XMP gone, the fill meets those bytes and `FF FF <byte> <len>` reads as a
+      marker with length 27,760: the output walks as JFIF only (Truncated) and the MPF index is gone, so the
+      MpfFields check refuses. The library is right (fail closed on an output that is not the input minus the
+      targets); the harness predicted Ok because it excuses VerifyFailed only for broken invariants it checks.
+      Fixed in the harness (SPEC-021 follow-up): VerifyAllowed also accepts a VerifyFailed when the naive
+      prediction re-walks as a different segment list (marker and payload length, in order) than the input's
+      segments less the removed ones; the guard stays strict otherwise (a test plants the refusal where no
+      segment is removed). Seeds: crash-mpf-fields-joined-stray (verbatim) and mask0040-joined-stray-bytes (built
+      by hand); test a_removal_that_joins_stray_bytes_into_a_marker_is_refused_and_excused_exactly. The open
+      question writer-stray-bytes (keep, or refuse earlier with a typed error) is unchanged.
 
   - id: writer-refusals-beyond-the-spec
     question: "The build added three Uneditable reasons the spec did not list: HiddenPointer, NestedIfd, PayloadUnreadable. Ratify them in the DEC-013 amendment?"
