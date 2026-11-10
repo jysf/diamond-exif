@@ -1405,9 +1405,9 @@ mod tests {
         };
         assert_eq!(s.range(), None);
         let s = Segment {
-            offset: usize::MAX - 7,
+            offset: usize::MAX - 8,
             ..s
         };
-        assert_eq!(s.range(), Some(usize::MAX - 7..usize::MAX));
+        assert_eq!(s.range(), Some(usize::MAX - 8..usize::MAX));
     }
 }

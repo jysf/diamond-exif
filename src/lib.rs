@@ -2,7 +2,8 @@
 //! reader, writer and stripper. Pre-release: the crate reads TIFF ([`tiff`]:
 //! tolerant walk, DEC-001), walks JPEG segments and locates its metadata
 //! regions ([`jpeg`]), and builds a read-only privacy audit over both
-//! ([`audit`]: container sniff, inventory, PII findings). No writer yet.
+//! ([`audit`]: container sniff, inventory, PII findings), and strips JPEG
+//! segment by segment ([`write`]: `strip` and `sanitize`, fail closed).
 
 #![forbid(unsafe_code)]
 #![deny(
@@ -20,6 +21,8 @@ pub mod policy;
 pub mod reader;
 pub mod report;
 pub mod tiff;
+pub mod write;
 
 pub use error::{Error, Result};
 pub use policy::{StripPolicy, StripSpec};
+pub use write::{sanitize, strip, StripError, Stripped};
