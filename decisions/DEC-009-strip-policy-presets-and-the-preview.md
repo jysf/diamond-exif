@@ -125,3 +125,7 @@ Revisit when the writer's first spec shows a preset cannot be implemented as sta
 - Related specs: SPEC-012 (the category table), SPEC-014 (implements), SPEC-015 (renders dispositions), SPEC-016 (exit codes), M1c/M1d (writer)
 - Related decisions: DEC-008 (categories, severity), DEC-006 (regions)
 - External: design `docs/exif-core-design.md` sections 5 and 7
+
+## Amendment (2026-11-09, DEC-012)
+
+The grid gains two rows, `EmbeddedImage` and `OtherSegment`, removed only by `Everything` (so `KeptUnread` under the other four presets); `may_hold` gains the same two rows (every category except itself) and `MakerNote` may hold `EmbeddedImage`. All other cells are unchanged. See DEC-012.

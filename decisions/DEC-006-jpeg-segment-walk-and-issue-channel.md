@@ -84,3 +84,7 @@ Revisit if the writer needs per-segment provenance on issues, if fuzzing finds a
 - Related specs: SPEC-009, SPEC-010, SPEC-011
 - Related decisions: DEC-001 (tolerant walk), DEC-002 (borrowed slices), DEC-005 (pointer policy)
 - External: ITU-T T.81 (JPEG) Annex B marker syntax; JFIF; Adobe XMP specification part 3 (JPEG embedding); docs/exif-core-design.md §6
+
+## Amendment (2026-11-09, DEC-012)
+
+The JPEG layer now also locates `EmbeddedImage` (Multi-Picture Format), `Comment`, `OtherApp` and `Trailer` regions, and every APP13 `Photoshop 3.0` segment is an `Iptc` region (replacing the `0x0404`-resource rule). See DEC-012 for the rules and bounds; the segment walk, the issue channel and the layering are unchanged.
