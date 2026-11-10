@@ -38,6 +38,16 @@ if [ "$METERING" = none ]; then
     exit 0
 fi
 
+# A fresh scaffold has no project, so nothing has shipped: pass. (This runs in
+# the instance's CI, which would otherwise fail on the first push.)
+if ! has_projects; then
+    if [ "$JSON_OUT" = 1 ]; then
+        json_emit cost-audit "$(json_obj gate "$(json_qs "enforced")" metering_source "$(json_qs "$METERING")" offenders 0 ok true violations "[]" implausible "[]")"
+        exit 0
+    fi
+    success "cost-audit: no projects yet — nothing shipped, nothing to audit."
+    exit 0
+fi
 project=$(get_active_project)
 project_dir="${REPO_ROOT}/projects/${project}"
 

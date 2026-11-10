@@ -67,6 +67,7 @@ update_frontmatter_scalar "$SPEC_FILE" "task.cycle" "$NEW_CYCLE"
 # The one thing the destination cannot tell you is punch-list vs rejected —
 # both return to build — so `--verdict rejected` is the manual distinction.
 # What was recorded is always printed, so an inferred value can be corrected.
+# verify_verdict holds the latest outcome; verify_rounds appends every one.
 if [ "$OLD_CYCLE" = "verify" ]; then
     recorded="$VERDICT" inferred=0
     if [ -z "$recorded" ]; then
@@ -82,6 +83,8 @@ if [ "$OLD_CYCLE" = "verify" ]; then
         # `verify_verdict:` line, and a plain update would no-op while we
         # printed "recorded" below.
         upsert_frontmatter_scalar "$SPEC_FILE" "task.verify_verdict" "$recorded"
+        # ...and the round, so a later approval doesn't erase this pushback.
+        append_verify_round "$SPEC_FILE" "$recorded"
         VERDICT_NOTE="$recorded"
         [ "$inferred" = 1 ] && VERDICT_NOTE="${recorded} (inferred from → ${NEW_CYCLE})"
     fi

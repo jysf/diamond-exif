@@ -18,6 +18,11 @@ task:
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
                                    #   rejects anything" stops being a hunch and becomes a number.
+  verify_rounds: []                # every verify outcome, oldest first, appended by
+                                   #   `just advance-cycle` each time the spec leaves verify.
+                                   #   verify_verdict keeps only the LAST one, so a spec sent
+                                   #   back and then approved read as "approved": irradiance's
+                                   #   field showed 1 pushback where its handoffs showed 5.
 
 project:
   id: PROJ-XXX

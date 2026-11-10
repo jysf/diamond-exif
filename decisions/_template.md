@@ -44,8 +44,12 @@ deciders: []                         # e.g. [your-name, claude]
 # scope, and `just decisions-audit --changed` flags this decision when
 # your pending changes touch these paths. `**` spans directories,
 # `*` stays within a path segment. Omit if the decision isn't tied to
-# specific files.
-affected_scope: []                   # e.g. ["src/lib/log.ts", "src/**/*.ts"]
+# specific files. Either list form works:
+#   affected_scope: ["src/lib/log.ts", "src/**/*.ts"]
+#   affected_scope:
+#     - "src/lib/log.ts"
+#     - "src/**/*.ts"
+affected_scope: []
 
 tags:
   - tag-1

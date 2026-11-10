@@ -65,6 +65,13 @@ EOF
     *)      die "Unknown lens: '$lens' (use: now | next | future | ledger | decisions | questions | signals | patches | spikes | defects | constraints | handoffs | help, or no arg for the dashboard)" ;;
 esac
 
+if ! has_projects; then
+    if [ "$(has_json_flag "$@")" = 1 ]; then
+        json_emit dash "$(json_obj project null now "$("${SCRIPT_DIR}/status.sh" --json)")"
+        exit 0
+    fi
+    exec "${SCRIPT_DIR}/status.sh"
+fi
 project=$(get_active_project)
 
 # --- Default dashboard: JSON (stitches the status + roadmap reports + cost) ---

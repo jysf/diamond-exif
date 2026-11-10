@@ -43,7 +43,7 @@ PROJECTS=()
 if [ "$SCOPE" = "active" ]; then
     PROJECTS+=("$(get_active_project)")
 elif [ "$SCOPE" = "one" ]; then
-    dir=$(find "${REPO_ROOT}/projects" -maxdepth 1 -type d -name "${TARGET}*" 2>/dev/null | sort | head -n1)
+    dir=$(find "${REPO_ROOT}/projects" -maxdepth 1 -type d -name "${TARGET}*" 2>/dev/null | sort | sed -n 1p)
     [ -n "$dir" ] || die "No project matching '${TARGET}' under projects/."
     PROJECTS+=("$(basename "$dir")")
 else

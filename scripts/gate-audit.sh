@@ -121,7 +121,8 @@ ruby -- - "${GATES[@]}" > "$report" <<'RUBY'
 Encoding.default_external = Encoding::UTF_8
 Encoding.default_internal = Encoding::UTF_8
 
-VERDICT_ORACLE = /(parse|verify|validate|check|assert|oracle|audit)/i
+# `check(?!out)`: "checkout" is not a check (_lib.sh's _checkout_root, v0.6.49).
+VERDICT_ORACLE = /(parse|verify|validate|check(?!out)|assert|oracle|audit)/i
 # Accessor prefixes: a helper whose job is to EMIT data, not to signal a verdict
 # by exit code. Its exit through a substitution is not a swallowed verdict.
 ACCESSOR = /\A(get|find|emit|list|has|is|fm|json|resolve|sum|load|read|print|echo|classify)_?/

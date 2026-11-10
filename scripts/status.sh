@@ -8,6 +8,21 @@ source "${SCRIPT_DIR}/_lib.sh"
 require_initialized
 
 VARIANT=$(get_variant)
+if ! has_projects; then
+    if [ "$(has_json_flag "$@")" = 1 ]; then
+        json_emit status "$(json_obj variant "$(json_qs "$VARIANT")" active_project null \
+            specs "[]" patches "[]" spikes "[]" missing_cost_specs "[]" \
+            summary "$(json_obj total_specs 0 shipped 0 decisions 0)")"
+        exit 0
+    fi
+    echo "${BOLD}Repo status${RESET}"
+    echo ""
+    echo "  Variant:         ${VARIANT}"
+    echo "  Active project:  (none yet)"
+    echo ""
+    info "$NO_PROJECTS_HINT"
+    exit 0
+fi
 ACTIVE_PROJECT=$(get_active_project)
 ACTIVE_PROJECT_DIR="${REPO_ROOT}/projects/${ACTIVE_PROJECT}"
 

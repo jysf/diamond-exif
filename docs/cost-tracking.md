@@ -11,8 +11,9 @@ cost:
     - cycle: build            # frame | design | build | verify | ship
       agent: <model you ran as>
       interface: claude-code  # claude-code | claude-ai | api | ollama | other
+      basis: transcript       # HOW tokens_total was measured — see "Basis" below
       tokens_total: 130653    # ONE combined number (the harness reports one)
-      estimated_usd: 0.71     # order-of-magnitude (see rate note)
+      estimated_usd: 0.71     # priced per component (see "Pricing")
       duration_minutes: 22
       recorded_at: 2026-06-15
       notes: "…"
@@ -31,15 +32,82 @@ if present, for forward-compatibility.)
 ## Where the numbers come from
 
 - **build / verify cycles** are the metered ones. The agent that runs the cycle
-  reads its real token count from its interface — `subagent_tokens` +
-  `duration_ms` from an `Agent` result when the cycle ran as a metered subagent,
-  `/cost` when run interactively, the `usage` object for an API call, or whatever
-  a third-party agent reports — and the real `tokens_total` / `duration_minutes` /
-  `estimated_usd` are written into the spec at **ship**.
+  measures its own cycle (below) and the real `tokens_total` /
+  `duration_minutes` / `estimated_usd` are written into the spec at **ship**.
 - **design / ship cycles** are main-loop work with no clean per-cycle metering —
   leave their numerics `null` with a "main-loop, not separately metered" note.
-- **`estimated_usd`** = `tokens_total` × your model's published list rate, with no
-  cache discount. It is explicitly order-of-magnitude — say so in the entry's note.
+  Orchestrator spend is recorded once per stage, in the stage's
+  `orchestration_cost`, never split across specs.
+
+## Measuring a cycle
+
+Two instances (crustyimg, irradiance) measured their recorded figures against
+the raw transcripts and found every shortcut wrong, mostly by large factors.
+This is the method they converged on. Each rule cites what it fixes.
+
+1. **Read the cycle's own transcript.** Claude Code writes one JSONL file per
+   session under `~/.claude/projects/<dir>/<session-id>.jsonl`. A session in a
+   git worktree has **its own `<dir>`**, and a subagent's transcript sits under
+   `<session-id>/subagents/`. Search all of them: crustyimg concluded 22 records
+   were unrecoverable, and 12 of them were in sibling directories.
+2. **Count each message once.** A message with several content blocks is written
+   as one line per block, and every line repeats the same `usage`. Group lines
+   by `message.id`. Summing every line over-counts **1.6–2.25×** (measured on
+   five irradiance transcripts).
+3. **Within a message, take the largest `output_tokens`.** The lines of one
+   message repeat the same `input_tokens`, `cache_creation_input_tokens` and
+   `cache_read_input_tokens`, while `output_tokens` grows. Take those three once
+   and output at its maximum: the first line's output under-counts about 11×
+   (crustyimg).
+4. **`tokens_total` = input + cache creation + cache read + output**, summed over
+   the deduplicated messages. On a long agentic cycle cache reads are usually
+   95%+ of it, so treat it as a spend indicator, not a measure of effort.
+5. **Leave out the orchestrator.** The orchestrating session's transcript lives
+   in the same directory, runs at the same time and mentions the same spec; it is
+   not part of the cycle. Its span encloses the cycle's, and its session id is not
+   the one in your scratchpad path. Its spend belongs in `orchestration_cost`.
+6. **Re-sum after the session ends.** A figure taken while the session is live is
+   a floor: irradiance's re-sums came out 17% and 25% higher. If you record it
+   live, say "floor" in `notes`.
+7. **`/cost` is not available everywhere.** In the desktop app's Code tab it
+   reports context-window occupancy, not spend (irradiance, eight cycles). Use the
+   transcript there.
+
+### Basis
+
+`basis:` says which of these numbers a session holds. They are different
+quantities, not different readings of one: irradiance measured an `Agent`
+result's `subagent_tokens` at 197,940 against 5.2M for the same cycle's
+deduplicated transcript. So `just calibration` groups by basis and warns when a
+band mixes them, and an entry without one counts as unrecorded.
+
+| `basis` | Where the number came from |
+|---|---|
+| `transcript` | the cycle's own transcript, measured as above |
+| `agent-result` | `subagent_tokens` from an `Agent` result |
+| `slash-cost` | `/cost` at the end of an interactive session |
+| `api-usage` | the `usage` objects of the API calls, summed |
+| `estimate` | not measured (e.g. claude.ai, estimated from length) |
+
+The set is open: another value is reported, never rejected.
+
+### Pricing
+
+Price each component separately, at the list prices of **the model that ran**
+(`message.model` in the transcript, also written to `agent`), not the model a
+prompt or `tier_map` named; irradiance's tier map predicted the build model
+wrong 6 times in 7, and pricing at the wrong model overstated one spec 5×.
+
+    estimated_usd = (input × in_rate) + (output × out_rate)
+                  + (cache_read × in_rate × 0.10)
+                  + (cache_creation × in_rate × 1.25)   # 5-minute cache writes
+                                                        # (× 2.0 for 1-hour writes)
+
+The flat `tokens_total × list rate` rule this file used to give is withdrawn.
+It ignored the cache discount on the 95%+ of tokens that are cache reads, and
+overstated by 2.6–14.7× across six measured cycles. Entries recorded under it
+are not comparable with entries recorded under this one; don't sum across the
+change without saying so.
 
 ## How it's enforced (so it can't silently go empty again)
 

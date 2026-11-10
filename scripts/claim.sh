@@ -28,7 +28,7 @@ esac
 
 # Resolve the spec file (any project), excluding prompts/ and timeline artifacts.
 sf=$(find "${REPO_ROOT}/projects" -type f -name "${SPEC_ID}-*.md" \
-        ! -name '*-timeline.md' -not -path '*/prompts/*' 2>/dev/null | sort | head -n1)
+        ! -name '*-timeline.md' -not -path '*/prompts/*' 2>/dev/null | sort | sed -n 1p)
 [ -n "$sf" ] || die "No spec ${SPEC_ID} found under projects/."
 
 current=$(get_spec_claimed_by "$sf")

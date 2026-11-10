@@ -9,10 +9,11 @@
 # signal #7). This is the reader.
 #
 # The number that matters is `escaped`: a defect that made it through design,
-# build AND verify into the real world. Across the dogfood, EVERY escaped defect
-# was operational/runtime rather than spec-logic — which is what the §12
-# behavioral pre-flight exists to catch. A rising escaped count means the
-# pre-flight isn't being run on the surfaces that need it.
+# build AND verify into the real world. The §12 behavioral pre-flight exists to
+# catch the operational/runtime kind; a rising escaped count means it isn't
+# being run on the surfaces that need it. (An earlier version of this comment
+# said every escaped defect in the dogfood was operational. The corpus has no
+# recorded escaped defects, so that was not a finding.)
 #
 # Scans ALL projects by default (the distribution is only meaningful in
 # aggregate); pass --active or a PROJ-NNN to scope. Read-only.
@@ -79,15 +80,71 @@ esc_ids=(); esc_where=()
 # able to: is the verify gate doing work, or waving things through?
 v_approved=0; v_punch=0; v_rejected=0; v_unrecorded=0
 
+# verify_verdict is the LAST outcome only, so pushback is counted from every
+# round instead: task.verify_rounds where recorded, and for specs that predate
+# it, repeat verify handoffs (a second verify handoff means the first round sent
+# the spec back). Irradiance: the last-verdict field showed 1 pushback, its
+# handoffs 5.
+pb_specs=0; pb_from_rounds=0; pb_from_handbacks=0; pb_from_handoffs=0
+rounds_total=0; r_punch=0; r_rejected=0
+
+# "SPEC-NNN verdict" per verify handoff across the scope (verdict = the
+# handback.verdict the verifier wrote, or "-" when the handoff predates it).
+HANDOFF_FILES=""
+while IFS= read -r pdir; do
+    [ -n "$pdir" ] || continue
+    HANDOFF_FILES="${HANDOFF_FILES}$(find "${pdir}/handoffs" -type f -name 'HANDOFF-*.md' 2>/dev/null || true)
+"
+done <<SCOPE
+${SCOPE_DIRS}
+SCOPE
+VERIFY_HANDOFFS=$(printf '%s' "$HANDOFF_FILES" | while IFS= read -r hf; do
+        [ -n "$hf" ] || continue
+        [ "$(get_handoff_field "$hf" cycle)" = verify ] || continue
+        sid=$(awk '/^---$/ { fm = !fm; next } fm && /^[[:space:]]+spec_id:/ { print $2; exit }' "$hf")
+        hv=$(get_handback_field "$hf" verdict)
+        [ -n "$hv" ] && [ "$hv" != "null" ] || hv="-"
+        printf '%s %s\n' "$sid" "$hv"
+    done)
+# How many verify handoffs a spec had, and how many of them recorded pushback.
+verify_handoffs_for() {
+    printf '%s\n' "$VERIFY_HANDOFFS" | awk -v id="$1" '$1 == id { n++ } END { print n + 0 }'
+}
+handback_pushbacks_for() {
+    printf '%s\n' "$VERIFY_HANDOFFS" | awk -v id="$1" '$1 == id && ($2 == "punch-list" || $2 == "rejected") { n++ } END { print n + 0 }'
+}
+
 scan_verdict() {
-    local v
-    v=$(get_spec_verify_verdict "$1")
+    local f="$1" v r id n pushed=0
+    v=$(get_spec_verify_verdict "$f")
     case "$v" in
         approved)   v_approved=$((v_approved + 1)) ;;
         punch-list) v_punch=$((v_punch + 1)) ;;
         rejected)   v_rejected=$((v_rejected + 1)) ;;
         *)          v_unrecorded=$((v_unrecorded + 1)) ;;
     esac
+    for r in $(get_spec_verify_rounds "$f"); do
+        rounds_total=$((rounds_total + 1))
+        case "$r" in
+            punch-list) r_punch=$((r_punch + 1)); pushed=1 ;;
+            rejected)   r_rejected=$((r_rejected + 1)); pushed=1 ;;
+        esac
+    done
+    if [ "$pushed" = 1 ]; then
+        pb_from_rounds=$((pb_from_rounds + 1))
+    else
+        id=$(basename "$f" | sed -E 's/^(SPEC-[0-9]+).*/\1/')
+        n=$(verify_handoffs_for "$id")
+        if [ "$(handback_pushbacks_for "$id")" -gt 0 ]; then
+            pushed=1; pb_from_handbacks=$((pb_from_handbacks + 1))
+        elif [ "${n:-0}" -gt 1 ]; then
+            pushed=1; pb_from_handoffs=$((pb_from_handoffs + 1))
+        elif [ "$v" = punch-list ] || [ "$v" = rejected ]; then
+            pushed=1
+        fi
+    fi
+    if [ "$pushed" = 1 ]; then pb_specs=$((pb_specs + 1)); fi
+    return 0
 }
 
 scan_one() {
@@ -142,66 +199,81 @@ if [ "$JSON_OUT" = 1 ]; then
                     ship "$c_ship" escaped "$c_escaped" none "$c_none")
     verdicts=$(json_obj approved "$v_approved" "punch-list" "$v_punch" \
                     rejected "$v_rejected" unrecorded "$v_unrecorded")
+    pushback=$(json_obj specs_pushed_back "$pb_specs" \
+                    from_verify_rounds "$pb_from_rounds" from_handback_verdicts "$pb_from_handbacks" \
+                    from_repeat_handoffs "$pb_from_handoffs" \
+                    rounds_recorded "$rounds_total" punch_list_rounds "$r_punch" rejected_rounds "$r_rejected")
     json_emit defects "$(json_obj \
         total "$total" answered "$answered" unanswered "$unanswered" \
-        distribution "$dist" verify_verdicts "$verdicts" escaped_artifacts "$earr")"
+        distribution "$dist" verify_verdicts "$verdicts" verify_pushback "$pushback" \
+        escaped_artifacts "$earr")"
     exit 0
 fi
 
 printf "${BOLD}Defect-escape distribution (%d answered / %d artifacts)${RESET}\n" "$answered" "$total"
 printf "${DIM}where the worst defect was caught — ship Reflection Q4 / a patch's Defect-catch-stage${RESET}\n"
 
+# No Q4 answers yet: say so, but keep going. The verify verdicts below are a
+# separate record, and an early exit here used to hide them.
 if [ "$answered" -eq 0 ]; then
     printf "  ${DIM}(no artifact has answered Q4 yet — the distribution needs shipped specs)${RESET}\n"
     [ "$unanswered" -gt 0 ] && printf "  ${DIM}%d artifact(s) scanned with no answer recorded.${RESET}\n" "$unanswered"
-    exit 0
 fi
 
-# A tiny inline bar, scaled to the largest bucket, so the shape reads at a glance.
-max=$c_design
-for n in $c_build $c_verify $c_ship $c_escaped $c_none; do
-    [ "$n" -gt "$max" ] && max=$n
-done
-[ "$max" -gt 0 ] || max=1
+if [ "$answered" -gt 0 ]; then
+    # A tiny inline bar, scaled to the largest bucket, so the shape reads at a glance.
+    max=$c_design
+    for n in $c_build $c_verify $c_ship $c_escaped $c_none; do
+        [ "$n" -gt "$max" ] && max=$n
+    done
+    [ "$max" -gt 0 ] || max=1
 
-row() {
-    local label="$1" n="$2" hl="${3:-}"
-    local width=$(( n * 24 / max ))
-    local bar=""
-    local i=0
-    while [ "$i" -lt "$width" ]; do bar="${bar}█"; i=$((i + 1)); done
-    local pct=$(( n * 100 / answered ))
-    if [ -n "$hl" ] && [ "$n" -gt 0 ]; then
-        printf "  ${BOLD}%-8s${RESET} %3d (%2d%%)  ${YELLOW}%s${RESET}\n" "$label" "$n" "$pct" "$bar"
-    else
-        printf "  %-8s %3d (%2d%%)  %s\n" "$label" "$n" "$pct" "$bar"
-    fi
-}
+    row() {
+        local label="$1" n="$2" hl="${3:-}"
+        local width=$(( n * 24 / max ))
+        local bar=""
+        local i=0
+        while [ "$i" -lt "$width" ]; do bar="${bar}█"; i=$((i + 1)); done
+        local pct=$(( n * 100 / answered ))
+        if [ -n "$hl" ] && [ "$n" -gt 0 ]; then
+            printf "  ${BOLD}%-8s${RESET} %3d (%2d%%)  ${YELLOW}%s${RESET}\n" "$label" "$n" "$pct" "$bar"
+        else
+            printf "  %-8s %3d (%2d%%)  %s\n" "$label" "$n" "$pct" "$bar"
+        fi
+    }
 
-row design  "$c_design"
-row build   "$c_build"
-row verify  "$c_verify"
-row ship    "$c_ship"
-row escaped "$c_escaped" highlight
-row none    "$c_none"
+    row design  "$c_design"
+    row build   "$c_build"
+    row verify  "$c_verify"
+    row ship    "$c_ship"
+    row escaped "$c_escaped" highlight
+    row none    "$c_none"
+fi
 
 # The second axis. Kept deliberately plain — it is a count, not a verdict on the
 # verdicts, and the interpretation belongs to whoever runs the study.
 v_recorded=$((v_approved + v_punch + v_rejected))
 if [ "$v_recorded" -gt 0 ]; then
     echo ""
-    printf "${BOLD}Verify verdicts${RESET} ${DIM}(task.verify_verdict, %d spec(s) recorded)${RESET}\n" "$v_recorded"
-    pushback=$((v_punch + v_rejected))
+    printf "${BOLD}Verify verdicts${RESET} ${DIM}(latest per spec, task.verify_verdict, %d spec(s) recorded)${RESET}\n" "$v_recorded"
     printf "  approved    %3d\n" "$v_approved"
     printf "  punch-list  %3d\n" "$v_punch"
     printf "  rejected    %3d\n" "$v_rejected"
-    if [ "$pushback" -eq 0 ]; then
-        printf "  ${YELLOW}⚠${RESET}  verify has never pushed back on a recorded spec.\n"
+    # Pushback counts EVERY round, not the latest verdict: a spec sent back and
+    # then approved is pushback, though its verify_verdict says "approved".
+    if [ "$pb_specs" -eq 0 ]; then
+        printf "  ${YELLOW}⚠${RESET}  verify has never pushed back on a recorded spec, in any round.\n"
         printf "     ${DIM}PLAYBOOK.md lists this as a failure signature. Either the specs are\n"
         printf "     that clean, or the gate is not doing work — worth knowing which.${RESET}\n"
     else
-        printf "  ${DIM}pushback rate: %d%% (punch-list + rejected)${RESET}\n" \
-            $(( pushback * 100 / v_recorded ))
+        printf "  sent back at least once: %d spec(s) — %d%% ${DIM}(any round)${RESET}\n" \
+            "$pb_specs" $(( pb_specs * 100 / v_recorded ))
+        if [ "$pb_from_handbacks" -gt 0 ] || [ "$pb_from_handoffs" -gt 0 ]; then
+            printf "  ${DIM}from: %d verify_rounds · %d handback.verdict · %d repeat verify handoffs" \
+                "$pb_from_rounds" "$pb_from_handbacks" "$pb_from_handoffs"
+            printf " · %d latest verdict only${RESET}\n" \
+                $(( pb_specs - pb_from_rounds - pb_from_handbacks - pb_from_handoffs ))
+        fi
     fi
 elif [ "$v_unrecorded" -gt 0 ]; then
     echo ""

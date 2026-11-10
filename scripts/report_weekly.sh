@@ -319,7 +319,7 @@ fi
             usd=$(sum_cost_usd_for_spec "$f")
             name=$(basename "$f" .md | sed -E 's/^(SPEC-[0-9]+).*/\1/')
             echo "${usd} ${name}"
-        done | sort -rn | head -n3 | while read -r usd name; do
+        done | sort -rn | sed -n 1,3p | while read -r usd name; do
             echo "- ${name}: \$${usd}"
         done
         echo ""
@@ -381,7 +381,7 @@ fi
                 /^## Reflection/ { in_r = 1; next }
                 /^## [A-Z]/ && in_r { in_r = 0 }
                 in_r { print }
-            ' "$f" | sed 's/^/  /' | head -n 12)
+            ' "$f" | sed 's/^/  /' | sed -n 1,12p)
             if [ -n "$refl" ]; then
                 echo "**${name}:**"
                 echo ""
