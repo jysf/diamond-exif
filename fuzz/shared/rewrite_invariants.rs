@@ -1755,9 +1755,9 @@ mod rewrite_invariants {
                         bytes, removals, ..
                     } => {
                         predicted_output_breaks(input, spec, bytes)
-                            // The joined-stray-bytes excuse is for the two
+                            // The joined-stray-bytes excuse is for the three
                             // checks that see a changed walk, no other.
-                            || (matches!(*check, "mpf-fields" | "walk")
+                            || (matches!(*check, "mpf-fields" | "walk" | "entries")
                                 && walks_as_other_segments(input, removals, bytes))
                     }
                     _ => false,

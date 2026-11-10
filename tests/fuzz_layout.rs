@@ -6377,6 +6377,22 @@ fn a_removal_that_joins_stray_bytes_into_a_marker_is_refused_and_excused_exactly
         &f,
         &pred
     ));
+    // The second crash of the class (found by the 60 s smoke after the L4
+    // restriction): the self-check refused with `Entries`, because the removals
+    // change the number of Exif blocks the output walk finds.
+    let crash2 = rewrite_seed_files()
+        .into_iter()
+        .find(|(n, _)| n == "crash-entries-joined-stray")
+        .expect("the second crash seed is committed");
+    assert_eq!(crash2.1, exif_records::CRASH_ENTRIES);
+    let (p2, j2) = rewrite_invariants::decode(&crash2.1);
+    assert!(matches!(
+        exif_core::strip(j2, p2),
+        Err(exif_core::StripError::VerifyFailed {
+            check: exif_core::write::Check::Entries
+        })
+    ));
+    rewrite_invariants::check(&crash2.1);
     // L4: on the joined input itself only the checks that see a changed walk
     // are excused; a refusal by any other check is not.
     let xspec = xmp.spec();
@@ -6387,7 +6403,7 @@ fn a_removal_that_joins_stray_bytes_into_a_marker_is_refused_and_excused_exactly
         ("preview", false),
         ("kept", false),
         ("scan", false),
-        ("entries", false),
+        ("entries", true),
         ("scrubbed", false),
         ("idempotent", false),
     ] {
@@ -6410,7 +6426,7 @@ fn a_removal_that_joins_stray_bytes_into_a_marker_is_refused_and_excused_exactly
 
 /// SPEC-020's 186 seeds plus SPEC-021's 198 entry seeds plus the two
 /// joined-stray seeds.
-const REWRITE_SEEDS: usize = 476;
+const REWRITE_SEEDS: usize = 477;
 
 #[test]
 fn seed_count_is_pinned() {

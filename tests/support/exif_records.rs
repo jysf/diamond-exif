@@ -402,6 +402,10 @@ pub fn stray_seeds() -> Vec<(String, Vec<u8>)> {
             "crash-mpf-fields-joined-stray".to_string(),
             CRASH_MPF_FIELDS.to_vec(),
         ),
+        (
+            "crash-entries-joined-stray".to_string(),
+            CRASH_ENTRIES.to_vec(),
+        ),
     ]
 }
 
@@ -409,6 +413,12 @@ pub fn stray_seeds() -> Vec<(String, Vec<u8>)> {
 /// byte JPEG), verbatim; the committed seed is its only copy (the generator reads it, never rewrites it).
 pub const CRASH_MPF_FIELDS: &[u8] =
     include_bytes!("../../fuzz/seeds/rewrite_jpeg/crash-mpf-fields-joined-stray");
+
+/// The second crash of the same class (policy mask 0x6008, a 4.4 KB JPEG): the
+/// removals change how many Exif blocks the output walk finds, so the
+/// self-check refuses with `Entries`. Verbatim; its only copy is the seed.
+pub const CRASH_ENTRIES: &[u8] =
+    include_bytes!("../../fuzz/seeds/rewrite_jpeg/crash-entries-joined-stray");
 
 /// The same shape built by hand: fill bytes, an XMP segment, stray bytes that
 /// start with a non-marker byte, an MPF index and a segment that runs past the
