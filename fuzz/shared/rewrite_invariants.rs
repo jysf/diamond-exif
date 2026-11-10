@@ -1001,6 +1001,12 @@ mod rewrite_invariants {
         if spec.contains(Category::Thumbnail) {
             if let Some(k) = ifd1 {
                 thumb.as_ref()?;
+                // The thumbnail is located only when IFD1 names it once: one
+                // 0x0201, one 0x0202, no strip tags.
+                let n = |tag: u16| ifds[k].ents.iter().filter(|e| e.tag == tag).count();
+                if n(0x0201) != 1 || n(0x0202) != 1 || n(0x0111) != 0 || n(0x0117) != 0 {
+                    return None;
+                }
                 if ifds[k].next != 0 {
                     return None;
                 }
@@ -1044,10 +1050,15 @@ mod rewrite_invariants {
             all_deleted.extend((0..ifds[r].ents.len()).map(|n| (r, n)));
         }
         all_deleted.sort_unstable();
-        if all_deleted
-            .iter()
-            .any(|&(g, n)| type_size(ifds[g].ents[n].ty).is_none())
-        {
+        if all_deleted.iter().any(|&(g, n)| {
+            // A value that cannot be sized, or that does not fit the
+            // 4-byte field and is not wholly in the blob, cannot be zeroed.
+            let e = &ifds[g].ents[n];
+            match type_size(e.ty).and_then(|s| s.checked_mul(u64::from(e.count))) {
+                None => true,
+                Some(len) => len > 4 && out_of_line(blob, big, e).is_none(),
+            }
+        }) {
             return None;
         }
         // Table rewrites.
@@ -1744,7 +1755,10 @@ mod rewrite_invariants {
                         bytes, removals, ..
                     } => {
                         predicted_output_breaks(input, spec, bytes)
-                            || walks_as_other_segments(input, removals, bytes)
+                            // The joined-stray-bytes excuse is for the two
+                            // checks that see a changed walk, no other.
+                            || (matches!(*check, "mpf-fields" | "walk")
+                                && walks_as_other_segments(input, removals, bytes))
                     }
                     _ => false,
                 },

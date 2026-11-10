@@ -400,6 +400,23 @@ fn a_plan_that_deletes_a_kept_exif_finding_fails_check_kept() {
 }
 
 #[test]
+fn l1_scrubbed_checks_every_range_not_only_the_first() {
+    let (input, at) = exif_input();
+    let out = exif_output(&input, at, &[0], Some(66..72), |_| {});
+    // The first range is zero; the second is the (kept) Software value, which
+    // is not. Only a check that reads past the first range sees it.
+    assert_eq!(
+        super::verify(&input, &out, make_spec(), &[(at + 66, 6), (at + 72, 7)]),
+        Err(Check::Scrubbed)
+    );
+    // Control: the first range alone passes.
+    assert_eq!(
+        super::verify(&input, &out, make_spec(), &[(at + 66, 6)]),
+        Ok(())
+    );
+}
+
+#[test]
 fn a_plan_that_leaves_a_deleted_entry_fails_check_preview() {
     let (input, at) = exif_input();
     let out = exif_output(&input, at, &[], None, |_| {});

@@ -192,6 +192,54 @@ pub fn exif_after_the_first_scan() -> Vec<u8> {
     v
 }
 
+/// A clean first Exif block, then a second whose GPS IFD declares 0xFFFF
+/// entries (a walk issue, no GPS finding) with the coordinates behind it.
+pub fn second_block_unclean() -> Vec<u8> {
+    let first = exif_layout::first_entry_target().layout();
+    let b = exif_layout::Build {
+        be: false,
+        ifds: vec![
+            exif_layout::ifd(
+                "ifd0",
+                vec![
+                    exif_layout::short(false, 0x0112, 1),
+                    exif_layout::ptr(0x8825, "gps"),
+                ],
+                None,
+            ),
+            exif_layout::ifd(
+                "gps",
+                vec![exif_layout::canaried(exif_layout::rational(
+                    false,
+                    0x0002,
+                    &exif_layout::K_LAT,
+                ))],
+                None,
+            ),
+        ],
+        thumb: None,
+        pad_to: None,
+    };
+    let mut second = b.layout();
+    let at = second.ifd("gps").table.start;
+    second.bytes[at..at + 2].copy_from_slice(&0xFFFFu16.to_le_bytes());
+    jpeg_with(&[first.bytes, second.bytes])
+}
+
+/// A clean first Exif block before the scan, a second one (clean) after it.
+pub fn second_block_after_scan() -> Vec<u8> {
+    let l = exif_layout::full_le().layout();
+    let first = exif_layout::first_entry_target().layout();
+    let mut v = vec![0xFF, 0xD8];
+    v.extend_from_slice(&jfif_bytes());
+    v.extend_from_slice(&real_shapes::exif_app1(&first.bytes));
+    v.extend_from_slice(&real_shapes::seg(0xDA, &[1, 1, 0, 0, 0x3F, 0]));
+    v.extend_from_slice(&[0x12, 0x34]);
+    v.extend_from_slice(&real_shapes::exif_app1(&l.bytes));
+    v.extend_from_slice(&real_shapes::EOI);
+    v
+}
+
 /// Seventeen small Exif segments (the audit parses sixteen).
 pub fn exif_17_segments() -> Vec<u8> {
     let l = exif_layout::first_entry_target().layout();
@@ -222,6 +270,40 @@ pub fn exif_inventory_over_budget() -> Vec<u8> {
 pub fn leak_inputs_jpeg() -> Vec<(&'static str, Vec<u8>)> {
     let one = |l: Layout| jpeg_of(&[l], false).bytes;
     vec![
+        (
+            "straddling_artist_le",
+            one(exif_layout::straddling_artist(false).layout()),
+        ),
+        (
+            "straddling_artist_be",
+            one(exif_layout::straddling_artist(true).layout()),
+        ),
+        (
+            "straddling_gps_value_le",
+            one(exif_layout::straddling_gps_value(false).layout()),
+        ),
+        (
+            "straddling_gps_value_be",
+            one(exif_layout::straddling_gps_value(true).layout()),
+        ),
+        (
+            "thumbnail_second_pair_le",
+            one(exif_layout::thumbnail_second_pair(false).layout()),
+        ),
+        (
+            "thumbnail_second_pair_be",
+            one(exif_layout::thumbnail_second_pair(true).layout()),
+        ),
+        (
+            "thumbnail_with_strips_le",
+            one(exif_layout::thumbnail_with_strips(false).layout()),
+        ),
+        (
+            "thumbnail_with_strips_be",
+            one(exif_layout::thumbnail_with_strips(true).layout()),
+        ),
+        ("exif_second_block_unclean", second_block_unclean()),
+        ("exif_second_block_after_scan", second_block_after_scan()),
         (
             "gps_ifd_pointed_to_twice",
             one(exif_layout::gps_ifd_pointed_to_twice().layout()),

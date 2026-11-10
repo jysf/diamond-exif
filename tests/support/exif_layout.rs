@@ -57,6 +57,9 @@ pub enum Val {
     Raw(u32),
     /// The offset of the thumbnail bytes.
     Thumb,
+    /// The offset of the thumbnail bytes plus this many (a second image
+    /// appended behind the thumbnail).
+    ThumbAt(usize),
     /// The offset of out-of-line bytes shared with another entry: the other
     /// entry's `(ifd name, tag)`.
     SameAs(&'static str, u16),
@@ -310,6 +313,10 @@ impl Build {
                     Val::Thumb => {
                         let t = thumb.clone().unwrap();
                         out[at + 8..at + 12].copy_from_slice(&u32b(be, t.start as u32));
+                    }
+                    Val::ThumbAt(n) => {
+                        let t = thumb.clone().unwrap();
+                        out[at + 8..at + 12].copy_from_slice(&u32b(be, (t.start + n) as u32));
                     }
                     Val::SameAs(other_ifd, other_tag) => {
                         let oi = self.ifds.iter().position(|f| f.name == *other_ifd).unwrap();
@@ -876,6 +883,84 @@ pub fn two_blocks() -> (Build, Build) {
 }
 
 // ── leak inputs ─────────────────────────────────────────────────────────────
+
+pub const K_THUMB2: &[u8] = b"CANARY-THUMB2-0019";
+pub const K_STRIPS: &[u8] = b"CANARY-STRIP-DATA-0020";
+
+/// An Artist (a deleted entry under `Authorship`) whose 40-byte value starts
+/// at the Make's value and runs past the end of the blob.
+pub fn straddling_artist(be: bool) -> Build {
+    let mut b = only_ifd0(be, vec![ascii(0x010F, K_MAKE), short(be, 0x0112, 1)]);
+    b.ifds[0].ents.push(Ent {
+        tag: 0x013B,
+        ty: ASCII,
+        count: 40,
+        val: Val::SameAs("ifd0", 0x010F),
+        canary: Some(K_MAKE.to_vec()),
+    });
+    b
+}
+
+/// A GPS entry (removed with its IFD) whose 60-byte value starts at the
+/// latitude and runs past the end of the blob.
+pub fn straddling_gps_value(be: bool) -> Build {
+    let mut b = full(be);
+    b.ifds.retain(|f| f.name != "ifd1" && f.name != "interop");
+    b.ifds[0].next = None;
+    b.ifds[0].ents.retain(|e| e.tag != 0x8769);
+    b.ifds.retain(|f| f.name != "exif");
+    b.thumb = None;
+    for e in &mut b.ifds[0].ents {
+        e.canary = None;
+    }
+    let gps = b.ifds.iter_mut().find(|f| f.name == "gps").unwrap();
+    gps.ents.retain(|e| e.tag != 0x001C);
+    gps.ents.push(Ent {
+        tag: 0x001C,
+        ty: UNDEFINED,
+        count: 60,
+        val: Val::SameAs("gps", 0x0002),
+        canary: Some(K_LAT[0].0.to_be_bytes().to_vec()),
+    });
+    b
+}
+
+/// IFD1 names a second thumbnail with a second 0x0201/0x0202 pair; only the
+/// first pair is the audit's thumbnail.
+pub fn thumbnail_second_pair(be: bool) -> Build {
+    let mut b = full(be);
+    let second = [&[0xFF, 0xD8][..], K_THUMB2, &[0xFF, 0xD9][..]].concat();
+    let first = thumb_jpeg().len();
+    let ifd1 = b.ifds.iter_mut().find(|f| f.name == "ifd1").unwrap();
+    ifd1.ents.push(Ent {
+        tag: 0x0201,
+        ty: LONG,
+        count: 1,
+        val: Val::ThumbAt(first),
+        canary: Some(K_THUMB2.to_vec()),
+    });
+    ifd1.ents.push(long(be, 0x0202, second.len() as u32));
+    b.thumb = Some([thumb_jpeg(), second].concat());
+    b
+}
+
+/// IFD1 names its JPEG and also strips (0x0111, 0x0117) with image data
+/// behind the thumbnail.
+pub fn thumbnail_with_strips(be: bool) -> Build {
+    let mut b = full(be);
+    let first = thumb_jpeg().len();
+    let ifd1 = b.ifds.iter_mut().find(|f| f.name == "ifd1").unwrap();
+    ifd1.ents.push(Ent {
+        tag: 0x0111,
+        ty: LONG,
+        count: 1,
+        val: Val::ThumbAt(first),
+        canary: Some(K_STRIPS.to_vec()),
+    });
+    ifd1.ents.push(long(be, 0x0117, K_STRIPS.len() as u32));
+    b.thumb = Some([thumb_jpeg(), K_STRIPS.to_vec()].concat());
+    b
+}
 
 /// The GPS IFD is pointed to by two entries of IFD0.
 pub fn gps_ifd_pointed_to_twice() -> Build {

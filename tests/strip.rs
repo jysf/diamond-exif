@@ -2313,6 +2313,41 @@ fn leak_inputs() -> Vec<Leak> {
             at: None,
         },
     ]
+    .into_iter()
+    .chain([false, true].into_iter().flat_map(|be| {
+        // HANDOFF-042 H1 and H2, in both byte orders.
+        vec![
+            Leak {
+                name: "straddling_artist",
+                layout: exif_layout::straddling_artist(be).layout(),
+                cats: &["authorship"],
+                reason: UneditableReason::PayloadUnreadable,
+                at: None,
+            },
+            Leak {
+                name: "straddling_gps_value",
+                layout: exif_layout::straddling_gps_value(be).layout(),
+                cats: &["gps"],
+                reason: UneditableReason::PayloadUnreadable,
+                at: None,
+            },
+            Leak {
+                name: "thumbnail_second_pair",
+                layout: exif_layout::thumbnail_second_pair(be).layout(),
+                cats: &["thumbnail"],
+                reason: UneditableReason::ThumbnailNotLocated,
+                at: None,
+            },
+            Leak {
+                name: "thumbnail_with_strips",
+                layout: exif_layout::thumbnail_with_strips(be).layout(),
+                cats: &["thumbnail"],
+                reason: UneditableReason::ThumbnailNotLocated,
+                at: None,
+            },
+        ]
+    }))
+    .collect()
 }
 
 #[test]
@@ -2368,4 +2403,88 @@ fn no_leak_input_is_ok_with_a_canary_left_under_any_policy() {
     for (_, _, p) in exif_policies() {
         assert!(strip(&s.bytes, p).is_err());
     }
+}
+
+/// The input offset of the `n`th Exif segment of `jpeg`.
+fn exif_segment_offset(jpeg: &[u8], n: usize) -> usize {
+    let m = exif_core::jpeg::read(jpeg).unwrap();
+    m.jpeg()
+        .segments()
+        .iter()
+        .filter(|s| s.kind() == exif_core::jpeg::SegmentKind::Exif)
+        .nth(n)
+        .unwrap()
+        .offset()
+}
+
+#[test]
+fn a_later_block_with_a_walk_issue_still_refuses_under_every_partial_policy() {
+    // HANDOFF-042 M1: a clean first block, then a second whose GPS IFD
+    // declares 0xFFFF entries, with coordinates behind it. A check that looks
+    // at the first block only would return Ok with the canary left.
+    let j = exif_records::second_block_unclean();
+    let second = exif_segment_offset(&j, 1);
+    assert!(contains(&j, b"CANA"));
+    for (pname, _, p) in exif_policies() {
+        assert_eq!(
+            strip(&j, p).unwrap_err(),
+            StripError::Uneditable {
+                reason: UneditableReason::BlockNotClean,
+                offset: second
+            },
+            "{pname}"
+        );
+    }
+    // Control: the first block alone strips.
+    let first = exif_layout::first_entry_target().layout();
+    assert!(strip(&jpeg_with(&[first.bytes]), StripPolicy::Gps).is_ok());
+}
+
+#[test]
+fn a_later_block_after_the_first_scan_is_uneditable() {
+    let j = exif_records::second_block_after_scan();
+    let second = exif_segment_offset(&j, 1);
+    for (pname, _, p) in exif_policies() {
+        assert_eq!(
+            strip(&j, p).unwrap_err(),
+            StripError::Uneditable {
+                reason: UneditableReason::AfterScan,
+                offset: second
+            },
+            "{pname}"
+        );
+    }
+}
+
+#[test]
+fn an_empty_gps_ifd_behind_a_present_pointer_is_removed_with_it() {
+    // HANDOFF-042 L2, pinned at the file level.
+    let b = exif_layout::Build {
+        be: false,
+        ifds: vec![
+            exif_layout::ifd(
+                "ifd0",
+                vec![
+                    exif_layout::ascii(0x010F, exif_layout::K_MAKE),
+                    exif_layout::ptr(0x8825, "gps"),
+                ],
+                None,
+            ),
+            exif_layout::ifd("gps", vec![], None),
+        ],
+        thumb: None,
+        pad_to: None,
+    };
+    let l = b.layout();
+    let j = jpeg_of(std::slice::from_ref(&l), false);
+    let out = strip(&j.bytes, StripPolicy::Gps).unwrap();
+    assert_eq!(out.entries().len(), 1);
+    assert_eq!(out.entries()[0].tag, 0x8825);
+    let t = &l.ifd("gps").table;
+    let at = j.blobs[0];
+    assert!(out.bytes()[at + t.start..at + t.end]
+        .iter()
+        .all(|b| *b == 0));
+    assert!(contains(out.bytes(), exif_layout::K_MAKE));
+    assert!(audit(out.bytes()).health().clean);
 }

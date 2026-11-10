@@ -232,8 +232,17 @@ pub(super) fn plan_block(
         if let Some(ifd1) = ifds.iter().position(|i| i.kind() == IfdKind::Ifd1) {
             let ifd = ifds.get(ifd1).ok_or_else(|| bad(0))?;
             let at = usize::try_from(ifd.offset()).unwrap_or(0);
+            // The thumbnail is located only when IFD1 names it exactly once:
+            // one 0x0201, one 0x0202 and no strip tags. A second locator, or
+            // strips, would leave image bytes unreferenced and unzeroed.
+            let count = |tag: u16| ifd.entries().iter().filter(|e| e.tag() == tag).count();
+            let single = count(0x0201) == 1
+                && count(0x0202) == 1
+                && count(0x0111) == 0
+                && count(0x0117) == 0;
             let range = sel
                 .thumbnail_range
+                .filter(|_| single)
                 .and_then(|r| blob_range(blob, r))
                 .ok_or_else(|| refuse(UneditableReason::ThumbnailNotLocated, at))?;
             if ifd.next() != 0 {
@@ -353,8 +362,10 @@ pub(super) fn plan_block(
             }
             match c.payload_range(entry) {
                 Some(r) => scrubs.push((r, ScrubReason::EntryValue)),
-                // A value that cannot be sized cannot be zeroed.
-                None if entry.byte_len().is_none() => {
+                // A value that cannot be sized, or that does not fit the 4-byte
+                // field and is not wholly in the blob (it runs past the end:
+                // its in-blob part is data too), cannot be zeroed exactly.
+                None if entry.byte_len().is_none_or(|len| len > 4) => {
                     return Err(refuse(
                         UneditableReason::PayloadUnreadable,
                         entry.value_at(),

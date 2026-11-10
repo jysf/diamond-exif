@@ -6377,6 +6377,35 @@ fn a_removal_that_joins_stray_bytes_into_a_marker_is_refused_and_excused_exactly
         &f,
         &pred
     ));
+    // L4: on the joined input itself only the checks that see a changed walk
+    // are excused; a refusal by any other check is not.
+    let xspec = xmp.spec();
+    let xpred = rewrite_invariants::predict(&input, xspec);
+    for (check, excused) in [
+        ("mpf-fields", true),
+        ("walk", true),
+        ("preview", false),
+        ("kept", false),
+        ("scan", false),
+        ("entries", false),
+        ("scrubbed", false),
+        ("idempotent", false),
+    ] {
+        let mut f = rewrite_invariants::facts(&input, xmp);
+        f.result = Err(rewrite_invariants::ErrFact::VerifyFailed(check));
+        f.out = None;
+        assert_eq!(
+            rewrite_invariants::holds(
+                rewrite_invariants::Guard::VerifyAllowed,
+                &input,
+                xspec,
+                &f,
+                &xpred
+            ),
+            excused,
+            "{check}"
+        );
+    }
 }
 
 /// SPEC-020's 186 seeds plus SPEC-021's 198 entry seeds plus the two

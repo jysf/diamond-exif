@@ -725,3 +725,145 @@ fn makernote_kept_is_byte_identical_including_absolute_offsets() {
         assert_eq!(&out[56..98], &b.bytes[56..98]);
     }
 }
+
+// ── HANDOFF-042 punch list ──────────────────────────────────────────────────
+
+/// H1: an out-of-line value that runs past the end of the blob has no
+/// `payload_range`, but its in-blob part is still data; it must not be taken
+/// for an inline value that needs no scrub.
+#[test]
+fn h1_a_deleted_value_that_straddles_the_blob_end_is_payload_unreadable() {
+    for be in [false, true] {
+        let mut b = Blob::new(be, 8);
+        let es = vec![b.short(0x0112, 1), b.out(0x013B, 2, 40, 38)];
+        b.ifd(8, &es, 0);
+        b.data(38, b"CANARY-ARTIST-PREFIX");
+        let err = run(&b.bytes, &del(&[(0, 1)])).unwrap_err();
+        assert_eq!(err.reason, UneditableReason::PayloadUnreadable, "be={be}");
+        // A value that fits is fine (control).
+        let mut ok = Blob::new(be, 8);
+        let es = vec![ok.short(0x0112, 1), ok.out(0x013B, 2, 20, 38)];
+        ok.ifd(8, &es, 0);
+        ok.data(38, b"CANARY-ARTIST-PREFIX");
+        assert!(run(&ok.bytes, &del(&[(0, 1)])).is_ok(), "be={be}");
+    }
+}
+
+#[test]
+fn h1_an_entry_of_a_removed_ifd_that_straddles_the_blob_end_is_payload_unreadable() {
+    for be in [false, true] {
+        let mut b = Blob::new(be, 8);
+        let es = vec![b.short(0x0112, 1), b.long(0x8825, 38)];
+        b.ifd(8, &es, 0);
+        let gps = vec![b.out(0x001C, 7, 60, 56)];
+        b.ifd(38, &gps, 0);
+        b.data(56, b"CANARY-GPS-AREA-PREFIX");
+        let err = run(&b.bytes, &gps_sel()).unwrap_err();
+        assert_eq!(err.reason, UneditableReason::PayloadUnreadable, "be={be}");
+    }
+}
+
+/// H2: more than one thumbnail locator leaves image bytes unreferenced.
+#[test]
+fn h2_a_thumbnail_ifd1_with_other_locators_is_thumbnail_not_located() {
+    type Ents = Vec<(u16, u16, u32, u32)>;
+    let cases: [(&str, Ents); 4] = [
+        (
+            "second pair",
+            vec![
+                (0x0201, 4, 1, 80),
+                (0x0202, 4, 1, 16),
+                (0x0201, 4, 1, 96),
+                (0x0202, 4, 1, 20),
+            ],
+        ),
+        (
+            "strip offsets",
+            vec![(0x0111, 4, 1, 96), (0x0201, 4, 1, 80), (0x0202, 4, 1, 16)],
+        ),
+        (
+            "strip byte counts",
+            vec![(0x0117, 4, 1, 20), (0x0201, 4, 1, 80), (0x0202, 4, 1, 16)],
+        ),
+        (
+            "second length",
+            vec![(0x0201, 4, 1, 80), (0x0202, 4, 1, 16), (0x0202, 4, 1, 20)],
+        ),
+    ];
+    for be in [false, true] {
+        for (what, ents) in &cases {
+            let mut b = Blob::new(be, 8);
+            let ifd0 = vec![b.short(0x0112, 1)];
+            b.ifd(8, &ifd0, 26);
+            let es: Vec<E> = ents
+                .iter()
+                .map(|&(tag, ty, count, val)| E {
+                    tag,
+                    ty,
+                    count,
+                    val: b.w32(val),
+                })
+                .collect();
+            b.ifd(26, &es, 0);
+            b.data(80, &[0xFF, 0xD8, b'T', b'H', b'U', b'M', b'B', 0xFF, 0xD9]);
+            b.data(96, b"CANARY-SECOND-THUMB!");
+            let sel = Selection {
+                thumbnail: true,
+                thumbnail_range: Some((80, 9)),
+                ..Selection::default()
+            };
+            let err = run(&b.bytes, &sel).unwrap_err();
+            assert_eq!(
+                err.reason,
+                UneditableReason::ThumbnailNotLocated,
+                "{what} be={be}"
+            );
+        }
+    }
+}
+
+/// L2: a GPS IFD with no entry (count 0) behind a present pointer: the pointer
+/// goes and the six bytes of the empty table are zeroed.
+#[test]
+fn l2_an_empty_gps_ifd_is_removed_with_its_pointer() {
+    for be in [false, true] {
+        let mut b = Blob::new(be, 8);
+        let es = vec![b.short(0x0112, 1), b.long(0x8825, 38)];
+        b.ifd(8, &es, 0);
+        b.ifd(38, &[], 0);
+        let plan = run(&b.bytes, &gps_sel()).unwrap();
+        let out = apply(&b.bytes, &plan);
+        assert_eq!(&out[38..44], &[0; 6], "be={be}");
+        assert_eq!(plan.deleted.len(), 1);
+        assert_eq!(plan.deleted[0].tag, 0x8825);
+        let c = Container::parse(&out).unwrap();
+        assert!(c.is_clean() && c.ifds().len() == 1);
+    }
+}
+
+/// L3: the overlap check runs although only one of the two IFDs is edited.
+#[test]
+fn l3_overlapping_ifd_tables_are_shared_bytes_even_when_only_one_is_edited() {
+    let mut b = Blob::new(false, 8);
+    // IFD0's table is 8..38; the SubIFD sits at 34, over its next-IFD word.
+    let es = vec![b.out(0x010F, 2, 6, 60), b.long(0x014A, 34)];
+    b.ifd(8, &es, 0);
+    b.data(60, MAKE);
+    let c = Container::parse(&b.bytes).unwrap();
+    assert!(c.is_clean(), "{:?}", c.issues());
+    assert_eq!(c.ifds().len(), 2);
+    // Only IFD0 loses an entry (the Make).
+    let err = run(&b.bytes, &del(&[(0, 0)])).unwrap_err();
+    assert_eq!(
+        err,
+        Refusal {
+            reason: UneditableReason::SharedBytes,
+            at: 34
+        }
+    );
+    // And with nothing to edit at all.
+    assert_eq!(
+        run(&b.bytes, &Selection::default()).unwrap_err().reason,
+        UneditableReason::SharedBytes
+    );
+}
