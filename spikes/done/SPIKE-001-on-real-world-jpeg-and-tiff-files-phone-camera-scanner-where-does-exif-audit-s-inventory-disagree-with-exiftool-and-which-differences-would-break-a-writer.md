@@ -17,7 +17,7 @@
 task:
   id: SPIKE-001
   type: spike                      # epic | story | task | bug | chore | patch | spike
-  cycle: spike                     # spike | land  (collapsed from a spec's 5)
+  cycle: land  # spike | land  (collapsed from a spec's 5)
   blocked: false
   priority: medium
 
@@ -32,12 +32,12 @@ spike:
                                    # REQUIRED. Exceeded means STOP and land it as
                                    # `inconclusive` — not extend. Extending twice
                                    # means it isn't a spike, it's an unframed project.
-  outcome: null                    # set at LAND. Never leave null on a landed spike —
+  outcome: answered                  # set at LAND. Never leave null on a landed spike —
                                    #   answered     — the question got an answer
                                    #   inconclusive — timebox hit, no answer (a real result)
                                    #   graduated    — the code becomes real work (see below)
                                    #   discarded    — the code is thrown away (also a win)
-  landed_at: null                  # YYYY-MM-DD, stamped at land
+  landed_at: 2026-11-09                  # YYYY-MM-DD, stamped at land
 
 project:
   id: PROJ-001               # OPTIONAL (null) — a spike may PRECEDE any project
@@ -60,7 +60,7 @@ cost:
   sessions: []
   totals:
     tokens_total: 0
-    estimated_usd: 0
+    estimated_usd: 0.00
     session_count: 0
 ---
 
@@ -97,11 +97,21 @@ A spike may **not**:
 
 ## Log
 
-*Free-form. Written during the spike, for you. No structure required — this is
-the one place in the template with no conventions to follow. What you tried,
-what surprised you, dead ends worth remembering.*
+Corpus: 16 files in one local folder (read in place, nothing copied; tag values never printed or recorded; files named here by short hash only): 11 JPEG, 5 DNG, 1 PNG, plus two non-image files that were not scanned. The JPEGs came from five kinds of source by their MakerNote signature or lack of one: three Nikon bodies' output, one Fuji, one Leica, one iPhone-class, and five with no MakerNote (a minimal 280 to 298 byte Exif, or Exif plus XMP and ICC). The DNGs were four without a MakerNote and one Leica. Tools: the release `exif-audit` (`--json --policy none --inventory`, values off) against `exiftool -a -u -G1 -H -s` 13.55, compared with the SPEC-013 rules by a throw-away script (scratchpad, not in the repo; ExifTool output reduced to group and id in memory and never written down).
 
----
+**Inventory comparison.** 15 of 15 TIFF/JPEG/DNG files: no ExifTool entry missing from ours (0 theirs-only); every audit `clean`; no crash, timeout or stderr from either tool. Ours-only in 8 files, always the same two ids: `ExifIFD 0x927C` (MakerNote, 7 files) and `IFD0 0xC4A5` (PrintIM, 1 Fuji file): ExifTool expands those values into its own groups (`Nikon`, `FujiFilm`, `Apple`, `Leica`, `PrintIM`) and prints no line for the tag itself: the same "directory-valued" class SPEC-013 recorded for the pointer tags. The PNG is `unsupported` as designed, and ExifTool lists 46 EXIF-family entries plus XMP in it. Speed: ours 7 to 32 ms per file (an 85 MB DNG in 32 ms), ExifTool 45 to 95 ms.
+
+**Structures a writer meets that the inventory does not show** (from segment walks, ExifTool's MPF/preview extraction, and MakerNote signatures; structure only):
+
+- Exif APP1 segments of 65,468, 65,534 and 65,534 bytes: at the 64 KB ceiling (the three big-MakerNote files).
+- Multi-Picture Format: 4 of 11 JPEGs have an APP2 `MPF` segment and 1 to 2 extra JPEG images inside the file (387 KB to 915 KB). The Nikon extras are preview JPEGs, two of the three with their own Exif; the iPhone extras are depth and HDR gain-map images carrying XMP and an ICC profile.
+- Preview JPEGs inside MakerNotes: the Nikon and Fuji files carry a PreviewImage (20 to 96 KB), the Nikon ones with their own Exif; the Leica files carry a PreviewImage and, in the DNG, a 1.6 MB JpgFromRaw.
+- Proprietary APP10 segments with signature `AROT` (718 and 1,022 bytes) in 2 of 11 JPEGs (the iPhone-class and one more); the audit has no category or region kind for them, so no policy can name them.
+- A 313-byte non-Exif trailer after the last EOI in 1 of 11 JPEGs.
+- IFD1 thumbnails (6 files): none carries metadata of its own.
+- MakerNote layout: signatures `FUJIFILM`, `Nikon`, `Apple iOS`, `LEICA`; none starts with a TIFF header at byte 0.
+
+**MakerNote relocation experiment.** For each JPEG with a MakerNote, copy the note to the end of the Exif block, point the 0x927C entry at the copy, zero the old bytes, and compare ExifTool's whole non-file view. Result: Nikon (11.5 KB) and Apple (1.7 KB) identical (the only changes were the MPF image offsets, which move with the file size); Fuji, Leica and the two larger Nikon notes could not be tested because the grown block would exceed 64 KB.
 
 ## Land
 
@@ -110,8 +120,18 @@ this lane exists to prevent — undocumented decisions leaking into production.*
 
 ### Answer
 
-What did you learn? Answer the `## Question` directly, in a few sentences. If the
-outcome is `inconclusive`, say what would make it answerable next time.
+On these 15 real TIFF, JPEG and DNG files the audit's inventory matches ExifTool's exactly except for two directory-valued tags (MakerNote 0x927C and PrintIM 0xC4A5, where ExifTool prints the expanded vendor group instead), with every file read cleanly and no crash, timeout or stderr: the reader showed no gap that would make a writer wrong **on the inventory**. The answer to the second half of the question is that the inventory is the wrong lens for a writer: real files contain five structures the audit and the DEC-009 preview do not model, and a strip that follows the preview would leave them behind or break them: (1) Multi-Picture Format secondary images, (2) preview JPEGs inside MakerNotes, (3) proprietary APP10 `AROT` segments, (4) Exif blocks at the 64 KB limit, (5) a non-Exif trailer. Coverage: 15 files, 5 JPEG source kinds, 2 raw sources, 1 PNG; not covered: Canon and Sony (the classic absolute-offset MakerNotes), Samsung and Pixel motion photos, Photoshop/Lightroom-edited files with APP13 and extended XMP, non-DNG TIFFs, HEIC and WebP.
+
+**What the writer's design must therefore do** (carried into the writer stage's frame):
+- Delete entries **in place** and **scrub**: removing an IFD entry must zero its out-of-line value bytes and any dead space, otherwise the GPS values stay in the file; do not relocate MakerNotes (relocation worked for Nikon and Apple notes but is untested for the rest).
+- Never grow an Exif block (several are already at the ceiling); `All`/`Everything` remove whole segments.
+- Treat MPF as a unit: either drop the MPF segment together with the secondary images or process each embedded JPEG; resizing the primary's header segments moves the secondary images' absolute offsets.
+- Decide, per policy, what happens to unrecognised APPn segments and trailers.
+- Make the audit report all of these first, so the preview can be true (see the follow-up below).
+
+**Follow-ups** (recorded as questions, nothing built here): the audit should report MPF/embedded images, unrecognised APPn segments (APP10 `AROT`) and trailer data, which is a DEC-008 amendment (new categories) and the natural first spec of the writer stage; the SPEC-013 comparator's `DIRECTORY_VALUED` set should learn 0x927C and 0xC4A5 for real-world files; more file types are needed (below).
+
+**More file types wanted** (for a second, smaller pass before or inside the writer stage): a Canon and a Sony JPEG (absolute-offset MakerNotes, the classic relocation hazard); a Samsung or Pixel motion-photo JPEG (large trailer, embedded video); a Photoshop- or Lightroom-edited JPEG (APP13/IPTC, extended XMP); a plain multi-page, tiled or strip TIFF scan (not DNG); an iPhone HEIC and a WebP (for the later stage).
 
 ### Decisions this exploration already made
 
@@ -122,14 +142,14 @@ emit a `DEC-*` and list it below with honest confidence.
 Not archaeology: only the load-bearing ones. If the rationale is genuinely lost,
 `confidence: 0.4` with a note is the truthful record, not a failure.
 
-- `DEC-NNN` — <one line> (confidence: X.X)
+- None emitted at land. The writer-design implications (in-place delete plus scrub, never grow an Exif block, MPF as a unit, no MakerNote relocation) are not yet decided choices: they are carried into the writer stage's frame, where the first of them becomes a DEC before any writer code. The comparator rule used (drop `-` ids and file-level groups, treat directory-valued tags as ExifTool-expanded) is the SPEC-013 rule unchanged.
 
 ### What happens to the code
 
 Pick one and complete its block.
 
 **`discarded`** — the code is thrown away.
-- What's worth keeping in writing instead: <one or two lines>
+- What's worth keeping in writing instead: the log and answer above. The comparison and structure scripts lived in the session scratchpad (none entered the repo); the corpus stayed where it was and nothing from it was copied or recorded.
 - *(A discarded spike is a win: you bought an answer cheaply.)*
 
 **`graduated`** — the code becomes real work. **The five-item contract (DEC-012):**
@@ -147,16 +167,16 @@ Pick one and complete its block.
 
 **`answered` / `inconclusive`** — the question resolved (or didn't); no code
 graduates.
-- What this unblocks or changes: <one or two lines>
+- What this unblocks or changes: the writer stage can be framed on evidence: its first spec is an audit-coverage spec (MPF/embedded images, unrecognised APPn, trailers) so the preview can be true, then segment-level strip, then in-place IFD deletion with scrub.
 
 ### What's next
 
-- [ ] <the concrete next action — frame a project, write a spec, drop the idea>
+- [x] Frame the writer stage (M1c/M1d, JPEG and TIFF), starting from the audit-coverage spec and the six implications in the Answer; ask the user for the extra file types listed in the Answer.
 
 ### Land checklist
 
-- [ ] `spike.outcome` set (never leave it null — `just validate` fails on this)
-- [ ] `spike.landed_at` stamped
-- [ ] `project.id` back-linked if a project exists now
+- [x] `spike.outcome` set (never leave it null — `just validate` fails on this)
+- [x] `spike.landed_at` stamped
+- [x] `project.id` back-linked if a project exists now
 - [ ] `just advance-cycle SPIKE-NNN land`
 - [ ] `just archive-spike SPIKE-NNN`
