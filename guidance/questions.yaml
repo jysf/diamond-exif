@@ -1115,6 +1115,33 @@ questions:
       by hand); test a_removal_that_joins_stray_bytes_into_a_marker_is_refused_and_excused_exactly. The open
       question writer-stray-bytes (keep, or refuse earlier with a typed error) is unchanged.
 
+  - id: preview-outside-ifd1-not-thumbnail
+    question: "A JPEG preview stored in IFD2 or in a SubIFD is not a Thumbnail under DEC-008 (the category is IFD1's 0x0201 and the strips form), so AllPii keeps it. Does DEC-008 need a category (or a rule) before the writer reaches users?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      Found by the HANDOFF-044 verifier: local file a3b66f84 (the one AllPii already refuses for
+      ChainAfterThumbnail) has a JPEG preview in its third chain IFD. The audit does not file it, the preview
+      does not mention it, and a policy that removes the Thumbnail category leaves it. The writer cannot
+      remove what the audit does not name (DEC-013 part 3), so this is an audit/DEC-008 gap, not a writer
+      defect. Related: makernote-internal-offsets.
+
+  - id: field-type-129-utf8
+    question: "Exif 3.0 adds field type 129 (UTF-8 string). The writer refuses a deleted or removed entry of any type outside 1 to 12 (PayloadUnreadable), so a UTF-8 tag of a removed category is refused rather than stripped. Accept type 129?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      Chosen in HANDOFF-041 round 4: not accepted. The walk (`type_size`) does not know 129, so its payload
+      has no range, and the closed-world type rule (only data types 1 to 12; 13 and 18 carry offsets) is the
+      fail-closed answer. Accepting it needs the walk to size type 129 as one byte per count and a test; no
+      local file has one.
+
   - id: makernote-internal-offsets
     question: "A MakerNote's own structure can hold offsets to data outside its declared range; a MakerNote deleted under MakerNote or AllPii is zeroed over its declared range only. Note it in DEC-013?"
     priority: medium
@@ -1166,6 +1193,16 @@ questions:
       field type) now keeps its in-blob bytes (clipped), so a scrub or table patch touching them is
       SharedBytes; the same for a kept IFD1 whose thumbnail range runs past the end. No real IFD1 or GPS IFD in the local
       corpus (5 and 4 IFDs) has an off-list tag.
+      HANDOFF-044 round: (1) a closed-world TYPE rule: every deleted entry and every entry of a removed IFD must
+      have a field type 1 to 12, else PayloadUnreadable (types 13 and 18 carry an offset whatever the tag;
+      the GPS pointer entries deleted with their IFD are exempt); a KEPT entry of type 13 or 18 keeps the
+      bytes from its offset to the end of the blob. (2) Protection, not refusal: the targets of KEPT offset tags
+      (0x0111/0x0117, 0x0144/0x0145, 0x0120/0x0121, every 0x0201/0x0202 pair, 0x0207 to 0x0209) are added to the
+      keep set (clipped; an offset with no length runs to the blob end) so a scrub touching them is SharedBytes;
+      an array of offsets that cannot be read is a refusal (PayloadUnreadable). (3) A removed IFD1 holding a
+      tag of a category the policy keeps is ThumbnailNotLocated (typed), not a VerifyFailed Kept. (4) An MPF
+      index whose primary-size or offset field would be patched on its own TIFF header or IFD0 table, or
+      inside a located image, is MpfNotIndexed (typed) instead of a VerifyFailed MpfFields.
       Also built beyond the spec: the check that no two IFD tables overlap runs for every partial policy
       whether or not anything is edited (the harness guard LibraryOkNaiveUnclean names it).
 

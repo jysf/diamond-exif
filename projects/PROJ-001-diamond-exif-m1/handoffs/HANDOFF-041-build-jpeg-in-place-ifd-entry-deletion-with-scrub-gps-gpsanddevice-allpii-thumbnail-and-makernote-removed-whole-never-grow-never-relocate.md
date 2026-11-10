@@ -150,6 +150,10 @@ Constraints: `panic-free-library` (five-lint deny set: no unchecked `+`, `-`, `*
 | `select` audit/walk tag cross-check | audit item == walk entry | equivalent code (one container); kept as a guard |
 | `rewrite_table` | count word equals the walk's | else BlockNotClean |
 | scrub merge | overlapping ranges merge, adjacent do not | patches stay disjoint (EditPlan checks) |
+| targets of KEPT offset tags (0x0111/0x0117, 0x0144/0x0145, 0x0120/0x0121, every 0x0201/0x0202 pair, 0x0207-0x0209) | a kept entry's data is only its own value | protection: target ranges join the keep set (clipped; no length: offset to blob end), so SharedBytes fires; an unreadable offsets array is `PayloadUnreadable` (a refusal) |
+| removed IFD1 holding a kept-category tag (e.g. Software under AllPii) | a removed IFD takes everything it holds | `ThumbnailNotLocated` up front (typed), check 7(b) not weakened |
+| field types | every entry is data of its declared type | closed-world: deleted and removed-IFD entries must be types 1-12 else `PayloadUnreadable` (13, 18, 129, unknown refuse); kept 13/18 entries keep offset..blob end; GPS pointer entries exempt |
+| MPF field patch location | a patched field is clear of the index structure and the images | `MpfNotIndexed` (typed) when it lies on the index TIFF header or IFD0 table or inside a located image |
 | MakerNote internals | its declared range is all of it | NOT closed: question `makernote-internal-offsets` |
 
 ## Questions raised (all in `guidance/questions.yaml`, status open)

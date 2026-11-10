@@ -1644,7 +1644,8 @@ mod rewrite_invariants {
                 let primary_end = w.eoi.map_or(len, |e| e + 2);
                 // A field may not be patched on the index's own TIFF header or
                 // IFD0 table, nor inside a located image: refused, typed.
-                let mut forbidden: Vec<Range<usize>> = vec![m.header..m.header + 8];
+                let mut forbidden: Vec<Range<usize>> = Vec::new();
+                forbidden.push(m.header..m.header + 8);
                 forbidden.push(m.header + m.table.start..m.header + m.table.end);
                 forbidden.extend(images.iter().map(|(_, r)| r.clone()));
                 let hit = |f: usize| forbidden.iter().any(|r| f < r.end && r.start < f + 4);
