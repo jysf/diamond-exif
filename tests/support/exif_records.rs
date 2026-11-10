@@ -527,6 +527,10 @@ pub fn stray_seeds() -> Vec<(String, Vec<u8>)> {
             "crash-mpf-entry-table-overlap".to_string(),
             CRASH_MPF_TABLE.to_vec(),
         ),
+        (
+            "crash-kept-offset-array-nothing-to-edit".to_string(),
+            CRASH_NOTHING_TO_EDIT.to_vec(),
+        ),
     ]
 }
 
@@ -546,6 +550,13 @@ pub const CRASH_ENTRIES: &[u8] =
 /// is the MPEntry tag's count. Verbatim; its only copy is the seed.
 pub const CRASH_MPF_TABLE: &[u8] =
     include_bytes!("../../fuzz/seeds/rewrite_jpeg/crash-mpf-entry-table-overlap");
+
+/// A crash input (policy Gps): an IFD1 whose kept 0x0202 entry has an
+/// unreadable type, and no GPS to delete. The library leaves the block alone
+/// (empty plan); the harness' naive editor refused because it checked the kept
+/// offset array before noticing there was nothing to edit. Verbatim.
+pub const CRASH_NOTHING_TO_EDIT: &[u8] =
+    include_bytes!("../../fuzz/seeds/rewrite_jpeg/crash-kept-offset-array-nothing-to-edit");
 
 /// The same shape built by hand: fill bytes, an XMP segment, stray bytes that
 /// start with a non-marker byte, an MPF index and a segment that runs past the

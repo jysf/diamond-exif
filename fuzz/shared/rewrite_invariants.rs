@@ -1183,6 +1183,15 @@ mod rewrite_invariants {
             all_deleted.extend((0..ifds[r].ents.len()).map(|n| (r, n)));
         }
         all_deleted.sort_unstable();
+        // Nothing to delete and no thumbnail to unlink: the block is left
+        // as it is, and nothing about the kept entries is checked (the same
+        // early exit as the library's plan_block).
+        if all_deleted.is_empty() && unlink.is_none() {
+            return Some(NEdit {
+                patches: Vec::new(),
+                deleted: Vec::new(),
+            });
+        }
         // By type (TIFF 6.0 section 2): only the data types 1 to 12 are
         // handled; IFD (13), IFD8 (18) and unknown types carry offsets or have
         // no size. The GPS pointer entries deleted with their IFD are exempt.

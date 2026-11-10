@@ -6401,6 +6401,13 @@ fn a_removal_that_joins_stray_bytes_into_a_marker_is_refused_and_excused_exactly
         Err(exif_core::StripError::MpfNotIndexed { offset: 150 })
     ));
     rewrite_invariants::check(exif_records::CRASH_MPF_TABLE);
+
+    // A kept offset array that cannot be read does not matter when nothing is
+    // edited: the library returns the input unchanged and the harness agrees.
+    let (p4, j4) = rewrite_invariants::decode(exif_records::CRASH_NOTHING_TO_EDIT);
+    let out = exif_core::strip(j4, p4).expect("nothing to edit is Ok");
+    assert_eq!(out.bytes(), j4, "the block is untouched");
+    rewrite_invariants::check(exif_records::CRASH_NOTHING_TO_EDIT);
     // L4: on the joined input itself only the checks that see a changed walk
     // are excused; a refusal by any other check is not.
     let xspec = xmp.spec();
@@ -6434,7 +6441,7 @@ fn a_removal_that_joins_stray_bytes_into_a_marker_is_refused_and_excused_exactly
 
 /// SPEC-020's 186 seeds plus SPEC-021's 198 entry seeds plus the two
 /// joined-stray seeds.
-const REWRITE_SEEDS: usize = 712;
+const REWRITE_SEEDS: usize = 713;
 
 #[test]
 fn seed_count_is_pinned() {
