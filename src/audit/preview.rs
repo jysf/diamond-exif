@@ -177,7 +177,7 @@ mod tests {
 
     /// DEC-009's block outcomes, typed by hand: for each block the cells
     /// `[Gps, GpsAndDevice, AllPii, All, Everything]`.
-    const KEPT_BLOCK: [(Category, [Disposition; 5]); 6] = [
+    const KEPT_BLOCK: [(Category, [Disposition; 5]); 8] = [
         (
             Thumbnail,
             [KeptUnread, KeptUnread, Removed, Removed, Removed],
@@ -193,6 +193,15 @@ mod tests {
             [KeptUnread, KeptUnread, KeptUnread, KeptUnread, Removed],
         ),
         (Icc, [Kept, Kept, Kept, Kept, Removed]),
+        // DEC-012: removed only by Everything; may hold anything else.
+        (
+            EmbeddedImage,
+            [KeptUnread, KeptUnread, KeptUnread, KeptUnread, Removed],
+        ),
+        (
+            OtherSegment,
+            [KeptUnread, KeptUnread, KeptUnread, KeptUnread, Removed],
+        ),
     ];
 
     /// An audit holding one finding per given category (no real file behind
@@ -220,6 +229,7 @@ mod tests {
                 item: None,
                 at: item,
                 thumbnail: None,
+                embedded: None,
             })
             .collect();
         let max = cats.iter().map(|c| c.severity()).max();
@@ -289,11 +299,11 @@ mod tests {
             p.counts(),
             Counts {
                 removed: 0,
-                kept: 13,
+                kept: 15,
                 kept_unread: 0
             }
         );
-        assert_eq!(p.residual_findings(), 13);
+        assert_eq!(p.residual_findings(), 15);
     }
 
     #[test]
@@ -313,12 +323,12 @@ mod tests {
         let a = synthetic(&Category::ALL, true, false);
         let want: [(usize, usize, usize); 5] = [
             // (removed, kept, kept_unread) per preset, derived by hand from
-            // DEC-009 over one finding per category.
-            (1, 8, 4),
-            (2, 7, 4),
-            (8, 2, 3),
-            (11, 1, 1),
-            (13, 0, 0),
+            // DEC-009 and DEC-012 over one finding per category.
+            (1, 8, 6),
+            (2, 7, 6),
+            (8, 2, 5),
+            (11, 1, 3),
+            (15, 0, 0),
         ];
         for (preset, (r, k, u)) in StripPolicy::PRESETS.iter().zip(want) {
             let p = preview(&a, *preset);
@@ -400,7 +410,7 @@ mod tests {
             preview(&a, StripPolicy::Custom(StripSpec::all())).residual_severity(),
             None
         );
-        // Not all(): every other category set, even 12 of 13, is conservative.
+        // Not all(): every other category set, even 14 of 15, is conservative.
         let almost = StripSpec::all().exclude(Icc);
         assert_eq!(
             preview(&a, StripPolicy::Custom(almost)).residual_severity(),
@@ -459,8 +469,61 @@ mod tests {
         assert_eq!(preview(&a, StripPolicy::All).policy(), StripPolicy::All);
         let p = preview(&a, StripPolicy::Gps);
         assert_eq!(p.disposition(0), Some(Removed));
-        assert_eq!(p.disposition(12), p.dispositions().last().copied());
-        assert_eq!(p.disposition(13), None);
+        assert_eq!(p.disposition(14), p.dispositions().last().copied());
+        assert_eq!(p.disposition(15), None);
+    }
+
+    #[test]
+    fn embedded_image_and_other_segment_are_removed_only_by_everything() {
+        for c in [EmbeddedImage, OtherSegment] {
+            let a = synthetic(&[c], true, false);
+            for (col, preset) in StripPolicy::PRESETS.iter().enumerate() {
+                let removed = preview(&a, *preset).dispositions()[0] == Removed;
+                assert_eq!(removed, col == 4, "{c:?} under {}", preset.name());
+            }
+        }
+    }
+
+    #[test]
+    fn embedded_image_and_other_segment_are_kept_unread_under_the_other_four() {
+        for c in [EmbeddedImage, OtherSegment] {
+            let a = synthetic(&[c], true, false);
+            for preset in &StripPolicy::PRESETS[..4] {
+                assert_eq!(
+                    preview(&a, *preset).dispositions(),
+                    &[KeptUnread],
+                    "{c:?} under {}",
+                    preset.name()
+                );
+            }
+        }
+    }
+
+    /// A JPEG with one `COM` segment, built here by hand.
+    fn jpeg_with_comment() -> Vec<u8> {
+        let mut v = vec![0xFF, 0xD8, 0xFF, 0xFE, 0x00, 0x05, b'h', b'i', b'!'];
+        v.extend_from_slice(&[0xFF, 0xDA, 0x00, 0x08, 1, 1, 0, 0, 0x3F, 0]);
+        v.extend_from_slice(&[0x12, 0x34, 0xFF, 0xD9]);
+        v
+    }
+
+    #[test]
+    fn comment_findings_follow_free_text() {
+        let bytes = jpeg_with_comment();
+        let a = audit(&bytes);
+        assert_eq!(a.findings().len(), 1);
+        assert_eq!(a.findings()[0].category, FreeText);
+        // FreeText is a tag category: Kept (never KeptUnread) where kept,
+        // Removed under AllPii, All and Everything.
+        let want = [Kept, Kept, Removed, Removed, Removed];
+        for (preset, d) in StripPolicy::PRESETS.iter().zip(want) {
+            assert_eq!(
+                preview(&a, *preset).dispositions(),
+                &[d],
+                "{}",
+                preset.name()
+            );
+        }
     }
 
     #[test]

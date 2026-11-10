@@ -172,7 +172,7 @@ pub struct Summary {
     /// Findings over every audited file.
     pub findings: usize,
     /// Findings per category, in [`Category::ALL`] order.
-    pub by_category: [(Category, usize); 13],
+    pub by_category: [(Category, usize); 15],
     /// The highest severity over every audited file's findings.
     pub max_severity: Option<Severity>,
     /// With a policy and at least one reliable file: the findings that would
@@ -434,6 +434,10 @@ pub(crate) fn region_name(kind: crate::audit::RegionKind) -> &'static str {
         RegionKind::Iptc => "iptc",
         RegionKind::Icc => "icc",
         RegionKind::Jumbf => "jumbf",
+        RegionKind::EmbeddedImage => "embedded_image",
+        RegionKind::Comment => "comment",
+        RegionKind::OtherApp => "other_app",
+        RegionKind::Trailer => "trailer",
     }
 }
 

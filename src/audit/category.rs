@@ -39,6 +39,12 @@ pub enum Category {
     Software,
     /// An embedded colour profile.
     Icc,
+    /// A Multi-Picture Format image stored inside the file (DEC-012): it can
+    /// carry its own metadata.
+    EmbeddedImage,
+    /// Data the library does not understand (DEC-012): an unrecognised APPn
+    /// segment or trailing bytes.
+    OtherSegment,
 }
 
 /// How much a finding matters (DEC-008). `Low < Medium < High`.
@@ -54,7 +60,7 @@ pub enum Severity {
 
 impl Category {
     /// Every category, in DEC-008 table order.
-    pub const ALL: [Category; 13] = [
+    pub const ALL: [Category; 15] = [
         Category::Gps,
         Category::DeviceId,
         Category::Authorship,
@@ -68,6 +74,8 @@ impl Category {
         Category::CameraModel,
         Category::Software,
         Category::Icc,
+        Category::EmbeddedImage,
+        Category::OtherSegment,
     ];
 
     /// The category's severity (DEC-008).
@@ -80,7 +88,9 @@ impl Category {
             | Category::MakerNote
             | Category::Xmp
             | Category::Iptc
-            | Category::Jumbf => Severity::Medium,
+            | Category::Jumbf
+            | Category::EmbeddedImage
+            | Category::OtherSegment => Severity::Medium,
             Category::Timestamps | Category::CameraModel | Category::Software | Category::Icc => {
                 Severity::Low
             }
@@ -88,7 +98,8 @@ impl Category {
     }
 
     /// Whether the category is a block the library locates but does not decode
-    /// (DEC-009): `Thumbnail`, `MakerNote`, `Xmp`, `Iptc`, `Jumbf`, `Icc`.
+    /// (DEC-009, DEC-012): `Thumbnail`, `MakerNote`, `Xmp`, `Iptc`, `Jumbf`,
+    /// `Icc`, `EmbeddedImage`, `OtherSegment`.
     pub fn is_block(self) -> bool {
         matches!(
             self,
@@ -98,6 +109,8 @@ impl Category {
                 | Category::Iptc
                 | Category::Jumbf
                 | Category::Icc
+                | Category::EmbeddedImage
+                | Category::OtherSegment
         )
     }
 
@@ -117,6 +130,8 @@ impl Category {
             Category::CameraModel => "camera_model",
             Category::Software => "software",
             Category::Icc => "icc",
+            Category::EmbeddedImage => "embedded_image",
+            Category::OtherSegment => "other_segment",
         }
     }
 }
@@ -187,6 +202,9 @@ pub fn region_category(kind: RegionKind) -> Category {
         RegionKind::Iptc => Category::Iptc,
         RegionKind::Icc => Category::Icc,
         RegionKind::Jumbf => Category::Jumbf,
+        RegionKind::EmbeddedImage => Category::EmbeddedImage,
+        RegionKind::Comment => Category::FreeText,
+        RegionKind::OtherApp | RegionKind::Trailer => Category::OtherSegment,
     }
 }
 
@@ -347,6 +365,8 @@ mod tests {
             (CameraModel, Low),
             (Software, Low),
             (Icc, Low),
+            (EmbeddedImage, Medium),
+            (OtherSegment, Medium),
         ];
         assert_eq!(want.len(), Category::ALL.len());
         for (c, s) in want {
@@ -362,9 +382,18 @@ mod tests {
     }
 
     #[test]
-    fn is_block_is_exactly_the_six_block_categories() {
+    fn is_block_is_exactly_the_eight_block_categories() {
         use Category::*;
-        let blocks = [Thumbnail, MakerNote, Xmp, Iptc, Jumbf, Icc];
+        let blocks = [
+            Thumbnail,
+            MakerNote,
+            Xmp,
+            Iptc,
+            Jumbf,
+            Icc,
+            EmbeddedImage,
+            OtherSegment,
+        ];
         let tags = [
             Gps,
             DeviceId,
@@ -426,5 +455,59 @@ mod tests {
         assert_eq!(region_category(RegionKind::Iptc), Category::Iptc);
         assert_eq!(region_category(RegionKind::Icc), Category::Icc);
         assert_eq!(region_category(RegionKind::Jumbf), Category::Jumbf);
+    }
+
+    #[test]
+    fn new_region_kinds_map_to_the_dec_012_categories() {
+        // DEC-012 section 4: EmbeddedImage to EmbeddedImage, Comment to
+        // FreeText, OtherApp and Trailer to OtherSegment.
+        assert_eq!(
+            region_category(RegionKind::EmbeddedImage),
+            Category::EmbeddedImage
+        );
+        assert_eq!(region_category(RegionKind::Comment), Category::FreeText);
+        assert_eq!(
+            region_category(RegionKind::OtherApp),
+            Category::OtherSegment
+        );
+        assert_eq!(
+            region_category(RegionKind::Trailer),
+            Category::OtherSegment
+        );
+    }
+
+    #[test]
+    fn category_all_has_fifteen_entries_and_the_two_new_names_are_pinned() {
+        use Category::*;
+        // The whole order, typed by hand: the two new entries come last.
+        let order = [
+            Gps,
+            DeviceId,
+            Authorship,
+            FreeText,
+            Thumbnail,
+            MakerNote,
+            Xmp,
+            Iptc,
+            Jumbf,
+            Timestamps,
+            CameraModel,
+            Software,
+            Icc,
+            EmbeddedImage,
+            OtherSegment,
+        ];
+        assert_eq!(Category::ALL.len(), 15);
+        assert_eq!(Category::ALL, order);
+        assert_eq!(EmbeddedImage.name(), "embedded_image");
+        assert_eq!(OtherSegment.name(), "other_segment");
+    }
+
+    #[test]
+    fn new_categories_are_medium_and_blocks() {
+        for c in [Category::EmbeddedImage, Category::OtherSegment] {
+            assert_eq!(c.severity(), Severity::Medium, "{c:?}");
+            assert!(c.is_block(), "{c:?}");
+        }
     }
 }

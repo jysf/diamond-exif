@@ -1,4 +1,4 @@
-//! The JSON report (DEC-010 part 3): one document, UTF-8, `schema_version` 1.
+//! The JSON report (DEC-010 part 3): one document, UTF-8, `schema_version` 2.
 //!
 //! Keys are written in a fixed order by this code and nowhere else; there is
 //! no JSON dependency and no generic serializer, so no key can be added,
@@ -15,7 +15,7 @@ use super::{
 };
 
 /// The schema version; a change to any key or enumeration bumps it.
-pub(crate) const SCHEMA_VERSION: usize = 1;
+pub(crate) const SCHEMA_VERSION: usize = 2;
 
 /// Append `text` as a JSON string literal (RFC 8259 escaping).
 pub(super) fn string(out: &mut String, text: &str) {
@@ -161,6 +161,26 @@ fn finding_json(
             out.push_str(",\"starts_with_ffd8\":");
             boolean(out, t.starts_with_ffd8);
             out.push('}');
+        }
+        None => out.push_str("null"),
+    }
+    out.push_str(",\"embedded\":");
+    match f.embedded {
+        Some(e) => {
+            out.push_str("{\"offset\":");
+            number(out, e.offset);
+            out.push_str(",\"length\":");
+            number(out, e.length);
+            out.push_str(",\"starts_with_ffd8\":");
+            boolean(out, e.starts_with_ffd8);
+            out.push_str(",\"holds\":[");
+            for (i, c) in e.holds.categories().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                string(out, c.name());
+            }
+            out.push_str("]}");
         }
         None => out.push_str("null"),
     }

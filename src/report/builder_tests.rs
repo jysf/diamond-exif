@@ -386,7 +386,7 @@ fn builder_json_assembly_puts_the_running_summary_before_the_files() {
     let summary_at = json.find("\"summary\":{\"files\":").unwrap();
     let files_at = json.find("\"files\":[{").unwrap();
     assert!(summary_at < files_at);
-    assert!(json.starts_with("{\"schema_version\":1,\"policy\":\"gps\",\"options\":{"));
+    assert!(json.starts_with("{\"schema_version\":2,\"policy\":\"gps\",\"options\":{"));
     assert!(json.contains(&format!("\"summary\":{{\"files\":{},", all.len())));
     assert_eq!(s.files, all.len());
     // The summary is the one of ALL entries, including the last.

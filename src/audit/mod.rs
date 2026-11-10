@@ -47,6 +47,7 @@ pub use preview::{preview, Counts, Disposition, Preview};
 pub use sniff::{sniff, Sniffed};
 
 use crate::jpeg::{self, Region};
+use crate::policy::StripSpec;
 use crate::tiff::{Container, Ifd, IfdKind};
 
 /// The most items (and, separately, the most findings) an audit keeps.
@@ -88,6 +89,14 @@ pub enum RegionKind {
     Icc,
     /// A JUMBF segment.
     Jumbf,
+    /// A Multi-Picture Format image other than the primary (DEC-012).
+    EmbeddedImage,
+    /// A `COM` segment.
+    Comment,
+    /// An unrecognised APPn segment.
+    OtherApp,
+    /// Bytes after the `EOI` that no embedded image accounts for.
+    Trailer,
 }
 
 /// Where an inventory item came from.
@@ -200,6 +209,23 @@ pub struct ThumbnailRange {
     pub starts_with_ffd8: bool,
 }
 
+/// What an embedded image (a Multi-Picture Format image other than the
+/// primary) holds, looked at once (DEC-012 section 3). Informational: it never
+/// changes a disposition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EmbeddedSummary {
+    /// Input offset of the image's first byte.
+    pub offset: usize,
+    /// The image's length in bytes.
+    pub length: usize,
+    /// Whether the bytes start with `FF D8` (always true for a located image).
+    pub starts_with_ffd8: bool,
+    /// The categories of the findings of the ordinary audit of the image's
+    /// bytes, run with embedded-image location off (an inner MPF segment is an
+    /// `OtherSegment`; nothing recurses).
+    pub holds: StripSpec,
+}
+
 /// One PII finding: a category, and the inventory item it is about.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Finding<'a> {
@@ -213,6 +239,8 @@ pub struct Finding<'a> {
     pub at: Item<'a>,
     /// For a [`Category::Thumbnail`] finding, where the thumbnail is.
     pub thumbnail: Option<ThumbnailRange>,
+    /// For a [`Category::EmbeddedImage`] finding, what the image holds.
+    pub embedded: Option<EmbeddedSummary>,
 }
 
 /// Was the file readable, and did the readers find problems?
@@ -284,7 +312,7 @@ impl<'a> FileAudit<'a> {
 pub fn audit(data: &[u8]) -> FileAudit<'_> {
     match sniff(data) {
         Sniffed::Tiff => audit_tiff(data),
-        Sniffed::Jpeg => audit_jpeg(data),
+        Sniffed::Jpeg => audit_jpeg(data, true),
         other => FileAudit {
             kind: ContainerKind::Unsupported(other),
             items: Vec::new(),
@@ -334,8 +362,10 @@ fn audit_tiff(data: &[u8]) -> FileAudit<'_> {
     b.finish(ContainerKind::Tiff, 0, exif_issues, 0)
 }
 
-fn audit_jpeg(data: &[u8]) -> FileAudit<'_> {
-    let Ok(meta) = jpeg::read(data) else {
+/// The audit of a JPEG with embedded-image location on (`embedded`: the
+/// ordinary audit) or off (the inner audit that computes `holds`).
+fn audit_jpeg(data: &[u8], embedded: bool) -> FileAudit<'_> {
+    let Ok(meta) = jpeg::read_with(data, embedded) else {
         return unreadable(ContainerKind::Jpeg);
     };
     let segments = meta.jpeg().segments();
@@ -365,11 +395,17 @@ fn audit_jpeg(data: &[u8]) -> FileAudit<'_> {
             Region::Icc { segment, .. } => (RegionKind::Icc, segment),
             Region::Iptc { segment, .. } => (RegionKind::Iptc, segment),
             Region::Jumbf { segment, .. } => (RegionKind::Jumbf, segment),
+            Region::EmbeddedImage { segment, .. } => (RegionKind::EmbeddedImage, segment),
+            Region::Comment { segment, .. } => (RegionKind::Comment, segment),
+            Region::OtherApp { segment, .. } => (RegionKind::OtherApp, segment),
+            Region::Trailer { segment, .. } => (RegionKind::Trailer, segment),
         };
+        // A trailer lies after the scan (its "segment" is one past the last).
+        let trailing = kind == RegionKind::Trailer;
         let origin = Origin {
             block: None,
             segment: Some(segment),
-            after_scan: after_scan(segment),
+            after_scan: trailing || after_scan(segment),
         };
         let item = Item::new(
             origin,
@@ -379,7 +415,11 @@ fn audit_jpeg(data: &[u8]) -> FileAudit<'_> {
                 len: region.data().len(),
             },
         );
-        b.push(item, Some(region_category(kind)), None);
+        let summary = match *region {
+            Region::EmbeddedImage { offset, data, .. } => Some(embedded_summary(offset, data)),
+            _ => None,
+        };
+        b.push_with(item, Some(region_category(kind)), None, summary);
     }
     b.finish(
         ContainerKind::Jpeg,
@@ -402,6 +442,17 @@ impl<'a> Builder<'a> {
     /// Add one item and, if it has one, its finding. Always classifies; only
     /// the *storing* is capped.
     fn push(&mut self, item: Item<'a>, category: Option<Category>, thumb: Option<ThumbnailRange>) {
+        self.push_with(item, category, thumb, None);
+    }
+
+    /// [`Builder::push`] with, for an embedded image, what it holds.
+    fn push_with(
+        &mut self,
+        item: Item<'a>,
+        category: Option<Category>,
+        thumb: Option<ThumbnailRange>,
+        embedded: Option<EmbeddedSummary>,
+    ) {
         let index = if self.items.len() < MAX_INVENTORY_ITEMS {
             let index = self.items.len();
             self.items.push(item);
@@ -424,6 +475,11 @@ impl<'a> Builder<'a> {
                 at: item,
                 thumbnail: if category == Category::Thumbnail {
                     thumb
+                } else {
+                    None
+                },
+                embedded: if category == Category::EmbeddedImage {
+                    embedded
                 } else {
                     None
                 },
@@ -501,6 +557,24 @@ impl<'a> Builder<'a> {
             },
             max_severity: self.max_severity,
         }
+    }
+}
+
+/// What the embedded image at input offset `offset` holds: the categories of
+/// the ordinary JPEG audit of its bytes with embedded-image location off
+/// (DEC-012 section 3). Run once per image; the images are bounded by
+/// [`jpeg::MAX_MPF_IMAGES`].
+fn embedded_summary(offset: usize, bytes: &[u8]) -> EmbeddedSummary {
+    let inner = audit_jpeg(bytes, false);
+    let holds = inner
+        .findings()
+        .iter()
+        .fold(StripSpec::none(), |s, f| s.include(f.category));
+    EmbeddedSummary {
+        offset,
+        length: bytes.len(),
+        starts_with_ffd8: bytes.starts_with(&[0xFF, 0xD8]),
+        holds,
     }
 }
 
