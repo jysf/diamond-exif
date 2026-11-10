@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: verifier             # implementer | verifier
   created_at: 2026-11-10
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-021
@@ -46,18 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                # completed | blocked | rejected
+  agent: claude-opus-5-5           # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
-  verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
+  verdict: punch-list              # verify handoffs: approved | punch-list | rejected
+  basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
-  branch: null
+  branch: worktree-agent-a6c98b4cf6b8abd61
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-10         # YYYY-MM-DD
+  notes: "Verifier cannot see its own token count; the orchestrator transcribes the metered subagent_tokens and duration from the harness. Verdict PUNCH LIST at 7697162: two High leaks on malformed input (straddling out-of-line value not scrubbed; IFD1 thumbnail bytes reachable through a second 0x0201 or through 0x0111 strips left unreferenced), one Medium test gap (rule 3 per-block refusal only tested on the first block), Lows. No code changed, nothing pushed, no cycle advanced."
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -126,38 +126,52 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** worktree branch `worktree-agent-a6c98b4cf6b8abd61` (fast-forwarded to 7697162; only this handback is committed on top). No PR, nothing pushed.
+- **Completed at:** 2026-11-10
+- **All acceptance criteria met?** No. "Every leak input refuses or is correct, never `Ok` with a canary left" and DEC-013 amendment B.3 ("the bytes are gone from the file, not just unreferenced") fail on malformed inputs the suite does not have (findings H1 and H2 below).
+- **For `verify`:** ⚠ PUNCH LIST at 7697162.
+
+**Gates, re-run by the verifier (all exit 0):** fmt (library, fuzz graph, `rustfmt --edition 2021 fuzz/shared/*.rs`), `just lint`, `lint-fuzz`, `lint-no-allow`, `lint-red-proof`, `lint-fuzz-red-proof`, `forbid-unsafe`, `deny`, `deny-fuzz`, `validate`, `decisions-audit`, `cost-audit`, release build of `exif-audit` (1.90.0 and stable), `just oracle-record` then `git status --porcelain` empty. `cargo test --no-fail-fast` with `DIAMOND_EXIF_REQUIRE_ORACLE=1 DIAMOND_EXIF_REQUIRE_CLI_FS=1`: stable 1.99.1 849 passed, 0 failed, 9 ignored; 1.90.0 the same; no SKIP line. Fuzz: `rewrite_jpeg` 300 s from the committed seeds, 275,995 runs, no crash; 60 s smokes of `jpeg_segments`, `audit`, `audit_render`, `cli_args`. `decisions/`, `scripts/` and every manifest and lock file unchanged since 6518356; no new `allow` outside test modules except the declared `#[allow(dead_code)]` in the harness.
+
+**Findings.**
+- **H1 (High, a leak): the out-of-line value of a deleted entry that runs past the end of the blob is not scrubbed.** The tolerant walk does not check ordinary entry payloads, so such a block is "clean"; `payload_range` returns `None` and the planner treats it like an inline value (`None => {}` in `plan_block`), so the bytes of the value that ARE inside the blob stay. Reproducer: LE TIFF, IFD0 at 8 = {0x0112 SHORT 1 = 1; 0x013B ASCII count 40, offset 38}, next 0; 20 bytes `CANARY-ARTIST-PREFIX` at 38 (the blob ends at 58); one Exif APP1 in a minimal JPEG. `strip(.., Custom{Authorship})` and `strip(.., AllPii)`: `Ok`, length unchanged, `entries()` 1, `scrubs()` 0, canary still in the output. Same in BE, and the same for a GPS IFD entry (IFD0 {0x0112, 0x8825 -> 38}; GPS IFD at 38 = {0x001C UNDEFINED count 60, offset 56}; canary at 56) under `Gps`. The fuzz harness has the same blind spot (`out_of_line` in `rewrite_invariants.rs` also returns `None`), so the six inputs pass the real `rewrite_jpeg` target. Fix: refuse (`PayloadUnreadable`) when a deleted or removed-IFD entry has `byte_len > 4` and `payload_range` is `None`; the naive editor must refuse the same way; add the input to the leak list and seeds. 0 of 550 entries on the local corpus have such a value.
+- **H2 (High, a leak): thumbnail image bytes left unreferenced.** Rule 7 scrubs only the range the audit located (the first 0x0201/0x0202 pair). (a) IFD1 = {0x0201 -> 80, 0x0202 = 16, 0x0201 -> 96, 0x0202 = 20} with a second JPEG (`FF D8 .. CANARY-THUMB-B .. FF D9`) at 96: `AllPii` and `Custom{Thumbnail}` return `Ok` with the second thumbnail in the output. (b) IFD1 = {0x0111 -> 96, 0x0117 = 20, 0x0201 -> 80, 0x0202 = 16} with strip data at 96: `AllPii` returns `Ok` with the strip data left. Both orders. The harness predicts the same output (its `thumb` uses the first 0x0201 only). Fix: when the thumbnail goes, refuse unless IFD1 has exactly one 0x0201 and one 0x0202 and no 0x0111 (or scrub every range IFD1 points to). Corpus: 0 of 13.
+- **M1 (Medium, test gap on a safety rule): rule 3's per-block refusal is only tested on the first Exif block.** Mutant V08 (the `AfterScan`/`BlockNotClean` loop takes only the first block) survives every test. Under it, two Exif segments (the first clean, the second IFD0 {0x0112, 0x8825 -> 38} with a GPS IFD of count 0xFFFF and a canary behind) return `Ok` with the GPS canary under `Gps`; the real code refuses (`Uneditable { BlockNotClean, 38 }`). Add that input as a deterministic test and a seed.
+- **L1 (Low):** mutant V04 (`Scrubbed` checks only the first recorded range) survives; `a_scrub_that_leaves_a_byte_fails_check_scrubbed` uses one range. Add a test with two ranges, the second not zero.
+- **L2 (Low):** mutant V05 (no GPS child removal when the GPS IFD has 0 entries) survives; no fixture or seed has an empty GPS IFD (the library would then fail closed through `Entries`, but nothing pins it). Add the input.
+- **L3 (Low):** mutant V11 (the always-on table-overlap check removed) survives; the check is not pinned by any test. Add one or drop the claim.
+- **L4 (Low):** `walks_as_other_segments` excuses any `VerifyFailed` check, not only the one stray-byte joins cause. The excuse is exact for the segment list (V09, "always true", is caught by `a_removal_that_joins_stray_bytes_into_a_marker_is_refused_and_excused_exactly`), and it only ever excuses a refusal, so it cannot hide a leak; it could hide a planner bug whose only symptom is a `VerifyFailed` on such an input. Restrict it to `mpf-fields` and `walk`, or record which check the follow-up crash produced.
+- **L5 (Low, equivalent mutant):** V15 (the tag cross-check in `select` removed) survives; the `Entries` self-check is the backstop.
+- **Note:** the public sample `sony-d700.jpg` (a real camera file with an uncompressed strips thumbnail) refuses `AllPii` with `ThumbnailNotLocated`, by design; worth a line in `allpii-refuses-ifd1-with-a-following-ifd` since SPEC-022 meets strips thumbnails often.
+
+**Mutants (scratch copy, exact text replacement, `cargo test --lib --test strip --test fuzz_layout --test strip_oracle`, reverted by `git checkout`, empty diff after each).** Of the 30: 1, 4, 7, 11, 13, 14, 17, 19, 20, 22, 23, 25, 26, 29, 30 re-run, all caught (1 by 47 tests incl. `all_pii_matches_the_policy_table_entry_by_entry`; 4 by `custom_software_only`, `each_entry_guard_goes_red_alone_when_planted`; 7 by `custom_makernote_only` and 31 more; 11 by `custom_timestamps_and_gps`; 13 by `gps_removes_the_gps_ifd_and_keeps_everything_else`; 14 by `custom_thumbnail_only`; 17 by `thumbnail_with_a_following_ifd_is_chain_after_thumbnail`, `leak_inputs_refuse_with_the_named_reason_and_offset`; 19 by `custom_software_only` and 32 more; 20 by the four `*_is_shared_bytes` tests; 22 by `a_block_with_a_walk_issue_is_uneditable_for_every_partial_policy`, `a_walk_issue_in_an_ifd_with_no_target_still_refuses`; 23 by `exif_after_the_first_scan_is_uneditable`; 25 by `entries_check_compares_type_count_and_value_not_only_the_tag`; 26 by `a_scrub_that_leaves_a_byte_fails_check_scrubbed`; 29 by `a_plan_that_deletes_a_kept_exif_finding_fails_check_kept`; 30 by `all_removes_every_exif_block_including_the_extra_ones` and 20 more). Verifier mutants: V01 BE-only next word zeroed, caught (`gps_removes_..`, oracle tag tests); V02 keep set built from removed IFDs, caught; V03 `Entries` ignores values, caught (`entries_check_compares_..`); V04 survived (L1); V05 survived (L2); V06 hard-coded tag list instead of the audit, caught (31 tests); V07 16-segment limit off by one, caught (`seventeen_exif_segments_are_uneditable`); V08 survived (M1); V09 `walks_as_other_segments` always true, caught; V10 `HiddenPointer` removed, caught; V11 survived (L3); V12 kept-thumbnail protection removed, caught (harness on every seed); V13 rule-4 byte cross-check removed, caught; V14 `PayloadUnreadable` removed, caught; V15 survived (L5); V16 table patches not checked against kept values, caught (harness); V17 `Entries` check skipped, caught; V18 `InventoryTruncated` removed, caught; V19 keep set holds only the first kept entry per IFD, caught. **Real libFuzzer plant** (deleted-entry values not scrubbed, child IFDs still scrubbed), empty corpus plus committed seeds only: crash on a seed, guards `[Records, EntryPrediction]`, artifact hash `01a950c3`; reverted clean.
+
+**Local corpus (`_incoming0`, read in place, counts and 8-hex hashes only, nothing written).** Reproduced exactly: 21 files, 13 JPEGs, 4 with Multi-Picture. `Gps` 13 Ok, 0 removed, 1,035 bytes patched, 22 entries; `GpsAndDevice` 13 Ok, 1,968 bytes, 24 entries; `AllPii` 12 Ok plus 1 `Uneditable(ChainAfterThumbnail)` on `a3b66f84`, 100,969 bytes, 154 entries; `All` 13 Ok, 313,995 removed; `Everything` 13 Ok. Scan identical, audit clean and values zero on every Ok; length equal 13/13 under `Gps`, `GpsAndDevice`, 12/12 under `AllPii`. ExifTool by pipe, one file at a time (39 output runs): `GPS` group gone in exactly the 4 files that had it; `IFD1` gone under `AllPii` in the 4 Ok files that had it, kept under the other two; `IFD0:Orientation` count unchanged in every run; `MPImage` groups 3 before and after in all 4 Multi-Picture files; 0 new warning kinds. Extra counts: 0 out-of-line values outside the blob, 0 IFD1 with a duplicated 0x0201, 0 IFD1 with both 0x0201 and 0x0111 (H1 and H2 do not touch the corpus).
+
+**Oracle.** 15 public samples under `Gps`, `GpsAndDevice`, `AllPii`: `GPS` lost only where present; kept MakerNote groups byte-equal in ExifTool's output under `Gps` (Canon, Sony); `sony-d700` refuses `AllPii` (`ThumbnailNotLocated`). Rule 9 re-measured: an emptied Exif IFD (pointer kept) and an emptied IFD2 read with no warning and the group simply absent, in both byte orders; allow is right. The six red-proofs run a control first and pass. The three re-recorded SPEC-020 records changed only by dropping the `xmp`/`icc` sections of `gps-count-overflow` and `unreadable-exif` (now refused, deviation 7) and adding `iptc+free_text` to `kitchen-sink`.
+
+**Questions.** `allpii-refuses-ifd1-with-a-following-ifd`: fails closed; decide before SPEC-022 (TIFF chains make it common). `writer-refusals-beyond-the-spec`: all four fail closed and are sound; ratify in a DEC-013 note before SPEC-022, and extend `PayloadUnreadable` per H1. `partial-policy-refuses-unreadable-exif-for-xmp-icc-iptc`: fails closed and follows the spec's definition; a usability regression only on files with broken Exif; no decision needed before SPEC-022. Joined stray bytes: the library refusal is correct and the harness excuse is exact for the segment shape (L4).
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null: the verifier cannot see its own token count; the orchestrator transcribes the harness's `subagent_tokens`.
+- **Estimated USD:** null (follows tokens).
+- **Duration (minutes):** null (the harness reports it).
+- **Source of the number:** harness report (to be transcribed).
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
-- **Deviations from spec:**
-  - [list]
-- **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+- **New decisions emitted:** none.
+- **Deviations from spec:** none by the verifier. Builder deviations 1 to 11 checked; deviation 3 (always-on overlap check) is untested (L3).
+- **Follow-up work identified:** builder follow-up for H1, H2, M1, L1 to L3 (no new spec).
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — Rule 8 says scrub ranges inside the blob are "guaranteed by a clean walk"; the walk never checks ordinary payloads, which is H1. The spec's assumption was carried into the harness, so both sides shared it.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — None missing; DEC-013 B.3 ("gone from the file, not just unreferenced") is the rule H1 and H2 break, and it should be quoted in the leak-input list.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Start from "which bytes does each deleted entry reach" (value, second pointer, strips) before reading the planner; that found H1 and H2 faster than the mutants did.
