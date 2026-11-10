@@ -324,8 +324,9 @@ pub fn stray_seeds() -> Vec<(String, Vec<u8>)> {
 }
 
 /// The crash the 60 s smoke found (policy byte 6, mask 0x1140, then a 1,032
-/// byte JPEG), verbatim.
-pub const CRASH_MPF_FIELDS: &[u8] = include_bytes!("crash_mpf_fields.bin");
+/// byte JPEG), verbatim; the committed seed is its only copy (the generator reads it, never rewrites it).
+pub const CRASH_MPF_FIELDS: &[u8] =
+    include_bytes!("../../fuzz/seeds/rewrite_jpeg/crash-mpf-fields-joined-stray");
 
 /// The same shape built by hand: fill bytes, an XMP segment, stray bytes that
 /// start with a non-marker byte, an MPF index and a segment that runs past the
