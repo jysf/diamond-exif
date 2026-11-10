@@ -1,0 +1,122 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# exiftool-version: 13.55
+# fixture: mpf-entry-not-jpeg
+## input
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	Comment	CANARY-COMMENT-ONE
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+MPF0	MPFVersion	0100
+MPF0	NumberOfImages	3
+MPImage1	MPImageFlags	4
+MPImage1	MPImageFormat	0
+MPImage1	MPImageType	196608
+MPImage1	MPImageLength	169
+MPImage1	MPImageStart	0
+MPImage1	DependentImage1EntryNumber	0
+MPImage1	DependentImage2EntryNumber	0
+MPImage2	MPImageFlags	0
+MPImage2	MPImageFormat	0
+MPImage2	MPImageType	0
+MPImage2	MPImageLength	8
+MPImage2	MPImageStart	169
+MPImage2	DependentImage1EntryNumber	0
+MPImage2	DependentImage2EntryNumber	0
+MPImage2	MPImage2	(Binary data 8 bytes, use -b option to extract)
+MPImage3	MPImageFlags	0
+MPImage3	MPImageFormat	0
+MPImage3	MPImageType	0
+MPImage3	MPImageLength	529
+MPImage3	MPImageStart	177
+MPImage3	DependentImage1EntryNumber	0
+MPImage3	DependentImage2EntryNumber	0
+MPImage3	MPImage3	(Binary data 529 bytes, use -b option to extract)
+## everything
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+## xmp
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	Comment	CANARY-COMMENT-ONE
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+MPF0	MPFVersion	0100
+MPF0	NumberOfImages	3
+MPImage1	MPImageFlags	4
+MPImage1	MPImageFormat	0
+MPImage1	MPImageType	196608
+MPImage1	MPImageLength	169
+MPImage1	MPImageStart	0
+MPImage1	DependentImage1EntryNumber	0
+MPImage1	DependentImage2EntryNumber	0
+MPImage2	MPImageFlags	0
+MPImage2	MPImageFormat	0
+MPImage2	MPImageType	0
+MPImage2	MPImageLength	8
+MPImage2	MPImageStart	169
+MPImage2	DependentImage1EntryNumber	0
+MPImage2	DependentImage2EntryNumber	0
+MPImage2	MPImage2	(Binary data 8 bytes, use -b option to extract)
+MPImage3	MPImageFlags	0
+MPImage3	MPImageFormat	0
+MPImage3	MPImageType	0
+MPImage3	MPImageLength	529
+MPImage3	MPImageStart	177
+MPImage3	DependentImage1EntryNumber	0
+MPImage3	DependentImage2EntryNumber	0
+MPImage3	MPImage3	(Binary data 529 bytes, use -b option to extract)
+## icc
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	Comment	CANARY-COMMENT-ONE
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+MPF0	MPFVersion	0100
+MPF0	NumberOfImages	3
+MPImage1	MPImageFlags	4
+MPImage1	MPImageFormat	0
+MPImage1	MPImageType	196608
+MPImage1	MPImageLength	169
+MPImage1	MPImageStart	0
+MPImage1	DependentImage1EntryNumber	0
+MPImage1	DependentImage2EntryNumber	0
+MPImage2	MPImageFlags	0
+MPImage2	MPImageFormat	0
+MPImage2	MPImageType	0
+MPImage2	MPImageLength	8
+MPImage2	MPImageStart	169
+MPImage2	DependentImage1EntryNumber	0
+MPImage2	DependentImage2EntryNumber	0
+MPImage2	MPImage2	(Binary data 8 bytes, use -b option to extract)
+MPImage3	MPImageFlags	0
+MPImage3	MPImageFormat	0
+MPImage3	MPImageType	0
+MPImage3	MPImageLength	529
+MPImage3	MPImageStart	177
+MPImage3	DependentImage1EntryNumber	0
+MPImage3	DependentImage2EntryNumber	0
+MPImage3	MPImage3	(Binary data 529 bytes, use -b option to extract)
+## embedded
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	Comment	CANARY-COMMENT-ONE
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1

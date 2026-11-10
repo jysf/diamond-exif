@@ -51,3 +51,10 @@ path = "fuzz_targets/cli_args.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "rewrite_jpeg"
+path = "fuzz_targets/rewrite_jpeg.rs"
+test = false
+doc = false
+bench = false

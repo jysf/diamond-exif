@@ -1,0 +1,115 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# exiftool-version: 13.55
+# fixture: com-over-embedded
+## input
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	Comment	before-����.ihttp://ns.adobe.com/xap/1.0/<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>.<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/"><xmp:CreatorTool>ShapeTool</xmp:CreatorTool></rdf:Description></rdf:RDF></x:xmpmeta>.<?xpacket end="w"?>��ICC_PROFILE..�..mntrRGB XYZ acsp��...?.4��-after
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+MPF0	MPFVersion	0100
+MPF0	NumberOfImages	2
+MPImage1	MPImageFlags	4
+MPImage1	MPImageFormat	0
+MPImage1	MPImageType	196608
+MPImage1	MPImageLength	677
+MPImage1	MPImageStart	0
+MPImage1	DependentImage1EntryNumber	0
+MPImage1	DependentImage2EntryNumber	0
+MPImage2	MPImageFlags	0
+MPImage2	MPImageFormat	0
+MPImage2	MPImageType	0
+MPImage2	MPImageLength	529
+MPImage2	MPImageStart	121
+MPImage2	DependentImage1EntryNumber	0
+MPImage2	DependentImage2EntryNumber	0
+MPImage2	MPImage2	(Binary data 529 bytes, use -b option to extract)
+## everything
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+## xmp
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	Comment	before-����.ihttp://ns.adobe.com/xap/1.0/<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>.<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/"><xmp:CreatorTool>ShapeTool</xmp:CreatorTool></rdf:Description></rdf:RDF></x:xmpmeta>.<?xpacket end="w"?>��ICC_PROFILE..�..mntrRGB XYZ acsp��...?.4��-after
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+MPF0	MPFVersion	0100
+MPF0	NumberOfImages	2
+MPImage1	MPImageFlags	4
+MPImage1	MPImageFormat	0
+MPImage1	MPImageType	196608
+MPImage1	MPImageLength	677
+MPImage1	MPImageStart	0
+MPImage1	DependentImage1EntryNumber	0
+MPImage1	DependentImage2EntryNumber	0
+MPImage2	MPImageFlags	0
+MPImage2	MPImageFormat	0
+MPImage2	MPImageType	0
+MPImage2	MPImageLength	529
+MPImage2	MPImageStart	121
+MPImage2	DependentImage1EntryNumber	0
+MPImage2	DependentImage2EntryNumber	0
+MPImage2	MPImage2	(Binary data 529 bytes, use -b option to extract)
+## icc
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	Comment	before-����.ihttp://ns.adobe.com/xap/1.0/<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>.<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/"><xmp:CreatorTool>ShapeTool</xmp:CreatorTool></rdf:Description></rdf:RDF></x:xmpmeta>.<?xpacket end="w"?>��ICC_PROFILE..�..mntrRGB XYZ acsp��...?.4��-after
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+MPF0	MPFVersion	0100
+MPF0	NumberOfImages	2
+MPImage1	MPImageFlags	4
+MPImage1	MPImageFormat	0
+MPImage1	MPImageType	196608
+MPImage1	MPImageLength	677
+MPImage1	MPImageStart	0
+MPImage1	DependentImage1EntryNumber	0
+MPImage1	DependentImage2EntryNumber	0
+MPImage2	MPImageFlags	0
+MPImage2	MPImageFormat	0
+MPImage2	MPImageType	0
+MPImage2	MPImageLength	529
+MPImage2	MPImageStart	121
+MPImage2	DependentImage1EntryNumber	0
+MPImage2	DependentImage2EntryNumber	0
+MPImage2	MPImage2	(Binary data 529 bytes, use -b option to extract)
+## other
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	Comment	before-����.ihttp://ns.adobe.com/xap/1.0/<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>.<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/"><xmp:CreatorTool>ShapeTool</xmp:CreatorTool></rdf:Description></rdf:RDF></x:xmpmeta>.<?xpacket end="w"?>��ICC_PROFILE..�..mntrRGB XYZ acsp��...?.4��-after
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+MPF0	MPFVersion	0100
+MPF0	NumberOfImages	2
+MPImage1	MPImageFlags	4
+MPImage1	MPImageFormat	0
+MPImage1	MPImageType	196608
+MPImage1	MPImageLength	677
+MPImage1	MPImageStart	0
+MPImage1	DependentImage1EntryNumber	0
+MPImage1	DependentImage2EntryNumber	0
+MPImage2	MPImageFlags	0
+MPImage2	MPImageFormat	0
+MPImage2	MPImageType	0
+MPImage2	MPImageLength	529
+MPImage2	MPImageStart	121
+MPImage2	DependentImage1EntryNumber	0
+MPImage2	DependentImage2EntryNumber	0
+MPImage2	MPImage2	(Binary data 529 bytes, use -b option to extract)

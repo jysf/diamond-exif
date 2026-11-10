@@ -39,6 +39,10 @@ mod oracle_jpeg;
 mod oracle_tiff;
 #[path = "../tests/support/real_shapes.rs"]
 mod real_shapes;
+#[path = "../tests/support/strip_records.rs"]
+mod strip_records;
+#[path = "../tests/support/strip_shapes.rs"]
+mod strip_shapes;
 #[path = "../tests/support/tools.rs"]
 mod tools;
 
@@ -190,6 +194,40 @@ fn main() {
     println!("oracle-record: wrote the hostile-subifds-overlap record");
 
     record_inventory(&root, &version);
+    record_strip(&root, &version);
+}
+
+/// SPEC-020: for every strip fixture, ExifTool (`-a -u -G1 -s -t -n`) on the
+/// input and on the library's output under each recorded policy that strips,
+/// in parallel (one thread per fixture), into
+/// `tests/oracle-fixtures/exiftool-strip/<fixture>.txt`.
+fn record_strip(root: &std::path::Path, version: &str) {
+    let dir = root.join("tests/oracle-fixtures/exiftool-strip");
+    fs::create_dir_all(&dir).expect("create strip record dir");
+    let shapes: Vec<_> = strip_shapes::all()
+        .into_iter()
+        .filter(|s| !s.refused)
+        .collect();
+    let texts: Vec<(&str, String)> = std::thread::scope(|scope| {
+        let handles: Vec<_> = shapes
+            .iter()
+            .map(|s| {
+                scope.spawn(move || {
+                    let text = strip_records::record_text(s, version)
+                        .unwrap_or_else(|e| panic!("{}: {e}", s.name));
+                    (s.name, text)
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("thread"))
+            .collect()
+    });
+    for (name, text) in &texts {
+        fs::write(dir.join(format!("{name}.txt")), text).expect("write strip record");
+    }
+    println!("oracle-record: wrote {} strip records", texts.len());
 }
 
 /// SPEC-013: the inventory records (`exiftool -a -u -G1 -H -s`), one file per

@@ -24,6 +24,9 @@ mod report_inputs;
 mod oracle_tiff;
 #[path = "../tests/support/real_shapes.rs"]
 mod real_shapes;
+// SPEC-020: the strip fixtures.
+#[path = "../tests/support/strip_shapes.rs"]
+mod strip_shapes;
 
 const BYTE: u16 = 1;
 const ASCII: u16 = 2;
@@ -1467,6 +1470,78 @@ fn cli_seeds() -> Vec<(String, Vec<u8>)> {
     all.into_iter().map(|(n, b)| (n.to_string(), b)).collect()
 }
 
+/// SPEC-020: the seeds of `rewrite_jpeg`. Byte 0 selects the policy (4
+/// `Everything`, 7 `All`, 6 a custom set from the 16-bit little-endian mask in
+/// bytes 1 and 2, bit i meaning `Category::ALL[i]`). Every SPEC-019 shape and
+/// every strip fixture appears under `All`, `Everything` and one custom mask
+/// (rotated through `MASKS`); a few presets and the empty set come on top.
+fn rewrite_seeds() -> Vec<(String, Vec<u8>)> {
+    // Xmp+Icc, EmbeddedImage, OtherSegment, Iptc+FreeText, Jumbf+Xmp+Icc,
+    // EmbeddedImage+OtherSegment+FreeText.
+    const MASKS: [u16; 6] = [0x1040, 0x2000, 0x4000, 0x0088, 0x1140, 0x6008];
+    let mut inputs: Vec<(String, Vec<u8>)> = real_shapes::fixtures()
+        .into_iter()
+        .map(|(n, b)| (format!("shape-{n}"), b))
+        .collect();
+    inputs.extend(
+        strip_shapes::all()
+            .into_iter()
+            .map(|s| (format!("strip-{}", s.name), s.bytes)),
+    );
+    let mut out = Vec::new();
+    for (i, (name, bytes)) in inputs.iter().enumerate() {
+        let mask = MASKS[i % MASKS.len()];
+        let mut with = |label: String, head: Vec<u8>| {
+            let mut v = head;
+            v.extend_from_slice(bytes);
+            out.push((format!("{label}-{name}"), v));
+        };
+        with("all".to_string(), vec![7]);
+        // The All preset by its own byte (3), the same inputs.
+        with("allpreset".to_string(), vec![3]);
+        with("everything".to_string(), vec![4]);
+        let m = mask.to_le_bytes();
+        with(format!("mask{mask:04x}"), vec![6, m[0], m[1]]);
+    }
+    let sink = strip_shapes::kitchen_sink().bytes;
+    for (label, head) in [
+        ("gps", vec![0u8]),
+        ("gps_and_device", vec![1]),
+        ("all_pii", vec![2]),
+        ("none", vec![5]),
+    ] {
+        let mut v = head;
+        v.extend_from_slice(&sink);
+        out.push((format!("{label}-strip-kitchen-sink"), v));
+    }
+    // The narrow presets (Gps 0, GpsAndDevice 1) on more classes: the
+    // Multi-Picture, two-Exif, Exif-without-GPS, comment-over-image and
+    // unindexed-MPF shapes, and the GPS count overflow.
+    for class in [
+        "mpo-plain",
+        "two-exif-blocks",
+        "exif-without-gps",
+        "com-over-embedded",
+        "unindexed-mpf",
+        "gps-count-overflow",
+    ] {
+        let bytes = &inputs
+            .iter()
+            .find(|(n, _)| *n == format!("strip-{class}"))
+            .expect("a strip fixture")
+            .1;
+        for (label, head) in [("gps", 0u8), ("gps_and_device", 1)] {
+            let mut v = vec![head];
+            v.extend_from_slice(bytes);
+            out.push((format!("{label}-strip-{class}"), v));
+        }
+    }
+    // Degenerate: a policy byte alone, and a mask cut short.
+    out.push(("policy-byte-only".to_string(), vec![7]));
+    out.push(("mask-cut-short".to_string(), vec![6, 0x40]));
+    out
+}
+
 fn main() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/tiff_ifd");
     fs::create_dir_all(&dir).expect("create seeds dir");
@@ -1549,6 +1624,15 @@ fn main() {
         "wrote {} shape seeds to jpeg_segments and audit",
         real_shapes::fixtures().len()
     );
+
+    // SPEC-020: the `rewrite_jpeg` seeds, a policy byte then a JPEG.
+    let wdir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/rewrite_jpeg");
+    fs::create_dir_all(&wdir).expect("create seeds dir");
+    let wseeds = rewrite_seeds();
+    for (name, bytes) in &wseeds {
+        fs::write(wdir.join(name), bytes).expect("write seed");
+    }
+    println!("wrote {} seeds to {}", wseeds.len(), wdir.display());
 
     let cdir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/cli_args");
     fs::create_dir_all(&cdir).expect("create seeds dir");

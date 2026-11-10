@@ -951,3 +951,124 @@ questions:
       Implemented as malformed: bad TIFF header or version, IFD0 absent or unreadable, no 0xB002, an
       unreadable payload (a truncated index), fewer than 16 bytes, and any second MPF segment (only
       the first is read). The count is the whole 16-byte entries of the 0xB002 payload.
+
+  - id: strip-keeps-orientation
+    question: "Should a strip that removes the whole Exif segment (All, Everything) keep or re-insert the Orientation tag so viewers do not show rotated images upright?"
+    priority: high
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      DEC-013 part 4 removes every Exif segment whole under All/Everything, like exiftool -all=, so
+      Orientation goes with it. Keeping it needs an insertion (a minimal Exif block) or the in-place
+      edit of SPEC-021. Decide with the user's expectation of `All`; an opt-in StripSpec flag is one option.
+
+  - id: writer-stray-bytes
+    question: "Bytes the JPEG walk skips between segments (stray bytes, long runs of fill) are kept byte for byte and not named by the audit; should the audit name them and a strip remove them?"
+    priority: medium
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      They are a place data could hide that no preset removes. SPEC-020 keeps them (DEC-013 part 10).
+      Decide with a measured example from a real file; the answer would be an audit category (DEC amendment) and a rule.
+
+  - id: writer-mpf-attribute-fields
+    question: "Do Multi-Picture individual-image attribute IFDs or other MPF fields hold offsets that move when bytes before them are removed?"
+    priority: low
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      SPEC-020 patches only the index entries' offset and the primary's size. The spec (CIPA DC-007)
+      has an attribute IFD whose offsets are relative to the MPF header; the builder checks with ExifTool
+      on the MPO fixtures and reports whether any such field exists in the fixtures and the local files.
+      SPEC-020 build result (ExifTool 13.55): none. Neither the SPEC-019/020 fixtures nor the four local
+      Multi-Picture files show an attribute-IFD tag (only MPF0:MPFVersion, MPF0:NumberOfImages and
+      MPImageN:MPImage{Flags,Format,Type,Length,Start}, DependentImage1/2EntryNumber, plus the extracted
+      preview as a tag); the question stays open for files that carry one.
+
+  - id: dec-013-exif-resident-xmp-iptc-icc-tags
+    question: "An Exif IFD can hold the tags DEC-008 files under Xmp (0x02BC), Iptc (0x83BB, 0x8649) and Icc (0x8773), which are not in EXIF9; what should a segment-level strip do with them?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      DEC-013 part 4 reasons only about EXIF9. The audit does report those tags as Xmp, Iptc and Icc
+      findings with an Exif origin. Implemented (SPEC-020): when the policy lacks some of EXIF9 and an
+      Exif block holds such a finding in a category the policy removes, strip returns NeedsEntryEdit
+      naming that category too (otherwise the output would still hold a finding of a removed category and
+      the self-check would return VerifyFailed). When every EXIF9 category is removed the Exif segments go
+      whole, and the self-check (7b) does not count the Exif-resident findings of the kept categories as
+      lost (an Icc-category tag inside a removed Exif segment is gone with it). Confirm or amend part 4.
+
+  - id: dec-013-unlocated-mpf-entries
+    question: "An MPF index entry the audit could not locate (outside the input, or not FF D8) is never patched; if a removal lies between the index header and the byte it points at, it would silently point at other bytes. Refuse (MpfNotIndexed at the index segment, as built) or patch it too?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      DEC-013 part 5 says such entries are left as they are. The committed seed shape-mpo-image-not-jpeg
+      under OtherSegment showed the effect: the unpatched entry then lands on the next image, the output
+      gains an embedded image, and the self-check returns VerifyFailed (MpfFields), which the spec's
+      "no VerifyFailed on any seed" forbids. Built: MpfNotIndexed {offset of the index segment} when the
+      entry points inside the input and a removal intersects [header start, pointed-at byte]. Entries that
+      point outside the input stay unpatched and unrefused (they stay outside).
+
+  - id: dec-013-mpf-segment-after-a-removed-index
+    question: "When the real MP index is removed (EmbeddedImage in the policy) and another APP2 MPF segment stays behind it, the next reader takes that segment for the index; DEC-013 part 5 does not say. Refuse as built?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      Built: MpfNotIndexed at the kept later segment, because the output's audit could find new embedded
+      images through it (a second, formerly ignored index becomes the first). Also built: an unindexed MPF
+      segment that is itself removed (OtherSegment in the policy) is exempt from the "removal at or after
+      its end offset" rule, since nothing is left to be wrong.
+
+  - id: dec-013-removable-segment-after-the-first-scan
+    question: "A removable segment that lies after the first SOS (inside the scan region, e.g. an Exif or XMP segment between two progressive scans) makes the strip refuse with Overlap; should such segments be removable?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      Rule 7 protects the scan region from SOS through EOI, and the walk puts a segment found between
+      scans inside it. A strip of the committed seeds exif-after-scan and app-after-scan therefore returns
+      Overlap. No file in the local corpus hits it (counts in the HANDOFF-039 handback).
+
+  - id: dec-013-mpf-primary-size-underflow
+    question: "A primary-size field smaller than the bytes removed from the primary cannot be patched (it would go below zero); the spec says VerifyFailed {MpfFields}. Prefer a dedicated typed refusal?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      Built as specified. The fuzz harness accepts VerifyFailed {MpfFields} exactly when its naive
+      arithmetic underflows, and any other VerifyFailed only when its own prediction breaks an invariant
+      of DEC-013 part 7. A dedicated variant would let "VerifyFailed is always a harness failure" hold
+      without that exception.
+
+  - id: audit-app1-signature-variants
+    question: "ExifTool still reads APP1 segments whose signature is not exactly Exif\\0\\0 or the XMP namespace line (lowercase exif, a garbage prefix before Exif, XMP\\0). The audit calls them OtherApp, so All and Gps strip them with Ok and leave readable metadata. Widen the audit's APP1 recognition, or remove OtherApp APP1 under All?"
+    priority: medium
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      Found by the SPEC-020 verifier with synthetic probes against ExifTool 13.55 (5 GPS, 6 IFD0, 4 ExifIFD tags
+      read from a lowercase exif signature, with a minor warning). The writer is correct by DEC-013 part 3
+      (the audit is the single definition of what is in the file), so this is an audit gap from SPEC-019 and
+      Everything removes all three. Decide before the writer is offered to users.

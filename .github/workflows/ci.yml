@@ -149,7 +149,7 @@ jobs:
       - name: committed records are unchanged by a re-record
         run: |
           set -euo pipefail
-          out="$(git status --porcelain -- tests/oracle-fixtures/exiftool tests/oracle-fixtures/exiftool-inventory)"
+          out="$(git status --porcelain -- tests/oracle-fixtures/exiftool tests/oracle-fixtures/exiftool-inventory tests/oracle-fixtures/exiftool-strip)"
           if [ -n "${out}" ]; then echo "${out}"; exit 1; fi
 
   licenses:
@@ -184,7 +184,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [tiff_ifd, jpeg_segments, audit, audit_render, cli_args]
+        target: [tiff_ifd, jpeg_segments, rewrite_jpeg, audit, audit_render, cli_args]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
