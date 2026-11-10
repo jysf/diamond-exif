@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: verifier             # implementer | verifier
   created_at: 2026-11-10
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-021
@@ -46,18 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                # completed | blocked | rejected
+  agent: claude-opus-5-5           # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
-  verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
+  verdict: punch-list              # verify handoffs: approved | punch-list | rejected
+  basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
-  branch: null
+  branch: worktree-agent-a4b6cc47777fd05ee
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-10         # YYYY-MM-DD
+  notes: "tokens_total, estimated_usd and duration left null on purpose: the verifier cannot see its own token count; the orchestrator transcribes the harness's metered subagent_tokens and duration. Verdict PUNCH LIST at c1c01bd (code 1cf8bd1): one High leak sibling of H2 (IFD1 tile, JPEG-table and free-space offsets left unreferenced and unzeroed when the thumbnail goes), one Medium test gap (rule-3 per-block refusal pinned only when the bad block is last), Lows. No code changed, nothing pushed, no cycle advanced."
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -113,38 +113,51 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** worktree branch `worktree-agent-a4b6cc47777fd05ee` (fast-forwarded to c1c01bd; only this handback is committed on top). No PR, nothing pushed.
+- **Completed at:** 2026-11-10
+- **All acceptance criteria met?** No. DEC-013 amendment B.3 ("every table or data range of a removed child IFD ... gone from the file, not just unreferenced") still fails on a sibling of H2 (finding H3 below).
+- **For `verify`:** ⚠ PUNCH LIST at c1c01bd (code 1cf8bd1).
+
+**Gates, re-run by the verifier (all exit 0):** `cargo fmt --all -- --check`, fuzz-graph fmt, `rustfmt --check --edition 2021 fuzz/shared/*.rs`, `just lint`, `lint-fuzz`, `lint-no-allow`, `lint-red-proof`, `lint-fuzz-red-proof`, `forbid-unsafe`, `deny`, `deny-fuzz`, `validate`, `decisions-audit`, `cost-audit`, release build of `exif-audit` on 1.90.0, `just oracle-record` and then `git status --porcelain` empty. `cargo test --no-fail-fast` with `DIAMOND_EXIF_REQUIRE_ORACLE=1 DIAMOND_EXIF_REQUIRE_CLI_FS=1`: stable (Homebrew 1.99.1) 859 passed, 0 failed, 9 ignored; `+1.90.0` the same; no SKIP line. Fuzz from the committed seeds: `rewrite_jpeg` 301 s, 314,482 runs, no crash; 60 s each of `tiff_ifd` (1,483,007 runs), `jpeg_segments` (181,968), `audit` (51,178), `audit_render` (35,811), `cli_args` (2,339,961): no crash. `decisions/`, `scripts/` and every manifest and lock file unchanged since 6518356; the new `unwrap`s in the diff are all in test modules.
+
+**Findings.**
+- **H3 (High, a leak; a sibling of H2 that the fix missed): IFD1 data reached through tile, JPEG-table or free-space offsets stays in the file after the thumbnail is removed.** The new `single` check in `plan_block` (and its mirror in the harness) only looks at 0x0201/0x0202/0x0111/0x0117. An IFD1 that also holds `TileOffsets`/`TileByteCounts` (0x0144/0x0145), `JPEGQTables` (0x0207, which also covers 0x0208/0x0209) or `FreeOffsets`/`FreeByteCounts` (0x0120/0x0121) has those entries deleted (their in-line 4-byte offset goes with the table), but the bytes they point to are never scrubbed. Reproducer (LE and BE): a 160-byte TIFF with IFD0 at 8 = {0x0112 SHORT 1 = 1} and next 26; IFD1 at 26 = {0x0103 SHORT 6; 0x0201 LONG 1 -> 100; 0x0202 LONG 1 = 20; 0x0144 LONG 1 -> 140; 0x0145 LONG 1 = 20} and next 0; at 100 `FF D8 CANARY-THUMB-AAA FF D9`; at 140 `CANARY-TILE-XXXXXXXX`; one Exif APP1 in a minimal JPEG. `AllPii` and `Custom{Thumbnail}` both return `Ok`, same length, 5 entries, 2 scrubs, and `CANARY-TILE` is still in the output. The same happens with 0x0207 -> 140, and with 0x0120 -> 140 plus 0x0121 = 20. `rewrite_invariants::check` holds on all six inputs (policy byte 6, mask 0x0010), so the harness has the same blind spot. Suggested fix: when IFD1 goes, refuse `ThumbnailNotLocated` unless every IFD1 tag is on an allow-list of tags that hold no offset (or scrub every range an IFD1 offset tag names). Mirror it in the harness and add the inputs to the leak list and the seeds. Corpus: 0 of 13 local JPEGs have such a tag in IFD1 (ExifTool by pipe, tag names counted).
+- **M2 (Medium, test gap on a safety rule; the M1 fix is only half done): rule 3's per-block refusal is pinned only when the bad block is the last one.** Mutant N10 (`for block in meta.exif_blocks().iter().rev().take(1)`) survives every test. With it applied, two Exif segments where the FIRST is unclean (LE, IFD0 {0x0112, 0x8825 -> 38}, a GPS IFD at 38 whose count is 0xFFFF and whose one real entry 0x001B UNDEFINED 19 points at the canary `CANARY-GPS-FIRSTBLK` at 80) and the second is clean (IFD0 {0x0112}) return `Ok` with the canary left, under `Gps` and `AllPii`. The real code refuses (`Uneditable { BlockNotClean, offset 2 }`). Add this ordering, and ideally three blocks with the bad one in the middle, as a test and a seed.
+- **L6 (Low, test gap): the H1 refusal is pinned only for long values.** Mutants N03 (`len > 4` becomes `len > 8`) and N15 (`len > 7`) survive: every straddling fixture is 40 or 60 bytes long. A regression that only refused values longer than 8 bytes would let a straddling RATIONAL (8 bytes) or a 5-to-8-byte ASCII leak again. Add straddlers whose `byte_len` is 5 and 8.
+- **L7 (Low, test gap): two 0x0201 entries with one 0x0202 are not tested.** Mutant N07 (`count(0x0201) >= 1`) survives because every two-locator fixture also repeats 0x0202. Add IFD1 = {0x0201 -> A, 0x0201 -> B, 0x0202 = n}.
+- **L8 (Low, integrity on malformed input): a kept entry whose payload cannot be located is not protected.** The keep set uses `payload_range`, which is `None` for a kept value that runs past the blob end or has an unknown type, so a scrub can zero its in-blob bytes. Reproducer: IFD0 at 8 = {0x010F ASCII 40 -> 60 (runs past the 80-byte blob); 0x0112; 0x013B ASCII 10 -> 60}, with `KEPTMAKE-ARTIST-QQQQ` at 60. Under `Custom{Authorship}` the result is `Ok`, and the kept Make's first 10 in-blob bytes are zeroed (`KEPTMAKE` is gone). The same happens with a kept entry of type 99. No reader can read the value before or after, so nothing leaks, but "a kept entry cannot change" does not hold byte-wise. Apply the H1 rule symmetrically: refuse `SharedBytes` when a scrub touches `[value offset, blob end)` of a kept entry with `byte_len > 4` (or of unknown size) whose `payload_range` is `None`.
+- **Note (scope question for SPEC-022 and the DEC-013 note, no change asked here):** a MakerNote is scrubbed over its declared byte range only. Data that a MakerNote's own internal offsets point to outside that range is not reachable without parsing the MakerNote, which is out of scope for M1. Worth a sentence in DEC-013.
+
+**L4 judged at byte level (the `entries` widening is justified).** Seed `crash-entries-joined-stray`, policy mask 0x6008 (FreeText, EmbeddedImage, OtherSegment). The input has JFIF, Exif (126-byte payload), 128 one-byte COM segments with stray bytes among them (1 byte at 150, at 176 and at 467; a 125-byte run of `7A` at 523; 5 bytes at 918), then a second JFIF and a second Exif at 941. COM is FreeText, so the only change under this policy is removing the 128 COMs. Cutting them by hand and walking the result gives JFIF plus the first Exif only: the joined stray bytes swallow the rest, so the output walks with 1 Exif block instead of 2. `Entries` sees the second block's entries go missing. With the 128 COMs flipped to APP15, FreeText plans nothing (0 entries, Ok), so there is no planner bug; `Entries` is the check that sees a changed walk when there is no MPF. Because the excuse only ever covers a refusal, it cannot hide a leak. Mutant N12 (drop `entries` from the excuse) is caught by the crash-seed test and the seed sweep; N11 (excuse every check) is caught by `a_removal_that_joins_stray_bytes_...`.
+
+**Siblings tried that fail closed or are correct (both byte orders):** SubIFDs at the GPS IFD (`BlockNotClean`); two blocks with the GPS only in the second (Ok, canary gone, under `Gps` and `AllPii`); a GPS entry of unknown type (`PayloadUnreadable`); a thumbnail inside a kept MakerNote under `Custom{Thumbnail}` (`SharedBytes`); 0x0202 with count 2 (`ThumbnailNotLocated`); 0x0117 without 0x0111 (`ThumbnailNotLocated`); BYTE count 0xFFFFFFFF and RATIONAL count 0x20000000 (`PayloadUnreadable`); a deleted value in the TIFF header (`SharedBytes`); SHORT-typed 0x0201/0x0202 (Ok, canary gone).
+
+**Mutants (scratch copy, exact text replacement, `cargo test --lib --test strip --test fuzz_layout --test strip_oracle`, restored from the saved text and diffed against the worktree).** Round-1 survivors are now caught: V04 by `l1_scrubbed_checks_every_range_not_only_the_first`; V05 by `l2_an_empty_gps_ifd_is_removed_with_its_pointer` and `an_empty_gps_ifd_behind_a_present_pointer_is_removed_with_it`; V08 by `a_later_block_with_a_walk_issue_still_refuses_under_every_partial_policy`, `a_later_block_after_the_first_scan_is_uneditable` and the seed sweep; V11 by `l3_overlapping_ifd_tables_are_shared_bytes_even_when_only_one_is_edited`. My mutants: N01 (H1 fix reverted) caught by both `h1_*` unit tests, `leak_inputs_refuse_with_the_named_reason_and_offset`, `no_leak_input_is_ok_with_a_canary_left_under_any_policy` and the harness seed sweep; N02 (`>= 4`) caught by 29 tests; N03 (`> 8`) and N15 (`> 7`) SURVIVED (L6); N04 (0x0202 count ignored), N05 (0x0117 skipped) and N06 (0x0111 skipped) each caught only by `h2_a_thumbnail_ifd1_with_other_locators_is_thumbnail_not_located`; N07 (`0x0201 >= 1`) SURVIVED (L7); N14 (the `single` filter removed) caught by the `h2_*` unit test, both leak tests and the harness seed sweep; N08 and N09 (harness mirrors removed) survive by design, because the harness accepts any library refusal as fail-closed (N01 and N14 show the mirrors catch a library regression); N10 (rule-3 loop takes the last block only) SURVIVED and leaks (M2); N11 caught; N12 caught; N13 (BlockNotClean dropped from the loop) caught by 13 tests.
+
+**Local corpus (`_incoming0`, read in place, counts and 8-hex hashes only, nothing written).** Same counts as round 1: 21 files, 13 JPEGs, 4 with Multi-Picture. `Gps` 13 Ok, 0 bytes removed, 1,035 bytes patched, 22 entries; `GpsAndDevice` 13 Ok, 1,968 bytes patched, 24 entries; `AllPii` 12 Ok plus 1 `Uneditable(ChainAfterThumbnail)` on `a3b66f84`, 100,969 bytes patched, 154 entries; `All` 13 Ok, 313,995 bytes removed; `Everything` 13 Ok. On every Ok: scan identical, audit clean, deleted values zero; same length on every Ok under the three partial policies. ExifTool by pipe (`-a -u -G1 -s -n -t`), one file at a time, input vs `gps`/`gps_and_device`/`all_pii`, 51 runs plus 13 IFD1 tag counts: `GPS` gone only from the 4 files that had it; `IFD1` gone under `AllPii` in the 4 Ok files that had it and kept under the other two policies; Orientation count unchanged except where it lived in the removed IFD1 (`8a083030` goes from 2 to 1, IFD0's kept); `MPImage1-3` and `MPF0` unchanged in all 4 Multi-Picture files; 0 new warnings; 0 files with an IFD1 tile, JPEG-table, free-space or strip tag.
+
+**Questions.** `allpii-refuses-ifd1-with-a-following-ifd`: fails closed. Decide it before SPEC-022, where TIFF chains are the norm. `writer-refusals-beyond-the-spec`: all fail closed. Ratify them in a DEC-013 note before SPEC-022, and widen the `ThumbnailNotLocated` wording to an allow-list per H3; the note's "sweep of the same class" missed tiles and JPEG tables. `partial-policy-refuses-unreadable-exif-for-xmp-icc-iptc`: fails closed and follows the definition; no decision needed before SPEC-022. `writer-self-check-fires-on-segments-joined-by-stray-bytes` (answered): agreed. With `entries` added, the excuse is exact at byte level (see L4 above).
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null. The verifier cannot see its own token count; the orchestrator transcribes the harness's `subagent_tokens`.
+- **Estimated USD:** null (follows the tokens).
+- **Duration (minutes):** null (the harness reports it).
+- **Source of the number:** harness report, to be transcribed.
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
-- **Deviations from spec:**
-  - [list]
-- **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+- **New decisions emitted:** none.
+- **Deviations from spec:** none by the verifier.
+- **Follow-up work identified:** a builder follow-up for H3, M2 and L6 to L8 (no new spec). Scope note on MakerNote-internal offsets for DEC-013.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — Rule 7 lists the thumbnail's locators by tag instead of saying "every offset an IFD1 entry holds"; the fix copied that enumerative shape, so the next tag the list did not name leaked.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — DEC-013 B.3 already covers it ("every table or data range of a removed child IFD"); the planner should implement it as an allow-list of offset-free tags, not a deny-list of known locators.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Keep my scratch files in a fresh subdirectory from the start. The scratchpad is shared with the orchestrator, and my first gate script and probe overwrote its `gates.sh`, `gates.out`, `g.*.txt` and `probe/{Cargo.toml,src/main.rs}`.
