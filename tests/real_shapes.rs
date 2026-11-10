@@ -262,7 +262,11 @@ fn the_arot_fpxr_com_and_trailer_fixtures_audit_as_other_segment_and_free_text()
         .items()
         .iter()
         .filter_map(|i| match i.kind() {
-            ItemKind::Region { kind, len, .. } if kind == RegionKind::Trailer => Some(len),
+            ItemKind::Region {
+                kind: RegionKind::Trailer,
+                len,
+                ..
+            } => Some(len),
             _ => None,
         })
         .collect();
