@@ -1149,6 +1149,30 @@ fn l9_the_targets_of_kept_offset_tags_are_protected() {
     }
 }
 
+/// M3, kept side: a kept entry of type IFD (13) or IFD8 (18) points at data;
+/// from its offset to the end of the blob is kept.
+#[test]
+fn m3_the_target_of_a_kept_offset_typed_entry_is_protected() {
+    for be in [false, true] {
+        for ty in [13u16, 18] {
+            let mut b = Blob::new(be, 8);
+            let es = vec![
+                E {
+                    tag: 0x0100,
+                    ty,
+                    count: 1,
+                    val: b.w32(90),
+                },
+                b.out(0x013B, 2, 10, 92),
+            ];
+            b.ifd(8, &es, 0);
+            b.data(90, b"CANARY-TARGET-DATA!!");
+            let err = run(&b.bytes, &del(&[(0, 1)])).unwrap_err();
+            assert_eq!(err.reason, UneditableReason::SharedBytes, "ty {ty} be={be}");
+        }
+    }
+}
+
 /// L10: a removed IFD1 that holds a tag of a category the policy keeps is a
 /// typed refusal (the policy cannot take the IFD whole and keep the tag).
 #[test]
