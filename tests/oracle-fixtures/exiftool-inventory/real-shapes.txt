@@ -304,6 +304,41 @@ MPImage17	0x0008	MPImageStart
 MPImage17	0x000c	DependentImage1EntryNumber
 MPImage17	0x000e	DependentImage2EntryNumber
 MPImage17	-	MPImage17
+## mpo-nested-ranges
+JFIF	0x0000	JFIFVersion
+JFIF	0x0002	ResolutionUnit
+JFIF	0x0003	XResolution
+JFIF	0x0005	YResolution
+MPF0	0xb000	MPFVersion
+MPF0	0xb001	NumberOfImages
+MPImage1	0x0000	MPImageFlags
+MPImage1	0x0000	MPImageFormat
+MPImage1	0x0000	MPImageType
+MPImage1	0x0004	MPImageLength
+MPImage1	0x0008	MPImageStart
+MPImage1	0x000c	DependentImage1EntryNumber
+MPImage1	0x000e	DependentImage2EntryNumber
+MPImage2	0x0000	MPImageFlags
+MPImage2	0x0000	MPImageFormat
+MPImage2	0x0000	MPImageType
+MPImage2	0x0004	MPImageLength
+MPImage2	0x0008	MPImageStart
+MPImage2	0x000c	DependentImage1EntryNumber
+MPImage2	0x000e	DependentImage2EntryNumber
+MPImage2	-	MPImage2
+MPImage3	0x0000	MPImageFlags
+MPImage3	0x0000	MPImageFormat
+MPImage3	0x0000	MPImageType
+MPImage3	0x0004	MPImageLength
+MPImage3	0x0008	MPImageStart
+MPImage3	0x000c	DependentImage1EntryNumber
+MPImage3	0x000e	DependentImage2EntryNumber
+MPImage3	-	MPImage3
+## app3-mpf-signature
+JFIF	0x0000	JFIFVersion
+JFIF	0x0002	ResolutionUnit
+JFIF	0x0003	XResolution
+JFIF	0x0005	YResolution
 ## split-app13
 JFIF	0x0000	JFIFVersion
 JFIF	0x0002	ResolutionUnit

@@ -103,7 +103,7 @@ fn every_builder_is_deterministic_and_parses() {
     let a = real_shapes::fixtures();
     let b = real_shapes::fixtures();
     assert_eq!(a, b, "fixtures() is a pure function");
-    assert_eq!(a.len(), 15);
+    assert_eq!(a.len(), 17);
     let names: BTreeSet<&str> = a.iter().map(|(n, _)| *n).collect();
     assert_eq!(names.len(), a.len(), "names are unique");
     // Each builder function on its own is deterministic too.
@@ -326,6 +326,10 @@ fn expected_groups(name: &str) -> (Vec<&'static str>, usize) {
         "mpo-offset-out-of-range" | "mpo-image-not-jpeg" => (vec!["JFIF", "MPF0"], 3),
         "mpo-inner-mpf" => (with_exif, 2),
         "mpo-seventeen" => (vec!["JFIF", "MPF0"], 17),
+        // Two index entries, the second nested in the first.
+        "mpo-nested-ranges" => (vec!["JFIF", "MPF0"], 3),
+        // MPF only on APP2: ExifTool reads no index from APP3.
+        "app3-mpf-signature" => (vec!["JFIF"], 0),
         "split-app13" => (vec!["IPTC", "JFIF"], 0),
         "app10-arot" => (vec!["AROT", "JFIF"], 0),
         "app2-fpxr" | "com-segment" => (vec!["JFIF"], 0),

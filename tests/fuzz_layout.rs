@@ -1553,8 +1553,8 @@ fn audit_harness_holds_on_every_seed_and_degenerate_inputs() {
     }
     assert_eq!(
         seen,
-        78 + 15,
-        "32 TIFF + 37 JPEG + 9 new + 15 SPEC-019 shapes"
+        78 + 17,
+        "32 TIFF + 37 JPEG + 9 new + 17 SPEC-019 shapes"
     );
     for data in audit_degenerate_inputs() {
         audit_invariants::check(&data);
@@ -2398,7 +2398,7 @@ fn tiff_harness_entry_budget_invariants_hold_on_every_seed() {
             seen += 1;
         }
     }
-    assert_eq!(seen, 32 + 78 + 15);
+    assert_eq!(seen, 32 + 78 + 17);
     // The degenerate inputs too, and the generated big inventory.
     for data in audit_degenerate_inputs() {
         entry_budget_invariants::check_input(&data);
@@ -2872,7 +2872,7 @@ fn preview_guards_hold_on_every_seed_and_degenerate_inputs() {
             inputs.push((path.display().to_string(), data));
         }
     }
-    assert_eq!(inputs.len(), 32 + 37 + 78 + 15 + 15);
+    assert_eq!(inputs.len(), 32 + 37 + 78 + 17 + 17);
     for (i, d) in audit_degenerate_inputs().into_iter().enumerate() {
         inputs.push((format!("degenerate {i}"), d));
     }
@@ -5330,8 +5330,8 @@ fn each_cli_args_guard_goes_red_alone_when_planted() {
 
 // ── SPEC-019: the real-world shapes (DEC-012) ────────────────────────────────
 
-/// The 15 `shape-*` seed names (without the prefix), typed by hand.
-const SHAPE_SEEDS: [&str; 15] = [
+/// The 17 `shape-*` seed names (without the prefix), typed by hand.
+const SHAPE_SEEDS: [&str; 17] = [
     "mpo-two-le",
     "mpo-two-be",
     "mpo-truncated-index",
@@ -5339,6 +5339,8 @@ const SHAPE_SEEDS: [&str; 15] = [
     "mpo-image-not-jpeg",
     "mpo-inner-mpf",
     "mpo-seventeen",
+    "mpo-nested-ranges",
+    "app3-mpf-signature",
     "split-app13",
     "app10-arot",
     "app2-fpxr",
@@ -5413,6 +5415,11 @@ fn new_seeds_are_committed_and_have_the_shapes_they_claim() {
         .jpeg_issues()
         .iter()
         .any(|i| matches!(i.error(), Error::TooManyMpfImages { .. })));
+    // Nested ranges: no phantom trailer. MPF only on APP2: an unrecognised APPn.
+    assert_eq!(regions("mpo-nested-ranges"), ["embedded", "embedded"]);
+    assert_eq!(regions("app3-mpf-signature"), ["other_app"]);
+    let d = seed("app3-mpf-signature");
+    assert!(jpeg::read(&d).unwrap().jpeg_issues().is_empty());
     assert_eq!(regions("split-app13"), ["iptc", "iptc"]);
     assert_eq!(regions("app10-arot"), ["other_app"]);
     assert_eq!(regions("app2-fpxr"), ["other_app"]);

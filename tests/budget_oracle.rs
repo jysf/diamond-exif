@@ -123,7 +123,7 @@ fn fnv1a_64(bytes: &[u8]) -> u64 {
 }
 
 /// The SPEC-019 seed names (typed by hand, without the `shape-` prefix).
-const SHAPE_NAMES: [&str; 15] = [
+const SHAPE_NAMES: [&str; 17] = [
     "mpo-two-le",
     "mpo-two-be",
     "mpo-truncated-index",
@@ -131,6 +131,8 @@ const SHAPE_NAMES: [&str; 15] = [
     "mpo-image-not-jpeg",
     "mpo-inner-mpf",
     "mpo-seventeen",
+    "mpo-nested-ranges",
+    "app3-mpf-signature",
     "split-app13",
     "app10-arot",
     "app2-fpxr",

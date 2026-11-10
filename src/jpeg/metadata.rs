@@ -2499,4 +2499,63 @@ mod tests {
         ));
         assert!(matches!(e[1], Error::StrayBytes { .. }));
     }
+
+    #[test]
+    fn nested_embedded_ranges_leave_no_phantom_trailer() {
+        // Entry 1 spans A+B+C, entry 2 is B alone, inside it: the trailer is
+        // exactly accounted for, whatever order the ranges are swept in.
+        let a = small_jpeg(&[exif_basic()]);
+        let b = small_jpeg(&[xmp_seg(b"<x/>")]);
+        let c = small_jpeg(&[com_seg(b"c")]);
+        let whole = [a.clone(), b.clone(), c.clone()].concat();
+        let layout = |e1: (u32, u32), e2: (u32, u32)| {
+            let (mut d, _) = jpeg_of(&[mpf_seg(false, &[(0, 0), e1, e2])]);
+            let at = d.len();
+            d.extend_from_slice(&whole);
+            (d, at)
+        };
+        let (probe, at) = layout((0, 0), (0, 0));
+        let rel = |abs: usize| u32::try_from(abs - 10).unwrap();
+        let (file, _) = layout(
+            (u32::try_from(whole.len()).unwrap(), rel(at)),
+            (u32::try_from(b.len()).unwrap(), rel(at + a.len())),
+        );
+        assert_eq!(file.len(), probe.len());
+        let m = read(&file).unwrap();
+        assert!(m.is_clean(), "{:?}", errs(&m));
+        assert_eq!(
+            embedded_of(&m),
+            [(0, at, whole.len()), (0, at + a.len(), b.len())]
+        );
+        assert!(trailers_of(&m).is_empty(), "{:?}", trailers_of(&m));
+        // The same with the nested range listed first.
+        let (file, _) = layout(
+            (u32::try_from(b.len()).unwrap(), rel(at + a.len())),
+            (u32::try_from(whole.len()).unwrap(), rel(at)),
+        );
+        let m = read(&file).unwrap();
+        assert!(trailers_of(&m).is_empty(), "{:?}", trailers_of(&m));
+    }
+
+    #[test]
+    fn mpf_is_read_only_from_app2() {
+        // A well-formed MPF payload under APP3: an unrecognised APPn, no
+        // index read, no MPF issue, no embedded image.
+        let full = mpf_seg(false, &[(100, 0), (10, 50)]);
+        let d = one(seg(0xE3, &full[4..]));
+        let m = read(&d).unwrap();
+        assert!(
+            matches!(
+                m.regions(),
+                [Region::OtherApp {
+                    segment: 0,
+                    marker: 0xE3,
+                    ..
+                }]
+            ),
+            "{:?}",
+            m.regions().len()
+        );
+        assert!(m.is_clean(), "{:?}", errs(&m));
+    }
 }

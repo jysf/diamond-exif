@@ -331,6 +331,44 @@ pub fn mpo_inner_mpf() -> Vec<u8> {
     mpo(false, &[mid])
 }
 
+/// Entry 1 spans three images back to back (A, B, C) and entry 2 is B alone,
+/// nested inside it. Together they account for the whole trailer, so there is
+/// no `Trailer` region. (A sweep that lets the later, shorter range pull its
+/// cursor back would report C's bytes as a phantom trailer.) The second image
+/// is a stand-in of no bytes: entry 2 is re-pointed at B.
+pub fn mpo_nested_ranges() -> Vec<u8> {
+    let (a, b, c) = (nikon_extra(), iphone_extra(), jpeg_of(&[]));
+    let whole = [a.clone(), b.clone(), c].concat();
+    // The MPF header starts after SOI, the JFIF segment and `FF E2 len len MPF 00`.
+    let header_start = 2 + jfif().len() + 8;
+    let (_, ranges) = mpo_with(false, &[], &[whole.clone(), Vec::new()], &Tweak::none());
+    let b_rel = u32::try_from(ranges[0].0 + a.len() - header_start).expect("small");
+    let (file, _) = mpo_with(
+        false,
+        &[],
+        &[whole, Vec::new()],
+        &Tweak {
+            entries: vec![(1, u32::try_from(b.len()).expect("small"), b_rel)],
+            declared: None,
+            cut_after: None,
+        },
+    );
+    file
+}
+
+/// A well-formed MPF payload under APP3, not APP2: the index is only read from
+/// APP2, so this is an unrecognised APPn and costs no MPF issue.
+pub fn app3_mpf_signature() -> Vec<u8> {
+    let seg2 = mpf_segment(
+        false,
+        &[(ATTR_PRIMARY, 100, 0), (ATTR_SECONDARY, 10, 50)],
+        32,
+        true,
+    );
+    // Drop `FF E2 len len`, keep the payload (`MPF\0` and the TIFF).
+    jpeg_of(&[jfif(), seg(0xE3, &seg2[4..])])
+}
+
 /// A 17-image index (the primary and sixteen secondaries): over the limit.
 pub fn mpo_seventeen() -> Vec<u8> {
     let imgs: Vec<Vec<u8>> = (1..SEVENTEEN).map(|_| iphone_extra()).collect();
@@ -556,6 +594,8 @@ pub fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
         ("mpo-image-not-jpeg", mpo_image_not_jpeg()),
         ("mpo-inner-mpf", mpo_inner_mpf()),
         ("mpo-seventeen", mpo_seventeen()),
+        ("mpo-nested-ranges", mpo_nested_ranges()),
+        ("app3-mpf-signature", app3_mpf_signature()),
         ("split-app13", split_app13()),
         ("app10-arot", app10_arot()),
         ("app2-fpxr", app2_fpxr()),
