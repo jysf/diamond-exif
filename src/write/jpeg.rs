@@ -346,7 +346,7 @@ fn mpf_not_indexed(
         if removed_itself {
             continue;
         }
-        let later_removal = removals.iter().any(|r| r.start >= end);
+        let later_removal = removals.iter().any(|r| r.end > end);
         let after_removed_index = index_removed && meta.mpf().is_some_and(|m| m.segment() < i);
         if later_removal || after_removed_index {
             return Err(StripError::MpfNotIndexed { offset });

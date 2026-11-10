@@ -13,6 +13,9 @@ use std::path::PathBuf;
 mod oracle_tiff;
 #[path = "support/real_shapes.rs"]
 mod real_shapes;
+// SPEC-020: the strip fixtures, for the `rewrite_jpeg` harness plants and seeds.
+#[path = "support/strip_shapes.rs"]
+mod strip_shapes;
 
 use exif_core::jpeg::{Jpeg, SegmentKind, MAX_JPEG_ISSUES, MAX_JPEG_SEGMENTS};
 use exif_core::tiff::{Container, Entry, IfdKind, MAX_IFDS, MAX_ISSUES, MAX_TAG_VALUES};
@@ -1385,7 +1388,9 @@ fn audit_target_is_declared_and_runs_in_ci() {
     assert!(root().join("fuzz/shared/audit_invariants.rs").is_file());
     let ci = read(".github/workflows/ci.yml");
     assert!(
-        ci.contains("target: [tiff_ifd, jpeg_segments, audit, audit_render, cli_args]"),
+        ci.contains(
+            "target: [tiff_ifd, jpeg_segments, rewrite_jpeg, audit, audit_render, cli_args]"
+        ),
         "the fuzz-smoke matrix must run the audit target"
     );
 }
@@ -5539,4 +5544,556 @@ fn each_new_region_guard_goes_red_alone_when_planted() {
             p.input
         );
     }
+}
+
+// ── SPEC-020: the `rewrite_jpeg` target (the JPEG strip writer, DEC-013) ─────
+
+include!("../fuzz/shared/rewrite_invariants.rs");
+
+fn rewrite_seed_files() -> Vec<(String, Vec<u8>)> {
+    let dir = root().join("fuzz/seeds/rewrite_jpeg");
+    let mut v: Vec<(String, Vec<u8>)> = fs::read_dir(&dir)
+        .expect("read rewrite_jpeg seeds")
+        .map(|e| {
+            let p = e.unwrap().path();
+            (
+                p.file_name().unwrap().to_string_lossy().into_owned(),
+                fs::read(&p).unwrap(),
+            )
+        })
+        .collect();
+    v.sort();
+    v
+}
+
+/// Degenerate inputs the policy byte can be put in front of.
+fn rewrite_degenerate() -> Vec<Vec<u8>> {
+    let seg = |m: u8, p: &[u8]| {
+        let mut v = vec![0xFF, m];
+        v.extend_from_slice(&((p.len() + 2) as u16).to_be_bytes());
+        v.extend_from_slice(p);
+        v
+    };
+    let mut many = vec![0xFF, 0xD8];
+    for _ in 0..4100 {
+        many.extend_from_slice(&seg(0xFE, b"c"));
+    }
+    let mut stray = vec![0xFF, 0xD8];
+    for _ in 0..1100 {
+        stray.extend_from_slice(&[0xFF, 0x00]);
+    }
+    stray.extend_from_slice(&seg(0xFE, b"after"));
+    vec![
+        vec![],
+        vec![0xFF],
+        vec![0xFF, 0xD8],
+        vec![0xFF, 0xD8, 0xFF],
+        vec![0xFF, 0xD8, 0xFF, 0xFE, 0x00, 0x01],
+        vec![0xFF, 0xD8, 0xFF, 0xFE, 0xFF, 0xFF, 1, 2, 3],
+        b"II*\0\x08\0\0\0\0\0\0\0\0\0".to_vec(),
+        b"\x89PNG\r\n\x1a\n".to_vec(),
+        many,
+        stray,
+        [vec![0xFF, 0xD8], seg(0xE2, b"MPF\0"), vec![0xFF, 0xD9]].concat(),
+        [
+            vec![0xFF, 0xD8],
+            seg(0xE1, b"http://ns.adobe.com/xap/1.0/\0x"),
+            seg(0xFE, b"c"),
+            vec![0xFF, 0xDA, 0, 2, 1, 2, 3],
+        ]
+        .concat(),
+    ]
+}
+
+#[test]
+fn rewrite_jpeg_harness_holds_on_every_seed_and_degenerate_inputs() {
+    let seeds = rewrite_seed_files();
+    assert!(seeds.len() >= 60, "{} seeds", seeds.len());
+    for (name, data) in &seeds {
+        // The seed as committed, and with every policy byte in front of it.
+        rewrite_invariants::check(data);
+        let (_, jpeg) = rewrite_invariants::decode(data);
+        for head in 0u8..=8 {
+            let mut v = vec![head, 0x08, 0x40];
+            v.extend_from_slice(jpeg);
+            rewrite_invariants::check(&v);
+        }
+        let _ = name;
+    }
+    for d in rewrite_degenerate() {
+        for head in 0u8..=8 {
+            let mut v = vec![head, 0xFF, 0x7F];
+            v.extend_from_slice(&d);
+            rewrite_invariants::check(&v);
+        }
+        // Every custom set of the 15 single categories.
+        for bit in 0..15u16 {
+            let m = (1u16 << bit).to_le_bytes();
+            let mut v = vec![6, m[0], m[1]];
+            v.extend_from_slice(&d);
+            rewrite_invariants::check(&v);
+        }
+    }
+    rewrite_invariants::check(&[]);
+    rewrite_invariants::check(&[6]);
+}
+
+/// A plant: a wrong answer put into the library's flattened answer for `input`
+/// under the policy byte `head`, which the named guard (and only the guards in
+/// `also`, if any) must reject.
+struct RewritePlant {
+    name: &'static str,
+    input: &'static str,
+    head: &'static [u8],
+    guard: rewrite_invariants::Guard,
+    apply: fn(&mut rewrite_invariants::Facts),
+}
+
+fn rewrite_plant_input(name: &str) -> Vec<u8> {
+    match name {
+        "kitchen" => strip_shapes::kitchen_sink().bytes,
+        "mpo-late" => strip_shapes::mpo_late_xmp(false).bytes,
+        "mpo-gaps" => strip_shapes::mpo_trailer_gaps().bytes,
+        "no-exif" => strip_shapes::no_exif().bytes,
+        "needs-edit" => strip_shapes::kitchen_sink().bytes,
+        "overlap" => strip_shapes::com_over_embedded().bytes,
+        "unindexed" => strip_shapes::unindexed_mpf().bytes,
+        "bad-length" => strip_shapes::bad_length().bytes,
+        "empty-plan" => strip_shapes::comment_only().bytes,
+        other => panic!("no plant input {other}"),
+    }
+}
+
+fn ok_mut(f: &mut rewrite_invariants::Facts) -> &mut rewrite_invariants::OkFacts {
+    f.result.as_mut().expect("an Ok answer")
+}
+
+fn out_mut(f: &mut rewrite_invariants::Facts) -> &mut rewrite_invariants::OutFacts {
+    f.out.as_mut().expect("output facts")
+}
+
+#[test]
+fn each_rewrite_guard_goes_red_alone_when_planted() {
+    use rewrite_invariants::{ErrFact, Guard};
+    let plants: Vec<RewritePlant> = vec![
+        // Prediction: the output bytes, in both directions (a wrong byte, a
+        // missing byte).
+        RewritePlant {
+            name: "a byte of the output is changed",
+            input: "kitchen",
+            head: &[7],
+            guard: Guard::Prediction,
+            apply: |f| {
+                let b = &mut ok_mut(f).bytes;
+                let n = b.len() / 2;
+                b[n] ^= 0x01;
+            },
+        },
+        RewritePlant {
+            name: "the output is one byte short",
+            input: "mpo-late",
+            head: &[7],
+            guard: Guard::Prediction,
+            apply: |f| {
+                ok_mut(f).bytes.pop();
+            },
+        },
+        RewritePlant {
+            name: "an Ok answer where a refusal is predicted",
+            input: "overlap",
+            head: &[7],
+            guard: Guard::Prediction,
+            apply: |f| {
+                f.result = Ok(rewrite_invariants::OkFacts {
+                    bytes: vec![0xFF, 0xD8],
+                    removals: vec![],
+                    patches: vec![],
+                });
+            },
+        },
+        // Records.
+        RewritePlant {
+            name: "a removal record has an output offset",
+            input: "kitchen",
+            head: &[7],
+            guard: Guard::Records,
+            apply: |f| {
+                let r = ok_mut(f).removals.last_mut().expect("a removal");
+                r.offset = r.offset.saturating_sub(5);
+            },
+        },
+        RewritePlant {
+            name: "a removal record is missing",
+            input: "kitchen",
+            head: &[7],
+            guard: Guard::Records,
+            apply: |f| {
+                ok_mut(f).removals.remove(0);
+            },
+        },
+        RewritePlant {
+            name: "a patch record is missing",
+            input: "mpo-late",
+            head: &[7],
+            guard: Guard::Records,
+            apply: |f| {
+                ok_mut(f).patches.pop();
+            },
+        },
+        RewritePlant {
+            name: "a removal record has the wrong category",
+            input: "kitchen",
+            head: &[7],
+            guard: Guard::Records,
+            apply: |f| {
+                ok_mut(f).removals[0].category = exif_core::audit::Category::Icc;
+            },
+        },
+        // Length, both directions of the iff.
+        RewritePlant {
+            name: "the output grows",
+            input: "kitchen",
+            head: &[7],
+            guard: Guard::Length,
+            apply: |f| {
+                // Longer than the input.
+                let input_len = strip_shapes::kitchen_sink().bytes.len();
+                ok_mut(f).bytes.resize(input_len + 1, 0);
+            },
+        },
+        RewritePlant {
+            name: "equal length with removals recorded",
+            input: "kitchen",
+            head: &[7],
+            guard: Guard::Length,
+            apply: |f| {
+                let input_len = strip_shapes::kitchen_sink().bytes.len();
+                ok_mut(f).bytes.resize(input_len, 0);
+            },
+        },
+        RewritePlant {
+            name: "shorter with nothing recorded as removed",
+            input: "empty-plan",
+            head: &[7],
+            guard: Guard::Length,
+            apply: |f| {
+                // `All` on a comment-only file removes the comment: clear the
+                // records but keep the shorter output.
+                ok_mut(f).removals.clear();
+            },
+        },
+        // Scan.
+        RewritePlant {
+            name: "the scan region differs",
+            input: "kitchen",
+            head: &[7],
+            guard: Guard::Scan,
+            apply: |f| out_mut(f).scan_same = false,
+        },
+        RewritePlant {
+            name: "the scan region differs on a Multi-Picture file",
+            input: "mpo-late",
+            head: &[4],
+            guard: Guard::Scan,
+            apply: |f| out_mut(f).scan_same = false,
+        },
+        // Removed categories left in the output.
+        RewritePlant {
+            name: "an Xmp finding is left in",
+            input: "kitchen",
+            head: &[7],
+            guard: Guard::RemovedCategories,
+            apply: |f| out_mut(f).categories.push(exif_core::audit::Category::Xmp),
+        },
+        RewritePlant {
+            name: "an Icc finding is left in under Everything",
+            input: "no-exif",
+            head: &[4],
+            guard: Guard::RemovedCategories,
+            apply: |f| out_mut(f).categories.push(exif_core::audit::Category::Icc),
+        },
+        // Kept findings, both directions.
+        RewritePlant {
+            name: "a kept finding is lost",
+            input: "kitchen",
+            head: &[7],
+            guard: Guard::KeptFindings,
+            apply: |f| {
+                out_mut(f).kept_out.0.pop();
+            },
+        },
+        RewritePlant {
+            name: "a kept finding appears from nowhere",
+            input: "kitchen",
+            head: &[7],
+            guard: Guard::KeptFindings,
+            apply: |f| out_mut(f).kept_out.0.push("Icc/Phantom".to_string()),
+        },
+        RewritePlant {
+            name: "the kept trailer bytes change",
+            input: "mpo-gaps",
+            head: &[7],
+            guard: Guard::KeptFindings,
+            apply: |f| out_mut(f).kept_out.1 += 1,
+        },
+        // Idempotence.
+        RewritePlant {
+            name: "stripping the output again changes it",
+            input: "kitchen",
+            head: &[4],
+            guard: Guard::Idempotent,
+            apply: |f| out_mut(f).idempotent = false,
+        },
+        RewritePlant {
+            name: "stripping the output again changes a Multi-Picture file",
+            input: "mpo-gaps",
+            head: &[6, 0x00, 0x40],
+            guard: Guard::Idempotent,
+            apply: |f| out_mut(f).idempotent = false,
+        },
+        // Determinism.
+        RewritePlant {
+            name: "two calls disagree",
+            input: "kitchen",
+            head: &[7],
+            guard: Guard::Deterministic,
+            apply: |f| f.deterministic = false,
+        },
+        RewritePlant {
+            name: "two calls disagree on a refusal",
+            input: "overlap",
+            head: &[7],
+            guard: Guard::Deterministic,
+            apply: |f| f.deterministic = false,
+        },
+        // Refusal classes, in both directions.
+        RewritePlant {
+            name: "NeedsEntryEdit names too many categories",
+            input: "needs-edit",
+            head: &[2],
+            guard: Guard::ErrClass,
+            apply: |f| {
+                f.result = Err(ErrFact::NeedsEntryEdit(
+                    exif_core::audit::Category::ALL.to_vec(),
+                ))
+            },
+        },
+        RewritePlant {
+            name: "an Overlap is reported at the wrong offset",
+            input: "overlap",
+            head: &[6, 0x08, 0x00],
+            guard: Guard::ErrClass,
+            apply: |f| {
+                if let Err(ErrFact::Overlap(o)) = &mut f.result {
+                    *o += 1;
+                }
+            },
+        },
+        RewritePlant {
+            name: "MpfNotIndexed is reported for a file that is fine",
+            input: "no-exif",
+            head: &[7],
+            guard: Guard::ErrClass,
+            apply: |f| f.result = Err(ErrFact::MpfNotIndexed(0)),
+        },
+        RewritePlant {
+            name: "a bad length is reported as Overlap",
+            input: "bad-length",
+            head: &[7],
+            guard: Guard::ErrClass,
+            apply: |f| f.result = Err(ErrFact::Overlap(4)),
+        },
+        RewritePlant {
+            name: "an unindexed MPF is reported as fine-with-a-different-offset",
+            input: "unindexed",
+            head: &[7],
+            guard: Guard::ErrClass,
+            apply: |f| {
+                if let Err(ErrFact::MpfNotIndexed(o)) = &mut f.result {
+                    *o += 3;
+                }
+            },
+        },
+        // VerifyFailed where the prediction is fine.
+        RewritePlant {
+            name: "VerifyFailed on a clean file",
+            input: "kitchen",
+            head: &[7],
+            guard: Guard::VerifyAllowed,
+            apply: |f| f.result = Err(ErrFact::VerifyFailed("preview")),
+        },
+        RewritePlant {
+            name: "VerifyFailed on a refusal",
+            input: "needs-edit",
+            head: &[2],
+            guard: Guard::VerifyAllowed,
+            apply: |f| f.result = Err(ErrFact::VerifyFailed("kept")),
+        },
+    ];
+
+    // Every guard has at least two plants, and the iff guards have plants in
+    // both directions (their names say which).
+    for g in rewrite_invariants::GUARDS {
+        let n = plants.iter().filter(|p| p.guard == g).count();
+        assert!(n >= 2, "{g:?} has {n} plants");
+    }
+
+    for p in &plants {
+        let input = rewrite_plant_input(p.input);
+        let mut seed = p.head.to_vec();
+        seed.extend_from_slice(&input);
+        let (policy, jpeg) = rewrite_invariants::decode(&seed);
+        let spec = policy.spec();
+        let pred = rewrite_invariants::predict(jpeg, spec);
+        let good = rewrite_invariants::facts(jpeg, policy);
+        // CONTROL: the unplanted answer satisfies every guard.
+        let control = rewrite_invariants::failures(jpeg, spec, &good, &pred);
+        assert!(control.is_empty(), "{}: control: {control:?}", p.name);
+        let mut bad = good.clone();
+        (p.apply)(&mut bad);
+        assert_ne!(bad, good, "{}: the plant changed nothing", p.name);
+        // The guard rejects the plant, run alone.
+        assert!(
+            !rewrite_invariants::holds(p.guard, jpeg, spec, &bad, &pred),
+            "{}: guard {:?} did not reject the planted bug",
+            p.name,
+            p.guard
+        );
+        // And the other guards that read other parts of the facts still hold
+        // where the plant did not touch their part: a guard is not red merely
+        // because another is.
+        let others = rewrite_invariants::failures(jpeg, spec, &bad, &pred);
+        assert!(others.contains(&p.guard), "{}: {others:?}", p.name);
+    }
+}
+
+#[test]
+fn rewrite_guards_are_not_constant() {
+    // Each guard accepts at least one real answer and rejects at least one
+    // planted one: a constant-true or constant-false guard fails one of them.
+    use rewrite_invariants::Guard;
+    let input = strip_shapes::kitchen_sink().bytes;
+    let policy = exif_core::StripPolicy::All;
+    let spec = policy.spec();
+    let pred = rewrite_invariants::predict(&input, spec);
+    let good = rewrite_invariants::facts(&input, policy);
+    for g in rewrite_invariants::GUARDS {
+        assert!(
+            rewrite_invariants::holds(g, &input, spec, &good, &pred),
+            "{g:?} rejects the real answer"
+        );
+    }
+    // The naive stripper agrees with the library on the Ok answer.
+    match pred {
+        rewrite_invariants::Pred::Ok { bytes, .. } => {
+            assert_eq!(good.result.as_ref().unwrap().bytes, bytes)
+        }
+        other => panic!("{other:?}"),
+    }
+    let _ = Guard::Prediction;
+}
+
+#[test]
+fn rewrite_seeds_are_committed_and_cover_every_fixture_and_policy_class() {
+    let seeds = rewrite_seed_files();
+    assert_eq!(seeds.len(), 126, "the rewrite_jpeg seed count is pinned");
+    let names: Vec<&str> = seeds.iter().map(|(n, _)| n.as_str()).collect();
+    // Every SPEC-019 shape and every strip fixture, under All, Everything and a
+    // custom mask.
+    for (n, _) in real_shapes::fixtures() {
+        for prefix in ["all-", "everything-", "mask"] {
+            assert!(
+                names
+                    .iter()
+                    .any(|s| s.starts_with(prefix) && s.ends_with(&format!("shape-{n}"))),
+                "{prefix} shape-{n}"
+            );
+        }
+    }
+    for s in strip_shapes::all() {
+        for prefix in ["all-", "everything-", "mask"] {
+            assert!(
+                names
+                    .iter()
+                    .any(|x| x.starts_with(prefix) && x.ends_with(&format!("strip-{}", s.name))),
+                "{prefix} strip-{}",
+                s.name
+            );
+        }
+    }
+    // Policy classes: the leading byte covers presets, the empty set, a mask
+    // and the default; every mask value used is one of the six pinned ones.
+    let heads: std::collections::BTreeSet<u8> = seeds
+        .iter()
+        .filter_map(|(_, d)| d.first().copied())
+        .collect();
+    for h in [0u8, 1, 2, 4, 5, 6, 7] {
+        assert!(heads.contains(&h), "no seed starts with policy byte {h}");
+    }
+    // Every shape of the audit's refusal classes is in there: a bad length, a
+    // halted walk, an overlap, an unindexed MPF, a needs-entry-edit file.
+    let expected_classes = [
+        ("strip-bad-length", "Unstrippable"),
+        ("strip-halted-walk", "Unstrippable"),
+        ("strip-com-over-embedded", "Overlap"),
+        ("strip-unindexed-mpf", "MpfNotIndexed"),
+        ("strip-kitchen-sink", "NeedsEntryEdit"),
+    ];
+    let mut seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    for (fixture, class) in expected_classes {
+        for (n, d) in &seeds {
+            if !n.ends_with(fixture) {
+                continue;
+            }
+            let (policy, jpeg) = rewrite_invariants::decode(d);
+            let got = match exif_core::strip(jpeg, policy) {
+                Err(exif_core::StripError::Unstrippable { .. }) => "Unstrippable",
+                Err(exif_core::StripError::Overlap { .. }) => "Overlap",
+                Err(exif_core::StripError::MpfNotIndexed { .. }) => "MpfNotIndexed",
+                Err(exif_core::StripError::NeedsEntryEdit { .. }) => "NeedsEntryEdit",
+                _ => "",
+            };
+            if got == class {
+                seen.insert(class);
+            }
+        }
+    }
+    assert_eq!(seen.len(), 4, "refusal classes seeded: {seen:?}");
+    // An Ok seed with patches exists.
+    assert!(seeds.iter().any(|(_, d)| {
+        let (p, j) = rewrite_invariants::decode(d);
+        exif_core::strip(j, p).is_ok_and(|s| !s.patches().is_empty())
+    }));
+}
+
+#[test]
+fn ci_fuzz_smoke_list_includes_rewrite_jpeg() {
+    let fuzz = read("fuzz/Cargo.toml");
+    assert!(
+        fuzz.contains("name = \"rewrite_jpeg\"") && fuzz.contains("fuzz_targets/rewrite_jpeg.rs"),
+        "fuzz/Cargo.toml must declare the rewrite_jpeg bin"
+    );
+    for f in [
+        "fuzz/fuzz_targets/rewrite_jpeg.rs",
+        "fuzz/shared/rewrite_invariants.rs",
+    ] {
+        assert!(root().join(f).is_file(), "{f}");
+    }
+    let target = read("fuzz/fuzz_targets/rewrite_jpeg.rs");
+    assert!(target.contains("rewrite_invariants.rs"));
+    assert!(
+        !target.contains("write::"),
+        "the harness must not reach into src/write"
+    );
+    assert!(
+        !read("fuzz/shared/rewrite_invariants.rs").contains("exif_core::write::plan")
+            && !read("fuzz/shared/rewrite_invariants.rs").contains("EditPlan"),
+        "the naive stripper must not use the library's plan"
+    );
+    let ci = read(".github/workflows/ci.yml");
+    assert!(
+        ci.contains("rewrite_jpeg"),
+        "the fuzz-smoke matrix must run the rewrite_jpeg target"
+    );
+    assert!(read("app.just").contains("rewrite_jpeg"));
 }
