@@ -90,7 +90,7 @@ them. Update status as specs progress.
 Format: `- [status] SPEC-ID (cycle) — one-line summary`
 
 - [x] SPEC-019 (shipped on 2026-11-10) — [L] Audit coverage of writer-relevant structures: Multi-Picture secondary images, MakerNote previews, unrecognised APPn (APP10), trailers, split APP13 resources; DEC-008/009 amendments; synthetic real-world-shape fixture builders
-- [ ] SPEC-020 (frame) — [L] Writer foundation and JPEG segment-level strip: writer DEC, change plan, pixel-integrity and audit-as-oracle invariants, `All`/`Everything`, `rewrite_jpeg` fuzz target, ExifTool output oracle
+- [ ] SPEC-020 (design) — [L] Writer foundation and JPEG segment-level strip: writer DEC, change plan, pixel-integrity and audit-as-oracle invariants, `All`/`Everything`, `rewrite_jpeg` fuzz target, ExifTool output oracle
 - [ ] SPEC-021 (frame) — [L] JPEG in-place IFD entry deletion with scrub: `Gps`, `GpsAndDevice`, `AllPii` (thumbnail and MakerNote removed whole), never grow, never relocate
 - [ ] SPEC-022 (frame) — [M] TIFF and DNG in-place strip: never touch strip or tile offsets, SubIFDs, TIFF writer fuzz target
 

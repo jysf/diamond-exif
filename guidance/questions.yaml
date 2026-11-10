@@ -951,3 +951,38 @@ questions:
       Implemented as malformed: bad TIFF header or version, IFD0 absent or unreadable, no 0xB002, an
       unreadable payload (a truncated index), fewer than 16 bytes, and any second MPF segment (only
       the first is read). The count is the whole 16-byte entries of the 0xB002 payload.
+
+  - id: strip-keeps-orientation
+    question: "Should a strip that removes the whole Exif segment (All, Everything) keep or re-insert the Orientation tag so viewers do not show rotated images upright?"
+    priority: high
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      DEC-013 part 4 removes every Exif segment whole under All/Everything, like exiftool -all=, so
+      Orientation goes with it. Keeping it needs an insertion (a minimal Exif block) or the in-place
+      edit of SPEC-021. Decide with the user's expectation of `All`; an opt-in StripSpec flag is one option.
+
+  - id: writer-stray-bytes
+    question: "Bytes the JPEG walk skips between segments (stray bytes, long runs of fill) are kept byte for byte and not named by the audit; should the audit name them and a strip remove them?"
+    priority: medium
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      They are a place data could hide that no preset removes. SPEC-020 keeps them (DEC-013 part 10).
+      Decide with a measured example from a real file; the answer would be an audit category (DEC amendment) and a rule.
+
+  - id: writer-mpf-attribute-fields
+    question: "Do Multi-Picture individual-image attribute IFDs or other MPF fields hold offsets that move when bytes before them are removed?"
+    priority: low
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      SPEC-020 patches only the index entries' offset and the primary's size. The spec (CIPA DC-007)
+      has an attribute IFD whose offsets are relative to the MPF header; the builder checks with ExifTool
+      on the MPO fixtures and reports whether any such field exists in the fixtures and the local files.
