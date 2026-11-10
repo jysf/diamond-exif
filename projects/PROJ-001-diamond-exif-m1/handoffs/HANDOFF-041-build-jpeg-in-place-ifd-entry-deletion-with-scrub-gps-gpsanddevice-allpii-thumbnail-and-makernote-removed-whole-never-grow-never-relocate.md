@@ -50,14 +50,14 @@ handback:
   agent: claude-sonnet-5-5         # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: null
+  basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 746836             # REAL combined count — what cost-audit reads
+  estimated_usd: 4.93              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  duration_minutes: 66
   branch: worktree-agent-a4c6983a1eacb858d
   pr: null
   completed_at: 2026-11-10         # YYYY-MM-DD
-  notes: "tokens_total, basis and estimated_usd are null on purpose: the build agent cannot see its own token count; the orchestrator transcribes the metered figure from the agent result (AGENTS.md section 4, DEC-013). Nothing was pushed, no PR, no cycle advanced."
+  notes: "Cost transcribed by the orchestrator from the harness final cumulative subagent_tokens (746,836) at 6.60 USD per Mtok = 4.93 USD; duration 3,942,831 ms = 65.7 min, rounded to 66. Nothing was pushed, no PR, no cycle advanced."
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
