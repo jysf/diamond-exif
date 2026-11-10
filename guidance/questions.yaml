@@ -1115,6 +1115,23 @@ questions:
       by hand); test a_removal_that_joins_stray_bytes_into_a_marker_is_refused_and_excused_exactly. The open
       question writer-stray-bytes (keep, or refuse earlier with a typed error) is unchanged.
 
+  - id: makernote-internal-offsets
+    question: "A MakerNote's own structure can hold offsets to data outside its declared range; a MakerNote deleted under MakerNote or AllPii is zeroed over its declared range only. Note it in DEC-013?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      The writer treats a MakerNote as one opaque out-of-line value (DEC-009 KeptUnread, rule 14) and scrubs the
+      bytes the entry declares. Many vendor notes carry an internal IFD whose entries point, by absolute or
+      note-relative offsets, at data inside the Exif blob but outside the note's declared range (Canon, Nikon,
+      Sony notes with preview images or serial tables are known cases). Those bytes are not zeroed when the
+      MakerNote entry goes, and the audit does not see them. Closing it needs MakerNote parsing per vendor,
+      which is out of scope for M1. Suggested DEC-013 wording: a removed MakerNote is scrubbed over its declared
+      range only; the preview says KeptUnread for what a policy that keeps it does not open, and says nothing
+      about data a removed note pointed to elsewhere in the block.
+
   - id: writer-refusals-beyond-the-spec
     question: "The build added three Uneditable reasons the spec did not list: HiddenPointer, NestedIfd, PayloadUnreadable. Ratify them in the DEC-013 amendment?"
     priority: medium
@@ -1141,6 +1158,14 @@ questions:
       finding per entry, so every copy and its value go (tested); repeated pointer tags are HiddenPointer;
       the `select` cross-check that the audit's tag equals the walk's tag at the same position is equivalent
       code (both come from one container), kept as a guard and not testable.
+      HANDOFF-043 (second verify) made the rule closed-world: a removed IFD1 is handled only if every entry is
+      on an allow-list of offset-free tags (THUMB_IFD_TAGS in src/write/exif.rs, one place, each group
+      commented; any other tag, including tiles, JPEGQTables, free offsets and unknown tags, is
+      ThumbnailNotLocated), and a removed GPS IFD only if every tag is 0x0000..=0x001F (else PayloadUnreadable,
+      an existing reason). A KEPT entry whose value cannot be located (runs past the blob end, or an unknown
+      field type) now keeps its in-blob bytes (clipped), so a scrub or table patch touching them is
+      SharedBytes; the same for a kept IFD1 whose thumbnail range runs past the end. No real IFD1 or GPS IFD in the local
+      corpus (5 and 4 IFDs) has an off-list tag.
       Also built beyond the spec: the check that no two IFD tables overlap runs for every partial policy
       whether or not anything is edited (the harness guard LibraryOkNaiveUnclean names it).
 

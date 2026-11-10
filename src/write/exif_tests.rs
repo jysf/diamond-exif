@@ -948,6 +948,30 @@ fn l8_a_kept_entry_that_straddles_the_blob_end_protects_its_in_blob_bytes() {
     }
 }
 
+/// Sweep: a KEPT thumbnail whose range runs past the blob end is not "located",
+/// but its in-blob bytes are still kept.
+#[test]
+fn a_kept_thumbnail_that_straddles_the_blob_end_protects_its_in_blob_bytes() {
+    for be in [false, true] {
+        let mut b = Blob::new(be, 8);
+        let ifd0 = vec![b.out(0x013B, 2, 10, 80)];
+        b.ifd(8, &ifd0, 26);
+        let ifd1 = vec![b.long(0x0201, 80), b.long(0x0202, 40)];
+        b.ifd(26, &ifd1, 0);
+        b.data(80, b"CANARY-ARTIST");
+        b.bytes.truncate(90);
+        let sel = Selection {
+            deleted: vec![(0, 0)],
+            thumbnail: false,
+            thumbnail_range: None,
+            ..Selection::default()
+        };
+        let err = run(&b.bytes, &sel).unwrap_err();
+        assert_eq!(err.reason, UneditableReason::SharedBytes, "be={be}");
+        assert_eq!(err.at, 80);
+    }
+}
+
 /// L6: the H1 boundary: a value over 4 bytes that runs past the end.
 #[test]
 fn l6_straddling_values_of_five_and_eight_bytes_are_refused_and_an_exact_fit_is_not() {

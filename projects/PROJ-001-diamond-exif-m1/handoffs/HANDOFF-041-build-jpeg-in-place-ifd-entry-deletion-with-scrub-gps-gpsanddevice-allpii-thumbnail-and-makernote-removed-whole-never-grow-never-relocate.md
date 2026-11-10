@@ -129,6 +129,29 @@ Constraints: `panic-free-library` (five-lint deny set: no unchecked `+`, `-`, `*
 10. **`exif_walk_issue_in_a_kept_ifd`** is an Interop pointer outside the blob; the fixture list's `exif_chain_ifd2` is `chain-ifd2` and doubles as `thumbnail_with_ifd2_after_it`.
 11. **Entry plants:** two per new guard, each guard red on its plants; "alone" is checked as "the guard is among the failing ones" (as SPEC-020's test did), not as the only one, because a changed byte inside the Exif segment fails `Prediction` outside it and `KeptEntriesIntact` inside it.
 
+## Sweep after the second verify (HANDOFF-043): where the planner acted on "unknown / None / first / count / pointer" as if complete
+
+| Place | What it assumes | Verdict |
+|---|---|---|
+| `Ifd::table_range` / `next_at` | a table fits `usize` | `None` is `bad(0)` (BlockNotClean); no default |
+| `Container::payload_range` None | "inline or unreadable" | deleted/removed entries: `PayloadUnreadable` when byte_len > 4 or unknown type; kept entries: `kept_value_range` keeps the in-blob part (clipped) so SharedBytes fires |
+| `Entry::byte_len` None (unknown type) | size unknown | deleted: refuse; kept: keep from its offset to the blob end |
+| hidden-pointer check | the walk followed the first pointer entry | any second entry, or one in a kind that does not follow it: `HiddenPointer` (0x014A, 0x8769, 0x8825, 0xA005) |
+| GPS removal | one pointer entry names the IFD | the entry whose value equals the offset, else `PointerNotInParent`; a second 0x8825 is HiddenPointer |
+| removed IFD with children | none | `NestedIfd` |
+| removed IFD1 contents | only 0x0201/0x0202 reach data | allow-list `THUMB_IFD_TAGS`; off-list tag: `ThumbnailNotLocated` |
+| removed GPS contents | tags 0x0000..=0x001F only | any other tag: `PayloadUnreadable` |
+| thumbnail locator | first 0x0201/0x0202 is the thumbnail | exactly one of each, no 0x0111/0x0117 (and off-list refuses the rest) |
+| IFD1 chain | IFD1.next == 0 | else `ChainAfterThumbnail`; IFD0 must link to it |
+| kept thumbnail range | located range only | also the clipped in-blob part when it runs past the end |
+| table overlap | tables are disjoint | checked for every partial policy, every IFD |
+| precondition loop over blocks | all blocks checked | tests for first, middle, last, second-after-scan; mutants take(1), rev().take(1), skip(1) caught |
+| `plan_entries` TooMany / truncated | 16 blocks, inventory complete | refuse |
+| `select` audit/walk tag cross-check | audit item == walk entry | equivalent code (one container); kept as a guard |
+| `rewrite_table` | count word equals the walk's | else BlockNotClean |
+| scrub merge | overlapping ranges merge, adjacent do not | patches stay disjoint (EditPlan checks) |
+| MakerNote internals | its declared range is all of it | NOT closed: question `makernote-internal-offsets` |
+
 ## Questions raised (all in `guidance/questions.yaml`, status open)
 
 - `allpii-refuses-ifd1-with-a-following-ifd`: 1 of 13 local files refuses `AllPii`; keep the refusal or keep an empty IFD1 in the chain?

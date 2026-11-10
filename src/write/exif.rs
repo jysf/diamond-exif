@@ -195,6 +195,25 @@ fn kept_value_range(
     (at < end).then_some(at..end)
 }
 
+/// The in-blob part of the range `ifd`'s first 0x0201 and 0x0202 name (SHORT or
+/// LONG, count 1), clipped to the blob.
+fn thumb_clip(blob: &[u8], order: ByteOrder, ifd: &Ifd) -> Option<Range<usize>> {
+    let scalar = |tag: u16| -> Option<usize> {
+        let e = ifd.entries().iter().find(|e| e.tag() == tag)?;
+        if e.count() != 1 {
+            return None;
+        }
+        match e.field_type() {
+            3 => read_u16(blob, e.value_at(), order).ok().map(usize::from),
+            4 => usize::try_from(read_u32(blob, e.value_at(), order).ok()?).ok(),
+            _ => None,
+        }
+    };
+    let (at, len) = (scalar(0x0201)?, scalar(0x0202)?);
+    let end = at.saturating_add(len).min(blob.len());
+    (at < end).then_some(at..end)
+}
+
 /// The first offset at which `r` touches one of the sorted, disjoint `set`.
 fn first_touch(set: &[Range<usize>], r: &Range<usize>) -> Option<usize> {
     let i = set.partition_point(|k| k.end <= r.start);
@@ -491,6 +510,11 @@ pub(super) fn plan_block(
     }
     if thumb.is_none() {
         keep.extend(sel.thumbnail_range.and_then(|r| blob_range(blob, r)));
+        // A kept IFD1 whose thumbnail range is not wholly in the blob has no
+        // "located" thumbnail, but the part that is in the blob stays.
+        if let Some(ifd1) = ifds.iter().find(|i| i.kind() == IfdKind::Ifd1) {
+            keep.extend(thumb_clip(blob, order, ifd1));
+        }
     }
     let keep = merge_ranges(keep);
     let must_stay = merge_ranges(keep.iter().chain(kept_tables.iter()).cloned().collect());
