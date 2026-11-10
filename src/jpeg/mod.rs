@@ -46,8 +46,8 @@ use crate::error::Error;
 
 pub use issue::JpegIssue;
 pub use metadata::{
-    read, AnyIssue, ExifBlock, JpegMetadata, Region, MAX_EXIF_BLOCKS, MAX_JPEG_METADATA_ISSUES,
-    MAX_MPF_IMAGES,
+    read, AnyIssue, ExifBlock, JpegMetadata, MpfEntry, MpfIndex, Region, MAX_EXIF_BLOCKS,
+    MAX_JPEG_METADATA_ISSUES, MAX_MPF_IMAGES,
 };
 
 /// Most segments one walk records. The `MAX_JPEG_SEGMENTS + 1`-th halts the
@@ -167,6 +167,15 @@ impl<'a> Segment<'a> {
     /// `SOS` itself is not after the scan.
     pub fn after_scan(&self) -> bool {
         self.after_scan
+    }
+
+    /// The segment's whole byte range in the input: the marker and its code,
+    /// the two length bytes and the payload (`offset .. offset + 4 +
+    /// payload.len()`). `None` if that end overflows `usize`. This is the
+    /// range a writer removes to delete the segment (DEC-013 part 3).
+    pub fn range(&self) -> Option<core::ops::Range<usize>> {
+        let end = self.offset.checked_add(4)?.checked_add(self.payload.len())?;
+        Some(self.offset..end)
     }
 }
 
@@ -1372,5 +1381,33 @@ mod tests {
         }
         let issue = JpegIssue::new(Error::MissingSos, 7);
         assert!(!issue.to_string().is_empty() && !format!("{issue:?}").is_empty());
+    }
+
+    #[test]
+    fn segment_range_is_marker_length_and_payload() {
+        let d = cat(&[&soi(), &seg(0xFE, b"hello"), &eoi()]);
+        let j = Jpeg::parse(&d).unwrap();
+        let s = &j.segments()[0];
+        // FF FE len len + 5 payload bytes, from offset 2.
+        assert_eq!(s.range(), Some(2..11));
+        assert_eq!(&d[s.range().unwrap()], &d[2..11]);
+        assert_eq!(s.range().unwrap().len(), 4 + s.payload().len());
+    }
+
+    #[test]
+    fn segment_range_overflow_is_none() {
+        let s = Segment {
+            marker: 0xFE,
+            offset: usize::MAX - 5,
+            payload: &[1, 2, 3, 4],
+            kind: SegmentKind::Com,
+            after_scan: false,
+        };
+        assert_eq!(s.range(), None);
+        let s = Segment {
+            offset: usize::MAX - 7,
+            ..s
+        };
+        assert_eq!(s.range(), Some(usize::MAX - 7..usize::MAX));
     }
 }

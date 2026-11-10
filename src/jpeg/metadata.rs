@@ -43,7 +43,7 @@
 //! No ExifTool source is read.
 
 use crate::error::Error;
-use crate::reader::read_u32;
+use crate::reader::{read_u32, ByteOrder};
 use crate::tiff::{Container, ParseIssue};
 
 use super::{
@@ -248,6 +248,88 @@ impl<'a> Region<'a> {
     }
 }
 
+/// One 16-byte entry of the MP index: where its `size` and `offset` fields sit
+/// in the input, so a writer can patch them in place (DEC-013 part 5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MpfEntry {
+    index: usize,
+    offset: u32,
+    size: u32,
+    size_field: usize,
+    offset_field: usize,
+    region: Option<usize>,
+}
+
+impl MpfEntry {
+    /// The entry's position in the index (entry 0 is the primary image).
+    pub fn index(&self) -> usize {
+        self.index
+    }
+
+    /// The `offset` field as read (relative to [`MpfIndex::header_start`]).
+    pub fn offset(&self) -> u32 {
+        self.offset
+    }
+
+    /// The `size` field as read.
+    pub fn size(&self) -> u32 {
+        self.size
+    }
+
+    /// Input offset of the entry's 4-byte `size` field.
+    pub fn size_field(&self) -> usize {
+        self.size_field
+    }
+
+    /// Input offset of the entry's 4-byte `offset` field.
+    pub fn offset_field(&self) -> usize {
+        self.offset_field
+    }
+
+    /// `Some(i)`: this entry became [`JpegMetadata::regions`]`()[i]`, an
+    /// [`Region::EmbeddedImage`]. `None`: the primary (entry 0) or an entry
+    /// that was malformed (outside the input, not `FF D8`).
+    pub fn region(&self) -> Option<usize> {
+        self.region
+    }
+}
+
+/// The MP index the audit read the embedded images from (DEC-012): the first
+/// APP2 `MPF\0` segment that parses. A second MPF segment, or one that does not
+/// parse, is never the index. Nothing is copied; the positions are input
+/// offsets, checked when they were computed.
+#[derive(Debug, Clone)]
+pub struct MpfIndex {
+    segment: usize,
+    header_start: usize,
+    big_endian: bool,
+    entries: Vec<MpfEntry>,
+}
+
+impl MpfIndex {
+    /// Index into [`Jpeg::segments`] of the index segment.
+    pub fn segment(&self) -> usize {
+        self.segment
+    }
+
+    /// Input offset of the byte after `MPF\0`; the entries' offsets are
+    /// relative to it.
+    pub fn header_start(&self) -> usize {
+        self.header_start
+    }
+
+    /// Whether the index (and so every field in it) is big-endian.
+    pub fn big_endian(&self) -> bool {
+        self.big_endian
+    }
+
+    /// The examined entries in order, at most [`MAX_MPF_IMAGES`] (the ones past
+    /// the limit are not examined, as in the audit).
+    pub fn entries(&self) -> &[MpfEntry] {
+        &self.entries
+    }
+}
+
 /// An issue with its layer named. Layers are never merged into one flat type
 /// (DEC-006).
 #[derive(Debug, Clone, Copy)]
@@ -279,9 +361,16 @@ pub struct JpegMetadata<'a> {
     exif_blocks: Vec<ExifBlock<'a>>,
     regions: Vec<Region<'a>>,
     jpeg_issues: Vec<JpegIssue>,
+    mpf: Option<MpfIndex>,
 }
 
 impl<'a> JpegMetadata<'a> {
+    /// The MP index the embedded images were read from, if there is one (see
+    /// [`MpfIndex`]).
+    pub fn mpf(&self) -> Option<&MpfIndex> {
+        self.mpf.as_ref()
+    }
+
     /// The segment walk.
     pub fn jpeg(&self) -> &Jpeg<'a> {
         &self.jpeg
@@ -346,6 +435,15 @@ pub fn read(data: &[u8]) -> Result<JpegMetadata<'_>, Error> {
 pub(crate) fn read_with(data: &[u8], embedded: bool) -> Result<JpegMetadata<'_>, Error> {
     let jpeg = Jpeg::parse(data)?;
     Ok(extract(jpeg, data, embedded))
+}
+
+/// What reading one MP index produced: the located images as `(entry index,
+/// input offset, bytes)` and the data of [`MpfIndex`].
+struct MpfRead<'a> {
+    images: Vec<(usize, usize, &'a [u8])>,
+    header_start: usize,
+    big_endian: bool,
+    entries: Vec<MpfEntry>,
 }
 
 /// The extraction's mutable state. Every issue goes through
@@ -422,7 +520,7 @@ impl Extract {
         data: &'a [u8],
         at: usize,
         payload: &'a [u8],
-    ) -> Option<Vec<(usize, &'a [u8])>> {
+    ) -> Option<MpfRead<'a>> {
         let header = payload.get(SIG_MPF.len()..)?;
         // The segment's own marker, code and length (4 bytes), then the signature.
         let base = at.checked_add(4)?.checked_add(SIG_MPF.len())?;
@@ -433,7 +531,13 @@ impl Extract {
             return None;
         }
         let order = container.byte_order();
+        // Where the entries start in the input: the index slice is a sub-slice
+        // of `header`, so its address difference is its offset in the header.
+        // (An address read is safe Rust; the subtraction is checked.)
+        let rel = (index.as_ptr() as usize).checked_sub(header.as_ptr() as usize)?;
+        let entries_at = base.checked_add(rel)?;
         let mut found = Vec::new();
+        let mut entries = Vec::new();
         for (i, chunk) in index.as_chunks::<MP_ENTRY_LEN>().0.iter().enumerate() {
             if i >= MAX_MPF_IMAGES {
                 self.record(
@@ -445,13 +549,28 @@ impl Extract {
                 );
                 break;
             }
-            if i == 0 {
-                continue;
-            }
             let (Ok(size), Ok(offset)) = (read_u32(chunk, 4, order), read_u32(chunk, 8, order))
             else {
                 continue;
             };
+            let field = |k: usize| {
+                i.checked_mul(MP_ENTRY_LEN)
+                    .and_then(|e| e.checked_add(k))
+                    .and_then(|e| entries_at.checked_add(e))
+            };
+            if let (Some(size_field), Some(offset_field)) = (field(4), field(8)) {
+                entries.push(MpfEntry {
+                    index: i,
+                    offset,
+                    size,
+                    size_field,
+                    offset_field,
+                    region: None,
+                });
+            }
+            if i == 0 {
+                continue;
+            }
             let range = usize::try_from(offset)
                 .ok()
                 .and_then(|o| base.checked_add(o))
@@ -465,10 +584,15 @@ impl Extract {
                 Some((_, bytes)) if !bytes.starts_with(&[0xFF, 0xD8]) => {
                     self.record(Error::MpfImageNotJpeg { at, index: i }, at);
                 }
-                Some(image) => found.push(image),
+                Some((start, bytes)) => found.push((i, start, bytes)),
             }
         }
-        Some(found)
+        Some(MpfRead {
+            images: found,
+            header_start: base,
+            big_endian: order == ByteOrder::Big,
+            entries,
+        })
     }
 
     /// Rule 5 (DEC-012): the segment is one `Iptc` region (its payload after
@@ -587,6 +711,7 @@ fn extract<'a>(jpeg: Jpeg<'a>, data: &'a [u8], embedded: bool) -> JpegMetadata<'
     // Only the first MPF segment is read as an index; a second one cannot be a
     // second index (the issue count stays bounded).
     let mut mpf_seen = false;
+    let mut mpf_index: Option<MpfIndex> = None;
 
     for (index, segment) in jpeg.segments().iter().enumerate() {
         let payload = segment.payload();
@@ -704,15 +829,25 @@ fn extract<'a>(jpeg: Jpeg<'a>, data: &'a [u8], embedded: bool) -> JpegMetadata<'
                         ex.mpf(data, at, payload)
                     };
                     mpf_seen = true;
-                    if let Some(images) = images {
-                        for (offset, bytes) in images {
+                    if let Some(read) = images {
+                        let mut entries = read.entries;
+                        for (entry, offset, bytes) in read.images {
                             covered.push((offset, offset.saturating_add(bytes.len())));
+                            if let Some(e) = entries.iter_mut().find(|e| e.index == entry) {
+                                e.region = Some(regions.len());
+                            }
                             regions.push(Region::EmbeddedImage {
                                 segment: index,
                                 offset,
                                 data: bytes,
                             });
                         }
+                        mpf_index = Some(MpfIndex {
+                            segment: index,
+                            header_start: read.header_start,
+                            big_endian: read.big_endian,
+                            entries,
+                        });
                         continue;
                     }
                     ex.record(Error::MpfMalformed { at }, at);
@@ -748,6 +883,7 @@ fn extract<'a>(jpeg: Jpeg<'a>, data: &'a [u8], embedded: bool) -> JpegMetadata<'
         exif_blocks,
         regions,
         jpeg,
+        mpf: mpf_index,
     }
 }
 
@@ -2557,5 +2693,97 @@ mod tests {
             m.regions().len()
         );
         assert!(m.is_clean(), "{:?}", errs(&m));
+    }
+
+    #[test]
+    fn mpf_index_exposes_field_positions_and_byte_order() {
+        for be in [false, true] {
+            let a = small_jpeg(&[exif_basic()]);
+            let b = small_jpeg(&[]);
+            let (file, ranges) = mpo(be, &[], &[0x44u8; 3], &[a.clone(), b.clone()]);
+            let m = read(&file).unwrap();
+            let idx = m.mpf().expect("an index");
+            assert_eq!(idx.big_endian(), be);
+            // `FF D8`, then `FF E2 len len M P F 00`: the header starts at 10.
+            assert_eq!(idx.header_start(), 10);
+            assert_eq!(idx.segment(), 0);
+            let seg = &m.jpeg().segments()[idx.segment()];
+            assert_eq!(seg.range().unwrap().start, 2);
+            assert_eq!(idx.entries().len(), 3);
+            for e in idx.entries() {
+                // Read the fields back from the input at the reported place.
+                let word = |at: usize| {
+                    let w: [u8; 4] = file[at..at + 4].try_into().unwrap();
+                    if be {
+                        u32::from_be_bytes(w)
+                    } else {
+                        u32::from_le_bytes(w)
+                    }
+                };
+                assert_eq!(word(e.size_field()), e.size(), "entry {}", e.index());
+                assert_eq!(word(e.offset_field()), e.offset(), "entry {}", e.index());
+                assert_eq!(e.offset_field(), e.size_field() + 4);
+            }
+            // The index fields agree with the true layout.
+            let e1 = idx.entries()[1];
+            assert_eq!(e1.size() as usize, ranges[0].1);
+            assert_eq!(idx.header_start() + e1.offset() as usize, ranges[0].0);
+            // The entries sit 16 bytes apart.
+            assert_eq!(
+                idx.entries()[2].size_field() - idx.entries()[1].size_field(),
+                16
+            );
+        }
+    }
+
+    #[test]
+    fn mpf_index_marks_which_entries_became_regions() {
+        let good = small_jpeg(&[]);
+        let glen = u32::try_from(good.len()).unwrap();
+        let (probe, _) = jpeg_of(&[mpf_seg(false, &[(0, 0); 4])]);
+        let image_at = probe.len();
+        let rel = |abs: usize| u32::try_from(abs - 10).unwrap();
+        // Entry 1 is good, entry 2 points outside the input, entry 3 is good.
+        let entries = [
+            (u32::try_from(image_at).unwrap(), 0u32),
+            (glen, rel(image_at)),
+            (glen, u32::MAX),
+            (glen, rel(image_at)),
+        ];
+        let (mut file, _) = jpeg_of(&[mpf_seg(false, &entries)]);
+        file.extend_from_slice(&good);
+        let m = read(&file).unwrap();
+        let idx = m.mpf().unwrap();
+        let regions: Vec<Option<usize>> = idx.entries().iter().map(|e| e.region()).collect();
+        assert_eq!(regions, [None, Some(0), None, Some(1)]);
+        for e in idx.entries() {
+            if let Some(r) = e.region() {
+                assert!(matches!(m.regions()[r], Region::EmbeddedImage { .. }));
+            }
+        }
+    }
+
+    #[test]
+    fn second_or_unparsed_mpf_is_not_the_index() {
+        // A second MPF segment: only the first is the index.
+        let first = mpf_seg(false, &[(100, 0), (10, 50)]);
+        let second = mpf_seg(true, &[(100, 0), (10, 60)]);
+        let d = one_pair(&first, &second);
+        let m = read(&d).unwrap();
+        let idx = m.mpf().unwrap();
+        assert_eq!(idx.segment(), 0);
+        assert!(!idx.big_endian());
+        // An unparsable MPF segment first: no index at all, and a parsable
+        // second one is still not the index (the issue count stays bounded).
+        let junk = seg(0xE2, b"MPF\0not a tiff header");
+        let d = one_pair(&junk, &second);
+        let m = read(&d).unwrap();
+        assert!(m.mpf().is_none());
+        // No MPF segment: no index.
+        assert!(read(&small_jpeg(&[])).unwrap().mpf().is_none());
+    }
+
+    fn one_pair(a: &[u8], b: &[u8]) -> Vec<u8> {
+        jpeg_of(&[a.to_vec(), b.to_vec()]).0
     }
 }
