@@ -2457,6 +2457,43 @@ fn a_later_block_after_the_first_scan_is_uneditable() {
 }
 
 #[test]
+fn repeated_tags_are_all_deleted_or_refused_never_the_first_only() {
+    // HANDOFF-042 sweep: a repeated MakerNote or Artist tag is one finding per
+    // entry, so every copy goes with its value.
+    let mut b = exif_layout::full_le();
+    let exif = b.ifds.iter_mut().find(|f| f.name == "exif").unwrap();
+    exif.ents.push(exif_layout::undefined(
+        0x927C,
+        b"CANARY-SECOND-NOTE-000000000",
+    ));
+    b.ifds[0]
+        .ents
+        .push(exif_layout::ascii(0x013B, b"CANARY-SECOND-ARTIST"));
+    let l = b.layout();
+    let j = jpeg_of(std::slice::from_ref(&l), false);
+    let out = strip(&j.bytes, only(&["maker_note", "authorship"])).unwrap();
+    for c in [
+        &b"CANARY-SECOND-NOTE"[..],
+        b"CANARY-SECOND-ARTIST",
+        exif_layout::K_NOTE,
+        exif_layout::K_ARTIST,
+    ] {
+        assert!(!contains(out.bytes(), c), "{}", String::from_utf8_lossy(c));
+    }
+    // A repeated pointer tag is refused (the walk follows the first only).
+    let mut b = exif_layout::full_le();
+    b.ifds[0].ents.push(exif_layout::ptr(0x8769, "exif"));
+    let j = jpeg_of(&[b.layout()], false);
+    assert!(matches!(
+        strip(&j.bytes, StripPolicy::Gps),
+        Err(StripError::Uneditable {
+            reason: UneditableReason::HiddenPointer,
+            ..
+        })
+    ));
+}
+
+#[test]
 fn an_empty_gps_ifd_behind_a_present_pointer_is_removed_with_it() {
     // HANDOFF-042 L2, pinned at the file level.
     let b = exif_layout::Build {

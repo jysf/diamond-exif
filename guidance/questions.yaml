@@ -1132,6 +1132,15 @@ questions:
       case of a pointer that stops naming the IFD).
       NestedIfd: a removed IFD (GPS, IFD1) that has IFDs of its own (the walk follows SubIFDs from any IFD).
       PayloadUnreadable: a deleted entry of an unknown field type, whose value cannot be sized to zero.
+      HANDOFF-042 (verify punch list) widened two existing reasons, no new one:
+      PayloadUnreadable is also returned for a deleted entry (or an entry of a removed GPS IFD or IFD1) whose
+      value does not fit the 4-byte field and is not wholly inside the blob (it runs past the end: the in-blob
+      part is data and was left unzeroed); ThumbnailNotLocated is also returned unless IFD1 has exactly one
+      0x0201, exactly one 0x0202 and no 0x0111 or 0x0117 (a second pair or strips leave image bytes
+      unreferenced). Sweep of the same class: a repeated MakerNote, Artist or other categorised tag is one
+      finding per entry, so every copy and its value go (tested); repeated pointer tags are HiddenPointer;
+      the `select` cross-check that the audit's tag equals the walk's tag at the same position is equivalent
+      code (both come from one container), kept as a guard and not testable.
       Also built beyond the spec: the check that no two IFD tables overlap runs for every partial policy
       whether or not anything is edited (the harness guard LibraryOkNaiveUnclean names it).
 
