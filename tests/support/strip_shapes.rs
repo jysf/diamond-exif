@@ -911,6 +911,38 @@ pub fn mpf_entry_not_jpeg() -> Shape {
     s
 }
 
+/// Both at once (found by the fuzzer): an index entry that points at bytes that
+/// are no image, and a second `MPF\0` segment behind the index, with a COM after
+/// both. Pinned order: the index's own entry is reported first.
+pub fn second_mpf_and_unlocated_entry() -> Shape {
+    let mut s = mpo_shape(
+        "second-mpf-unlocated-entry",
+        false,
+        vec![],
+        vec![
+            (
+                K::OtherApp,
+                rs::mpf_segment(false, &[(0x2003_0000, 100, 0), (0, 10, 50)], 32, true),
+            ),
+            (K::Com, com_seg(C_COM1)),
+        ],
+        vec![
+            (Vec::new(), vec![0xFF, 0xD9, 1, 2, 3, 4, 5, 6]),
+            (Vec::new(), rs::iphone_extra()),
+        ],
+        Vec::new(),
+        ExifFacts::default(),
+    );
+    let mut first = true;
+    for p in &mut s.parts {
+        if p.kind == K::Image && first {
+            p.kind = K::Trailer;
+            first = false;
+        }
+    }
+    s
+}
+
 /// The index lists an `FF D8` range inside a COM payload of the primary.
 pub fn com_over_embedded() -> Shape {
     let inner = rs::iphone_extra();
@@ -1046,6 +1078,7 @@ pub fn all() -> Vec<Shape> {
         second_mpf(),
         mpf_malformed_entry(),
         mpf_entry_not_jpeg(),
+        second_mpf_and_unlocated_entry(),
         com_over_embedded(),
         overlapping_images(),
         bad_length(),
@@ -1229,41 +1262,12 @@ pub fn model(shape: &Shape, spec: StripSpec) -> Expect {
     let removed_parts: Vec<usize> = targets.iter().map(|(i, _)| *i).collect();
     let index_part = shape.parts.iter().position(|p| p.kind == K::MpfIndex);
     let index_removed = index_part.is_some_and(|i| removed_parts.contains(&i));
-    // An MPF segment the index does not describe.
-    for (i, p) in shape.parts.iter().enumerate() {
-        let second = index_part.is_some_and(|ip| ip < i)
-            && shape
-                .bytes
-                .get(p.range.start + 4..)
-                .is_some_and(|b| b.starts_with(b"MPF\0"))
-            && p.kind == K::OtherApp;
-        if (is_unindexed_mpf(shape, p) || second) && !removed_parts.contains(&i) {
-            let later = targets.iter().any(|(_, r)| r.range.start >= p.range.end);
-            let after_removed_index = index_removed && index_part.is_some_and(|ip| ip < i);
-            if later || after_removed_index {
-                return Expect::MpfNotIndexed(p.range.start);
-            }
-        }
-    }
-    // Overlap: a removed byte that is also a kept byte.
     let n = shape.bytes.len();
     let mut removed = vec![false; n];
-    let mut kept = vec![false; n];
     for (_, r) in &targets {
         for b in &mut removed[r.range.clone()] {
             *b = true;
         }
-    }
-    for (i, p) in shape.parts.iter().enumerate() {
-        let is_kept = !removed_parts.contains(&i) && p.kind != K::Stray;
-        if is_kept {
-            for b in &mut kept[p.range.clone()] {
-                *b = true;
-            }
-        }
-    }
-    if let Some(at) = (0..n).find(|&i| removed[i] && kept[i]) {
-        return Expect::Overlap(at);
     }
     // An index entry that is no image, pointing inside the input, with a removal
     // between the header and the byte it points at.
@@ -1281,6 +1285,35 @@ pub fn model(shape: &Shape, spec: StripSpec) -> Expect {
                 return Expect::MpfNotIndexed(shape.parts[ip].range.start);
             }
         }
+    }
+    // An MPF segment the index does not describe.
+    for (i, p) in shape.parts.iter().enumerate() {
+        let second = index_part.is_some_and(|ip| ip < i)
+            && shape
+                .bytes
+                .get(p.range.start + 4..)
+                .is_some_and(|b| b.starts_with(b"MPF\0"))
+            && p.kind == K::OtherApp;
+        if (is_unindexed_mpf(shape, p) || second) && !removed_parts.contains(&i) {
+            let later = targets.iter().any(|(_, r)| r.range.start >= p.range.end);
+            let after_removed_index = index_removed && index_part.is_some_and(|ip| ip < i);
+            if later || after_removed_index {
+                return Expect::MpfNotIndexed(p.range.start);
+            }
+        }
+    }
+    // Overlap: a removed byte that is also a kept byte.
+    let mut kept = vec![false; n];
+    for (i, p) in shape.parts.iter().enumerate() {
+        let is_kept = !removed_parts.contains(&i) && p.kind != K::Stray;
+        if is_kept {
+            for b in &mut kept[p.range.clone()] {
+                *b = true;
+            }
+        }
+    }
+    if let Some(at) = (0..n).find(|&i| removed[i] && kept[i]) {
+        return Expect::Overlap(at);
     }
     // Patches.
     let mut patches = Vec::new();

@@ -741,18 +741,8 @@ mod rewrite_invariants {
         let removed_in = |a: usize, b: usize| removed[a..b].iter().filter(|x| **x).count();
 
         // MpfNotIndexed (and its two documented extensions).
-        for (i, s) in w.segs.iter().enumerate() {
-            let mpf_like = typed[i] == T::App && s.marker == 0xE2 && starts(s, b"MPF\0");
-            let is_index = mpf.as_ref().is_some_and(|(k, _)| *k == i);
-            if !mpf_like || is_index || !kept_segment[i] {
-                continue;
-            }
-            let later = removed[s.end..].iter().any(|b| *b);
-            let after_removed_index = index_removed && mpf.as_ref().is_some_and(|(k, _)| *k < i);
-            if later || after_removed_index {
-                return Pred::MpfNotIndexed(s.off);
-            }
-        }
+        // Pinned order (the library's): the index's own unlocated entries first,
+        // then the other `MPF\0` segments.
         if let (Some((ki, m)), false) = (&mpf, spec.contains(Category::EmbeddedImage)) {
             let located: Vec<usize> = images.iter().map(|(k, _)| *k).collect();
             for (k, &(_, _, _, offset)) in m.entries.iter().enumerate().skip(1) {
@@ -765,6 +755,18 @@ mod rewrite_invariants {
                 if pointed < len && removed[m.header..=pointed].iter().any(|b| *b) {
                     return Pred::MpfNotIndexed(w.segs[*ki].off);
                 }
+            }
+        }
+        for (i, s) in w.segs.iter().enumerate() {
+            let mpf_like = typed[i] == T::App && s.marker == 0xE2 && starts(s, b"MPF\0");
+            let is_index = mpf.as_ref().is_some_and(|(k, _)| *k == i);
+            if !mpf_like || is_index || !kept_segment[i] {
+                continue;
+            }
+            let later = removed[s.end..].iter().any(|b| *b);
+            let after_removed_index = index_removed && mpf.as_ref().is_some_and(|(k, _)| *k < i);
+            if later || after_removed_index {
+                return Pred::MpfNotIndexed(s.off);
             }
         }
 

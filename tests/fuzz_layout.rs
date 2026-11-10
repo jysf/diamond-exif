@@ -5996,7 +5996,7 @@ fn rewrite_guards_are_not_constant() {
 #[test]
 fn rewrite_seeds_are_committed_and_cover_every_fixture_and_policy_class() {
     let seeds = rewrite_seed_files();
-    assert_eq!(seeds.len(), 126, "the rewrite_jpeg seed count is pinned");
+    assert_eq!(seeds.len(), 129, "the rewrite_jpeg seed count is pinned");
     let names: Vec<&str> = seeds.iter().map(|(n, _)| n.as_str()).collect();
     // Every SPEC-019 shape and every strip fixture, under All, Everything and a
     // custom mask.

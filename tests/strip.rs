@@ -801,6 +801,18 @@ fn an_index_entry_that_is_no_image_is_not_shifted_under_it() {
 }
 
 #[test]
+fn an_unlocated_index_entry_is_reported_before_a_second_mpf_segment() {
+    // Found by the fuzzer: both refusals apply; the pinned order reports the
+    // index's own entry (at the index segment) first.
+    let s = shape("second-mpf-unlocated-entry");
+    let index = s.parts_of(K::MpfIndex)[0].start;
+    assert_eq!(
+        strip(&s.bytes, policy("free_text")).unwrap_err(),
+        StripError::MpfNotIndexed { offset: index }
+    );
+}
+
+#[test]
 fn a_comment_over_a_kept_embedded_image_is_overlap() {
     let s = shape("com-over-embedded");
     let image = s.parts_of(K::Image)[0].start;
