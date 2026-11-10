@@ -94,10 +94,20 @@ cost:
       duration_minutes: 20
       recorded_at: 2026-11-10
       notes: "Cost transcribed by the orchestrator from the harness final subagent_tokens 262,089 at 6.60 USD per Mtok = 1.73 USD; duration 1,174,253 ms = 19.6 min rounded to 20. tokens_total, estimated_usd and duration left null on purpose: the verifier cannot see its own token count; the orchestrator transcribes the harness's metered subagent_tokens and duration. Verdict PUNCH LIST at c1c01bd (code 1cf8bd1): one High leak sibling of H2 (IFD1 tile, JPEG-table and free-space offsets left unreferenced and unzeroed when the thumbnail goes), one Medium test gap (rule-3 per-block refusal pinned only when the bad block is last), Lows. No code changed, nothing pushed, no cycle advanced."
+    - cycle: verify
+      handoff: HANDOFF-044
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 281942
+      estimated_usd: 1.86
+      duration_minutes: 19
+      recorded_at: 2026-11-10
+      notes: "Cost transcribed by the orchestrator from the harness final subagent_tokens 281,942 at 6.60 USD per Mtok = 1.86 USD; duration 1,154,977 ms = 19.2 min rounded to 19. tokens_total, estimated_usd and duration_minutes left null on purpose: the verifier cannot see its own token count; the orchestrator transcribes the harness's metered subagent_tokens and duration. Verdict PUNCH LIST at e4062f3 (code 4911058): one Medium (the closed-world allow-lists are by tag only; a field of type 13 IFD makes an allow-listed IFD1 tag or any GPS tag an offset whose target stays after the IFD is removed), Lows (kept-side targets of kept offset tags unprotected; VerifyFailed Kept when a removed IFD1 holds a kept-category tag, seen on a real local file; mutant A5 survives; a pre-existing SPEC-020 rewrite_jpeg crash ebc677e5). No code changed, nothing pushed, no cycle advanced; this handback is left uncommitted in the worktree."
   totals:
-    tokens_total: 1473189
-    estimated_usd: 9.72
-    session_count: 3
+    tokens_total: 1755131
+    estimated_usd: 11.58
+    session_count: 4
 ---
 
 # SPEC-021: JPEG in-place IFD entry deletion with scrub: `Gps`, `GpsAndDevice`, `AllPii` (thumbnail and MakerNote removed whole), never grow, never relocate
