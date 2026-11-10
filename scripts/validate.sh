@@ -7,18 +7,15 @@
 # any violation — the CI gate contract (DEC-001 §2, exit 1).
 #
 # Two scopes, on purpose:
-#   * Required-KEYS check — specs + patches + spikes. Schema-specific, so it
-#     stays scoped to the lanes whose schema it knows.
-#   * Front-matter PARSE gate (SPEC-016) — EVERY *.md under projects/ and the
-#     decisions dir (handoffs/ and patches/ live under projects/). Schema-
-#     agnostic: it only asks whether a real YAML parser can read the front
-#     matter at all, which generalises to every artifact this repo ships. The
-#     key check never parsed, so an artifact no parser could read was reported
-#     "valid" — one shipped and was archived (SPEC-016 Context). See
-#     front_matter_parse_report() in _lib.sh.
+#   * Required-KEYS check — specs, patches, spikes. Schema-specific, so it stays
+#     scoped to the lanes whose schema it knows.
+#   * Front-matter PARSE check (v0.6.41) — every *.md under projects/ and the
+#     decisions dir, handoffs included. It only asks whether the front matter
+#     parses at all. The key check never parsed, so a file no parser could read
+#     was reported valid (irradiance SPEC-010). Uses ruby when present, else a
+#     weaker bash check, and says which (see front_matter_parse_report).
 # Cost recording on SHIPPED specs is a separate gate (`just cost-audit`);
-# decision records are linted by `just decisions-audit`. This validator is the
-# place to grow stage/brief checks over time.
+# decision records are linted by `just decisions-audit`.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/_lib.sh
@@ -72,6 +69,7 @@ depends_notes=""
 actual_notes=""
 roadmap_notes=""
 verdict_notes=""
+basis_notes=""
 closed_notes=""
 
 while IFS= read -r pdir; do
@@ -120,6 +118,21 @@ while IFS= read -r pdir; do
                 *) verdict_notes="${verdict_notes}    ${name}: verify_verdict='${vv}'"$'\n' ;;
             esac
         fi
+        for vr in $(get_spec_verify_rounds "$f"); do
+            case "$VALID_VERDICT" in
+                *" $vr "*) : ;;
+                *) verdict_notes="${verdict_notes}    ${name}: verify_rounds has '${vr}'"$'\n' ;;
+            esac
+        done
+
+        # Cost session `basis:` — open set, advisory (docs/cost-tracking.md "Basis").
+        while IFS= read -r cb; do
+            [ -n "$cb" ] || continue
+            case "$SUGGESTED_COST_BASIS" in
+                *" $cb "*) : ;;
+                *) basis_notes="${basis_notes}    ${name}: basis='${cb}'"$'\n' ;;
+            esac
+        done < <(list_cost_session_bases "$f" | sort -u)
 
         # `depends_on:` refs. ADVISORY only — a dangling ref is collected here and
         # never counted as an offender, so a spec that names a not-yet-created
@@ -183,11 +196,13 @@ while IFS= read -r pdir; do
     fi
 
     # `closed_reason` (optional, stamped at close). Open set, advisory only.
+    # `|| true`: a project folder with no brief.md made awk exit 2 here, which
+    # under set -e ended validate with exit 2 and no message.
     pname=$(basename "$pdir")
     cr=$(awk '
         /^---$/ { f = !f; next } !f { next }
         /^closed_reason:/ { v = $2; if (v != "null" && v != "") print v; exit }
-    ' "${pdir}/brief.md" 2>/dev/null)
+    ' "${pdir}/brief.md" 2>/dev/null || true)
     if [ -n "$cr" ]; then
         case "$SUGGESTED_CLOSED_REASON" in
             *" $cr "*) : ;;
@@ -288,22 +303,21 @@ done < <(find_all_spikes)
 if ! command -v ruby >/dev/null 2>&1; then
     die "validate: the front-matter parse gate needs 'ruby' (ships with macOS and the GitHub runners) and it is not on PATH. Refusing to report green on an unparsed check — install ruby, or move the gate to a parser that is present (SPEC-016 AC1)."
 fi
+# ── Front-matter PARSE check ────────────────────────────────────────────────
+# Runs the parser to a temp file with its exit code captured — NOT in a
+# `done < <(…)` loop, which hides a crash from `set -e` and would report green.
+# Two more guards against a check that silently didn't run: the parser must
+# report having examined every file it was given (SCANNED), and a non-zero
+# exit with no FAIL line is a crash, not a verdict.
+PARSER=$(fm_parser)
 parse_targets=()
 while IFS= read -r f; do
     [ -n "$f" ] && parse_targets+=("$f")
 done < <(find "${REPO_ROOT}/projects" "$(decisions_dir)" -type f -name '*.md' 2>/dev/null | sort)
 if [ "${#parse_targets[@]}" -gt 0 ]; then
-    # ⚠ The mute-death this spec closes (SPEC-023, §16 rule 3 / DEC-017): a
-    # process substitution `done < <(front_matter_parse_report …)` hides the
-    # oracle's exit status from `set -e`, so a ruby fault that is NOT a
-    # Psych::SyntaxError — an unreadable file, an invalid UTF-8 byte that makes
-    # `rstrip` raise — could crash the parser mid-run and still leave this gate
-    # reporting green "0 … parseable". So: run the oracle to a temp file with its
-    # rc CAPTURED, assert it SCANNED every target it was handed (the completion
-    # sentinel), and a non-zero rc with no FAIL line is a crash, not a verdict.
     parse_report="$(mktemp)"
     set +e
-    front_matter_parse_report "${parse_targets[@]}" > "$parse_report"; parse_rc=$?
+    front_matter_parse_report "${parse_targets[@]}" > "$parse_report" 2>&1; parse_rc=$?
     set -e
     scanned=0
     parse_fails=0
@@ -321,19 +335,13 @@ if [ "${#parse_targets[@]}" -gt 0 ]; then
                 ;;
         esac
     done < "$parse_report"
+    parse_tail=$(tail -n 3 "$parse_report" | tr '\n' ' ')
     rm -f "$parse_report"
-    # The oracle examined every target → it ran to completion. A short count
-    # means it died before the sentinel, which an exit-swallowing process sub
-    # would have reported green.
     if [ "$scanned" -ne "${#parse_targets[@]}" ]; then
-        die "validate: the front-matter parser examined ${scanned} of ${#parse_targets[@]} target(s) before stopping — it crashed mid-run rather than finishing. Refusing to report green on a parse check that did not complete (SPEC-023, §16 rule 3 / DEC-017)."
+        die "validate: the ${PARSER} front-matter check examined ${scanned} of ${#parse_targets[@]} file(s) before stopping, so it did not finish. Refusing to report green. Last output: ${parse_tail}"
     fi
-    # A non-zero rc is only legitimate when it carries at least one FAIL (that is
-    # how the oracle signals an unparseable file). rc≠0 with zero FAILs is a
-    # crash for some other reason — a wrong parser API, a ruby fault — and must
-    # not pass as green.
     if [ "$parse_rc" -ne 0 ] && [ "$parse_fails" -eq 0 ]; then
-        die "validate: the front-matter parser exited ${parse_rc} without naming a single unparseable file — it failed for a reason other than a parse error. Refusing to report green on a check that did not run (SPEC-023, §16 rule 3)."
+        die "validate: the ${PARSER} front-matter check exited ${parse_rc} without naming an unparseable file, so it failed for some other reason. Refusing to report green. Last output: ${parse_tail}"
     fi
 fi
 
@@ -348,8 +356,7 @@ if [ "$JSON_OUT" = 1 ]; then
         probs="${off_problems[$i]# }"
         parts=(); for tok in $probs; do parts+=("$(json_qs "$tok")"); done
         [ "${#parts[@]}" -gt 0 ] && parr=$(json_arr "${parts[@]}") || parr="[]"
-        # Parse offenders carry the parser's own message as a scalar `message`
-        # field (the problems token is a fixed slug); other offenders have none.
+        # Parse failures carry the parser's own message; other offenders have none.
         if [ -n "${off_messages[$i]}" ]; then
             items+=("$(json_obj \
                 artifact "$(json_qs "${off_names[$i]}")" \
@@ -366,7 +373,7 @@ if [ "$JSON_OUT" = 1 ]; then
     done
     [ "${#items[@]}" -gt 0 ] && arr=$(json_arr "${items[@]}") || arr="[]"
     json_emit validate "$(json_obj \
-        checked "$checked" parsed "$parsed" offenders "$offenders" ok "$([ "$offenders" -eq 0 ] && echo true || echo false)" \
+        checked "$checked" parsed "$parsed" parser "$(json_qs "$PARSER")" offenders "$offenders" ok "$([ "$offenders" -eq 0 ] && echo true || echo false)" \
         violations "$arr")"
     [ "$offenders" -gt 0 ] && exit 1
     exit 0
@@ -394,8 +401,14 @@ fi
 
 # Advisory: an unrecognized `task.verify_verdict`. Never changes the exit code.
 if [ -n "$verdict_notes" ]; then
-    warn "validate: unrecognized task.verify_verdict (advisory — expected one of${VALID_VERDICT}):"
+    warn "validate: unrecognized verify verdict (advisory — expected one of${VALID_VERDICT}):"
     printf '%s' "$verdict_notes"
+fi
+
+# Advisory: an unrecognized cost-session `basis` (open set). Never changes the exit code.
+if [ -n "$basis_notes" ]; then
+    warn "validate: unrecognized cost basis (advisory — open set, documented:${SUGGESTED_COST_BASIS}):"
+    printf '%s' "$basis_notes"
 fi
 
 # Advisory: an unrecognized `task.complexity_actual`. Never changes the exit code.
@@ -411,8 +424,13 @@ if [ -n "$depends_notes" ]; then
     printf '%s' "$depends_notes"
 fi
 
+# Advisory: no YAML parser, so the parse check was the weaker bash heuristic.
+if [ "$PARSER" = bash ]; then
+    warn "validate: front matter was checked with the bash heuristic (no ruby on PATH, or FM_PARSER=bash), which catches unclosed quotes and tab indentation only. Install ruby for a real parse."
+fi
+
 if [ "$offenders" -gt 0 ]; then
     echo ""
-    die "validate: ${offenders} artifact(s) failed front-matter validation — ${checked} checked for required keys (specs + patches + spikes), ${parsed} parsed under projects/ + decisions/. See DEC-001 §1 / docs/schema-reference.md."
+    die "validate: ${offenders} artifact(s) failed front-matter validation: ${checked} checked for required keys (specs + patches + spikes), ${parsed} parsed (${PARSER}) under projects/ + decisions/. See DEC-001 §1 / docs/schema-reference.md."
 fi
-success "validate: ${checked} artifact(s) (specs + patches + spikes) have valid required front-matter; ${parsed} artifact(s) under projects/ + decisions/ have parseable front matter."
+success "validate: ${checked} artifact(s) (specs + patches + spikes) have valid required front-matter; ${parsed} artifact(s) under projects/ + decisions/ parse (${PARSER})."

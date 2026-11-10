@@ -7,8 +7,12 @@
 # orchestrator estimating (which corrupts the cost record), the executing agent
 # self-reports into its handoff's `handback:` block and this transcribes it.
 #
-# Idempotent: a handback is stamped `synced_at` once transcribed and skipped
-# afterwards, so re-running never double-counts.
+# Idempotent twice over. A handback is stamped `synced_at` once transcribed and
+# skipped afterwards; and before appending, the spec's own cost.sessions is
+# checked, so a cycle already on the ledger is never appended again — whether an
+# earlier sync wrote it (matched by `handoff:` id) or the agent wrote it by hand
+# (same cycle + same tokens_total). The stamp alone let one cycle land twice when
+# the agent and the script both recorded it (irradiance `cost-field-has-two-owners`).
 #
 # Usage: handback-sync.sh SPEC-NNN [--json] [--dry-run]
 set -euo pipefail
@@ -44,7 +48,32 @@ sed_inplace() {
     if [ "$(uname)" = "Darwin" ]; then sed -i '' "$@"; else sed -i "$@"; fi
 }
 
-synced=0; skipped=0; pending=0; superseded=0
+# Is this handoff's cycle already on the spec's cost.sessions ledger?
+# Prints `handoff` (an entry names this handoff id), `duplicate` (an entry has
+# the same cycle and the same numeric tokens_total), or nothing.
+session_already_recorded() {
+    local spec="$1" hid="$2" cyc="$3" tok="$4"
+    awk -v hid="$hid" -v cyc="$cyc" -v tok="$tok" '
+        function check() {
+            if (ec == "") return
+            if (eh == hid) { print "handoff"; found = 1; exit }
+            if (ec == cyc && tok ~ /^[0-9]+$/ && et == tok) { print "duplicate"; found = 1; exit }
+        }
+        function val(s) { sub(/^[^:]*:[[:space:]]*/, "", s); sub(/[[:space:]]+#.*$/, "", s); gsub(/"/, "", s); return s }
+        /^---$/ { if (fm) { check(); exit } fm = 1; next }
+        !fm { exit }
+        /^cost:/ { inc = 1; next }
+        inc && /^[^[:space:]]/ { check(); inc = 0 }
+        inc && /^  [a-z_]+:/ && !/^  sessions:/ { check(); ec = ""; ins = 0; next }
+        inc && /^  sessions:/ { ins = 1; next }
+        ins && /^    - / { check(); ec = ""; et = ""; eh = "" }
+        ins && /^    (- |  )cycle:/        { ec = val($0) }
+        ins && /^      tokens_total:/      { et = val($0) }
+        ins && /^      handoff:/           { eh = val($0) }
+    ' "$spec"
+}
+
+synced=0; skipped=0; recorded=0; pending=0; superseded=0
 sync_ids=(); sync_cycles=(); sync_tokens=(); pending_ids=(); pending_why=()
 
 if [ -d "$HANDOFF_DIR" ]; then
@@ -65,6 +94,7 @@ if [ -d "$HANDOFF_DIR" ]; then
             superseded=$((superseded + 1)); continue
         fi
 
+        # `|| true`: under pipefail a zero-match grep inside $() kills the script.
         hid=$(basename "$hf" .md | grep -oE 'HANDOFF-[0-9]+' || true)
         hcycle=$(get_handoff_field "$hf" cycle)
         [ -n "$hcycle" ] || hcycle="build"
@@ -73,6 +103,11 @@ if [ -d "$HANDOFF_DIR" ]; then
         husd=$(get_handback_field "$hf" estimated_usd)
         hmin=$(get_handback_field "$hf" duration_minutes)
         hnotes=$(get_handback_field "$hf" notes)
+        hbasis=$(get_handback_field "$hf" basis)
+        # The model that actually ran, when the agent reported it. to_agent is
+        # the tier_map PREDICTION, wrong for irradiance's build 6 times in 7.
+        hagent=$(get_handback_field "$hf" agent)
+        [ -n "$hagent" ] && [ "$hagent" != "null" ] || hagent=$(get_handoff_field "$hf" to_agent)
         hsynced=$(get_handback_field "$hf" synced_at)
 
         # Already transcribed → skip (idempotence).
@@ -98,6 +133,15 @@ if [ -d "$HANDOFF_DIR" ]; then
             fi
         fi
 
+        # Already on the ledger → stamp the handoff so it isn't re-examined,
+        # but never append a second entry for the same cycle.
+        already=$(session_already_recorded "$SPEC_FILE" "$hid" "$hcycle" "${htok:-null}")
+        if [ -n "$already" ]; then
+            recorded=$((recorded + 1))
+            [ "$DRY_RUN" = 0 ] && sed_inplace "s|^  synced_at: null.*|  synced_at: $(today)|" "$hf"
+            continue
+        fi
+
         sync_ids+=("$hid"); sync_cycles+=("$hcycle"); sync_tokens+=("${htok:-null}")
 
         if [ "$DRY_RUN" = 0 ]; then
@@ -105,20 +149,38 @@ if [ -d "$HANDOFF_DIR" ]; then
             [ "$note" = "null" ] && note="transcribed from ${hid} by handback-sync"
             # Append the session entry to cost.sessions (end of the sessions list,
             # immediately before `  totals:`), preserving 4/6-space indentation.
-            awk -v cyc="$hcycle" -v agent="$(get_handoff_field "$hf" to_agent)" \
-                -v tok="${htok:-null}" -v usd="${husd:-null}" -v mins="${hmin:-null}" \
-                -v day="$(today)" -v note="$note" '
+            # `notes` is free text, so it is always written as a double-quoted
+            # YAML scalar with \ " newline and tab escaped: a raw copy of a
+            # multi-line or `#`-bearing note left the spec unparseable. It goes
+            # through ENVIRON, not -v, because -v would expand its backslashes.
+            HB_NOTE="$note" awk -v cyc="$hcycle" -v agent="$hagent" -v basis="${hbasis:-}" \
+                -v hid="$hid" -v tok="${htok:-null}" -v usd="${husd:-null}" \
+                -v mins="${hmin:-null}" -v day="$(today)" '
+                function yq(s,   out, i, c) {
+                    out = ""
+                    for (i = 1; i <= length(s); i++) {
+                        c = substr(s, i, 1)
+                        if (c == "\\") out = out "\\\\"
+                        else if (c == "\"") out = out "\\\""
+                        else if (c == "\n") out = out "\\n"
+                        else if (c == "\t") out = out "\\t"
+                        else out = out c
+                    }
+                    return "\"" out "\""
+                }
                 /^---$/ { fm = !fm; print; next }
                 fm && /^cost:/ { in_cost = 1 }
                 fm && in_cost && /^  totals:/ && !done {
                     print "    - cycle: " cyc
+                    print "      handoff: " hid
                     print "      agent: " agent
                     print "      interface: other"
+                    if (basis != "" && basis != "null") print "      basis: " basis
                     print "      tokens_total: " tok
                     print "      estimated_usd: " usd
                     print "      duration_minutes: " mins
                     print "      recorded_at: " day
-                    print "      notes: " note
+                    print "      notes: " yq(ENVIRON["HB_NOTE"])
                     done = 1
                 }
                 { print }
@@ -154,7 +216,7 @@ if [ "$JSON_OUT" = 1 ]; then
     json_emit handback-sync "$(json_obj \
         "task.id" "$(json_qs "$SPEC_ID")" \
         dry_run "$([ "$DRY_RUN" = 1 ] && echo true || echo false)" \
-        synced "$synced" already_synced "$skipped" superseded "$superseded" pending "$pending" \
+        synced "$synced" already_synced "$skipped" already_recorded "$recorded" superseded "$superseded" pending "$pending" \\
         transcribed "$sarr" awaiting "$parr")"
     [ "$pending" -gt 0 ] && exit 1
     exit 0
@@ -172,6 +234,7 @@ if [ "$synced" -gt 0 ]; then
 fi
 [ "$skipped" -gt 0 ] && printf "  ${DIM}%d handback(s) already synced — skipped${RESET}\n" "$skipped"
 [ "$superseded" -gt 0 ] && printf "  ${DIM}%d handoff(s) superseded (never dispatched) — skipped${RESET}\n" "$superseded"
+[ "$recorded" -gt 0 ] && printf "  ${DIM}%d handback(s) already on cost.sessions — not appended again${RESET}\n" "$recorded"
 
 if [ "$pending" -gt 0 ]; then
     echo ""
@@ -187,8 +250,8 @@ if [ "$pending" -gt 0 ]; then
     exit 1
 fi
 
-if [ "$synced" -eq 0 ] && [ "$skipped" -eq 0 ] && [ "$superseded" -eq 0 ]; then
+if [ "$synced" -eq 0 ] && [ "$skipped" -eq 0 ] && [ "$recorded" -eq 0 ] && [ "$superseded" -eq 0 ]; then
     echo "  ${DIM}(no handoffs found for ${SPEC_ID})${RESET}"
 else
-    success "${prefix}handback-sync: ${synced} transcribed, ${skipped} already synced, ${superseded} superseded."
+    success "${prefix}handback-sync: ${synced} transcribed, ${skipped} already synced, ${recorded} already recorded, ${superseded} superseded."
 fi
