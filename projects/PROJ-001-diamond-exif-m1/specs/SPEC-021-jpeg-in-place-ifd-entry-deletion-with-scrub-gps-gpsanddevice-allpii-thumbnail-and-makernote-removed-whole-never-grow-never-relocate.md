@@ -84,10 +84,20 @@ cost:
       duration_minutes: 24
       recorded_at: 2026-11-10
       notes: "Cost transcribed by the orchestrator from the harness final subagent_tokens 315,410 at 6.60 USD per Mtok = 2.08 USD; duration 1,434,530 ms = 23.9 min rounded to 24. Verifier cannot see its own token count; the orchestrator transcribes the metered subagent_tokens and duration from the harness. Verdict PUNCH LIST at 7697162: two High leaks on malformed input (straddling out-of-line value not scrubbed; IFD1 thumbnail bytes reachable through a second 0x0201 or through 0x0111 strips left unreferenced), one Medium test gap (rule 3 per-block refusal only tested on the first block), Lows. No code changed, nothing pushed, no cycle advanced."
+    - cycle: verify
+      handoff: HANDOFF-043
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 262089
+      estimated_usd: 1.73
+      duration_minutes: 20
+      recorded_at: 2026-11-10
+      notes: "Cost transcribed by the orchestrator from the harness final subagent_tokens 262,089 at 6.60 USD per Mtok = 1.73 USD; duration 1,174,253 ms = 19.6 min rounded to 20. tokens_total, estimated_usd and duration left null on purpose: the verifier cannot see its own token count; the orchestrator transcribes the harness's metered subagent_tokens and duration. Verdict PUNCH LIST at c1c01bd (code 1cf8bd1): one High leak sibling of H2 (IFD1 tile, JPEG-table and free-space offsets left unreferenced and unzeroed when the thumbnail goes), one Medium test gap (rule-3 per-block refusal pinned only when the bad block is last), Lows. No code changed, nothing pushed, no cycle advanced."
   totals:
-    tokens_total: 1162598
-    estimated_usd: 7.67
-    session_count: 2
+    tokens_total: 1424687
+    estimated_usd: 9.40
+    session_count: 3
 ---
 
 # SPEC-021: JPEG in-place IFD entry deletion with scrub: `Gps`, `GpsAndDevice`, `AllPii` (thumbnail and MakerNote removed whole), never grow, never relocate

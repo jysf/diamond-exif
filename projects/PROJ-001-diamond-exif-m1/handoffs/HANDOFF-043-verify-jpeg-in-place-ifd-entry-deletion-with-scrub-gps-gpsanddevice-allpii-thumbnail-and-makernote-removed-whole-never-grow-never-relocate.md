@@ -51,14 +51,14 @@ handback:
                                    #   to_agent above is a prediction from tier_map
   verdict: punch-list              # verify handoffs: approved | punch-list | rejected
   basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: null
+  tokens_total: 262089               # REAL combined count — what cost-audit reads
+  estimated_usd: 1.73              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  duration_minutes: 20
   branch: worktree-agent-a4b6cc47777fd05ee
   pr: null
   completed_at: 2026-11-10         # YYYY-MM-DD
-  notes: "tokens_total, estimated_usd and duration left null on purpose: the verifier cannot see its own token count; the orchestrator transcribes the harness's metered subagent_tokens and duration. Verdict PUNCH LIST at c1c01bd (code 1cf8bd1): one High leak sibling of H2 (IFD1 tile, JPEG-table and free-space offsets left unreferenced and unzeroed when the thumbnail goes), one Medium test gap (rule-3 per-block refusal pinned only when the bad block is last), Lows. No code changed, nothing pushed, no cycle advanced."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "Cost transcribed by the orchestrator from the harness final subagent_tokens 262,089 at 6.60 USD per Mtok = 1.73 USD; duration 1,174,253 ms = 19.6 min rounded to 20. tokens_total, estimated_usd and duration left null on purpose: the verifier cannot see its own token count; the orchestrator transcribes the harness's metered subagent_tokens and duration. Verdict PUNCH LIST at c1c01bd (code 1cf8bd1): one High leak sibling of H2 (IFD1 tile, JPEG-table and free-space offsets left unreferenced and unzeroed when the thumbnail goes), one Medium test gap (rule-3 per-block refusal pinned only when the bad block is last), Lows. No code changed, nothing pushed, no cycle advanced."
+  synced_at: 2026-11-10
 ---
 
 # HANDOFF-043: Re-verify JPEG in-place Exif entry deletion with scrub (SPEC-021, round 2)
