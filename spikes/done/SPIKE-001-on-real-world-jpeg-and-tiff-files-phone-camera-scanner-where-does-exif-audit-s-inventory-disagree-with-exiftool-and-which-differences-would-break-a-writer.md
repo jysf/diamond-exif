@@ -133,6 +133,16 @@ On these 15 real TIFF, JPEG and DNG files the audit's inventory matches ExifTool
 
 **More file types wanted** (for a second, smaller pass before or inside the writer stage): a Canon and a Sony JPEG (absolute-offset MakerNotes, the classic relocation hazard); a Samsung or Pixel motion-photo JPEG (large trailer, embedded video); a Photoshop- or Lightroom-edited JPEG (APP13/IPTC, extended XMP); a plain multi-page, tiled or strip TIFF scan (not DNG); an iPhone HEIC and a WebP (for the later stage).
 
+### Addendum (2026-11-09): second pass
+
+Added after landing, at the user's request: two edited Sony-exported JPEGs the user dropped into the same folder, and 23 public sample files downloaded with the user's approval into a scratch directory outside the repo and used locally only (ianare/exif-samples, exiftool/exiftool `t/images`, Exiv2/exiv2 `test/data`; nothing committed, no values recorded). Same tools and rules as the first pass.
+
+- **Inventory:** 0 theirs-only on all 30 TIFF and JPEG files (the 2 user files, 20 JPEGs and 4 TIFFs among the public ones, plus the first pass). Ours-only: MakerNote 0x927C (Canon, Sony, Samsung, Nikon) and PrintIM 0xC4A5 (Sony), as before; and on the GeoTIFF, `IFD0 0x87AF, 0x87B0, 0x87B1` (GeoKeyDirectory, GeoDoubleParams, GeoAsciiParams), which ExifTool expands into its `GeoTiff` group. The two user "Sony" JPEGs are edited exports (Exif 870 bytes plus XMP, no MakerNote), matched exactly.
+- **MakerNote relocation, Canon and Sony (the classic hazard), now tested:** moving the note inside the Exif block left ExifTool's view identical for 3 of 7 testable (Canon 1D Mk III, Canon 40D, Canon 5D-class) and **broke 4 of 7**: two older Canon PowerShot/IXUS notes (66 to 8 and 39 to 7 Canon tags read), a Canon EOS 20D note (145 to 48, custom functions 18 to 0), and a Sony DSC note (8 of 9 values changed). Combined with the first pass (Nikon and Apple fine), this settles it: **a MakerNote must never be relocated**; the writer's rule 'delete in place, scrub, never relocate' stands, with evidence from five vendors.
+- **A real reader gap, not silent:** a Photoshop file whose resources span two APP13 segments (32,016 and 4,036 bytes; a Photoshop 3.0 block longer than one segment) gives 0 IPTC regions and 2 JPEG issues (`RegionTooShort` for an 8BIM resource, 4,020 `StrayBytes`), while ExifTool joins them and lists 2 IPTC datasets. The audit says `issues`, not `ok`, so it is flagged, but it finds no IPTC region and a strip must remove both APP13 segments.
+- **Other shapes parsed correctly:** extended XMP (1 XMP plus 2 extended-XMP regions), three separate XMP APP1 segments, IPTC-only files with Photoshop and Adobe segments, XMP-first segment order, JFIF + ICC, and a Photoshop-edited file with XMP, IPTC and ICC.
+- **WebP:** two samples, both `unsupported` as designed. ExifTool lists 5 Exif-family entries (a 586-byte test file) and 72 Exif entries plus a Nikon MakerNote, ICC and XMP (a 188 KB Exiv2 test file): extended-format (VP8X) WebP with EXIF, XMP and ICCP chunks is real and carries a full Exif block.
+
 ### Decisions this exploration already made
 
 The spike made real choices without writing them down — that's allowed *during*,
