@@ -51,13 +51,13 @@ handback:
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
   basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: 847188             # REAL combined count — what cost-audit reads
-  estimated_usd: 5.59              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: 122
+  tokens_total: 895690             # REAL combined count — what cost-audit reads
+  estimated_usd: 5.91              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  duration_minutes: 144
   branch: worktree-agent-a4c6983a1eacb858d
   pr: null
   completed_at: 2026-11-10         # YYYY-MM-DD
-  notes: "Cost transcribed by the orchestrator from the harness final cumulative subagent_tokens after the second follow-up (847,188; 782,540 after the first, 746,836 at the first build report) at 6.60 USD per Mtok = 5.59 USD. Duration is the sum of the three runs reported by the harness: 3,942,831 + 1,149,869 + 2,246,227 ms = 122.3 min, rounded to 122. Token cumulativity is derived (each resume added tokens in proportion to its tool uses), not confirmed by the harness. Follow-ups: joined-stray-bytes harness fix (56bd4a6, 9315047); verify punch list H1 H2 M1 L1-L5 (1cf8bd1). Nothing was pushed, no PR, no cycle advanced."
+  notes: "Cost transcribed by the orchestrator from the harness final cumulative subagent_tokens after the third follow-up (895,690; 847,188 after the second, 782,540 after the first, 746,836 at the first build report) at 6.60 USD per Mtok = 5.91 USD. Duration is the sum of the four runs reported by the harness: 3,942,831 + 1,149,869 + 2,246,227 + 1,278,112 ms = 143.6 min, rounded to 144. Token cumulativity is derived (each resume added tokens in proportion to its tool uses), not confirmed by the harness. Follow-ups: joined-stray-bytes harness fix (56bd4a6, 9315047); verify round 1 punch list H1 H2 M1 L1-L5 (1cf8bd1); verify round 2 punch list H3 M2 L6-L8 (4911058). Nothing was pushed, no PR, no cycle advanced."
   synced_at: 2026-11-10
 ---
 

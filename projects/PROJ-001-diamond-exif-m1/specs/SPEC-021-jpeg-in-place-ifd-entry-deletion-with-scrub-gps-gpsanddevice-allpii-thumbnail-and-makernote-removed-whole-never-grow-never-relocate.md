@@ -69,11 +69,11 @@ cost:
       agent: claude-sonnet-5-5
       interface: other
       basis: agent-result
-      tokens_total: 847188
-      estimated_usd: 5.59
-      duration_minutes: 122
+      tokens_total: 895690
+      estimated_usd: 5.91
+      duration_minutes: 144
       recorded_at: 2026-11-10
-      notes: "Cost transcribed by the orchestrator from the harness final cumulative subagent_tokens after the second follow-up (847,188; 782,540 after the first, 746,836 at the first build report) at 6.60 USD per Mtok = 5.59 USD. Duration is the sum of the three runs reported by the harness: 3,942,831 + 1,149,869 + 2,246,227 ms = 122.3 min, rounded to 122. Token cumulativity is derived (each resume added tokens in proportion to its tool uses), not confirmed by the harness. Follow-ups: joined-stray-bytes harness fix (56bd4a6, 9315047); verify punch list H1 H2 M1 L1-L5 (1cf8bd1). Nothing was pushed, no PR, no cycle advanced."
+      notes: "Cost transcribed by the orchestrator from the harness final cumulative subagent_tokens after the third follow-up (895,690; 847,188 after the second, 782,540 after the first, 746,836 at the first build report) at 6.60 USD per Mtok = 5.91 USD. Duration is the sum of the four runs reported by the harness: 3,942,831 + 1,149,869 + 2,246,227 + 1,278,112 ms = 143.6 min, rounded to 144. Token cumulativity is derived (each resume added tokens in proportion to its tool uses), not confirmed by the harness. Follow-ups: joined-stray-bytes harness fix (56bd4a6, 9315047); verify round 1 punch list H1 H2 M1 L1-L5 (1cf8bd1); verify round 2 punch list H3 M2 L6-L8 (4911058). Nothing was pushed, no PR, no cycle advanced."
     - cycle: verify
       handoff: HANDOFF-042
       agent: claude-opus-5-5
@@ -95,8 +95,8 @@ cost:
       recorded_at: 2026-11-10
       notes: "Cost transcribed by the orchestrator from the harness final subagent_tokens 262,089 at 6.60 USD per Mtok = 1.73 USD; duration 1,174,253 ms = 19.6 min rounded to 20. tokens_total, estimated_usd and duration left null on purpose: the verifier cannot see its own token count; the orchestrator transcribes the harness's metered subagent_tokens and duration. Verdict PUNCH LIST at c1c01bd (code 1cf8bd1): one High leak sibling of H2 (IFD1 tile, JPEG-table and free-space offsets left unreferenced and unzeroed when the thumbnail goes), one Medium test gap (rule-3 per-block refusal pinned only when the bad block is last), Lows. No code changed, nothing pushed, no cycle advanced."
   totals:
-    tokens_total: 1424687
-    estimated_usd: 9.40
+    tokens_total: 1473189
+    estimated_usd: 9.72
     session_count: 3
 ---
 
