@@ -204,7 +204,9 @@ fn exif_targets(
     // there is nothing to remove from them, else ask for the entry edit.
     let in_exif = |f: &crate::audit::Finding<'_>| f.at.origin().block.is_some();
     let unreadable = spec.intersects(all9)
-        && (audited.health().failed_blocks > 0 || exif_segments.len() > meta.exif_blocks().len());
+        && (audited.health().failed_blocks > 0
+            || audited.health().exif_issues > 0
+            || exif_segments.len() > meta.exif_blocks().len());
     // Findings the audit made inside an Exif block in a category the policy
     // removes. (An Exif IFD can also hold the tags the audit files under `Xmp`,
     // `Iptc` and `Icc`; a segment-level writer cannot take those out of a kept

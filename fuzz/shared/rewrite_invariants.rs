@@ -668,8 +668,11 @@ mod rewrite_invariants {
                 }
             } else {
                 let touches_exif9 = EXIF9.iter().any(|c| spec.contains(*c));
-                let unreadable =
-                    touches_exif9 && (a.health().failed_blocks > 0 || exif_idx.len() > 16);
+                // Any walk issue of any Exif block counts as "could not be read".
+                let unreadable = touches_exif9
+                    && (a.health().failed_blocks > 0
+                        || a.health().exif_issues > 0
+                        || exif_idx.len() > 16);
                 let found: Vec<Category> = Category::ALL
                     .iter()
                     .copied()
