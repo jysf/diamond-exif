@@ -962,6 +962,82 @@ pub fn thumbnail_with_strips(be: bool) -> Build {
     b
 }
 
+pub const K_HIDDEN: &[u8] = b"CANARY-HIDDEN-DATA-0021";
+
+/// IFD1 holds a tag that carries an offset to data nothing else references
+/// (tiles, JPEG tables, free blocks, or an unknown tag).
+pub fn thumbnail_hidden_offset(be: bool, tag: u16) -> Build {
+    let mut b = full(be);
+    let first = thumb_jpeg().len();
+    let ifd1 = b.ifds.iter_mut().find(|f| f.name == "ifd1").unwrap();
+    ifd1.ents.push(Ent {
+        tag,
+        ty: LONG,
+        count: 1,
+        val: Val::ThumbAt(first),
+        canary: Some(K_HIDDEN.to_vec()),
+    });
+    b.thumb = Some([thumb_jpeg(), K_HIDDEN.to_vec()].concat());
+    b
+}
+
+/// The GPS IFD holds a tag outside 0x0000..=0x001F that points at data.
+pub fn gps_hidden_offset(be: bool) -> Build {
+    let mut b = full(be);
+    let first = thumb_jpeg().len();
+    let gps = b.ifds.iter_mut().find(|f| f.name == "gps").unwrap();
+    gps.ents.push(Ent {
+        tag: 0xF000,
+        ty: LONG,
+        count: 1,
+        val: Val::ThumbAt(first),
+        canary: Some(K_HIDDEN.to_vec()),
+    });
+    b.thumb = Some([thumb_jpeg(), K_HIDDEN.to_vec()].concat());
+    b
+}
+
+/// IFD1 with two 0x0201 and one 0x0202.
+pub fn thumbnail_two_offsets(be: bool) -> Build {
+    let mut b = full(be);
+    let ifd1 = b.ifds.iter_mut().find(|f| f.name == "ifd1").unwrap();
+    ifd1.ents.push(Ent {
+        tag: 0x0201,
+        ty: LONG,
+        count: 1,
+        val: Val::Thumb,
+        canary: None,
+    });
+    b
+}
+
+/// A KEPT Make whose 40-byte value starts at 60 and runs past the end of an
+/// 80-byte blob, and a deleted Artist whose 10 bytes sit at 60.
+pub fn kept_straddling_value(be: bool) -> Build {
+    let mut b = only_ifd0(
+        be,
+        vec![
+            short(be, 0x0112, 1),
+            Ent {
+                tag: 0x010F,
+                ty: ASCII,
+                count: 40,
+                val: Val::At(60),
+                canary: None,
+            },
+            Ent {
+                tag: 0x013B,
+                ty: ASCII,
+                count: 10,
+                val: Val::At(60),
+                canary: None,
+            },
+        ],
+    );
+    b.pad_to = Some(80);
+    b
+}
+
 /// The GPS IFD is pointed to by two entries of IFD0.
 pub fn gps_ifd_pointed_to_twice() -> Build {
     let mut b = full(false);

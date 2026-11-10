@@ -39,6 +39,36 @@ const TAG_GPS_POINTER: u16 = 0x8825;
 const TAG_THUMB_OFFSET: u16 = 0x0201;
 /// The tags the walk follows as pointers: `SubIFDs`, Exif, GPS, Interop.
 const POINTER_TAGS: [u16; 4] = [0x014A, 0x8769, TAG_GPS_POINTER, 0xA005];
+/// The tags an IFD1 may hold when it is removed whole (the allow-list; any
+/// other tag is refused as `ThumbnailNotLocated`). Each is a tag whose only
+/// offset to data is its own out-of-line value (which the planner zeroes), or
+/// the thumbnail locator pair the planner scrubs:
+/// * image description (TIFF 6.0 section 8): 0x0100 ImageWidth, 0x0101
+///   ImageLength, 0x0102 BitsPerSample, 0x0103 Compression, 0x0106
+///   PhotometricInterpretation;
+/// * text and device strings: 0x010E ImageDescription, 0x010F Make, 0x0110
+///   Model, 0x0131 Software, 0x0132 DateTime, 0x013B Artist, 0x8298 Copyright;
+/// * 0x0112 Orientation, 0x011A XResolution, 0x011B YResolution, 0x011C
+///   PlanarConfiguration, 0x0128 ResolutionUnit;
+/// * colour data stored by value: 0x013E WhitePoint, 0x013F
+///   PrimaryChromaticities, 0x0211 YCbCrCoefficients, 0x0213
+///   YCbCrPositioning, 0x0214 ReferenceBlackWhite;
+/// * 0x0201 JPEGInterchangeFormat and 0x0202 JPEGInterchangeFormatLength: the
+///   thumbnail itself (exactly one pair, checked separately).
+///
+/// Left out on purpose, because they hold offsets to data: 0x0111
+/// StripOffsets, 0x0117 StripByteCounts, 0x0144 TileOffsets, 0x0145
+/// TileByteCounts, 0x0120 and 0x0121 FreeOffsets and FreeByteCounts, 0x0207
+/// JPEGQTables, 0x0208 JPEGDCTables, 0x0209 JPEGACTables, 0x014A SubIFDs, and
+/// every tag not named here.
+const THUMB_IFD_TAGS: [u16; 24] = [
+    0x0100, 0x0101, 0x0102, 0x0103, 0x0106, 0x010E, 0x010F, 0x0110, 0x0112, 0x011A, 0x011B, 0x011C,
+    0x0128, 0x0131, 0x0132, 0x013B, 0x013E, 0x013F, 0x0201, 0x0202, 0x0211, 0x0213, 0x0214, 0x8298,
+];
+/// A removed GPS IFD may hold the tags 0x0000 to 0x001F (Exif 2.32 table of GPS
+/// attributes: every one is a value, a string or a rational array stored in its
+/// own out-of-line value) and nothing else.
+const GPS_LAST_TAG: u16 = 0x001F;
 /// Every IFD entry is 12 bytes (TIFF 6.0 section 2).
 const ENTRY_LEN: usize = 12;
 /// The TIFF header: byte-order mark, 42, offset of IFD0.
@@ -137,6 +167,32 @@ fn pointer_followed_from(kind: IfdKind, tag: u16) -> bool {
 /// Where an entry's 12 bytes start according to the walk (for a fault report).
 fn start_of(e: &Entry) -> usize {
     e.value_at().saturating_sub(8)
+}
+
+/// The bytes of a KEPT entry's out-of-line value that lie in the blob, as
+/// closely as can be known: its `payload_range` when it has one, else (a value
+/// over 4 bytes that runs past the end, or a field type with no known size) the
+/// part of it that is inside the blob, clipped, from its offset to the end of
+/// the value or of the blob. Conservative: those bytes are treated as kept, so a
+/// scrub or table patch that touches them is refused as `SharedBytes`.
+fn kept_value_range(
+    c: &Container<'_>,
+    blob: &[u8],
+    order: ByteOrder,
+    e: &Entry,
+) -> Option<Range<usize>> {
+    if let Some(r) = c.payload_range(e) {
+        return Some(r);
+    }
+    let len = e.byte_len().and_then(|l| usize::try_from(l).ok());
+    if len.is_some_and(|l| l <= 4) {
+        return None;
+    }
+    let at = usize::try_from(read_u32(blob, e.value_at(), order).ok()?).ok()?;
+    let end = len
+        .map_or(blob.len(), |l| at.saturating_add(l))
+        .min(blob.len());
+    (at < end).then_some(at..end)
 }
 
 /// The first offset at which `r` touches one of the sorted, disjoint `set`.
@@ -263,6 +319,27 @@ pub(super) fn plan_block(
                 UneditableReason::NestedIfd,
                 usize::try_from(child.offset()).unwrap_or(0),
             ));
+        }
+    }
+
+    // ── closed world: a removed IFD may hold only tags known to be offset-free
+    // beyond their own value (see the lists) ────────────────────────────────
+    for &r in &removed {
+        let ifd = ifds.get(r).ok_or_else(|| bad(0))?;
+        for entry in ifd.entries() {
+            let tag = entry.tag();
+            match ifd.kind() {
+                IfdKind::Ifd1 if !THUMB_IFD_TAGS.contains(&tag) => {
+                    return Err(refuse(
+                        UneditableReason::ThumbnailNotLocated,
+                        start_of(entry),
+                    ));
+                }
+                IfdKind::Gps if tag > GPS_LAST_TAG => {
+                    return Err(refuse(UneditableReason::PayloadUnreadable, start_of(entry)));
+                }
+                _ => {}
+            }
         }
     }
 
@@ -408,7 +485,7 @@ pub(super) fn plan_block(
         for (n, entry) in ifd.entries().iter().enumerate() {
             let is_gone = gone.get(&i).is_some_and(|s| s.contains(&n));
             if !is_gone {
-                keep.extend(c.payload_range(entry));
+                keep.extend(kept_value_range(c, blob, order, entry));
             }
         }
     }

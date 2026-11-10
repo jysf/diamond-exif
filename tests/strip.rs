@@ -2345,7 +2345,41 @@ fn leak_inputs() -> Vec<Leak> {
                 reason: UneditableReason::ThumbnailNotLocated,
                 at: None,
             },
+            Leak {
+                name: "thumbnail_two_offsets",
+                layout: exif_layout::thumbnail_two_offsets(be).layout(),
+                cats: &["thumbnail"],
+                reason: UneditableReason::ThumbnailNotLocated,
+                at: None,
+            },
+            Leak {
+                name: "gps_unknown_tag",
+                layout: exif_layout::gps_hidden_offset(be).layout(),
+                cats: &["gps"],
+                reason: UneditableReason::PayloadUnreadable,
+                at: None,
+            },
+            Leak {
+                name: "kept_straddling_make",
+                layout: exif_layout::kept_straddling_value(be).layout(),
+                cats: &["authorship"],
+                reason: UneditableReason::SharedBytes,
+                at: Some(60),
+            },
         ]
+        .into_iter()
+        .chain(
+            [0x0144u16, 0x0207, 0x0120, 0xF123]
+                .into_iter()
+                .map(|tag| Leak {
+                    name: "thumbnail_hidden_offset",
+                    layout: exif_layout::thumbnail_hidden_offset(be, tag).layout(),
+                    cats: &["thumbnail"],
+                    reason: UneditableReason::ThumbnailNotLocated,
+                    at: None,
+                }),
+        )
+        .collect::<Vec<_>>()
     }))
     .collect()
 }
@@ -2438,6 +2472,29 @@ fn a_later_block_with_a_walk_issue_still_refuses_under_every_partial_policy() {
     // Control: the first block alone strips.
     let first = exif_layout::first_entry_target().layout();
     assert!(strip(&jpeg_with(&[first.bytes]), StripPolicy::Gps).is_ok());
+}
+
+#[test]
+fn an_unclean_block_anywhere_refuses_first_middle_or_last() {
+    // HANDOFF-043 M2: a check that looks at the last block only (or skips
+    // the first) would return Ok with the coordinates left in.
+    let first = exif_records::first_block_unclean();
+    for (what, j, n) in [
+        ("first of two", first, 0usize),
+        ("middle of three", exif_records::middle_block_unclean(), 1),
+    ] {
+        let at = exif_segment_offset(&j, n);
+        for (pname, _, p) in exif_policies() {
+            assert_eq!(
+                strip(&j, p).unwrap_err(),
+                StripError::Uneditable {
+                    reason: UneditableReason::BlockNotClean,
+                    offset: at
+                },
+                "{what} {pname}"
+            );
+        }
+    }
 }
 
 #[test]

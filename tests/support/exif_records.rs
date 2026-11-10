@@ -196,6 +196,25 @@ pub fn exif_after_the_first_scan() -> Vec<u8> {
 /// entries (a walk issue, no GPS finding) with the coordinates behind it.
 pub fn second_block_unclean() -> Vec<u8> {
     let first = exif_layout::first_entry_target().layout();
+    jpeg_with(&[first.bytes, unclean_gps_blob()])
+}
+
+/// An unclean block first, then a clean one (the order a check of the last
+/// block only would pass).
+pub fn first_block_unclean() -> Vec<u8> {
+    let second = exif_layout::first_entry_target().layout();
+    jpeg_with(&[unclean_gps_blob(), second.bytes])
+}
+
+/// Three blocks, the middle one unclean.
+pub fn middle_block_unclean() -> Vec<u8> {
+    let a = exif_layout::first_entry_target().layout();
+    let c = exif_layout::last_entry_target().layout();
+    jpeg_with(&[a.bytes, unclean_gps_blob(), c.bytes])
+}
+
+/// A block whose GPS IFD declares 0xFFFF entries, coordinates behind it.
+pub fn unclean_gps_blob() -> Vec<u8> {
     let b = exif_layout::Build {
         be: false,
         ifds: vec![
@@ -223,7 +242,7 @@ pub fn second_block_unclean() -> Vec<u8> {
     let mut second = b.layout();
     let at = second.ifd("gps").table.start;
     second.bytes[at..at + 2].copy_from_slice(&0xFFFFu16.to_le_bytes());
-    jpeg_with(&[first.bytes, second.bytes])
+    second.bytes
 }
 
 /// A clean first Exif block before the scan, a second one (clean) after it.
@@ -303,6 +322,64 @@ pub fn leak_inputs_jpeg() -> Vec<(&'static str, Vec<u8>)> {
             one(exif_layout::thumbnail_with_strips(true).layout()),
         ),
         ("exif_second_block_unclean", second_block_unclean()),
+        ("exif_first_block_unclean", first_block_unclean()),
+        ("exif_middle_block_unclean", middle_block_unclean()),
+        (
+            "thumbnail_tiles_le",
+            one(exif_layout::thumbnail_hidden_offset(false, 0x0144).layout()),
+        ),
+        (
+            "thumbnail_tiles_be",
+            one(exif_layout::thumbnail_hidden_offset(true, 0x0144).layout()),
+        ),
+        (
+            "thumbnail_jpegqtables_le",
+            one(exif_layout::thumbnail_hidden_offset(false, 0x0207).layout()),
+        ),
+        (
+            "thumbnail_jpegqtables_be",
+            one(exif_layout::thumbnail_hidden_offset(true, 0x0207).layout()),
+        ),
+        (
+            "thumbnail_free_offsets_le",
+            one(exif_layout::thumbnail_hidden_offset(false, 0x0120).layout()),
+        ),
+        (
+            "thumbnail_free_offsets_be",
+            one(exif_layout::thumbnail_hidden_offset(true, 0x0120).layout()),
+        ),
+        (
+            "thumbnail_unknown_tag_le",
+            one(exif_layout::thumbnail_hidden_offset(false, 0xF123).layout()),
+        ),
+        (
+            "thumbnail_unknown_tag_be",
+            one(exif_layout::thumbnail_hidden_offset(true, 0xF123).layout()),
+        ),
+        (
+            "gps_unknown_tag_le",
+            one(exif_layout::gps_hidden_offset(false).layout()),
+        ),
+        (
+            "gps_unknown_tag_be",
+            one(exif_layout::gps_hidden_offset(true).layout()),
+        ),
+        (
+            "thumbnail_two_offsets_le",
+            one(exif_layout::thumbnail_two_offsets(false).layout()),
+        ),
+        (
+            "thumbnail_two_offsets_be",
+            one(exif_layout::thumbnail_two_offsets(true).layout()),
+        ),
+        (
+            "kept_straddling_make_le",
+            one(exif_layout::kept_straddling_value(false).layout()),
+        ),
+        (
+            "kept_straddling_make_be",
+            one(exif_layout::kept_straddling_value(true).layout()),
+        ),
         ("exif_second_block_after_scan", second_block_after_scan()),
         (
             "gps_ifd_pointed_to_twice",

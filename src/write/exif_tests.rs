@@ -767,7 +767,7 @@ fn h1_an_entry_of_a_removed_ifd_that_straddles_the_blob_end_is_payload_unreadabl
 #[test]
 fn h2_a_thumbnail_ifd1_with_other_locators_is_thumbnail_not_located() {
     type Ents = Vec<(u16, u16, u32, u32)>;
-    let cases: [(&str, Ents); 4] = [
+    let cases: [(&str, Ents); 5] = [
         (
             "second pair",
             vec![
@@ -784,6 +784,10 @@ fn h2_a_thumbnail_ifd1_with_other_locators_is_thumbnail_not_located() {
         (
             "strip byte counts",
             vec![(0x0117, 4, 1, 20), (0x0201, 4, 1, 80), (0x0202, 4, 1, 16)],
+        ),
+        (
+            "two offsets, one length",
+            vec![(0x0201, 4, 1, 80), (0x0201, 4, 1, 96), (0x0202, 4, 1, 16)],
         ),
         (
             "second length",
@@ -818,6 +822,156 @@ fn h2_a_thumbnail_ifd1_with_other_locators_is_thumbnail_not_located() {
                 UneditableReason::ThumbnailNotLocated,
                 "{what} be={be}"
             );
+        }
+    }
+}
+
+/// H3: a removed IFD1 is handled only if every entry is on the allow-list;
+/// any other tag may carry an offset to data nothing else references.
+#[test]
+fn h3_an_off_list_tag_in_a_removed_ifd1_is_thumbnail_not_located() {
+    for be in [false, true] {
+        for tag in [0x0144u16, 0x0145, 0x0207, 0x0120, 0x0121, 0xF123] {
+            let mut b = Blob::new(be, 8);
+            let ifd0 = vec![b.short(0x0112, 1)];
+            b.ifd(8, &ifd0, 26);
+            let es = vec![
+                b.long(0x0201, 80),
+                b.long(0x0202, 9),
+                E {
+                    tag,
+                    ty: 4,
+                    count: 1,
+                    val: b.w32(96),
+                },
+            ];
+            b.ifd(26, &es, 0);
+            b.data(80, &[0xFF, 0xD8, b'T', b'H', b'U', b'M', b'B', 0xFF, 0xD9]);
+            b.data(96, b"CANARY-HIDDEN-DATA!!");
+            let sel = Selection {
+                thumbnail: true,
+                thumbnail_range: Some((80, 9)),
+                ..Selection::default()
+            };
+            let r = run_on_maybe(&b.bytes, &sel);
+            assert_eq!(
+                r.unwrap_err().reason,
+                UneditableReason::ThumbnailNotLocated,
+                "tag {tag:#x} be={be}"
+            );
+        }
+    }
+}
+
+/// `run`, but tolerating an unclean walk (a 0x014A pointer at offset 96 leads
+/// to garbage): the allow-list refusal comes before anything else it matters.
+fn run_on_maybe(blob: &[u8], sel: &Selection) -> Result<BlockPlan, Refusal> {
+    let c = Container::parse(blob).unwrap();
+    plan_block(blob, &c, sel)
+}
+
+#[test]
+fn h3_an_off_list_tag_in_a_removed_gps_ifd_is_refused() {
+    for be in [false, true] {
+        for tag in [0x0020u16, 0x0100, 0xF000] {
+            let mut b = Blob::new(be, 8);
+            let es = vec![b.short(0x0112, 1), b.long(0x8825, 38)];
+            b.ifd(8, &es, 0);
+            let gps = vec![
+                b.inl(0x0001, b"N\0"),
+                E {
+                    tag,
+                    ty: 4,
+                    count: 1,
+                    val: b.w32(80),
+                },
+            ];
+            b.ifd(38, &gps, 0);
+            b.data(80, b"CANARY-HIDDEN-GPS!!!");
+            let err = run(&b.bytes, &gps_sel()).unwrap_err();
+            assert_eq!(
+                err.reason,
+                UneditableReason::PayloadUnreadable,
+                "tag {tag:#x} be={be}"
+            );
+        }
+        // Control: every tag 0x0000..=0x001F is fine.
+        let mut b = Blob::new(be, 8);
+        let es = vec![b.short(0x0112, 1), b.long(0x8825, 38)];
+        b.ifd(8, &es, 0);
+        let gps = vec![b.inl(0x0001, b"N\0"), b.long(0x001F, 5)];
+        b.ifd(38, &gps, 0);
+        assert!(run(&b.bytes, &gps_sel()).is_ok(), "be={be}");
+    }
+}
+
+/// L8: a kept entry whose value cannot be located still has bytes in the blob;
+/// they are kept, so a scrub or table patch that touches them is refused.
+#[test]
+fn l8_a_kept_entry_that_straddles_the_blob_end_protects_its_in_blob_bytes() {
+    for be in [false, true] {
+        let mut b = Blob::new(be, 8);
+        // Make (kept) 40 bytes at 60 in an 80-byte blob; Artist (deleted)
+        // 10 bytes at 60: the scrub of the Artist would zero Make's bytes.
+        let es = vec![
+            b.out(0x010F, 2, 40, 60),
+            b.short(0x0112, 1),
+            b.out(0x013B, 2, 10, 60),
+        ];
+        b.ifd(8, &es, 0);
+        b.data(60, b"CANARY-MAKE-KEPT-IN");
+        b.data(79, &[1]);
+        assert_eq!(b.bytes.len(), 80);
+        let err = run(&b.bytes, &del(&[(0, 2)])).unwrap_err();
+        assert_eq!(err.reason, UneditableReason::SharedBytes, "be={be}");
+        assert_eq!(err.at, 60);
+        // An unknown field type behaves the same.
+        let mut b = Blob::new(be, 8);
+        let es = vec![
+            E {
+                tag: 0x010F,
+                ty: 99,
+                count: 3,
+                val: b.w32(60),
+            },
+            b.short(0x0112, 1),
+            b.out(0x013B, 2, 10, 60),
+        ];
+        b.ifd(8, &es, 0);
+        b.data(60, b"CANARY-MAKE-KEPT-IN");
+        let err = run(&b.bytes, &del(&[(0, 2)])).unwrap_err();
+        assert_eq!(
+            err.reason,
+            UneditableReason::SharedBytes,
+            "unknown type be={be}"
+        );
+    }
+}
+
+/// L6: the H1 boundary: a value over 4 bytes that runs past the end.
+#[test]
+fn l6_straddling_values_of_five_and_eight_bytes_are_refused_and_an_exact_fit_is_not() {
+    for be in [false, true] {
+        for (count, at, want_err) in [
+            (5u32, 60usize, true), // 60..65 in a 62-byte blob
+            (8, 60, true),         // 60..68 in a 62-byte blob
+            (8, 54, false),        // 54..62: exact fit
+            (5, 57, false),        // 57..62: exact fit
+        ] {
+            let mut b = Blob::new(be, 8);
+            let es = vec![
+                b.short(0x0112, 1),
+                b.out(0x013B, 2, count, u32::try_from(at).unwrap()),
+            ];
+            b.ifd(8, &es, 0);
+            b.data(54, b"CANARY-ARTIST-TAIL-----------------");
+            b.bytes.truncate(62);
+            assert_eq!(b.bytes.len(), 62);
+            let r = run(&b.bytes, &del(&[(0, 1)]));
+            assert_eq!(r.is_err(), want_err, "count {count} at {at} be={be}");
+            if want_err {
+                assert_eq!(r.unwrap_err().reason, UneditableReason::PayloadUnreadable);
+            }
         }
     }
 }

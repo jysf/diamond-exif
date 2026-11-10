@@ -6426,7 +6426,7 @@ fn a_removal_that_joins_stray_bytes_into_a_marker_is_refused_and_excused_exactly
 
 /// SPEC-020's 186 seeds plus SPEC-021's 198 entry seeds plus the two
 /// joined-stray seeds.
-const REWRITE_SEEDS: usize = 477;
+const REWRITE_SEEDS: usize = 621;
 
 #[test]
 fn seed_count_is_pinned() {

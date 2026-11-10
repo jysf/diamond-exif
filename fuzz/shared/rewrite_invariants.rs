@@ -676,6 +676,27 @@ mod rewrite_invariants {
         Some(start..end)
     }
 
+    /// The bytes of a KEPT entry's out-of-line value that lie in the blob: all
+    /// of it when it is in the blob, else the in-blob part of a value over 4
+    /// bytes that runs past the end (or, for an unknown type, everything from
+    /// its offset to the end of the blob).
+    fn kept_bytes(blob: &[u8], big: bool, e: &NEnt) -> Option<Range<usize>> {
+        if let Some(r) = out_of_line(blob, big, e) {
+            return Some(r);
+        }
+        let len = type_size(e.ty)
+            .and_then(|s| s.checked_mul(u64::from(e.count)))
+            .and_then(|l| usize::try_from(l).ok());
+        if len.is_some_and(|l| l <= 4) {
+            return None;
+        }
+        let at = usize::try_from(nu32(blob, e.at.checked_add(8)?, big)?).ok()?;
+        let end = len
+            .map_or(blob.len(), |l| at.saturating_add(l))
+            .min(blob.len());
+        (at < end).then_some(at..end)
+    }
+
     /// DEC-005's table: whether an IFD of `role` follows pointer tag `tag`.
     fn n_followed(role: &str, tag: u16) -> bool {
         match tag {
@@ -1023,6 +1044,25 @@ mod rewrite_invariants {
         {
             return None;
         }
+        // Closed world (from TIFF 6.0 section 8 and Exif 2.32, typed here): a
+        // removed IFD1 may hold only these tags, a removed GPS IFD only
+        // 0x0000..=0x001F. Tags that carry offsets to data (strips, tiles,
+        // free blocks, JPEG tables) and every unknown tag are refused.
+        const IFD1_OK: [u16; 24] = [
+            0x0100, 0x0101, 0x0102, 0x0103, 0x0106, 0x010E, 0x010F, 0x0110, 0x0112, 0x011A,
+            0x011B, 0x011C, 0x0128, 0x0131, 0x0132, 0x013B, 0x013E, 0x013F, 0x0201, 0x0202,
+            0x0211, 0x0213, 0x0214, 0x8298,
+        ];
+        for &r in &removed {
+            let ok = match ifds[r].role {
+                "ifd1" => ifds[r].ents.iter().all(|e| IFD1_OK.contains(&e.tag)),
+                "gps" => ifds[r].ents.iter().all(|e| e.tag <= 0x001F),
+                _ => true,
+            };
+            if !ok {
+                return None;
+            }
+        }
         // Which entries go.
         let mut gone: Vec<(usize, usize)> = Vec::new();
         for (g, ifd) in ifds.iter().enumerate() {
@@ -1116,7 +1156,7 @@ mod rewrite_invariants {
             kept_tables.push(ifd.table.clone());
             for (n, e) in ifd.ents.iter().enumerate() {
                 if !gone.contains(&(g, n)) {
-                    keep.extend(out_of_line(blob, big, e));
+                    keep.extend(kept_bytes(blob, big, e));
                 }
             }
         }
