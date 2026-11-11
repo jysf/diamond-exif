@@ -114,6 +114,14 @@ TIFF and DNG are the same IFD engine with a different container: no segment laye
 
 ---
 
+## Failing Tests
+
+Written first in intent, built in one pass (the planner and tests landed together; red-proofs were run afterwards, see the handoff). Red-proofs: (1) the TIFF branch disabled turns 6 of 8 `strip_tiff` tests red (`Unsupported`); (2) the planner's protected-range keep set emptied turns `hostile_inputs_*` red (the self-check then catches it as `VerifyFailed`, the planner's typed `SharedBytes` is gone); (3) the oracle comparator goes red on four planted faults (`the_comparator_goes_red_on_planted_faults`, no ExifTool needed).
+
+- `tests/strip_tiff.rs` (every shape x 12 policies: length, image data, offsets, canaries, audit, idempotence; GPS and Artist inside a DNG SubIFD; page vs thumbnail IFD1; hostile: strip over a GPS value, strip offset into an IFD table, SubIFD cycle, truncated, unreadable offsets entry; BigTIFF; JPEG unchanged)
+- `tests/strip_tiff_oracle.rs` (ExifTool `-a -u -G1 -s -t -n`, 10 records in `tests/oracle-fixtures/exiftool-strip-tiff/`, live + replay + comparator red-proof)
+- `fuzz/fuzz_targets/rewrite_tiff.rs` (98 seeds, 60 s clean, 304k runs; `tests/fuzz_layout.rs::ci_fuzz_smoke_list_includes_rewrite_tiff`)
+
 ## Reflection
 
 *Appended during **ship**. Three questions, short answers.*

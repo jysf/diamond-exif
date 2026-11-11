@@ -173,7 +173,7 @@ pub fn check(spec: StripSpec, out: &Section, input: &Section) -> Result<(), Stri
     for cat in Category::ALL {
         for l in &out.lines {
             let gone = if cat == Category::Gps {
-                (l.group == "GPS" || l.tag.starts_with("GPS"))
+                l.group == "GPS" || l.tag.starts_with("GPS")
             } else {
                 names(cat).contains(&l.tag.as_str())
             };
@@ -200,7 +200,7 @@ pub fn check(spec: StripSpec, out: &Section, input: &Section) -> Result<(), Stri
         }
         let pick = |l: &Line| {
             if cat == Category::Gps {
-                (l.group == "GPS" || l.tag.starts_with("GPS"))
+                l.group == "GPS" || l.tag.starts_with("GPS")
             } else {
                 names(cat).contains(&l.tag.as_str())
             }

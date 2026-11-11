@@ -472,7 +472,13 @@ fn an_empty_plan_on_an_input_with_targets_is_still_refused() {
     let (input, _) = exif_input();
     let s = make_spec();
     assert_eq!(
-        crate::write::finish(&input, s, crate::write::jpeg::Planned::empty()).unwrap_err(),
+        crate::write::finish(
+            &input,
+            s,
+            crate::write::jpeg::Planned::empty(),
+            crate::write::Format::Jpeg
+        )
+        .unwrap_err(),
         crate::write::StripError::VerifyFailed {
             check: Check::Preview
         }

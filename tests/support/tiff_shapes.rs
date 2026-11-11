@@ -146,7 +146,7 @@ impl B {
     /// Reserve an IFD table of `n` entries (next word 0).
     pub fn ifd(&mut self, n: usize) -> usize {
         let mut t = self.w16(n as u16).to_vec();
-        t.extend(std::iter::repeat(0).take(n * 12 + 4));
+        t.extend(std::iter::repeat_n(0u8, n * 12 + 4));
         self.alloc(K::Table, &t) as usize
     }
     pub fn entry(&mut self, ifd: usize, i: usize, tag: u16, typ: u16, count: u32, v: V) {

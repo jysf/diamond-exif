@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-10
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-022
@@ -46,18 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                # completed | blocked | rejected
+  agent: claude-sonnet-5-5                      # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
+  basis: transcript                      # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 10270000               # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: null
-  branch: null
+  duration_minutes: 55
+  branch: claude/spec-022-tiff-dng-strips-26c250
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-10               # YYYY-MM-DD
+  notes: "Floor, summed live from the session transcript (62 deduplicated messages: input + cache creation + cache read + output, max output per message id); about 55 tool calls. estimated_usd left null: no rates applied. Items 1-10 done; no PR (per instruction)."                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -145,9 +145,9 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
+- **Branch / PR:** `claude/spec-022-tiff-dng-strips-26c250`, no PR (not asked)
+- **Completed at:** 2026-11-10
+- **All acceptance criteria met?** yes for items 1-10. Not done: nothing from the design. Left for the orchestrator: bookkeeping (stage/project, provenance ledger rows, a DEC-013 reflection check), and a 24 h clean fuzz run is not part of this spec.
 - **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
 
 ### Cost self-report
@@ -156,27 +156,34 @@ Mirror what you put in the `handback:` front-matter, and say where the number
 came from. **This is the number that lands in the spec** — the orchestrator
 transcribes it via `just handback-sync`, it does not estimate it.
 
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** 10270000 (floor, summed live; rule 6 of cost-tracking)
+- **Estimated USD:** null (no rates applied)
+- **Duration (minutes):** 55 (estimate)
+- **Source of the number:** session transcript (`basis: transcript`)
 
 ### Drift and new artifacts
 
 - **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
+  - none new; DEC-013 amendment D (bare TIFF and DNG: never-touch set, page vs thumbnail refusal, TIFF self-check)
 - **Deviations from spec:**
-  - [list]
+  - Tests and planner were written together, not tests first; red was shown afterwards by mutation (TIFF branch off: 6 of 8 red; protected-range keep set emptied: the hostile test goes red; comparator: 4 planted faults). Say so, do not call it test-first.
+  - An IFD1 that is a page makes every `Thumbnail`-including policy (AllPii, All, Everything) refuse the file (`ThumbnailNotLocated`), rather than strip around it: the audit calls it a thumbnail and the writer will not cut a page. Needs a user decision if multi-page TIFFs must be strippable under the presets (an audit-side page-vs-thumbnail rule, DEC-008).
+  - The fuzz target found one bug in its first 60 s run (an unreadable offsets entry with nothing to edit: `VerifyFailed{Walk}`); fixed in the planner (typed `PayloadUnreadable`), regression test added.
+  - The `rewrite_jpeg` shared harness now returns early on a classic TIFF (its naive prediction said NotAJpeg); JPEG strip behaviour itself is untouched.
+  - `tests/strip.rs::tiff_png_webp_heic_are_unsupported...` lost its TIFF half (renamed `png_webp_heic...`); TIFF is now covered by `strip_tiff.rs`.
+  - Oracle comparator is name-based over ExifTool groups (GPS, tag names per category typed by hand); XMP/IPTC/ICC carriers in the fixtures are opaque blobs, so ExifTool shows them as binary or not at all: the carrier deletion is checked by canaries in `strip_tiff.rs`, not by the oracle.
 - **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - Decide the page-versus-thumbnail rule for IFD1 in TIFF (audit-side), so presets can strip multi-page TIFFs.
+  - A 24 h `rewrite_tiff` run for the milestone gate; ExifTool run over real DNG/TIFF photos (`examples/strip_corpus.rs` is JPEG-only).
+  - Documents in the lib.rs crate doc and README still say "strips JPEG"; update at ship.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — Whether a page IFD1 under a Thumbnail policy should refuse or be left alone; I chose refuse (fail closed, matches B.4 strips form) and recorded it. Also that the plan_block "keep" set only runs when something is deleted.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — The shared `rewrite_jpeg` harness predicting NotAJpeg for TIFF (a hidden coupling to the old Unsupported answer), and `tests/fuzz_layout.rs` pinning the CI matrix string.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Write the failing tests before the planner as the handoff asks, and run the fuzz target before the oracle work, since it found the only real bug.

@@ -256,3 +256,35 @@ fn the_jpeg_path_is_unchanged() {
     assert!(out.len() < jpeg.len());
     assert!(!contains(&out, b"hi!!"));
 }
+
+/// Found by `rewrite_tiff` (first 60 s run): an offsets entry of a type that
+/// holds no integers made the self-check fail on a file the planner had
+/// accepted. The planner now refuses it, typed, even when it edits nothing.
+#[test]
+fn an_unreadable_offsets_entry_is_a_typed_refusal_even_with_no_edit() {
+    let t = tiff_shapes::tiled(false);
+    let mut bytes = t.bytes.clone();
+    let ifd0 = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]) as usize;
+    let n = usize::from(u16::from_le_bytes([bytes[ifd0], bytes[ifd0 + 1]]));
+    let e = (0..n)
+        .map(|i| ifd0 + 2 + i * 12)
+        .find(|e| bytes[*e] == 0x44 && bytes[*e + 1] == 0x01)
+        .unwrap();
+    bytes[e + 2] = 2; // ASCII
+    for policy in [
+        StripPolicy::Custom(StripSpec::none()),
+        StripPolicy::Custom(spec_of(&[Category::Jumbf])),
+        StripPolicy::AllPii,
+    ] {
+        assert!(
+            matches!(
+                strip(&bytes, policy),
+                Err(StripError::Uneditable {
+                    reason: UneditableReason::PayloadUnreadable,
+                    ..
+                })
+            ),
+            "{policy:?}"
+        );
+    }
+}

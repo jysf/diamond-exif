@@ -184,7 +184,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [tiff_ifd, jpeg_segments, rewrite_jpeg, audit, audit_render, cli_args]
+        target: [tiff_ifd, jpeg_segments, rewrite_jpeg, rewrite_tiff, audit, audit_render, cli_args]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly

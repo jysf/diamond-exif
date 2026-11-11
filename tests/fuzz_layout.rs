@@ -1394,7 +1394,7 @@ fn audit_target_is_declared_and_runs_in_ci() {
     let ci = read(".github/workflows/ci.yml");
     assert!(
         ci.contains(
-            "target: [tiff_ifd, jpeg_segments, rewrite_jpeg, audit, audit_render, cli_args]"
+            "target: [tiff_ifd, jpeg_segments, rewrite_jpeg, rewrite_tiff, audit, audit_render, cli_args]"
         ),
         "the fuzz-smoke matrix must run the audit target"
     );
@@ -6565,4 +6565,25 @@ fn ci_fuzz_smoke_list_includes_rewrite_jpeg() {
         "the fuzz-smoke matrix must run the rewrite_jpeg target"
     );
     assert!(read("app.just").contains("rewrite_jpeg"));
+}
+
+#[test]
+fn ci_fuzz_smoke_list_includes_rewrite_tiff() {
+    let fuzz = read("fuzz/Cargo.toml");
+    assert!(
+        fuzz.contains("name = \"rewrite_tiff\"") && fuzz.contains("fuzz_targets/rewrite_tiff.rs"),
+        "fuzz/Cargo.toml must declare the rewrite_tiff bin"
+    );
+    assert!(root().join("fuzz/fuzz_targets/rewrite_tiff.rs").is_file());
+    let target = read("fuzz/fuzz_targets/rewrite_tiff.rs");
+    assert!(
+        !target.contains("write::"),
+        "the harness must not reach into src/write"
+    );
+    assert!(read(".github/workflows/ci.yml").contains("rewrite_tiff"));
+    assert!(read("app.just").contains("rewrite_tiff"));
+    let seeds = std::fs::read_dir(root().join("fuzz/seeds/rewrite_tiff"))
+        .expect("read rewrite_tiff seeds")
+        .count();
+    assert!(seeds >= 50, "{seeds} rewrite_tiff seeds");
 }

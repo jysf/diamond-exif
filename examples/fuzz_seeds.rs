@@ -27,6 +27,8 @@ mod real_shapes;
 // SPEC-020: the strip fixtures.
 #[path = "../tests/support/strip_shapes.rs"]
 mod strip_shapes;
+#[path = "../tests/support/tiff_shapes.rs"]
+mod tiff_shapes;
 // SPEC-021: the Exif entry fixtures and leak inputs.
 #[path = "../tests/support/exif_layout.rs"]
 mod exif_layout;
@@ -1475,6 +1477,39 @@ fn cli_seeds() -> Vec<(String, Vec<u8>)> {
     all.into_iter().map(|(n, b)| (n.to_string(), b)).collect()
 }
 
+/// SPEC-022: the seeds of `rewrite_tiff` (same policy byte as `rewrite_jpeg`):
+/// every TIFF shape and hostile input under the presets, the empty set and a
+/// custom mask (Software+Timestamps, Thumbnail+Gps).
+fn rewrite_tiff_seeds() -> Vec<(String, Vec<u8>)> {
+    let mut inputs: Vec<(String, Vec<u8>)> = tiff_shapes::all()
+        .into_iter()
+        .map(|s| (s.name, s.bytes))
+        .collect();
+    inputs.extend(
+        tiff_shapes::hostile()
+            .into_iter()
+            .map(|(n, b)| (n.to_string(), b)),
+    );
+    let heads: [(&str, Vec<u8>); 7] = [
+        ("gps", vec![0]),
+        ("all-pii", vec![2]),
+        ("everything", vec![4]),
+        ("all", vec![7]),
+        ("none", vec![5]),
+        ("mask-sw-ts", vec![6, 0x00, 0x0A]),
+        ("mask-thumb-gps", vec![6, 0x11, 0x00]),
+    ];
+    let mut out = Vec::new();
+    for (name, bytes) in &inputs {
+        for (label, head) in &heads {
+            let mut v = head.clone();
+            v.extend_from_slice(bytes);
+            out.push((format!("tiff-{name}-{label}"), v));
+        }
+    }
+    out
+}
+
 /// SPEC-020: the seeds of `rewrite_jpeg`. Byte 0 selects the policy (4
 /// `Everything`, 7 `All`, 6 a custom set from the 16-bit little-endian mask in
 /// bytes 1 and 2, bit i meaning `Category::ALL[i]`). Every SPEC-019 shape and
@@ -1641,6 +1676,14 @@ fn main() {
         fs::write(wdir.join(name), bytes).expect("write seed");
     }
     println!("wrote {} seeds to {}", wseeds.len(), wdir.display());
+
+    let tdir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/rewrite_tiff");
+    fs::create_dir_all(&tdir).expect("create seeds dir");
+    let tseeds = rewrite_tiff_seeds();
+    for (name, bytes) in &tseeds {
+        fs::write(tdir.join(name), bytes).expect("write seed");
+    }
+    println!("wrote {} seeds to {}", tseeds.len(), tdir.display());
 
     let cdir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/cli_args");
     fs::create_dir_all(&cdir).expect("create seeds dir");

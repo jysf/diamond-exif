@@ -29,7 +29,7 @@ use crate::audit::audit;
 use crate::policy::StripSpec;
 use crate::tiff::Container;
 
-use super::exif::{mode, plan_block, select, Mode};
+use super::exif::{mode, plan_block, protected_ranges, select, Mode};
 use super::jpeg::Planned;
 use super::{EntryRecord, StripError, UneditableReason};
 
@@ -50,6 +50,11 @@ pub(super) fn plan(data: &[u8], spec: StripSpec) -> Result<Planned, StripError> 
     if audited.health().inventory_truncated {
         return Err(refuse(UneditableReason::InventoryTruncated, 0));
     }
+    // The data ranges must be knowable even when nothing is edited: the
+    // self-check compares them, so an offsets entry that cannot be read is
+    // refused here, typed, rather than by the self-check afterwards.
+    protected_ranges(data, &container)
+        .map_err(|at| refuse(UneditableReason::PayloadUnreadable, at))?;
     // A policy with no category an Exif entry can have leaves the file as is.
     // The self-check still runs on it.
     if mode(spec) == Mode::Untouched {
