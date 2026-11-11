@@ -50,15 +50,15 @@ handback:
   agent: claude-sonnet-5-5                      # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: transcript                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: 10270000               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: 55
+  basis: agent-result                      # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 249601               # REAL combined count — what cost-audit reads
+  estimated_usd: 1.65              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  duration_minutes: 13
   branch: claude/spec-022-tiff-dng-strips-26c250
   pr: null
   completed_at: 2026-11-10               # YYYY-MM-DD
-  notes: "Floor, summed live from the session transcript (62 deduplicated messages: input + cache creation + cache read + output, max output per message id); about 55 tool calls. estimated_usd left null: no rates applied. Items 1-10 done; no PR (per instruction)."                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "Orchestrator correction: tokens_total is the harness subagent_tokens (249,601; 54 tool uses; 806,266 ms = 13.4 min), the same basis as earlier specs, at 6.60 USD per Mtok = 1.65 USD. The builder self-reported 10,270,000 from its transcript counting every cache read, which is not comparable with the other specs, so it is NOT used. Builder original note: Floor, summed live from the session transcript (62 deduplicated messages: input + cache creation + cache read + output, max output per message id); about 55 tool calls. estimated_usd left null: no rates applied. Items 1-10 done; no PR (per instruction)."                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  synced_at: 2026-11-10
 ---
 
 # HANDOFF-046: Build SPEC-022 TIFF and DNG in-place strip

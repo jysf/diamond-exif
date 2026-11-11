@@ -6,7 +6,7 @@
 task:
   id: SPEC-022
   type: story                      # epic | story | task | bug | chore
-  cycle: design  # frame | design | build | verify | ship
+  cycle: verify  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -63,11 +63,21 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: null
-  sessions: []
+  sessions:
+    - cycle: build
+      handoff: HANDOFF-046
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 249601
+      estimated_usd: 1.65
+      duration_minutes: 13
+      recorded_at: 2026-11-10
+      notes: "Orchestrator correction: tokens_total is the harness subagent_tokens (249,601; 54 tool uses; 806,266 ms = 13.4 min), the same basis as earlier specs, at 6.60 USD per Mtok = 1.65 USD. The builder self-reported 10,270,000 from its transcript counting every cache read, which is not comparable with the other specs, so it is NOT used. Builder original note: Floor, summed live from the session transcript (62 deduplicated messages: input + cache creation + cache read + output, max output per message id); about 55 tool calls. estimated_usd left null: no rates applied. Items 1-10 done; no PR (per instruction)."
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 249601
+    estimated_usd: 1.65
+    session_count: 1
 ---
 
 # SPEC-022: TIFF and DNG in-place strip: never touch strip or tile offsets, SubIFDs, TIFF writer fuzz target
