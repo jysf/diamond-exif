@@ -1158,6 +1158,11 @@ questions:
       which is out of scope for M1. Suggested DEC-013 wording: a removed MakerNote is scrubbed over its declared
       range only; the preview says KeptUnread for what a policy that keeps it does not open, and says nothing
       about data a removed note pointed to elsewhere in the block.
+      HANDOFF-045 (L14), same class: kept opaque tags with internal offsets, e.g. 0xC634 (DNGPrivateData) or
+      a kept 0x0190, 0x8290, 0xFE00 or 0x888A (the last four are refused as HiddenPointer under a partial
+      policy), are protected by their own value range only. A kept 0xC634 whose payload overlaps a deleted
+      value gets its target zeroed (integrity, not a leak); the test
+      l14_a_kept_opaque_tag_is_protected_by_its_own_value_only pins this. Safe to ship with this note.
 
   - id: writer-refusals-beyond-the-spec
     question: "The build added three Uneditable reasons the spec did not list: HiddenPointer, NestedIfd, PayloadUnreadable. Ratify them in the DEC-013 amendment?"
@@ -1205,6 +1210,33 @@ questions:
       inside a located image, is MpfNotIndexed (typed) instead of a VerifyFailed MpfFields.
       Also built beyond the spec: the check that no two IFD tables overlap runs for every partial policy
       whether or not anything is edited (the harness guard LibraryOkNaiveUnclean names it).
+      HANDOFF-045 round (no new reason): (H4) an entry with 0x0190 (GlobalParametersIFD), 0x888A
+      (LeafSubIFD), 0x8290 (KodakIFD) or 0xFE00 (KDC_IFD), in any IFD kind and of any type, is HiddenPointer
+      under every partial policy (EXIFTOOL_SUBDIRECTORY_TAGS in src/write/exif.rs; nothing is followed). The
+      four come from a scan of every tag id 0x0000..=0xFFFF as a LONG pointer in IFD0, the Exif IFD, IFD1 and
+      GPS against ExifTool 13.55: no other tag opened an IFD. Whole policies are unchanged. (M4) an entry in
+      an Interop IFD whose tag the audit table would categorise in the policy's set (as in IFD0 or Exif) is
+      PayloadUnreadable (the nearest existing reason): the audit reports nothing in Interop (DEC-008), so the
+      entry cannot be deleted and the policy cannot be honoured. Neither the audit nor DEC-008 changed.
+      (L13) a removed GPS IFD whose next-IFD word is non-zero is NestedIfd (nothing reads that word, so the
+      IFD it names would be left behind; IFD1's word is ChainAfterThumbnail). No local file has any of these
+      (counts: 0 entries with the four tags, 0 category tags in Interop, 0 GPS next words).
+
+  - id: exiftool-subdirectory-pointer-tags
+    question: "The set of IFD pointer tags ExifTool opens (0x014A, 0x8769, 0x8825, 0xA005 plus 0x0190, 0x888A, 0x8290, 0xFE00) is wider than DEC-005's four. Record the ExifTool-derived set in a DEC-005 note so the audit can name what it does not read?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      The walk follows the four DEC-005 tags only; the writer refuses the other four (HiddenPointer, H4)
+      because ExifTool opens them as sub-IFDs (0x0190 with the Exif table, so a GPS IFD behind it is printed
+      as GPS:GPSLatitude). The audit still reports nothing under them (read parity since SPEC-019). Options:
+      (a) DEC-005 note listing the ExifTool 13.55 set (the scan script is a 40-line generator over all 65,536
+      tag ids), the writer keeps refusing; (b) the walk follows them (changes the audit, DEC-008 scope).
+      The scan covered pointer entries in IFD0, the Exif IFD, IFD1 and a GPS IFD; Interop and SubIFD hosts
+      were not scanned.
 
   - id: partial-policy-refuses-unreadable-exif-for-xmp-icc-iptc
     question: "Custom sets that name only Xmp, Iptc or Icc are now partial (those tags can sit in an Exif IFD), so an Exif block with a walk issue refuses them as Uneditable; under SPEC-020 they returned Ok. Intended?"

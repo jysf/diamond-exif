@@ -154,6 +154,10 @@ Constraints: `panic-free-library` (five-lint deny set: no unchecked `+`, `-`, `*
 | removed IFD1 holding a kept-category tag (e.g. Software under AllPii) | a removed IFD takes everything it holds | `ThumbnailNotLocated` up front (typed), check 7(b) not weakened |
 | field types | every entry is data of its declared type | closed-world: deleted and removed-IFD entries must be types 1-12 else `PayloadUnreadable` (13, 18, 129, unknown refuse); kept 13/18 entries keep offset..blob end; GPS pointer entries exempt |
 | MPF field patch location | a patched field is clear of the index structure and the images | `MpfNotIndexed` (typed) when it lies on the index TIFF header or IFD0 table or inside a located image |
+| IFD pointer tags ExifTool opens that the walk does not follow (0x0190, 0x888A, 0x8290, 0xFE00) | the four DEC-005 tags are all the pointers | `HiddenPointer` for an entry with one of the four in any IFD kind and of any type (`EXIFTOOL_SUBDIRECTORY_TAGS`); set from an ExifTool 13.55 scan of all 65,536 tag ids; question `exiftool-subdirectory-pointer-tags` |
+| category tags in the Interop IFD | the audit reports every tag of a category | the audit reports none there (DEC-008, unchanged); a partial policy whose set holds the category of an Interop entry (as in IFD0/Exif) refuses with `PayloadUnreadable` |
+| next-IFD word of a removed GPS IFD | nothing hangs off a GPS IFD | `NestedIfd` when non-zero (IFD1's word is `ChainAfterThumbnail`) |
+| kept opaque tags with internal offsets (e.g. 0xC634) | protected by their own value | known limit, pinned by `l14_...`, noted in `makernote-internal-offsets` |
 | MakerNote internals | its declared range is all of it | NOT closed: question `makernote-internal-offsets` |
 
 ## Questions raised (all in `guidance/questions.yaml`, status open)
