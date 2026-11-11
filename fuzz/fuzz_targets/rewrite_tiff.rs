@@ -5,7 +5,8 @@
 //! mask in bytes 1 and 2, 7 and above `All`); the rest is the TIFF candidate.
 //! Invariants, for every input and policy:
 //!
-//! * no panic; a refusal is typed: only `Uneditable` for a TIFF (never
+//! * for input `sniff` calls TIFF (anything else takes the JPEG path and only
+//!   has to not panic; `rewrite_jpeg` checks it): no panic; a refusal is typed: only `Uneditable` for a TIFF (never
 //!   `Unstrippable`, `Overlap`, `MpfNotIndexed`, or the self-check's
 //!   `VerifyFailed`, which would mean the plan and the audit disagree);
 //! * on `Ok`: the output has the input's length and the same 8 header bytes;
@@ -96,7 +97,18 @@ fn protected(bytes: &[u8]) -> Vec<(usize, usize)> {
 
 fuzz_target!(|data: &[u8]| {
     let (policy, tiff) = decode(data);
+    // The invariants below are TIFF-specific. Input the sniffer calls JPEG (for
+    // instance `FF D8` followed by a TIFF header) takes the JPEG path in
+    // `strip`, which has its own typed refusals (`Unstrippable`, `Overlap`, ...)
+    // and is checked by `rewrite_jpeg`; here it only has to not panic.
+    let is_tiff = matches!(
+        exif_core::audit::sniff(tiff),
+        exif_core::audit::Sniffed::Tiff
+    );
     let first = strip(tiff, policy);
+    if !is_tiff {
+        return;
+    }
     match first {
         Ok(out) => {
             let b = out.bytes();
@@ -125,14 +137,7 @@ fuzz_target!(|data: &[u8]| {
         }
         Err(StripError::Uneditable { .. }) => {}
         Err(StripError::Unsupported { .. }) | Err(StripError::NotJpeg) => {
-            // Only for input that is not a classic TIFF.
-            assert!(
-                !matches!(
-                    exif_core::audit::sniff(tiff),
-                    exif_core::audit::Sniffed::Tiff
-                ),
-                "a classic TIFF was called unsupported"
-            );
+            panic!("a classic TIFF was called unsupported");
         }
         Err(other) => panic!("a TIFF got an untyped refusal: {other:?}"),
     }
