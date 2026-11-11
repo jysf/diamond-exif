@@ -104,10 +104,20 @@ cost:
       duration_minutes: 19
       recorded_at: 2026-11-10
       notes: "Cost transcribed by the orchestrator from the harness final subagent_tokens 281,942 at 6.60 USD per Mtok = 1.86 USD; duration 1,154,977 ms = 19.2 min rounded to 19. tokens_total, estimated_usd and duration_minutes left null on purpose: the verifier cannot see its own token count; the orchestrator transcribes the harness's metered subagent_tokens and duration. Verdict PUNCH LIST at e4062f3 (code 4911058): one Medium (the closed-world allow-lists are by tag only; a field of type 13 IFD makes an allow-listed IFD1 tag or any GPS tag an offset whose target stays after the IFD is removed), Lows (kept-side targets of kept offset tags unprotected; VerifyFailed Kept when a removed IFD1 holds a kept-category tag, seen on a real local file; mutant A5 survives; a pre-existing SPEC-020 rewrite_jpeg crash ebc677e5). No code changed, nothing pushed, no cycle advanced; this handback is left uncommitted in the worktree."
+    - cycle: verify
+      handoff: HANDOFF-045
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 343329
+      estimated_usd: 2.27
+      duration_minutes: 34
+      recorded_at: 2026-11-10
+      notes: "Cost transcribed by the orchestrator from the harness final subagent_tokens 343,329 at 6.60 USD per Mtok = 2.27 USD; duration 2,062,990 ms = 34.4 min rounded to 34. tokens_total, estimated_usd and duration_minutes left null on purpose: the verifier cannot see its own token count; the orchestrator transcribes the harness's metered subagent_tokens and duration. Verdict PUNCH LIST at dbf3567 (code c1958b2): one High (IFD pointer tags that ExifTool follows but the walk and the HiddenPointer guard do not know, 0x0190 GlobalParametersIFD first; a GPS IFD behind it survives Gps and AllPii with ExifTool still printing GPS:GPSLatitude), one Medium (category tags inside the Interop IFD; ExifTool prints InteropIFD:Artist after an Authorship strip; DEC-008 scope), Lows (target of a removed GPS IFD's next-word left; kept-target protection by tag only; five surviving mutants). No code changed, nothing pushed, no cycle advanced."
   totals:
-    tokens_total: 1755131
-    estimated_usd: 11.58
-    session_count: 4
+    tokens_total: 2098460
+    estimated_usd: 13.85
+    session_count: 5
 ---
 
 # SPEC-021: JPEG in-place IFD entry deletion with scrub: `Gps`, `GpsAndDevice`, `AllPii` (thumbnail and MakerNote removed whole), never grow, never relocate

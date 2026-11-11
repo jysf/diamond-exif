@@ -51,14 +51,14 @@ handback:
                                    #   to_agent above is a prediction from tier_map
   verdict: punch-list              # verify handoffs: approved | punch-list | rejected
   basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: null
+  tokens_total: 343329               # REAL combined count — what cost-audit reads
+  estimated_usd: 2.27              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  duration_minutes: 34
   branch: worktree-agent-a24756c36e015cd68
   pr: null
   completed_at: 2026-11-10         # YYYY-MM-DD
-  notes: "tokens_total, estimated_usd and duration_minutes left null on purpose: the verifier cannot see its own token count; the orchestrator transcribes the harness's metered subagent_tokens and duration. Verdict PUNCH LIST at dbf3567 (code c1958b2): one High (IFD pointer tags that ExifTool follows but the walk and the HiddenPointer guard do not know, 0x0190 GlobalParametersIFD first; a GPS IFD behind it survives Gps and AllPii with ExifTool still printing GPS:GPSLatitude), one Medium (category tags inside the Interop IFD; ExifTool prints InteropIFD:Artist after an Authorship strip; DEC-008 scope), Lows (target of a removed GPS IFD's next-word left; kept-target protection by tag only; five surviving mutants). No code changed, nothing pushed, no cycle advanced."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "Cost transcribed by the orchestrator from the harness final subagent_tokens 343,329 at 6.60 USD per Mtok = 2.27 USD; duration 2,062,990 ms = 34.4 min rounded to 34. tokens_total, estimated_usd and duration_minutes left null on purpose: the verifier cannot see its own token count; the orchestrator transcribes the harness's metered subagent_tokens and duration. Verdict PUNCH LIST at dbf3567 (code c1958b2): one High (IFD pointer tags that ExifTool follows but the walk and the HiddenPointer guard do not know, 0x0190 GlobalParametersIFD first; a GPS IFD behind it survives Gps and AllPii with ExifTool still printing GPS:GPSLatitude), one Medium (category tags inside the Interop IFD; ExifTool prints InteropIFD:Artist after an Authorship strip; DEC-008 scope), Lows (target of a removed GPS IFD's next-word left; kept-target protection by tag only; five surviving mutants). No code changed, nothing pushed, no cycle advanced."
+  synced_at: 2026-11-10
 ---
 
 # HANDOFF-045: Re-verify JPEG in-place Exif entry deletion with scrub (SPEC-021, round 4)
