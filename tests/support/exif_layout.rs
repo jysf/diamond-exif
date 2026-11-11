@@ -1245,3 +1245,60 @@ pub fn bad_exif_pointer() -> Layout {
 pub fn ifd0_emptied() -> Build {
     every_entry_target()
 }
+
+// ── HANDOFF-045 (round 4) ───────────────────────────────────────────────────
+
+/// IFD0 holds `tag` (an IFD pointer tag ExifTool opens and the walk does not),
+/// leading to an IFD that holds a pointer to a GPS IFD with canaried values
+/// (`behind == "gps"`) or an Artist (`behind == "artist"`).
+pub fn exiftool_subdirectory(be: bool, tag: u16, behind: &str) -> Build {
+    let ifd0 = ifd("ifd0", vec![short(be, 0x0112, 1), ptr(tag, "hidden")], None);
+    let mut ifds = vec![ifd0];
+    if behind == "gps" {
+        ifds.push(ifd("hidden", vec![ptr(0x8825, "gps")], None));
+        ifds.push(ifd(
+            "gps",
+            vec![
+                Ent {
+                    tag: 0x0001,
+                    ty: ASCII,
+                    count: 2,
+                    val: Val::Data(b"N\0".to_vec()),
+                    canary: None,
+                },
+                canaried(rational(be, 0x0002, &K_LAT)),
+            ],
+            None,
+        ));
+    } else {
+        ifds.push(ifd("hidden", vec![ascii(0x013B, K_SUBARTIST)], None));
+    }
+    Build {
+        be,
+        ifds,
+        thumb: None,
+        pad_to: None,
+    }
+}
+
+/// The Interop IFD holds an Artist (a category tag the audit does not report
+/// there, DEC-008).
+pub fn interop_with_a_category_tag(be: bool) -> Build {
+    let mut b = full(be);
+    let f = b.ifds.iter_mut().find(|f| f.name == "interop").unwrap();
+    f.ents.push(ascii(0x013B, K_SUBARTIST));
+    b
+}
+
+/// The GPS IFD's next-IFD word leads to another IFD with a canaried value.
+pub fn gps_with_a_next_word(be: bool) -> Build {
+    let mut b = full(be);
+    let f = b.ifds.iter_mut().find(|f| f.name == "gps").unwrap();
+    f.next = Some("tail");
+    b.ifds.push(ifd(
+        "tail",
+        vec![canaried(rational(be, 0x0002, &K_LON))],
+        None,
+    ));
+    b
+}

@@ -1294,3 +1294,227 @@ fn l3_overlapping_ifd_tables_are_shared_bytes_even_when_only_one_is_edited() {
         UneditableReason::SharedBytes
     );
 }
+
+// ── HANDOFF-045 (round 4) ───────────────────────────────────────────────────
+
+/// H4: ExifTool opens these tags as sub-IFDs; the walk does not. In any IFD kind
+/// and of any type, a partial policy refuses them as a hidden pointer.
+#[test]
+fn h4_an_exiftool_subdirectory_pointer_tag_is_a_hidden_pointer() {
+    for be in [false, true] {
+        for tag in [0x0190u16, 0x888A, 0x8290, 0xFE00] {
+            for ty in [4u16, 13, 18, 3] {
+                // In IFD0.
+                let mut b = Blob::new(be, 8);
+                let es = vec![
+                    b.short(0x0112, 1),
+                    E {
+                        tag,
+                        ty,
+                        count: 1,
+                        val: b.w32(60),
+                    },
+                ];
+                b.ifd(8, &es, 0);
+                let sub = vec![b.out(0x013B, 2, 7, 80)];
+                b.ifd(60, &sub, 0);
+                b.data(80, ARTIST);
+                let err = run(&b.bytes, &Selection::default()).unwrap_err();
+                assert_eq!(
+                    err,
+                    Refusal {
+                        reason: UneditableReason::HiddenPointer,
+                        at: 8 + 2 + 12
+                    },
+                    "IFD0 tag {tag:#x} type {ty} be={be}"
+                );
+            }
+            // In the Exif IFD.
+            let mut b = Blob::new(be, 8);
+            let es = vec![b.short(0x0112, 1), b.long(0x8769, 40)];
+            b.ifd(8, &es, 0);
+            let ex = vec![
+                b.short(0xA001, 1),
+                E {
+                    tag,
+                    ty: 4,
+                    count: 1,
+                    val: b.w32(100),
+                },
+            ];
+            b.ifd(40, &ex, 0);
+            let sub = vec![b.out(0x013B, 2, 7, 120)];
+            b.ifd(100, &sub, 0);
+            b.data(120, ARTIST);
+            let err = run(&b.bytes, &del(&[])).unwrap_err();
+            assert_eq!(
+                err,
+                Refusal {
+                    reason: UneditableReason::HiddenPointer,
+                    at: 40 + 2 + 12
+                },
+                "Exif tag {tag:#x} be={be}"
+            );
+        }
+        // Without the tag the same shape is fine.
+        let mut b = Blob::new(be, 8);
+        let es = vec![b.short(0x0112, 1), b.long(0x9999, 60)];
+        b.ifd(8, &es, 0);
+        assert!(run(&b.bytes, &Selection::default()).is_ok());
+    }
+}
+
+/// M4: a category tag inside Interop is not an audit finding (DEC-008), so the
+/// writer refuses a policy whose set holds that tag's category (`interop_hits`).
+#[test]
+fn m4_a_category_tag_in_the_interop_ifd_is_refused() {
+    for be in [false, true] {
+        let mut b = Blob::new(be, 8);
+        let es = vec![b.short(0x0112, 1), b.long(0x8769, 40)];
+        b.ifd(8, &es, 0);
+        let ex = vec![b.long(0xA005, 60)];
+        b.ifd(40, &ex, 0);
+        let io = vec![b.inl(0x0001, b"R9\0"), b.out(0x013B, 2, 7, 90)];
+        b.ifd(60, &io, 0);
+        b.data(90, ARTIST);
+        let c = Container::parse(&b.bytes).unwrap();
+        assert!(c.is_clean());
+        assert_eq!(c.ifds()[2].kind(), IfdKind::Interop);
+        let sel = Selection {
+            interop_hits: vec![(2, 1)],
+            ..Selection::default()
+        };
+        let err = run(&b.bytes, &sel).unwrap_err();
+        assert_eq!(
+            err,
+            Refusal {
+                reason: UneditableReason::PayloadUnreadable,
+                at: 60 + 2 + 12
+            },
+            "be={be}"
+        );
+        // No hit, no refusal.
+        assert!(run(&b.bytes, &Selection::default()).is_ok());
+    }
+}
+
+/// L13: a removed GPS IFD with a non-zero next word would leave the IFD it
+/// names behind; refused as nested.
+#[test]
+fn l13_a_removed_gps_ifd_with_a_next_word_is_nested_ifd() {
+    for be in [false, true] {
+        let (mut b, _) = gps_blob(be, false);
+        // The GPS table is 72..114; its next word is the last four bytes.
+        let next = b.w32(170);
+        b.data(110, &next);
+        let tail = vec![b.out(0x0002, 5, 3, 200)];
+        b.ifd(170, &tail, 0);
+        b.data(200, &[0xC3; 24]);
+        let err = run(&b.bytes, &gps_sel()).unwrap_err();
+        assert_eq!(
+            err,
+            Refusal {
+                reason: UneditableReason::NestedIfd,
+                at: 110
+            },
+            "be={be}"
+        );
+        // A kept GPS IFD (no GPS removal) with a next word is not our business.
+        assert!(run(&b.bytes, &Selection::default()).is_ok());
+    }
+}
+
+/// L14 (known limit, pinned): a KEPT entry whose tag is not in the offset list
+/// (DNGPrivateData 0xC634 here) is protected by its own value only; what it
+/// points at is zeroed when a deleted value lies there. Nothing leaks; the
+/// kept entry's target loses its bytes. See `makernote-internal-offsets`.
+#[test]
+fn l14_a_kept_opaque_tag_is_protected_by_its_own_value_only() {
+    for be in [false, true] {
+        let mut b = Blob::new(be, 8);
+        let es = vec![
+            b.short(0x0112, 1),
+            b.out(0x013B, 2, 16, 120),
+            b.long(0xC634, 120),
+        ];
+        b.ifd(8, &es, 0);
+        b.data(120, &[0xD4; 16]);
+        let plan = run(&b.bytes, &del(&[(0, 1)])).unwrap();
+        let out = apply(&b.bytes, &plan);
+        assert_eq!(&out[120..136], &[0u8; 16], "be={be}");
+    }
+}
+
+/// L15 MB: a deleted entry of type 129 (Exif 3.0 UTF-8) is not accepted.
+#[test]
+fn l15_mb_a_deleted_entry_of_type_129_is_payload_unreadable() {
+    for be in [false, true] {
+        let mut b = Blob::new(be, 8);
+        let es = vec![
+            b.short(0x0112, 1),
+            E {
+                tag: 0x013B,
+                ty: 129,
+                count: 7,
+                val: b.w32(90),
+            },
+        ];
+        b.ifd(8, &es, 0);
+        b.data(90, ARTIST);
+        let err = run(&b.bytes, &del(&[(0, 1)])).unwrap_err();
+        assert_eq!(err.reason, UneditableReason::PayloadUnreadable, "be={be}");
+        assert_eq!(err.at, 8 + 2 + 12);
+    }
+}
+
+/// L15 MS: the GPS pointer entry deleted with its IFD is exempt from the type
+/// rule even when it is typed IFD (13).
+#[test]
+fn l15_ms_a_gps_pointer_entry_of_type_13_is_deleted_with_its_ifd() {
+    for be in [false, true] {
+        let mut b = Blob::new(be, 8);
+        let es = vec![
+            b.short(0x0112, 1),
+            E {
+                tag: 0x8825,
+                ty: 13,
+                count: 1,
+                val: b.w32(40),
+            },
+        ];
+        b.ifd(8, &es, 0);
+        let gps = vec![b.out(0x0002, 5, 3, 80)];
+        b.ifd(40, &gps, 0);
+        b.data(80, &[0xA1; 24]);
+        let c = Container::parse(&b.bytes).unwrap();
+        assert!(c.is_clean());
+        assert_eq!(c.ifds().len(), 2, "the type-13 pointer is followed");
+        let plan = run(&b.bytes, &gps_sel()).unwrap();
+        let out = apply(&b.bytes, &plan);
+        assert_eq!(&out[80..104], &[0u8; 24], "be={be}");
+    }
+}
+
+/// L15 MT: a kept entry of type 13 keeps everything from its target to the end
+/// of the blob, not only four bytes.
+#[test]
+fn l15_mt_a_kept_type_13_entry_protects_its_target_to_the_blob_end() {
+    for be in [false, true] {
+        let mut b = Blob::new(be, 8);
+        let es = vec![
+            b.short(0x0112, 1),
+            E {
+                tag: 0xABCD,
+                ty: 13,
+                count: 1,
+                val: b.w32(90),
+            },
+            b.out(0x013B, 2, 10, 98),
+        ];
+        b.ifd(8, &es, 0);
+        b.data(90, b"CANARY-TARGET-DATA!!");
+        let err = run(&b.bytes, &del(&[(0, 2)])).unwrap_err();
+        assert_eq!(err.reason, UneditableReason::SharedBytes, "be={be}");
+        assert_eq!(err.at, 98);
+    }
+}

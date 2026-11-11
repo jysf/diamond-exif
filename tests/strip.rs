@@ -2395,6 +2395,20 @@ fn leak_inputs() -> Vec<Leak> {
                 at: None,
             },
             Leak {
+                name: "interop_category_tag",
+                layout: exif_layout::interop_with_a_category_tag(be).layout(),
+                cats: &["authorship"],
+                reason: UneditableReason::PayloadUnreadable,
+                at: None,
+            },
+            Leak {
+                name: "gps_next_word",
+                layout: exif_layout::gps_with_a_next_word(be).layout(),
+                cats: &["gps"],
+                reason: UneditableReason::NestedIfd,
+                at: None,
+            },
+            Leak {
                 name: "kept_straddling_make",
                 layout: exif_layout::kept_straddling_value(be).layout(),
                 cats: &["authorship"],
@@ -2403,6 +2417,25 @@ fn leak_inputs() -> Vec<Leak> {
             },
         ]
         .into_iter()
+        .chain(
+            [0x0190u16, 0x888A, 0x8290, 0xFE00]
+                .into_iter()
+                .flat_map(|tag| {
+                    [("gps", "gps"), ("artist", "authorship")].into_iter().map(
+                        move |(behind, cat)| Leak {
+                            name: "exiftool_subdirectory",
+                            layout: exif_layout::exiftool_subdirectory(be, tag, behind).layout(),
+                            cats: if cat == "gps" {
+                                &["gps"]
+                            } else {
+                                &["authorship"]
+                            },
+                            reason: UneditableReason::HiddenPointer,
+                            at: None,
+                        },
+                    )
+                }),
+        )
         .chain(
             [0x0144u16, 0x0207, 0x0120, 0xF123]
                 .into_iter()
@@ -2616,4 +2649,112 @@ fn an_empty_gps_ifd_behind_a_present_pointer_is_removed_with_it() {
         .all(|b| *b == 0));
     assert!(contains(out.bytes(), exif_layout::K_MAKE));
     assert!(audit(out.bytes()).health().clean);
+}
+
+// ── HANDOFF-045 L15: hostile Multi-Picture indexes (ML, MN) ─────────────────
+
+/// A JPEG with an Exif segment (removed under `All`, so the index must be
+/// patched), then an MPF segment holding the TIFF blob `t`, then the scan. When
+/// `primary_at` is given, the u32 at that offset of `t` is set to the file's
+/// total length (the primary's size).
+fn hostile_mpf_jpeg(be: bool, t: &[u8], primary_at: Option<usize>) -> Vec<u8> {
+    let seg = |m: u8, p: &[u8]| {
+        let mut v = vec![0xFF, m];
+        v.extend(((p.len() + 2) as u16).to_be_bytes());
+        v.extend_from_slice(p);
+        v
+    };
+    let w16 = |x: u16| if be { x.to_be_bytes() } else { x.to_le_bytes() };
+    let w32 = |x: u32| if be { x.to_be_bytes() } else { x.to_le_bytes() };
+    let mut eb = vec![0u8; 60];
+    eb[0..2].copy_from_slice(if be { b"MM" } else { b"II" });
+    eb[2..4].copy_from_slice(&w16(42));
+    eb[4..8].copy_from_slice(&w32(8));
+    eb[8..10].copy_from_slice(&w16(1));
+    eb[10..12].copy_from_slice(&w16(0x013B));
+    eb[12..14].copy_from_slice(&w16(2));
+    eb[14..18].copy_from_slice(&w32(16));
+    eb[18..22].copy_from_slice(&w32(40));
+    eb[40..56].copy_from_slice(b"CNRYmpfaCNRYmpfa");
+    let mut exif = b"Exif\0\0".to_vec();
+    exif.extend(&eb);
+    let mut f = vec![0xFF, 0xD8];
+    f.extend(seg(0xE1, &exif));
+    let mut mp = b"MPF\0".to_vec();
+    mp.extend_from_slice(t);
+    // The index header (the TIFF header of `t`) starts after the marker, the
+    // length and "MPF\0".
+    let header = f.len() + 4 + 4;
+    f.extend(seg(0xE2, &mp));
+    f.extend(seg(0xDA, &[1, 1, 0, 0, 0x3F, 0]));
+    f.extend([0x12, 0x34, 0xFF, 0xD9]);
+    if let Some(at) = primary_at {
+        let total = f.len() as u32;
+        f[header + at..header + at + 4].copy_from_slice(&w32(total));
+    }
+    f
+}
+
+/// An MP index TIFF blob of 160 bytes: header, IFD0 at `ifd0` with MPFVersion,
+/// NumberOfImages (2) and an MPEntry of 32 bytes at `array`.
+fn mp_index(be: bool, ifd0: usize, array: usize) -> Vec<u8> {
+    let w16 = |x: u16| if be { x.to_be_bytes() } else { x.to_le_bytes() };
+    let w32 = |x: u32| if be { x.to_be_bytes() } else { x.to_le_bytes() };
+    let mut t = vec![0u8; 160];
+    t[0..2].copy_from_slice(if be { b"MM" } else { b"II" });
+    t[2..4].copy_from_slice(&w16(42));
+    t[4..8].copy_from_slice(&w32(ifd0 as u32));
+    t[ifd0..ifd0 + 2].copy_from_slice(&w16(3));
+    let mut p = ifd0 + 2;
+    for (tag, ty, count, val) in [
+        (0xB000u16, 7u16, 4u32, *b"0100"),
+        (0xB001, 4, 1, w32(2)),
+        (0xB002, 7, 32, w32(array as u32)),
+    ] {
+        t[p..p + 2].copy_from_slice(&w16(tag));
+        t[p + 2..p + 4].copy_from_slice(&w16(ty));
+        t[p + 4..p + 8].copy_from_slice(&w32(count));
+        t[p + 8..p + 12].copy_from_slice(&val);
+        p += 12;
+    }
+    t
+}
+
+/// ML: a located secondary image whose bytes hold the MP entry array: the
+/// primary-size patch would land inside a kept image. Refused up front.
+#[test]
+fn l15_ml_a_secondary_image_over_the_mp_entry_array_is_mpf_not_indexed() {
+    for be in [false, true] {
+        let w32 = |x: u32| if be { x.to_be_bytes() } else { x.to_le_bytes() };
+        let mut t = mp_index(be, 8, 58);
+        // The secondary (entry 1): size 42, offset 50 from the header; its bytes
+        // FF D8 .. FF D9 are t[50..92], which hold the entry array at 58..90.
+        t[50..58].copy_from_slice(&[0xFF, 0xD8, 0xFF, 0xFE, 0x00, 0x04, 0x00, 0x00]);
+        t[58..62].copy_from_slice(&w32(0x2003_0000));
+        t[78..82].copy_from_slice(&w32(42));
+        t[82..86].copy_from_slice(&w32(50));
+        t[90..92].copy_from_slice(&[0xFF, 0xD9]);
+        let j = hostile_mpf_jpeg(be, &t[..92], Some(62));
+        let err = strip(&j, StripPolicy::All).unwrap_err();
+        assert!(
+            matches!(err, StripError::MpfNotIndexed { .. }),
+            "be={be}: {err:?}"
+        );
+    }
+}
+
+/// MN: an MPEntry value at header offset 0: the primary-size field is the TIFF
+/// header's IFD0-offset word, which a patch would rewrite. Refused up front.
+#[test]
+fn l15_mn_an_mp_entry_array_on_the_tiff_header_is_mpf_not_indexed() {
+    for be in [false, true] {
+        // IFD0 at 100: the word at header offset 4 is 100, read as the size.
+        let t = mp_index(be, 100, 0);
+        let j = hostile_mpf_jpeg(be, &t, None);
+        let err = strip(&j, StripPolicy::All).unwrap_err();
+        assert!(
+            matches!(err, StripError::MpfNotIndexed { .. }),
+            "be={be}: {err:?}"
+        );
+    }
 }

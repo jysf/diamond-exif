@@ -361,6 +361,86 @@ pub fn leak_inputs_jpeg() -> Vec<(&'static str, Vec<u8>)> {
             "ifd1_kept_category_be",
             one(exif_layout::thumbnail_ifd1_with_a_kept_category_tag(true).layout()),
         ),
+        (
+            "interop_category_tag_le",
+            one(exif_layout::interop_with_a_category_tag(false).layout()),
+        ),
+        (
+            "interop_category_tag_be",
+            one(exif_layout::interop_with_a_category_tag(true).layout()),
+        ),
+        (
+            "gps_next_word_le",
+            one(exif_layout::gps_with_a_next_word(false).layout()),
+        ),
+        (
+            "gps_next_word_be",
+            one(exif_layout::gps_with_a_next_word(true).layout()),
+        ),
+        (
+            "subdirectory_0190_gps_le",
+            one(exif_layout::exiftool_subdirectory(false, 0x0190, "gps").layout()),
+        ),
+        (
+            "subdirectory_0190_gps_be",
+            one(exif_layout::exiftool_subdirectory(true, 0x0190, "gps").layout()),
+        ),
+        (
+            "subdirectory_0190_artist_le",
+            one(exif_layout::exiftool_subdirectory(false, 0x0190, "artist").layout()),
+        ),
+        (
+            "subdirectory_0190_artist_be",
+            one(exif_layout::exiftool_subdirectory(true, 0x0190, "artist").layout()),
+        ),
+        (
+            "subdirectory_888a_gps_le",
+            one(exif_layout::exiftool_subdirectory(false, 0x888A, "gps").layout()),
+        ),
+        (
+            "subdirectory_888a_gps_be",
+            one(exif_layout::exiftool_subdirectory(true, 0x888A, "gps").layout()),
+        ),
+        (
+            "subdirectory_888a_artist_le",
+            one(exif_layout::exiftool_subdirectory(false, 0x888A, "artist").layout()),
+        ),
+        (
+            "subdirectory_888a_artist_be",
+            one(exif_layout::exiftool_subdirectory(true, 0x888A, "artist").layout()),
+        ),
+        (
+            "subdirectory_8290_gps_le",
+            one(exif_layout::exiftool_subdirectory(false, 0x8290, "gps").layout()),
+        ),
+        (
+            "subdirectory_8290_gps_be",
+            one(exif_layout::exiftool_subdirectory(true, 0x8290, "gps").layout()),
+        ),
+        (
+            "subdirectory_8290_artist_le",
+            one(exif_layout::exiftool_subdirectory(false, 0x8290, "artist").layout()),
+        ),
+        (
+            "subdirectory_8290_artist_be",
+            one(exif_layout::exiftool_subdirectory(true, 0x8290, "artist").layout()),
+        ),
+        (
+            "subdirectory_fe00_gps_le",
+            one(exif_layout::exiftool_subdirectory(false, 0xFE00, "gps").layout()),
+        ),
+        (
+            "subdirectory_fe00_gps_be",
+            one(exif_layout::exiftool_subdirectory(true, 0xFE00, "gps").layout()),
+        ),
+        (
+            "subdirectory_fe00_artist_le",
+            one(exif_layout::exiftool_subdirectory(false, 0xFE00, "artist").layout()),
+        ),
+        (
+            "subdirectory_fe00_artist_be",
+            one(exif_layout::exiftool_subdirectory(true, 0xFE00, "artist").layout()),
+        ),
         ("exif_second_block_unclean", second_block_unclean()),
         ("exif_first_block_unclean", first_block_unclean()),
         ("exif_middle_block_unclean", middle_block_unclean()),

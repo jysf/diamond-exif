@@ -1070,6 +1070,26 @@ mod rewrite_invariants {
                 }
             }
         }
+        // Sub-IFD pointer tags ExifTool 13.55 opens and the walk does not
+        // (found by scanning every tag id as a LONG pointer): refused in any
+        // IFD, of any type.
+        if ifds.iter().any(|i| {
+            i.ents
+                .iter()
+                .any(|e| [0x0190, 0x888A, 0x8290, 0xFE00].contains(&e.tag))
+        }) {
+            return None;
+        }
+        // The audit reports nothing in Interop (DEC-008): a tag that would be a
+        // finding of the policy's categories in IFD0 or Exif is refused there.
+        if ifds.iter().any(|i| {
+            i.role == "interop"
+                && i.ents
+                    .iter()
+                    .any(|e| ncat("ifd0", e.tag, false).is_some_and(|c| spec.contains(c)))
+        }) {
+            return None;
+        }
         // Tables that share bytes.
         let mut tables: Vec<&Range<usize>> = ifds.iter().map(|i| &i.table).collect();
         tables.sort_by_key(|r| (r.start, r.end));
@@ -1127,6 +1147,14 @@ mod rewrite_invariants {
         if removed
             .iter()
             .any(|&r| ifds.iter().any(|i| i.parent == Some(r)))
+        {
+            return None;
+        }
+        // A removed GPS IFD's next word is not followed by anything; a
+        // non-zero one would leave the IFD it names behind.
+        if removed
+            .iter()
+            .any(|&r| ifds[r].role == "gps" && ifds[r].next != 0)
         {
             return None;
         }

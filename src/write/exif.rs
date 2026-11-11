@@ -39,6 +39,15 @@ const TAG_GPS_POINTER: u16 = 0x8825;
 const TAG_THUMB_OFFSET: u16 = 0x0201;
 /// The tags the walk follows as pointers: `SubIFDs`, Exif, GPS, Interop.
 const POINTER_TAGS: [u16; 4] = [0x014A, 0x8769, TAG_GPS_POINTER, 0xA005];
+/// IFD pointer tags that ExifTool opens as sub-IFDs and the walk does not
+/// follow (DEC-005 names only [`POINTER_TAGS`]). From a scan of every tag id
+/// 0x0000..=0xFFFF as a LONG pointer in IFD0, the Exif IFD and IFD1 against
+/// ExifTool 13.55, besides `POINTER_TAGS`: 0x0190 GlobalParametersIFD (read
+/// with the Exif table, so it may hold a GPS IFD), 0x888A LeafSubIFD, 0x8290
+/// KodakIFD and 0xFE00 KDC_IFD. Nothing is followed: an entry with one of these
+/// tags, in any IFD and of any type, makes a partial policy refuse
+/// (`HiddenPointer`), because an entry of a removed category could sit behind it.
+const EXIFTOOL_SUBDIRECTORY_TAGS: [u16; 4] = [0x0190, 0x888A, 0x8290, 0xFE00];
 /// The tags an IFD1 may hold when it is removed whole (the allow-list; any
 /// other tag is refused as `ThumbnailNotLocated`). Each is a tag whose only
 /// offset to data is its own out-of-line value (which the planner zeroes), or
@@ -90,6 +99,11 @@ pub(super) struct Selection {
     /// Tags of IFD1 whose category the policy keeps (a removed IFD1 holding
     /// one is refused: the policy cannot take the IFD whole and keep the tag).
     pub kept_ifd1_tags: Vec<u16>,
+    /// Entries of an Interop IFD, as `(ifd index, entry index)`, whose tag the
+    /// audit table would categorise in the policy's set if it were in IFD0 or
+    /// Exif. The audit reports nothing in Interop (DEC-008), so such an entry
+    /// cannot be deleted and the policy would leave it: refused.
+    pub interop_hits: Vec<(usize, usize)>,
 }
 
 /// One deleted entry, in blob coordinates.
@@ -332,6 +346,13 @@ pub(super) fn plan_block(
     // inside the Exif IFD), where an entry of the policy's categories could be
     // left behind.
     for ifd in ifds {
+        if let Some(e) = ifd
+            .entries()
+            .iter()
+            .find(|e| EXIFTOOL_SUBDIRECTORY_TAGS.contains(&e.tag()))
+        {
+            return Err(refuse(UneditableReason::HiddenPointer, start_of(e)));
+        }
         for tag in POINTER_TAGS {
             let holders: Vec<&Entry> = ifd.entries().iter().filter(|e| e.tag() == tag).collect();
             let followed = pointer_followed_from(ifd.kind(), tag);
@@ -344,6 +365,15 @@ pub(super) fn plan_block(
                 return Err(refuse(UneditableReason::HiddenPointer, start_of(e)));
             }
         }
+    }
+
+    // ── a category tag the audit cannot see (Interop) ───────────────────────
+    if let Some(&(g, n)) = sel.interop_hits.first() {
+        let entry = ifds
+            .get(g)
+            .and_then(|i| i.entries().get(n))
+            .ok_or_else(|| bad(0))?;
+        return Err(refuse(UneditableReason::PayloadUnreadable, start_of(entry)));
     }
 
     // ── IFD tables that share bytes ─────────────────────────────────────────
@@ -399,6 +429,22 @@ pub(super) fn plan_block(
                 .ok_or_else(|| bad(at))?;
             removed.push(ifd1);
             thumb = Some(ThumbCut { ifd1, ifd0, range });
+        }
+    }
+    // A removed GPS IFD's next-IFD word is read neither by the walk nor by
+    // ExifTool (DEC-005); a non-zero one would leave the IFD it names behind.
+    // (IFD1's is `ChainAfterThumbnail`, above.)
+    for &r in &removed {
+        let ifd = ifds.get(r).ok_or_else(|| bad(0))?;
+        if ifd.kind() != IfdKind::Gps {
+            continue;
+        }
+        let next_at = ifd
+            .table_range()
+            .and_then(|t| t.end.checked_sub(4))
+            .ok_or_else(|| bad(0))?;
+        if read_u32(blob, next_at, order).map_err(|_| bad(next_at))? != 0 {
+            return Err(refuse(UneditableReason::NestedIfd, next_at));
         }
     }
     for &r in &removed {
@@ -864,6 +910,18 @@ fn select(
         thumbnail: spec.contains(Category::Thumbnail),
         ..Selection::default()
     };
+    for (g, ifd) in container.ifds().iter().enumerate() {
+        if ifd.kind() != IfdKind::Interop {
+            continue;
+        }
+        for (n, entry) in ifd.entries().iter().enumerate() {
+            if crate::audit::categorize(IfdKind::Ifd0, entry.tag())
+                .is_some_and(|c| spec.contains(c))
+            {
+                sel.interop_hits.push((g, n));
+            }
+        }
+    }
     for f in audited
         .findings()
         .iter()
