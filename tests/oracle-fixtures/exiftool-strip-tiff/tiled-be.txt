@@ -54,6 +54,51 @@ IFD0	TileWidth	16
 IFD0	TileLength	16
 IFD0	TileOffsets	104 360 616 872
 IFD0	TileByteCounts	256 256 256 128
+## xmp
+ExifTool	Warning	Invalid EXIF text encoding for GPSAreaInformation
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	TileWidth	16
+IFD0	TileLength	16
+IFD0	TileOffsets	104 360 616 872
+IFD0	TileByteCounts	256 256 256 128
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	52.5041666666667
+GPS	GPSAreaInformation	CANARY-TIFF-GPS-AREA...
+Composite	GPSLatitude	52.5041666666667
+## iptc
+ExifTool	Warning	Invalid EXIF text encoding for GPSAreaInformation
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	TileWidth	16
+IFD0	TileLength	16
+IFD0	TileOffsets	104 360 616 872
+IFD0	TileByteCounts	256 256 256 128
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	52.5041666666667
+GPS	GPSAreaInformation	CANARY-TIFF-GPS-AREA...
+Composite	GPSLatitude	52.5041666666667
+## icc
+ExifTool	Warning	Invalid EXIF text encoding for GPSAreaInformation
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	TileWidth	16
+IFD0	TileLength	16
+IFD0	TileOffsets	104 360 616 872
+IFD0	TileByteCounts	256 256 256 128
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	52.5041666666667
+GPS	GPSAreaInformation	CANARY-TIFF-GPS-AREA...
+Composite	GPSLatitude	52.5041666666667
 ## software
 ExifTool	Warning	Invalid EXIF text encoding for GPSAreaInformation
 File	FileType	TIFF

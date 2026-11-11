@@ -33,6 +33,18 @@ pub fn policies() -> Vec<(&'static str, StripPolicy)> {
         ("all_pii", StripPolicy::AllPii),
         ("everything", StripPolicy::Everything),
         (
+            "xmp",
+            StripPolicy::Custom(StripSpec::none().include(Category::Xmp)),
+        ),
+        (
+            "iptc",
+            StripPolicy::Custom(StripSpec::none().include(Category::Iptc)),
+        ),
+        (
+            "icc",
+            StripPolicy::Custom(StripSpec::none().include(Category::Icc)),
+        ),
+        (
             "software",
             StripPolicy::Custom(StripSpec::none().include(Category::Software)),
         ),
@@ -137,6 +149,9 @@ fn names(c: Category) -> &'static [&'static str] {
         Category::Authorship => &["Artist"],
         Category::DeviceId => &["SerialNumber", "BodySerialNumber", "CameraSerialNumber"],
         Category::MakerNote => &["MakerNote"],
+        Category::Xmp => &["Creator"],
+        Category::Iptc => &["By-line"],
+        Category::Icc => &["ProfileDescription"],
         Category::Thumbnail => &["ThumbnailOffset", "ThumbnailLength", "ThumbnailImage"],
         _ => &[],
     }

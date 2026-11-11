@@ -195,6 +195,20 @@ impl B {
         self.put(ifd, i, tag, UNDEFINED, d.len() as u32, &d);
         self.canaries.push((s, cat));
     }
+    /// A carrier whose bytes are exactly `d` (a structure ExifTool parses),
+    /// holding the canary `s`.
+    pub fn raw_blob(
+        &mut self,
+        ifd: usize,
+        i: usize,
+        tag: u16,
+        d: &[u8],
+        s: &'static [u8],
+        cat: Category,
+    ) {
+        self.put(ifd, i, tag, UNDEFINED, d.len() as u32, d);
+        self.canaries.push((s, cat));
+    }
     pub fn long(&mut self, ifd: usize, i: usize, tag: u16, v: u32) {
         let w = self.w32(v).to_vec();
         self.entry(ifd, i, tag, LONG, 1, V::Inline(w));
@@ -274,6 +288,49 @@ fn name(base: &str, be: bool) -> String {
     format!("{base}-{}", if be { "be" } else { "le" })
 }
 
+/// A minimal XMP packet ExifTool reads: `dc:creator` holds the canary.
+fn xmp_packet() -> Vec<u8> {
+    let mut v = b"<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF \
+xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"><rdf:Description rdf:about=\"\" \
+xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><dc:creator><rdf:Seq><rdf:li>"
+        .to_vec();
+    v.extend_from_slice(C_XMP);
+    v.extend_from_slice(
+        b"</rdf:li></rdf:Seq></dc:creator></rdf:Description></rdf:RDF></x:xmpmeta>",
+    );
+    v
+}
+
+/// One IPTC IIM dataset, record 2 dataset 80 (By-line), holding the canary.
+fn iptc_record() -> Vec<u8> {
+    let mut v = vec![0x1C, 0x02, 0x50, 0, C_IPTC.len() as u8];
+    v.extend_from_slice(C_IPTC);
+    v
+}
+
+/// A minimal ICC profile: 128-byte header, one `desc` tag (ProfileDescription)
+/// holding the canary, and the exact profile size in the header.
+fn icc_profile() -> Vec<u8> {
+    let mut desc = b"desc\0\0\0\0".to_vec();
+    desc.extend_from_slice(&(C_ICC.len() as u32 + 1).to_be_bytes());
+    desc.extend_from_slice(C_ICC);
+    desc.push(0);
+    let total = 128 + 4 + 12 + desc.len();
+    let mut v = vec![0u8; 128];
+    v[0..4].copy_from_slice(&(total as u32).to_be_bytes());
+    v[8..12].copy_from_slice(&0x0210_0000u32.to_be_bytes());
+    v[12..16].copy_from_slice(b"mntr");
+    v[16..20].copy_from_slice(b"RGB ");
+    v[20..24].copy_from_slice(b"XYZ ");
+    v[36..40].copy_from_slice(b"acsp");
+    v.extend_from_slice(&1u32.to_be_bytes());
+    v.extend_from_slice(b"desc");
+    v.extend_from_slice(&144u32.to_be_bytes());
+    v.extend_from_slice(&(desc.len() as u32).to_be_bytes());
+    v.extend_from_slice(&desc);
+    v
+}
+
 /// IFD0 with every carrier, two strips, an Exif IFD and a GPS IFD.
 pub fn stripped(be: bool) -> Shape {
     let mut b = B::new(be);
@@ -288,11 +345,11 @@ pub fn stripped(be: bool) -> Shape {
     b.text(ifd0, 6, 0x0131, C_SOFTWARE, Some(Category::Software));
     b.text(ifd0, 7, 0x0132, C_DATETIME, Some(Category::Timestamps));
     b.text(ifd0, 8, 0x013B, C_ARTIST, Some(Category::Authorship));
-    b.blob(ifd0, 9, 0x02BC, C_XMP, Category::Xmp);
-    b.blob(ifd0, 10, 0x83BB, C_IPTC, Category::Iptc);
+    b.raw_blob(ifd0, 9, 0x02BC, &xmp_packet(), C_XMP, Category::Xmp);
+    b.raw_blob(ifd0, 10, 0x83BB, &iptc_record(), C_IPTC, Category::Iptc);
     b.blob(ifd0, 11, 0x8649, C_PSD, Category::Iptc);
     b.long(ifd0, 12, 0x8769, exif as u32);
-    b.blob(ifd0, 13, 0x8773, C_ICC, Category::Icc);
+    b.raw_blob(ifd0, 13, 0x8773, &icc_profile(), C_ICC, Category::Icc);
     let g = b.gps(C_GPS);
     b.long(ifd0, 14, 0x8825, g as u32);
     b.entry(ifd0, 15, 0xC612, BYTE, 4, V::Inline(vec![1, 4, 0, 0]));
@@ -409,6 +466,20 @@ pub fn all() -> Vec<Shape> {
         v.extend([stripped(be), tiled(be), multipage(be), thumb(be), dng(be)]);
     }
     v
+}
+
+/// IFD0 with strips and a 0xCD41 UNDEFINED entry holding a JUMBF box: in a
+/// bare TIFF that tag is the only place JUMBF can be. Not in `all()` (no
+/// category the audit sees names it, so the shape has no canary record).
+pub fn jumbf(be: bool) -> Shape {
+    let mut b = B::new(be);
+    let ifd0 = b.ifd(3);
+    b.set_ifd0(ifd0);
+    b.data_entries(ifd0, 0, 1, (0x0111, 0x0117), &[300, 200], 3);
+    let mut jumb = vec![0, 0, 0, 24];
+    jumb.extend_from_slice(b"jumbPROBE-C2PA-MANIFEST");
+    b.put(ifd0, 2, 0xCD41, UNDEFINED, jumb.len() as u32, &jumb);
+    b.finish(&name("jumbf", be), false, false)
 }
 
 /// The structural attacks, each with the policy that makes it bite.

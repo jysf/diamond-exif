@@ -341,15 +341,11 @@ fn blob_range(blob: &[u8], range: (u32, u32)) -> Option<Range<usize>> {
     Some(start..end)
 }
 
-/// Plan the edits of one block. See the module documentation.
-pub(super) fn plan_block(
-    blob: &[u8],
-    c: &Container<'_>,
-    sel: &Selection,
-) -> Result<BlockPlan, Refusal> {
-    let order = c.byte_order();
-    let ifds = c.ifds();
-
+/// Refuse when an IFD holds a pointer the walk did not follow, or a blob
+/// carrier of subdirectories ExifTool reads. Also run by the TIFF planner for a
+/// policy whose categories no Exif entry can have, so that it cannot report
+/// success on a file where such an entry could sit behind a hidden pointer.
+pub(super) fn hidden_pointers(ifds: &[Ifd]) -> Result<(), Refusal> {
     // ── pointers the walk did not follow ────────────────────────────────────
     // The walk follows the first entry with a pointer tag, and only from the
     // IFD kinds DEC-005 allows. Any other pointer entry leads to bytes the
@@ -376,6 +372,19 @@ pub(super) fn plan_block(
             }
         }
     }
+    Ok(())
+}
+
+/// Plan the edits of one block. See the module documentation.
+pub(super) fn plan_block(
+    blob: &[u8],
+    c: &Container<'_>,
+    sel: &Selection,
+) -> Result<BlockPlan, Refusal> {
+    let order = c.byte_order();
+    let ifds = c.ifds();
+
+    hidden_pointers(ifds)?;
 
     // ── a category tag the audit cannot see (Interop) ───────────────────────
     if let Some(&(g, n)) = sel.interop_hits.first() {

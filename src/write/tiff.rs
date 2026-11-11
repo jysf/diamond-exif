@@ -29,7 +29,7 @@ use crate::audit::audit;
 use crate::policy::StripSpec;
 use crate::tiff::Container;
 
-use super::exif::{mode, plan_block, protected_ranges, select, Mode};
+use super::exif::{hidden_pointers, mode, plan_block, protected_ranges, select, Mode};
 use super::jpeg::Planned;
 use super::{EntryRecord, StripError, UneditableReason};
 
@@ -56,8 +56,16 @@ pub(super) fn plan(data: &[u8], spec: StripSpec) -> Result<Planned, StripError> 
     protected_ranges(data, &container)
         .map_err(|at| refuse(UneditableReason::PayloadUnreadable, at))?;
     // A policy with no category an Exif entry can have leaves the file as is.
-    // The self-check still runs on it.
+    // The self-check still runs on it. A policy that removes something still
+    // meets the hidden-pointer guard: a bare TIFF's 0xCD41 entry is the only
+    // place JUMBF can be, and the policy must not report success over it.
     if mode(spec) == Mode::Untouched {
+        if !spec.is_empty() {
+            hidden_pointers(container.ifds()).map_err(|r| StripError::Uneditable {
+                reason: r.reason,
+                offset: r.at,
+            })?;
+        }
         return Ok(Planned::empty());
     }
     let selection = select(&audited, None, &container, spec)

@@ -545,3 +545,27 @@ fn the_seven_old_checks_still_pass_and_fail_as_before() {
     let clean = apply(&ok, |p| p.remove(x..x + xmp().len()));
     assert_eq!(verify(&ok, &clean, spec(&[Category::Xmp])), Ok(()));
 }
+
+/// An empty little-endian TIFF: header, an IFD0 with no entries, no next IFD.
+fn empty_tiff() -> Vec<u8> {
+    let mut v = b"II\x2A\0\x08\0\0\0".to_vec();
+    v.extend_from_slice(&[0; 6]);
+    v
+}
+
+#[test]
+fn verify_tiff_accepts_the_identity_and_rejects_a_changed_header() {
+    let input = empty_tiff();
+    assert_eq!(verify_tiff(&input, &input, StripSpec::none(), &[]), Ok(()));
+    // Each header byte: the check that fails is the header compare (Scan), not
+    // whichever later check the changed byte happens to break.
+    for at in 0..8 {
+        let mut out = input.clone();
+        out[at] ^= 0x01;
+        assert_eq!(
+            verify_tiff(&input, &out, StripSpec::none(), &[]),
+            Err(Check::Scan),
+            "header byte {at}"
+        );
+    }
+}

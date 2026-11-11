@@ -288,3 +288,32 @@ fn an_unreadable_offsets_entry_is_a_typed_refusal_even_with_no_edit() {
         );
     }
 }
+
+/// A policy that removes anything must meet the hidden-pointer guard even when
+/// no category it names can occur in an Exif entry: `Custom(Jumbf)` on a TIFF
+/// holding a 0xCD41 entry used to return the input unchanged and report success.
+#[test]
+fn a_custom_jumbf_policy_on_a_tiff_with_a_jumbf_entry_is_refused() {
+    for be in [false, true] {
+        let s = tiff_shapes::jumbf(be);
+        for policy in [
+            StripPolicy::Custom(spec_of(&[Category::Jumbf])),
+            StripPolicy::Everything,
+        ] {
+            let r = strip(&s.bytes, policy);
+            assert!(
+                matches!(
+                    r,
+                    Err(StripError::Uneditable {
+                        reason: UneditableReason::HiddenPointer,
+                        ..
+                    })
+                ),
+                "be={be}: {r:?}"
+            );
+        }
+        // A policy that removes nothing is still the identity.
+        let r = strip(&s.bytes, StripPolicy::Custom(StripSpec::none())).unwrap();
+        assert_eq!(r.bytes(), &s.bytes[..]);
+    }
+}

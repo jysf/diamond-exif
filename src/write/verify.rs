@@ -164,6 +164,10 @@ pub(super) fn verify_tiff(
     if input.len() != output.len() {
         return Err(Check::Scan);
     }
+    // The 8-byte header (byte order, magic, IFD0 offset) is never edited.
+    if input.get(..8) != output.get(..8) {
+        return Err(Check::Scan);
+    }
     let (Ok(cin), Ok(cout)) = (Container::parse(input), Container::parse(output)) else {
         return Err(Check::Walk);
     };

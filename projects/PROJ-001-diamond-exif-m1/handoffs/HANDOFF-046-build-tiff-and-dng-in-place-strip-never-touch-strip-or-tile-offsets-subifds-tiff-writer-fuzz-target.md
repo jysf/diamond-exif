@@ -187,3 +187,11 @@ transcribes it via `just handback-sync`, it does not estimate it.
 
 3. **If you did this task again, what would you do differently?**
    — Write the failing tests before the planner as the handoff asks, and run the fuzz target before the oracle work, since it found the only real bug.
+
+### Follow-up 1 (verify round 1 punch list, HANDOFF-047)
+
+- **M1 done.** Fixture carriers are now valid structures (XMP packet with `dc:creator`, IPTC record 2:80 By-line, ICC profile with a `desc` tag). `names()` covers `Creator`, `By-line`, `ProfileDescription`; policies `xmp`, `iptc`, `icc` recorded. `just oracle-record` changed only the 10 `exiftool-strip-tiff` records (all other record directories byte-identical). Red-proof: a planted `XMP-dc Creator`, `IPTC By-line` or `ICC_Profile ProfileDescription` line under `## everything` makes `strip_tiff_oracle recorded` fail ("survives Xmp/Iptc/Icc"); plants reverted. The 14 `rewrite_tiff` stripped seeds were regenerated (shape bytes changed). Warnings are still not treated as findings.
+- **M2 done, TIFF-only.** `hidden_pointers` was extracted from `plan_block`; the TIFF planner runs it in Untouched mode when the spec is non-empty. Test `a_custom_jumbf_policy_on_a_tiff_with_a_jumbf_entry_is_refused` (shape `jumbf`, both byte orders). JPEG unchanged (same limit remains there, not touched).
+- **L1/L2/L4 done.** DEC-013 D.3 and D.4 corrected; `verify_tiff` compares bytes 0..8 (unit test; red when the check is disabled); DEC-013 added to the spec's `references.decisions`. L3 and the `NotJpeg` naming left as is.
+- **M3/M4 done.** Questions `dng-identity-tags-have-no-category` and `tiff-ifd1-strips-is-a-page` added; one sentence each in D.5.
+- **Gates:** fmt (+ fuzz/shared), clippy 1.90 -D warnings, `-F unsafe_code`, full `cargo test` (909 passed, 0 failed), `just validate`, `just fuzz-smoke rewrite_tiff` (352,451 runs, exit 0): all clean.

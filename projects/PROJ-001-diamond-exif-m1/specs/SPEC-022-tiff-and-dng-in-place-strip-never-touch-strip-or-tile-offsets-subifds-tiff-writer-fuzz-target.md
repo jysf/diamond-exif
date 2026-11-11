@@ -31,7 +31,7 @@ handoff:
   created_at: null
 
 references:
-  decisions: [DEC-008, DEC-009, DEC-010]
+  decisions: [DEC-008, DEC-009, DEC-010, DEC-013]
   constraints: []                  # [constraint-id-1, constraint-id-2]
   related_specs: []                # [SPEC-NNN]
 
