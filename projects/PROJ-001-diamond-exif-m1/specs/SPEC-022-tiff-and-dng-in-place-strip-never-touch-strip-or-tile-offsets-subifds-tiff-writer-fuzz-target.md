@@ -6,7 +6,7 @@
 task:
   id: SPEC-022
   type: story                      # epic | story | task | bug | chore
-  cycle: frame                     # frame | design | build | verify | ship
+  cycle: design  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -72,7 +72,7 @@ cost:
 
 # SPEC-022: TIFF and DNG in-place strip: never touch strip or tile offsets, SubIFDs, TIFF writer fuzz target
 
-> **OUTLINE — `cycle: frame`.** This spec exists so its ID is stable and
+> **Designed (see Design below); originally an outline at `cycle: frame`.** This spec exists so its ID is stable and
 > siblings can declare `depends_on: [SPEC-022]`. Capture **scope** (Context /
 > Goal / Non-Goals) and **dependencies** only — the *approach* is designed
 > just-in-time when this moves to `design`. Do not pre-design it here.
@@ -88,6 +88,29 @@ TIFF and DNG are the same IFD engine with a different container: no segment laye
 ## Non-Goals
 
 - BigTIFF; a write CLI; `set` operations
+
+---
+
+## Design (SPEC-022, approved by the user; complexity M)
+
+**Goal.** `strip(data, policy)` accepts classic TIFF and DNG (`Sniffed::Tiff`; BigTIFF stays `Unsupported`), rewriting IN PLACE: same length, nothing moves, strip/tile/raw data byte-identical. Same `StripPolicy` presets, same `Stripped` result, same `finish` + self-check path as JPEG.
+
+**Reuse, do not rewrite.** `src/write/exif.rs::plan_block(blob, container, selection)` already plans same-length entry deletion + scrubbing on one TIFF blob and its module doc says SPEC-022 calls it on a bare TIFF. `src/write/jpeg.rs::plan` + `exif.rs::plan_entries` show how a caller builds a `Selection` from the audit and maps blob patches to input coordinates (for a bare TIFF the blob is the whole file, offset 0). `src/write/mod.rs::strip` currently returns `Unsupported{Tiff}` for TIFF: add a TIFF branch (new `src/write/tiff.rs`, mirroring `jpeg.rs`).
+
+**Work items.**
+1. `src/write/tiff.rs`: build the `Selection` from the audit + policy spec; call `plan_block`; return the same `Planned` shape `finish` needs. Empty plan still goes through verify.
+2. Never-touch set: compute protected byte ranges from every IFD in the walk (including SubIFDs 0x014A and IFD chain pages): strip data (0x0111 offsets / 0x0117 counts), tile data (0x0144 / 0x0145), JPEGInterchangeFormat (0x0201/0x0202) when it is page data not a thumbnail, and any other image-data range. The plan must never zero, rewrite or move them; contact is refused (`UneditableReason::SharedBytes` or the closest existing reason; add a variant only if none fits, with a DEC-013 amendment note). Strip/tile offset and byte-count ENTRIES are never deleted or edited by any policy (they are structural, not privacy).
+3. IFD1 in TIFF may be another PAGE, not a thumbnail. Thumbnail removal applies only when IFD1 is a JPEG thumbnail (0x0201/0x0202, no StripOffsets/TileOffsets, as audited); a page IFD is never removed.
+4. Structural + DNG core tags are always kept and are not privacy categories (Compression, Photometric, Strip/Tile tags, SamplesPerPixel, BitsPerSample, Orientation, DNGVersion, CFA/color-matrix tags 0xC612..). Check how the audit categorises them; do not invent categories (DEC-008/009 are authority). Where the audit already marks them kept, just assert that in tests.
+5. GPS/Device/AllPii inside SubIFDs (DNG raw/preview SubIFDs) and in IFD0/Exif IFD get the same deletion and scrub as JPEG Exif. IFD0 carriers XMP 700, IPTC 33723, ICC 34675, Photoshop 34377: follow what the audit/preset says for their categories; if the preset removes them, delete the entry AND scrub the out-of-line bytes; if the preset keeps them, they stay byte-identical. Check this against the audit as oracle and against ExifTool.
+6. `src/write/verify.rs`: its JPEG checks assume a scan region. Add the TIFF variant: protected ranges byte-identical; no finding in a removed category; kept categories unchanged; output walks with no new issue kind; Exif inventory is input minus deleted entries; zeroed ranges read zero; re-strip of output is a no-op. Keep the JPEG path untouched.
+7. Fixtures: ONE generator script/function in `tests/support` (e.g. `tiff_shapes.rs`, model on `strip_shapes.rs`, independent of the library): stripped TIFF, tiled TIFF, multi-page TIFF (IFD1 = page), DNG-shaped file with raw SubIFD + preview SubIFD (image data = large sparse/pattern bytes, canaries), GPS in IFD0-pointer, in a SubIFD, Exif IFD device tags, XMP/IPTC/ICC carriers in IFD0, both byte orders. Every fixture records what each byte range is, with canary values.
+8. Tests (write them FIRST, see them fail): `tests/strip_tiff.rs` (integration, model on `tests/strip.rs`), `tests/strip_tiff_oracle.rs` (ExifTool `-a -u -G1 -s -t -n` over outputs; records in `tests/oracle-fixtures/exiftool-strip-tiff/`; live tests skip loudly without ExifTool; red-proof the oracle comparator by a mutated expectation and say so in the handback; extend `just oracle-record`/CI diff to the new dir). Include: never-touch property (strip/tile/raw bytes identical, length identical, StripOffsets values identical), hostile cases (offset into an IFD table, strips overlapping a GPS value, SubIFD cycle, truncated file, BigTIFF refused, JPEG path unchanged).
+9. Fuzz: `fuzz/fuzz_targets/rewrite_tiff.rs` modelled on `rewrite_jpeg.rs` (input = policy byte then TIFF; invariants: no panic; Ok output has same length and every protected range identical; output re-strip is a no-op; refusal is typed). Seeds via `examples/fuzz_seeds.rs` into `fuzz/seeds/rewrite_tiff/`; `just fuzz-smoke rewrite_tiff` 60 s clean; add to CI smoke list and the `fuzz_layout` test as the existing targets are.
+10. Gates: `just` lint/fmt/test/deny/deny-fuzz/lint-fuzz/validate as in toolchain brief; a DEC (DEC-014) ONLY if a real decision arises (e.g. page-vs-thumbnail rule, refusal reason), else a DEC-013 amendment note.
+
+**Non-goals.** BigTIFF, write CLI, `set` ops, MakerNote editing, PNG/WebP, anything pixel-decoding, relocating or growing bytes.
+**Split trigger.** If you reach the budget with items 1-8 done but 9 undone, commit, write the handback listing exactly what remains, and stop.
 
 ---
 
