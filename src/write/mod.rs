@@ -26,6 +26,7 @@
 mod exif;
 mod jpeg;
 mod plan;
+mod tiff;
 mod verify;
 
 use core::fmt;
@@ -300,7 +301,8 @@ pub enum Check {
     Preview,
     /// (b) The output lost or gained a finding in a category the policy keeps.
     Kept,
-    /// (c) The scan region is not byte-identical.
+    /// (c) The scan region is not byte-identical (TIFF: the output's length
+    /// differs, or a strip, tile or JPEG data range is not byte-identical).
     Scan,
     /// (d) The output is not a JPEG that walks, or has a new kind of issue.
     Walk,
@@ -350,13 +352,9 @@ impl std::error::Error for StripError {}
 
 /// Strip `data` according to `policy`. See the module documentation.
 pub fn strip(data: &[u8], policy: StripPolicy) -> Result<Stripped, StripError> {
-    match sniff(data) {
-        Sniffed::Jpeg => {}
-        Sniffed::Tiff => {
-            return Err(StripError::Unsupported {
-                kind: ContainerKind::Tiff,
-            })
-        }
+    let sniffed = sniff(data);
+    match sniffed {
+        Sniffed::Jpeg | Sniffed::Tiff => {}
         Sniffed::Empty | Sniffed::Unknown => return Err(StripError::NotJpeg),
         other => {
             return Err(StripError::Unsupported {
@@ -365,14 +363,30 @@ pub fn strip(data: &[u8], policy: StripPolicy) -> Result<Stripped, StripError> {
         }
     }
     let spec = policy.spec();
+    if sniffed == Sniffed::Tiff {
+        let planned = tiff::plan(data, spec)?;
+        return finish(data, spec, planned, Format::Tiff);
+    }
     let planned = jpeg::plan(data, spec)?;
-    finish(data, spec, planned)
+    finish(data, spec, planned, Format::Jpeg)
+}
+
+/// Which self-check a plan is verified with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Format {
+    Jpeg,
+    Tiff,
 }
 
 /// Apply a plan, run the self-check (always, an empty plan included: the
 /// output is then the input, and it must still satisfy the policy) and build
 /// the result.
-fn finish(data: &[u8], spec: StripSpec, planned: jpeg::Planned) -> Result<Stripped, StripError> {
+fn finish(
+    data: &[u8],
+    spec: StripSpec,
+    planned: jpeg::Planned,
+    format: Format,
+) -> Result<Stripped, StripError> {
     let bytes = planned
         .plan
         .apply(data)
@@ -406,8 +420,11 @@ fn finish(data: &[u8], spec: StripSpec, planned: jpeg::Planned) -> Result<Stripp
         .collect();
     scrubs.sort_by_key(|s| s.offset);
     let zeroed: Vec<(usize, usize)> = scrubs.iter().map(|s| (s.offset, s.len)).collect();
-    verify::verify(data, &bytes, spec, &zeroed)
-        .map_err(|check| StripError::VerifyFailed { check })?;
+    let checked = match format {
+        Format::Jpeg => verify::verify(data, &bytes, spec, &zeroed),
+        Format::Tiff => verify::verify_tiff(data, &bytes, spec, &zeroed),
+    };
+    checked.map_err(|check| StripError::VerifyFailed { check })?;
     Ok(Stripped {
         bytes,
         removals: planned.removals,
@@ -456,7 +473,7 @@ mod tests {
         // A planner that missed the XMP segment: an empty plan.
         let planned = jpeg::Planned::empty();
         assert_eq!(
-            finish(&d, spec, planned).unwrap_err(),
+            finish(&d, spec, planned, Format::Jpeg).unwrap_err(),
             StripError::VerifyFailed {
                 check: Check::Preview
             }

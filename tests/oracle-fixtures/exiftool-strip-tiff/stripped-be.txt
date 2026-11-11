@@ -1,0 +1,332 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# exiftool-version: 13.55
+# fixture: stripped-be
+## input
+ExifTool	Warning	Bad Photoshop IRB resource "CANA"
+ExifTool	Warning	Invalid EXIF text encoding for UserComment
+ExifTool	Warning	[minor] Unrecognized MakerNotes
+ExifTool	Warning	Invalid EXIF text encoding for GPSAreaInformation
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	MM
+File	CurrentIPTCDigest	dac446510a43eedecaf25b40b90635e6
+IFD0	ImageDescription	CANARY-TIFF-DESCRIPTION
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	Model	CANARY-TIFF-MODEL
+IFD0	StripOffsets	320 620
+IFD0	Orientation	1
+IFD0	StripByteCounts	300 200
+IFD0	Software	CANARY-TIFF-SOFTWARE
+IFD0	ModifyDate	2031:02:03 04:05:06
+IFD0	Artist	CANARY-TIFF-ARTIST
+IFD0	DNGVersion	1 4 0 0
+XMP-dc	Creator	CANARY-TIFF-XMP-PACKET
+IPTC	By-line	CANARY-TIFF-IPTC
+ExifIFD	DateTimeOriginal	2032:07:08 09:10:11
+ExifIFD	UserComment	CANARY-TIFF-USERCOMMENT."3DU
+ExifIFD	SerialNumber	CANARY-TIFF-SERIAL
+ICC-header	ProfileCMMType	
+ICC-header	ProfileVersion	528
+ICC-header	ProfileClass	mntr
+ICC-header	ColorSpaceData	RGB
+ICC-header	ProfileConnectionSpace	XYZ
+ICC-header	ProfileDateTime	0000:00:00 00:00:00
+ICC-header	ProfileFileSignature	acsp
+ICC-header	PrimaryPlatform	
+ICC-header	CMMFlags	0
+ICC-header	DeviceManufacturer	
+ICC-header	DeviceModel	
+ICC-header	DeviceAttributes	0 0
+ICC-header	RenderingIntent	0
+ICC-header	ConnectionSpaceIlluminant	0 0 0
+ICC-header	ProfileCreator	
+ICC-header	ProfileID	0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ICC_Profile	ProfileDescription	CANARY-TIFF-ICC-PROFILE
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	52.5041666666667
+GPS	GPSAreaInformation	CANARY-TIFF-GPS-AREA...
+Composite	GPSLatitude	52.5041666666667
+## gps
+ExifTool	Warning	Bad Photoshop IRB resource "CANA"
+ExifTool	Warning	Invalid EXIF text encoding for UserComment
+ExifTool	Warning	[minor] Unrecognized MakerNotes
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	MM
+File	CurrentIPTCDigest	dac446510a43eedecaf25b40b90635e6
+IFD0	ImageDescription	CANARY-TIFF-DESCRIPTION
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	Model	CANARY-TIFF-MODEL
+IFD0	StripOffsets	320 620
+IFD0	Orientation	1
+IFD0	StripByteCounts	300 200
+IFD0	Software	CANARY-TIFF-SOFTWARE
+IFD0	ModifyDate	2031:02:03 04:05:06
+IFD0	Artist	CANARY-TIFF-ARTIST
+IFD0	DNGVersion	1 4 0 0
+XMP-dc	Creator	CANARY-TIFF-XMP-PACKET
+IPTC	By-line	CANARY-TIFF-IPTC
+ExifIFD	DateTimeOriginal	2032:07:08 09:10:11
+ExifIFD	UserComment	CANARY-TIFF-USERCOMMENT."3DU
+ExifIFD	SerialNumber	CANARY-TIFF-SERIAL
+ICC-header	ProfileCMMType	
+ICC-header	ProfileVersion	528
+ICC-header	ProfileClass	mntr
+ICC-header	ColorSpaceData	RGB
+ICC-header	ProfileConnectionSpace	XYZ
+ICC-header	ProfileDateTime	0000:00:00 00:00:00
+ICC-header	ProfileFileSignature	acsp
+ICC-header	PrimaryPlatform	
+ICC-header	CMMFlags	0
+ICC-header	DeviceManufacturer	
+ICC-header	DeviceModel	
+ICC-header	DeviceAttributes	0 0
+ICC-header	RenderingIntent	0
+ICC-header	ConnectionSpaceIlluminant	0 0 0
+ICC-header	ProfileCreator	
+ICC-header	ProfileID	0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ICC_Profile	ProfileDescription	CANARY-TIFF-ICC-PROFILE
+## gps_and_device
+ExifTool	Warning	Bad Photoshop IRB resource "CANA"
+ExifTool	Warning	Invalid EXIF text encoding for UserComment
+ExifTool	Warning	[minor] Unrecognized MakerNotes
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	MM
+File	CurrentIPTCDigest	dac446510a43eedecaf25b40b90635e6
+IFD0	ImageDescription	CANARY-TIFF-DESCRIPTION
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	Model	CANARY-TIFF-MODEL
+IFD0	StripOffsets	320 620
+IFD0	Orientation	1
+IFD0	StripByteCounts	300 200
+IFD0	Software	CANARY-TIFF-SOFTWARE
+IFD0	ModifyDate	2031:02:03 04:05:06
+IFD0	Artist	CANARY-TIFF-ARTIST
+IFD0	DNGVersion	1 4 0 0
+XMP-dc	Creator	CANARY-TIFF-XMP-PACKET
+IPTC	By-line	CANARY-TIFF-IPTC
+ExifIFD	DateTimeOriginal	2032:07:08 09:10:11
+ExifIFD	UserComment	CANARY-TIFF-USERCOMMENT."3DU
+ICC-header	ProfileCMMType	
+ICC-header	ProfileVersion	528
+ICC-header	ProfileClass	mntr
+ICC-header	ColorSpaceData	RGB
+ICC-header	ProfileConnectionSpace	XYZ
+ICC-header	ProfileDateTime	0000:00:00 00:00:00
+ICC-header	ProfileFileSignature	acsp
+ICC-header	PrimaryPlatform	
+ICC-header	CMMFlags	0
+ICC-header	DeviceManufacturer	
+ICC-header	DeviceModel	
+ICC-header	DeviceAttributes	0 0
+ICC-header	RenderingIntent	0
+ICC-header	ConnectionSpaceIlluminant	0 0 0
+ICC-header	ProfileCreator	
+ICC-header	ProfileID	0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ICC_Profile	ProfileDescription	CANARY-TIFF-ICC-PROFILE
+## all_pii
+ExifTool	Warning	Bad Photoshop IRB resource "CANA"
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	MM
+File	CurrentIPTCDigest	dac446510a43eedecaf25b40b90635e6
+IFD0	StripOffsets	320 620
+IFD0	Orientation	1
+IFD0	StripByteCounts	300 200
+IFD0	Software	CANARY-TIFF-SOFTWARE
+IFD0	DNGVersion	1 4 0 0
+XMP-dc	Creator	CANARY-TIFF-XMP-PACKET
+IPTC	By-line	CANARY-TIFF-IPTC
+ICC-header	ProfileCMMType	
+ICC-header	ProfileVersion	528
+ICC-header	ProfileClass	mntr
+ICC-header	ColorSpaceData	RGB
+ICC-header	ProfileConnectionSpace	XYZ
+ICC-header	ProfileDateTime	0000:00:00 00:00:00
+ICC-header	ProfileFileSignature	acsp
+ICC-header	PrimaryPlatform	
+ICC-header	CMMFlags	0
+ICC-header	DeviceManufacturer	
+ICC-header	DeviceModel	
+ICC-header	DeviceAttributes	0 0
+ICC-header	RenderingIntent	0
+ICC-header	ConnectionSpaceIlluminant	0 0 0
+ICC-header	ProfileCreator	
+ICC-header	ProfileID	0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ICC_Profile	ProfileDescription	CANARY-TIFF-ICC-PROFILE
+## everything
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	MM
+IFD0	StripOffsets	320 620
+IFD0	Orientation	1
+IFD0	StripByteCounts	300 200
+IFD0	DNGVersion	1 4 0 0
+## xmp
+ExifTool	Warning	Bad Photoshop IRB resource "CANA"
+ExifTool	Warning	Invalid EXIF text encoding for UserComment
+ExifTool	Warning	[minor] Unrecognized MakerNotes
+ExifTool	Warning	Invalid EXIF text encoding for GPSAreaInformation
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	MM
+File	CurrentIPTCDigest	dac446510a43eedecaf25b40b90635e6
+IFD0	ImageDescription	CANARY-TIFF-DESCRIPTION
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	Model	CANARY-TIFF-MODEL
+IFD0	StripOffsets	320 620
+IFD0	Orientation	1
+IFD0	StripByteCounts	300 200
+IFD0	Software	CANARY-TIFF-SOFTWARE
+IFD0	ModifyDate	2031:02:03 04:05:06
+IFD0	Artist	CANARY-TIFF-ARTIST
+IFD0	DNGVersion	1 4 0 0
+IPTC	By-line	CANARY-TIFF-IPTC
+ExifIFD	DateTimeOriginal	2032:07:08 09:10:11
+ExifIFD	UserComment	CANARY-TIFF-USERCOMMENT."3DU
+ExifIFD	SerialNumber	CANARY-TIFF-SERIAL
+ICC-header	ProfileCMMType	
+ICC-header	ProfileVersion	528
+ICC-header	ProfileClass	mntr
+ICC-header	ColorSpaceData	RGB
+ICC-header	ProfileConnectionSpace	XYZ
+ICC-header	ProfileDateTime	0000:00:00 00:00:00
+ICC-header	ProfileFileSignature	acsp
+ICC-header	PrimaryPlatform	
+ICC-header	CMMFlags	0
+ICC-header	DeviceManufacturer	
+ICC-header	DeviceModel	
+ICC-header	DeviceAttributes	0 0
+ICC-header	RenderingIntent	0
+ICC-header	ConnectionSpaceIlluminant	0 0 0
+ICC-header	ProfileCreator	
+ICC-header	ProfileID	0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ICC_Profile	ProfileDescription	CANARY-TIFF-ICC-PROFILE
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	52.5041666666667
+GPS	GPSAreaInformation	CANARY-TIFF-GPS-AREA...
+Composite	GPSLatitude	52.5041666666667
+## iptc
+ExifTool	Warning	Invalid EXIF text encoding for UserComment
+ExifTool	Warning	[minor] Unrecognized MakerNotes
+ExifTool	Warning	Invalid EXIF text encoding for GPSAreaInformation
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	MM
+IFD0	ImageDescription	CANARY-TIFF-DESCRIPTION
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	Model	CANARY-TIFF-MODEL
+IFD0	StripOffsets	320 620
+IFD0	Orientation	1
+IFD0	StripByteCounts	300 200
+IFD0	Software	CANARY-TIFF-SOFTWARE
+IFD0	ModifyDate	2031:02:03 04:05:06
+IFD0	Artist	CANARY-TIFF-ARTIST
+IFD0	DNGVersion	1 4 0 0
+XMP-dc	Creator	CANARY-TIFF-XMP-PACKET
+ExifIFD	DateTimeOriginal	2032:07:08 09:10:11
+ExifIFD	UserComment	CANARY-TIFF-USERCOMMENT."3DU
+ExifIFD	SerialNumber	CANARY-TIFF-SERIAL
+ICC-header	ProfileCMMType	
+ICC-header	ProfileVersion	528
+ICC-header	ProfileClass	mntr
+ICC-header	ColorSpaceData	RGB
+ICC-header	ProfileConnectionSpace	XYZ
+ICC-header	ProfileDateTime	0000:00:00 00:00:00
+ICC-header	ProfileFileSignature	acsp
+ICC-header	PrimaryPlatform	
+ICC-header	CMMFlags	0
+ICC-header	DeviceManufacturer	
+ICC-header	DeviceModel	
+ICC-header	DeviceAttributes	0 0
+ICC-header	RenderingIntent	0
+ICC-header	ConnectionSpaceIlluminant	0 0 0
+ICC-header	ProfileCreator	
+ICC-header	ProfileID	0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ICC_Profile	ProfileDescription	CANARY-TIFF-ICC-PROFILE
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	52.5041666666667
+GPS	GPSAreaInformation	CANARY-TIFF-GPS-AREA...
+Composite	GPSLatitude	52.5041666666667
+## icc
+ExifTool	Warning	Bad Photoshop IRB resource "CANA"
+ExifTool	Warning	Invalid EXIF text encoding for UserComment
+ExifTool	Warning	[minor] Unrecognized MakerNotes
+ExifTool	Warning	Invalid EXIF text encoding for GPSAreaInformation
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	MM
+File	CurrentIPTCDigest	dac446510a43eedecaf25b40b90635e6
+IFD0	ImageDescription	CANARY-TIFF-DESCRIPTION
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	Model	CANARY-TIFF-MODEL
+IFD0	StripOffsets	320 620
+IFD0	Orientation	1
+IFD0	StripByteCounts	300 200
+IFD0	Software	CANARY-TIFF-SOFTWARE
+IFD0	ModifyDate	2031:02:03 04:05:06
+IFD0	Artist	CANARY-TIFF-ARTIST
+IFD0	DNGVersion	1 4 0 0
+XMP-dc	Creator	CANARY-TIFF-XMP-PACKET
+IPTC	By-line	CANARY-TIFF-IPTC
+ExifIFD	DateTimeOriginal	2032:07:08 09:10:11
+ExifIFD	UserComment	CANARY-TIFF-USERCOMMENT."3DU
+ExifIFD	SerialNumber	CANARY-TIFF-SERIAL
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	52.5041666666667
+GPS	GPSAreaInformation	CANARY-TIFF-GPS-AREA...
+Composite	GPSLatitude	52.5041666666667
+## software
+ExifTool	Warning	Bad Photoshop IRB resource "CANA"
+ExifTool	Warning	Invalid EXIF text encoding for UserComment
+ExifTool	Warning	[minor] Unrecognized MakerNotes
+ExifTool	Warning	Invalid EXIF text encoding for GPSAreaInformation
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	MM
+File	CurrentIPTCDigest	dac446510a43eedecaf25b40b90635e6
+IFD0	ImageDescription	CANARY-TIFF-DESCRIPTION
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	Model	CANARY-TIFF-MODEL
+IFD0	StripOffsets	320 620
+IFD0	Orientation	1
+IFD0	StripByteCounts	300 200
+IFD0	ModifyDate	2031:02:03 04:05:06
+IFD0	Artist	CANARY-TIFF-ARTIST
+IFD0	DNGVersion	1 4 0 0
+XMP-dc	Creator	CANARY-TIFF-XMP-PACKET
+IPTC	By-line	CANARY-TIFF-IPTC
+ExifIFD	DateTimeOriginal	2032:07:08 09:10:11
+ExifIFD	UserComment	CANARY-TIFF-USERCOMMENT."3DU
+ExifIFD	SerialNumber	CANARY-TIFF-SERIAL
+ICC-header	ProfileCMMType	
+ICC-header	ProfileVersion	528
+ICC-header	ProfileClass	mntr
+ICC-header	ColorSpaceData	RGB
+ICC-header	ProfileConnectionSpace	XYZ
+ICC-header	ProfileDateTime	0000:00:00 00:00:00
+ICC-header	ProfileFileSignature	acsp
+ICC-header	PrimaryPlatform	
+ICC-header	CMMFlags	0
+ICC-header	DeviceManufacturer	
+ICC-header	DeviceModel	
+ICC-header	DeviceAttributes	0 0
+ICC-header	RenderingIntent	0
+ICC-header	ConnectionSpaceIlluminant	0 0 0
+ICC-header	ProfileCreator	
+ICC-header	ProfileID	0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ICC_Profile	ProfileDescription	CANARY-TIFF-ICC-PROFILE
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	52.5041666666667
+GPS	GPSAreaInformation	CANARY-TIFF-GPS-AREA...
+Composite	GPSLatitude	52.5041666666667

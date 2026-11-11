@@ -22,9 +22,11 @@ use crate::audit::{audit, Category, FileAudit, ItemKind, RegionKind};
 use crate::error::Error;
 use crate::jpeg::{self, Jpeg, Region};
 use crate::policy::StripSpec;
-use crate::tiff::IfdKind;
+use crate::tiff::{Container, IfdKind};
 
+use super::exif::protected_ranges;
 use super::jpeg::plan;
+use super::tiff;
 use super::Check;
 
 /// Check `output` against `input` for the categories `spec`. `scrubs` are the
@@ -94,7 +96,7 @@ pub(super) fn verify(
     // every Exif category is removed the segments are gone whole (nothing to
     // compare).
     if !exif_gone {
-        entries(input, spec, &before, &after)?;
+        entries(input, spec, &before, &after, false)?;
     }
 
     // (h) Every range the plan zeroed reads zero in the output.
@@ -110,6 +112,90 @@ pub(super) fn verify(
 
     // (e) Idempotence: the plan for the output is empty.
     match plan(output, spec) {
+        Ok(p) if p.plan.is_empty() => Ok(()),
+        _ => Err(Check::Idempotent),
+    }
+}
+
+/// The GPS pointer entry of every GPS IFD of `container`, added to `gone`.
+fn gps_pointers(
+    container: &Container<'_>,
+    block: Option<usize>,
+    gone: &mut BTreeSet<Place>,
+) -> Result<(), Check> {
+    for ifd in container.ifds().iter().filter(|i| i.kind() == IfdKind::Gps) {
+        let pointer = ifd
+            .parent()
+            .and_then(|p| {
+                let holder = container.ifds().get(p)?;
+                let n = holder.entries().iter().position(|e| e.tag() == 0x8825)?;
+                Some((p, n))
+            })
+            .ok_or(Check::Entries)?;
+        gone.insert((block, pointer.0, pointer.1));
+    }
+    Ok(())
+}
+
+/// The self-check of a bare TIFF (SPEC-022): the JPEG checks with the scan
+/// region replaced by the data ranges. (a) no finding of a removed category;
+/// (b) kept categories unchanged; (c) same length, and every strip, tile, JPEG
+/// data range of the OUTPUT's walk is byte-identical to the input; (d) the
+/// output walks with no new kind of issue; (g) the inventory is the input's
+/// minus the deleted entries; (h) zeroed ranges read zero; (e) re-stripping the
+/// output changes nothing.
+pub(super) fn verify_tiff(
+    input: &[u8],
+    output: &[u8],
+    spec: StripSpec,
+    scrubs: &[(usize, usize)],
+) -> Result<(), Check> {
+    let before = audit(input);
+    let after = audit(output);
+    if after.findings().iter().any(|f| spec.contains(f.category)) {
+        return Err(Check::Preview);
+    }
+    let (kept_before, _) = kept_findings(&before, spec, false);
+    let (kept_after, _) = kept_findings(&after, spec, false);
+    if kept_before != kept_after {
+        return Err(Check::Kept);
+    }
+    // (c) Same length and the image data untouched.
+    if input.len() != output.len() {
+        return Err(Check::Scan);
+    }
+    // The 8-byte header (byte order, magic, IFD0 offset) is never edited.
+    if input.get(..8) != output.get(..8) {
+        return Err(Check::Scan);
+    }
+    let (Ok(cin), Ok(cout)) = (Container::parse(input), Container::parse(output)) else {
+        return Err(Check::Walk);
+    };
+    let protected = protected_ranges(output, &cout).map_err(|_| Check::Walk)?;
+    for r in &protected {
+        if input.get(r.clone()) != output.get(r.clone()) {
+            return Err(Check::Scan);
+        }
+    }
+    // (d) No new kind of issue.
+    let kinds = |c: &Container<'_>| -> Vec<Discriminant<Error>> {
+        c.issues().iter().map(|i| discriminant(i.error())).collect()
+    };
+    let old = kinds(&cin);
+    if !kinds(&cout).iter().all(|k| old.contains(k)) {
+        return Err(Check::Walk);
+    }
+    entries(input, spec, &before, &after, true)?;
+    for &(offset, len) in scrubs {
+        let zero = offset
+            .checked_add(len)
+            .and_then(|end| output.get(offset..end))
+            .is_some_and(|bytes| bytes.iter().all(|b| *b == 0));
+        if !zero {
+            return Err(Check::Scrubbed);
+        }
+    }
+    match tiff::plan(output, spec) {
         Ok(p) if p.plan.is_empty() => Ok(()),
         _ => Err(Check::Idempotent),
     }
@@ -159,6 +245,7 @@ fn entries(
     spec: StripSpec,
     before: &FileAudit<'_>,
     after: &FileAudit<'_>,
+    tiff: bool,
 ) -> Result<(), Check> {
     let items = tag_items(before);
     let mut gone: BTreeSet<Place> = BTreeSet::new();
@@ -178,21 +265,16 @@ fn entries(
         }
     }
     if spec.contains(Category::Gps) {
-        let meta = jpeg::read(input).map_err(|_| Check::Entries)?;
-        for (b, block) in meta.exif_blocks().iter().enumerate() {
-            let Ok(container) = block.container() else {
-                continue;
-            };
-            for ifd in container.ifds().iter().filter(|i| i.kind() == IfdKind::Gps) {
-                let pointer = ifd
-                    .parent()
-                    .and_then(|p| {
-                        let holder = container.ifds().get(p)?;
-                        let n = holder.entries().iter().position(|e| e.tag() == 0x8825)?;
-                        Some((p, n))
-                    })
-                    .ok_or(Check::Entries)?;
-                gone.insert((Some(b), pointer.0, pointer.1));
+        if tiff {
+            let container = Container::parse(input).map_err(|_| Check::Entries)?;
+            gps_pointers(&container, None, &mut gone)?;
+        } else {
+            let meta = jpeg::read(input).map_err(|_| Check::Entries)?;
+            for (b, block) in meta.exif_blocks().iter().enumerate() {
+                let Ok(container) = block.container() else {
+                    continue;
+                };
+                gps_pointers(container, Some(b), &mut gone)?;
             }
         }
     }

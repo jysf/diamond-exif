@@ -5,7 +5,7 @@
 
 stage:
   id: STAGE-004                     # stable, zero-padded, continuous across the repo
-  status: active                    # proposed | active | shipped | cancelled | on_hold
+  status: shipped                   # proposed | active | shipped | cancelled | on_hold
   priority: high                    # critical | high | medium | low
   target_complete: null             # optional: YYYY-MM-DD
 
@@ -15,7 +15,7 @@ repo:
   id: diamond-exif
 
 created_at: 2026-11-09
-shipped_at: null
+shipped_at: 2026-11-10
 
 # What part of the project's value thesis this stage advances.
 # If you can't articulate value_contribution, the stage may be
@@ -44,7 +44,12 @@ value_contribution:
 # that is a division you cannot observe, so any per-spec number is invented.
 # Warn-only, never a gate. A null here is honest; a guess is not. (DEC-013 §5)
 orchestration_cost:
-  sessions: []                      # - tokens_total: N
+  sessions:
+    - tokens_total: 2259684
+      estimated_usd: 14.91
+      recorded_at: 2026-11-10
+      notes: "Measured by the orchestrator from raw transcripts, the STAGE-003 method (input + output + cache_creation, de-duplicated by message id with the largest output per id, cache_read excluded, 6.60 USD/Mtok). Window: messages after the STAGE-003 close commit (d7a5587, 2026-11-06T22:43:46-08:00). Two sessions: 1cd6e68e (the long-lived orchestrator, 356 messages: 838 in + 1,738,269 cache_creation + 361,514 out = 2,100,621) and c6de7258 (SPEC-022 orchestration, 52 messages: 119 + 124,556 + 34,388 = 159,063; read live, so a floor: the closing turns after the read are not included). Cache reads are excluded as for STAGE-003 (they were 94.3M and 7.35M in the two sessions). The window may include a little non-STAGE-004 orchestration in 1cd6e68e (the STAGE-003 merge turns); four unrelated side sessions (readme update, template PR review, token spike, PR 32 file review) are not counted. Sub-agent costs are per spec, not here."
+                                    # - tokens_total: N
                                     #   estimated_usd: N
                                     #   recorded_at: YYYY-MM-DD
                                     #   notes: "framing + spec breakdown"
@@ -92,9 +97,9 @@ Format: `- [status] SPEC-ID (cycle) — one-line summary`
 - [x] SPEC-019 (shipped on 2026-11-10) — [L] Audit coverage of writer-relevant structures: Multi-Picture secondary images, MakerNote previews, unrecognised APPn (APP10), trailers, split APP13 resources; DEC-008/009 amendments; synthetic real-world-shape fixture builders
 - [x] SPEC-020 (shipped on 2026-11-10) — [L] Writer foundation and JPEG segment-level strip: writer DEC, change plan, pixel-integrity and audit-as-oracle invariants, `All`/`Everything`, `rewrite_jpeg` fuzz target, ExifTool output oracle
 - [x] SPEC-021 (shipped on 2026-11-10) — [L] JPEG in-place IFD entry deletion with scrub: `Gps`, `GpsAndDevice`, `AllPii` (thumbnail and MakerNote removed whole), never grow, never relocate
-- [ ] SPEC-022 (frame) — [M] TIFF and DNG in-place strip: never touch strip or tile offsets, SubIFDs, TIFF writer fuzz target
+- [x] SPEC-022 (shipped on 2026-11-10) — [M] TIFF and DNG in-place strip: never touch strip or tile offsets, SubIFDs, TIFF writer fuzz target
 
-**Count:** 3 shipped / 1 active / 0 pending
+**Count:** 4 shipped / 0 active / 0 pending
 
 ## Design Notes
 
@@ -120,18 +125,26 @@ Format: `- [status] SPEC-ID (cycle) — one-line summary`
 *Filled in when status moves to shipped. Run Prompt 1c (Stage Ship) in
 FIRST_SESSION_PROMPTS.md to draft this.*
 
-- **Did we deliver the outcome in "What This Stage Is"?** <yes/no + notes>
-- **How many specs did it actually take?** <number vs. plan>
-- **How many outlines survived unchanged?** <n of m — only if this stage was
-  framed with `just frame-stage`. Counts outlines whose scope held from frame to
-  ship. A low number means framing ran ahead of what was knowable; a high one
-  means it's paying for itself.>
-- **What changed between starting and shipping?** <one sentence>
+- **Did we deliver the outcome in "What This Stage Is"?**
+  Yes. `strip` / `sanitize` now work on JPEG (segment removal, in-place IFD entry deletion with scrub) and on classic TIFF and DNG (in place, same length). Each output is audited by the repo's own audit and by ExifTool, with strip, tile and raw data, and JPEG scan data, checked byte-identical, and fuzzed by `rewrite_jpeg` and `rewrite_tiff`. Two limits are recorded as DEC-008 questions: multi-page TIFFs are refused under AllPii/All/Everything, and DNG identity tags have no category.
+
+- **How many specs did it actually take?**
+  Four against the four framed (019 to 022). Total 4,921,119 tokens, 32.47 USD (019: 933,873; 020: 904,003; 021: 2,330,487 over five verify rounds; 022: 752,756).
+
+- **How many outlines survived unchanged?**
+  3 of 4 framed scopes held (019, 020, 022). SPEC-021 kept its goal but became the stage's cost outlier because the in-place engine had many refusal shapes (hidden pointers, blob carriers, shared bytes).
+
+- **What changed between starting and shipping?**
+  The hard work moved from format handling to proving what a refusal-free strip may touch: the shared `plan_block` engine, built in SPEC-021 for JPEG, made SPEC-022 an M that cost 0.67M tokens.
+
 - **Lessons that should update AGENTS.md, templates, or constraints?**
-  - <one-line updates>
-- **Signals dispositioned at this close?** (Prompt 1d step 7) Every
-  `type: lesson` signal in `/guidance/signals.yaml` owned by this stage close
-  was walked — codified (at its bar), left `watch`, or dropped. No silent carry.
-  - <note what codified / what's still watch + its N>
+  - Build the shared in-place engine against a bare blob first; the TIFF spec then reused it with a thin container layer (SPEC-021 to SPEC-022).
+  - A builder's self-reported transcript token count can include cache reads (10.27M against 249,601 from the harness); record only the harness figure (the 4th time the cost needed fixing: N=4 on the cumulative-notice lesson).
+  - An oracle must be shown able to see each category it claims to check: SPEC-022 round 1 found the ExifTool comparator blind to XMP, IPTC and ICC.
+  - Tests-first was skipped by the builder in SPEC-022 (red proven by mutation afterwards); the handoff should say "commit the failing tests first".
+
+- **Signals dispositioned at this close?**
+  No `type: lesson` signal is owned by this close beyond the watch items above; none codified. Left as `watch`.
+
 - **Should any spec-level reflections be promoted to stage-level lessons?**
-  - <one-line items — record below-bar ones as `watch` signals; don't codify yet>
+  - Carried forward as questions, not blockers: `dng-identity-tags-have-no-category`, `tiff-ifd1-strips-is-a-page`; a 24 h run of `rewrite_tiff` and `rewrite_jpeg` for the milestone gate; ExifTool over real TIFF/DNG photos; lib.rs and README text still say "strips JPEG".

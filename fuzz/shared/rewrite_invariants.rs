@@ -2063,6 +2063,14 @@ mod rewrite_invariants {
     }
 
     pub fn check_input(jpeg: &[u8], policy: StripPolicy) {
+        // A classic TIFF is stripped in place since SPEC-022; that surface has
+        // its own target (`rewrite_tiff`), so this JPEG harness leaves it out.
+        if matches!(
+            exif_core::audit::sniff(jpeg),
+            exif_core::audit::Sniffed::Tiff
+        ) {
+            return;
+        }
         let spec = policy.spec();
         let facts = facts(jpeg, policy);
         let pred = predict(jpeg, spec);

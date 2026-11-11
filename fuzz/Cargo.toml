@@ -58,3 +58,10 @@ path = "fuzz_targets/rewrite_jpeg.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "rewrite_tiff"
+path = "fuzz_targets/rewrite_tiff.rs"
+test = false
+doc = false
+bench = false

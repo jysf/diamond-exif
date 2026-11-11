@@ -103,17 +103,8 @@ fn removal_ranges(e: &Expect) -> Vec<Range<usize>> {
 // ── dispatch and refusals ───────────────────────────────────────────────────
 
 #[test]
-fn tiff_png_webp_heic_are_unsupported_naming_the_container() {
-    let tiff = oracle_tiff::assemble(
-        false,
-        &[oracle_tiff::ifd(vec![oracle_tiff::short(false, 274, 1)])],
-    );
-    assert_eq!(
-        strip(&tiff, StripPolicy::All).unwrap_err(),
-        StripError::Unsupported {
-            kind: ContainerKind::Tiff
-        }
-    );
+fn png_webp_heic_are_unsupported_naming_the_container() {
+    // (TIFF moved to SPEC-022, `tests/strip_tiff.rs`.)
     let mut png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
     png.extend_from_slice(&[0; 16]);
     let mut webp = b"RIFF\x10\0\0\0WEBPVP8 ".to_vec();

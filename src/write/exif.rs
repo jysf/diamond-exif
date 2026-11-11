@@ -341,15 +341,11 @@ fn blob_range(blob: &[u8], range: (u32, u32)) -> Option<Range<usize>> {
     Some(start..end)
 }
 
-/// Plan the edits of one block. See the module documentation.
-pub(super) fn plan_block(
-    blob: &[u8],
-    c: &Container<'_>,
-    sel: &Selection,
-) -> Result<BlockPlan, Refusal> {
-    let order = c.byte_order();
-    let ifds = c.ifds();
-
+/// Refuse when an IFD holds a pointer the walk did not follow, or a blob
+/// carrier of subdirectories ExifTool reads. Also run by the TIFF planner for a
+/// policy whose categories no Exif entry can have, so that it cannot report
+/// success on a file where such an entry could sit behind a hidden pointer.
+pub(super) fn hidden_pointers(ifds: &[Ifd]) -> Result<(), Refusal> {
     // ── pointers the walk did not follow ────────────────────────────────────
     // The walk follows the first entry with a pointer tag, and only from the
     // IFD kinds DEC-005 allows. Any other pointer entry leads to bytes the
@@ -376,6 +372,19 @@ pub(super) fn plan_block(
             }
         }
     }
+    Ok(())
+}
+
+/// Plan the edits of one block. See the module documentation.
+pub(super) fn plan_block(
+    blob: &[u8],
+    c: &Container<'_>,
+    sel: &Selection,
+) -> Result<BlockPlan, Refusal> {
+    let order = c.byte_order();
+    let ifds = c.ifds();
+
+    hidden_pointers(ifds)?;
 
     // ── a category tag the audit cannot see (Interop) ───────────────────────
     if let Some(&(g, n)) = sel.interop_hits.first() {
@@ -866,7 +875,7 @@ pub(super) fn plan_entries(
         let Ok(container) = block.container() else {
             continue;
         };
-        let selection = select(audited, b, container, spec)
+        let selection = select(audited, Some(b), container, spec)
             .ok_or_else(|| uneditable(UneditableReason::BlockNotClean, Some(block.segment())))?;
         let plan = plan_block(block.tiff(), container, &selection).map_err(|r| {
             StripError::Uneditable {
@@ -899,12 +908,12 @@ pub(super) fn plan_entries(
     Ok(edits)
 }
 
-/// What block `b` loses under `spec`: the audit's findings in the policy's
-/// categories (rule 2), mapped to `(ifd, entry)` positions of the walk. `None`
-/// when the audit and the walk disagree.
-fn select(
+/// What block `b` loses under `spec` (`None`: the bare TIFF of SPEC-022): the
+/// audit's findings in the policy's categories (rule 2), mapped to `(ifd,
+/// entry)` positions of the walk. `None` when the audit and the walk disagree.
+pub(super) fn select(
     audited: &FileAudit<'_>,
-    b: usize,
+    b: Option<usize>,
     container: &Container<'_>,
     spec: StripSpec,
 ) -> Option<Selection> {
@@ -913,7 +922,7 @@ fn select(
     let first = audited
         .items()
         .iter()
-        .position(|it| it.origin().block == Some(b))
+        .position(|it| it.origin().block == b)
         .unwrap_or(0);
     let mut sel = Selection {
         gps: spec.contains(Category::Gps),
@@ -935,7 +944,7 @@ fn select(
     for f in audited
         .findings()
         .iter()
-        .filter(|f| f.at.origin().block == Some(b))
+        .filter(|f| f.at.origin().block == b)
     {
         let ItemKind::Tag {
             ifd_index,
@@ -975,3 +984,16 @@ fn select(
 #[cfg(test)]
 #[path = "exif_tests.rs"]
 mod tests;
+
+/// The byte ranges that the entries of every IFD of `c` make image data of the
+/// file: strips, tiles, free blocks, the JPEG thumbnail and the JPEG tables
+/// (SPEC-022). Used by the self-check, which computes them over the OUTPUT's
+/// walk and requires them byte-identical to the input's bytes. `Err(entry
+/// start)` when an array cannot be read.
+pub(super) fn protected_ranges(blob: &[u8], c: &Container<'_>) -> Result<Vec<Range<usize>>, usize> {
+    let mut out = Vec::new();
+    for ifd in c.ifds() {
+        out.extend(offset_targets(c, blob, ifd, None)?);
+    }
+    Ok(merge_ranges(out))
+}

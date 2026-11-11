@@ -39,7 +39,6 @@ pub(super) struct Planned {
 
 impl Planned {
     /// A plan with no edit and no record.
-    #[cfg(test)]
     pub(super) fn empty() -> Planned {
         Planned {
             plan: EditPlan::new(),

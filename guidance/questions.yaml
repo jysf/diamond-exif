@@ -1280,3 +1280,33 @@ questions:
       gps-count-overflow under {Xmp}, {Icc} and {FreeText} changed from Ok to Uneditable (the SPEC-020 grid
       tests and their ExifTool records were updated). Policies with no category an Exif entry can have
       (Jumbf, EmbeddedImage, OtherSegment) still return Ok on those files.
+
+  - id: dng-identity-tags-have-no-category
+    question: "DNG identity tags 0xC614 UniqueCameraModel, 0xC615 LocalizedCameraModel, 0xC68B OriginalRawFileName and 0xC634 DNGPrivateData (Adobe MakN, a copy of the MakerNote with serials) have no DEC-008 category, so no preset removes them. Give them one (a DEC-008 amendment)?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      Found by the SPEC-022 verify (M3). Under GpsAndDevice, AllPii and Everything all four survive in
+      both byte orders; ExifTool on an Everything output still prints IFD0:UniqueCameraModel,
+      LocalizedCameraModel and OriginalRawFileName. The writer follows the audit and does not invent
+      categories. Every real DNG carries 0xC614, so Everything and the CameraModel and MakerNote
+      categories promise more than they deliver on DNG. Candidate mapping: CameraModel for 0xC614 and
+      0xC615, FreeText or DeviceId for 0xC68B, MakerNote for 0xC634.
+
+  - id: tiff-ifd1-strips-is-a-page
+    question: "In a bare TIFF, IFD1 with strips is a page, not a Thumbnail, but the audit rule calls it Thumbnail. Make that rule container-aware (a DEC-008 note) so multi-page TIFFs can be stripped under AllPii, All and Everything?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      Found by the SPEC-022 verify (M4). ExifTool names page 2's strips IFD1:StripOffsets (record
+      multipage-le.txt), the audit reports them under Thumbnail, so the three presets that include
+      Thumbnail refuse every multi-page TIFF (ThumbnailNotLocated, DEC-013 D.3). Fail-closed and
+      documented, but those presets are unusable on scans and faxes. After the audit change a planner
+      could keep the page; the self-check (a) would then agree. Also: a tiled IFD1 page is refused
+      although the audit does not call it a Thumbnail (D.3).
