@@ -80,7 +80,7 @@ The design and porting brief are complete and carry named failure modes. The fir
 - [ ] (not yet defined) — M1d: PNG and WebP readers and writers, `set` operations, MakerNote rules
 - [ ] (not yet defined) — M1e/M1f: HEIC read, IPTC/ICC passthrough, 24 h fuzz gate, publish
 
-**Count:** 3 shipped / 1 active / 3 pending
+**Count:** 4 shipped / 0 active / 3 pending
 
 ## Dependencies
 
