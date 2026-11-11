@@ -569,3 +569,35 @@ fn verify_tiff_accepts_the_identity_and_rejects_a_changed_header() {
         );
     }
 }
+
+/// A one-strip TIFF: IFD0 at 8 with StripOffsets and StripByteCounts, the strip
+/// at `strip_at` (10 bytes), another 10 bytes of data after it.
+fn one_strip_tiff(strip_at: u32) -> Vec<u8> {
+    let mut v = b"II\x2A\0\x08\0\0\0".to_vec();
+    v.extend_from_slice(&2u16.to_le_bytes());
+    for (tag, value) in [(0x0111u16, strip_at), (0x0117, 10)] {
+        v.extend_from_slice(&tag.to_le_bytes());
+        v.extend_from_slice(&4u16.to_le_bytes());
+        v.extend_from_slice(&1u32.to_le_bytes());
+        v.extend_from_slice(&value.to_le_bytes());
+    }
+    v.extend_from_slice(&0u32.to_le_bytes());
+    assert_eq!(v.len(), 38);
+    v.extend_from_slice(b"STRIPDATA1");
+    v.extend_from_slice(b"OTHERDATA2");
+    v
+}
+
+/// The protected ranges are read from the input as well as the output: a plan
+/// that repointed the strip at other bytes would otherwise compare the new
+/// range with bytes that were never the image data, and pass.
+#[test]
+fn verify_tiff_rejects_a_repointed_strip() {
+    let input = one_strip_tiff(38);
+    assert_eq!(verify_tiff(&input, &input, StripSpec::none(), &[]), Ok(()));
+    let out = one_strip_tiff(48);
+    assert_eq!(
+        verify_tiff(&input, &out, StripSpec::none(), &[]),
+        Err(Check::Scan)
+    );
+}

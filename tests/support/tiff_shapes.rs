@@ -476,8 +476,12 @@ pub fn jumbf(be: bool) -> Shape {
     let ifd0 = b.ifd(3);
     b.set_ifd0(ifd0);
     b.data_entries(ifd0, 0, 1, (0x0111, 0x0117), &[300, 200], 3);
-    let mut jumb = vec![0, 0, 0, 24];
-    jumb.extend_from_slice(b"jumbPROBE-C2PA-MANIFEST");
+    // A well-formed box: a big-endian length that counts itself, the type, the
+    // payload. (The length is the box's own, whatever the TIFF byte order.)
+    let payload = b"jumbPROBE-C2PA-MANIFEST";
+    let box_len = u32::try_from(payload.len() + 4).unwrap_or(0);
+    let mut jumb = box_len.to_be_bytes().to_vec();
+    jumb.extend_from_slice(payload);
     b.put(ifd0, 2, 0xCD41, UNDEFINED, jumb.len() as u32, &jumb);
     b.finish(&name("jumbf", be), false, false)
 }

@@ -171,7 +171,17 @@ pub(super) fn verify_tiff(
     let (Ok(cin), Ok(cout)) = (Container::parse(input), Container::parse(output)) else {
         return Err(Check::Walk);
     };
+    // The protected ranges are read from the input too. A range the output
+    // protects must be one the input protected: a plan that repointed a strip
+    // or tile entry would otherwise pass by comparing the output's ranges with
+    // bytes that were never the image data. (The reverse need not hold: a
+    // policy that removes the thumbnail removes its pointer entries, and so
+    // its ranges.)
+    let protected_in = protected_ranges(input, &cin).map_err(|_| Check::Walk)?;
     let protected = protected_ranges(output, &cout).map_err(|_| Check::Walk)?;
+    if protected.iter().any(|r| !protected_in.contains(r)) {
+        return Err(Check::Scan);
+    }
     for r in &protected {
         if input.get(r.clone()) != output.get(r.clone()) {
             return Err(Check::Scan);

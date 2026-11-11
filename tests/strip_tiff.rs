@@ -317,3 +317,33 @@ fn a_custom_jumbf_policy_on_a_tiff_with_a_jumbf_entry_is_refused() {
         assert_eq!(r.bytes(), &s.bytes[..]);
     }
 }
+
+/// The hidden-pointer guard runs for any policy that removes something, not
+/// only for the ones that name JUMBF: a policy that cannot touch the 0xCD41
+/// entry must still not report success over a file that hides one. Covers both
+/// planner paths: a policy with no Exif-entry category (the file is left as is)
+/// and one that edits entries.
+#[test]
+fn any_removing_policy_is_refused_over_a_hidden_jumbf_entry() {
+    for be in [false, true] {
+        let s = tiff_shapes::jumbf(be);
+        for (name, policy) in [
+            ("xmp", StripPolicy::Custom(spec_of(&[Category::Xmp]))),
+            ("icc", StripPolicy::Custom(spec_of(&[Category::Icc]))),
+            ("gps", StripPolicy::Gps),
+            ("all_pii", StripPolicy::AllPii),
+        ] {
+            let r = strip(&s.bytes, policy);
+            assert!(
+                matches!(
+                    r,
+                    Err(StripError::Uneditable {
+                        reason: UneditableReason::HiddenPointer,
+                        ..
+                    })
+                ),
+                "be={be} {name}: {r:?}"
+            );
+        }
+    }
+}
