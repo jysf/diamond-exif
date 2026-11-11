@@ -69,11 +69,11 @@ cost:
       agent: claude-sonnet-5-5
       interface: other
       basis: agent-result
-      tokens_total: 249601
-      estimated_usd: 1.65
-      duration_minutes: 13
+      tokens_total: 367289
+      estimated_usd: 2.42
+      duration_minutes: 19
       recorded_at: 2026-11-10
-      notes: "Orchestrator correction: tokens_total is the harness subagent_tokens (249,601; 54 tool uses; 806,266 ms = 13.4 min), the same basis as earlier specs, at 6.60 USD per Mtok = 1.65 USD. The builder self-reported 10,270,000 from its transcript counting every cache read, which is not comparable with the other specs, so it is NOT used. Builder original note: Floor, summed live from the session transcript (62 deduplicated messages: input + cache creation + cache read + output, max output per message id); about 55 tool calls. estimated_usd left null: no rates applied. Items 1-10 done; no PR (per instruction)."
+      notes: "Cumulative: build 249,601 + round-1 punch-list follow-up 117,688. Orchestrator correction: tokens_total is the harness subagent_tokens (249,601; 54 tool uses; 806,266 ms = 13.4 min), the same basis as earlier specs, at 6.60 USD per Mtok = 1.65 USD. The builder self-reported 10,270,000 from its transcript counting every cache read, which is not comparable with the other specs, so it is NOT used. Builder original note: Floor, summed live from the session transcript (62 deduplicated messages: input + cache creation + cache read + output, max output per message id); about 55 tool calls. estimated_usd left null: no rates applied. Items 1-10 done; no PR (per instruction)."
     - cycle: verify
       handoff: HANDOFF-047
       agent: claude-opus-5-5
@@ -85,8 +85,8 @@ cost:
       recorded_at: 2026-11-10
       notes: "tokens_total, estimated_usd and duration_minutes left null on purpose: the verifier (a subagent) cannot see its own metered token count; the orchestrator transcribes the harness subagent_tokens and duration. Verdict PUNCH LIST at a9ead7a (code fd5a2c3): no High; three Medium (ExifTool oracle blind to XMP/IPTC/ICC; Custom(Jumbf) is a silent no-op on a TIFF holding a 0xCD41 JUMBF entry; DNG identity tags outside DEC-008 survive Everything) plus a Medium usability follow-up (multi-page TIFF refused by the three presets that include Thumbnail); Lows on DEC-013 D.3/D.4 wording and verify_tiff using the output walk only. Core property held: 264,579 Ok strips from an independent input-walk differential, 0 violations; fuzz 315,498 runs clean. No code changed, nothing pushed, no cycle advanced."
   totals:
-    tokens_total: 447471
-    estimated_usd: 2.96
+    tokens_total: 565159
+    estimated_usd: 3.73
     session_count: 2
 ---
 
