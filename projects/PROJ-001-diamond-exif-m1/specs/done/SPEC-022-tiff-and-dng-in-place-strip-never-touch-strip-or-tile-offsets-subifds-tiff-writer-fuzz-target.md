@@ -95,6 +95,15 @@ cost:
       duration_minutes: 8
       recorded_at: 2026-11-10
       notes: "Round 2 (narrow), harness subagent_tokens 102,905, 23 tool uses, 451,615 ms. APPROVED at b19d9b8: M1 and M2 closed, header check real, 909 tests, both fuzz smokes clean. Two Lows (jumbf() fixture box length; guard now runs for any removing policy, no test)."
+    - cycle: build
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 84692
+      estimated_usd: 0.56
+      duration_minutes: 3
+      recorded_at: 2026-11-11
+      notes: "Post-ship CI fix (2840afa): the rewrite_tiff harness applied TIFF-only invariants to FF D8 (JPEG-sniffed) input; found by the CI 60 s smoke after PR 33 opened. Harness subagent_tokens 84,692, 13 tool uses, 205,726 ms. No handoff file."
     - cycle: ship
       agent: claude-opus-5-5
       interface: claude-code
@@ -105,9 +114,9 @@ cost:
       recorded_at: 2026-11-10
       notes: "Un-metered main-loop cycles (design, orchestration, ship) not measured: null on purpose."
   totals:
-    tokens_total: 668064
-    estimated_usd: 4.41
-    session_count: 4
+    tokens_total: 752756
+    estimated_usd: 4.97
+    session_count: 5
 shipped_at: 2026-11-10
 ---
 

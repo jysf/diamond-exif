@@ -129,7 +129,7 @@ FIRST_SESSION_PROMPTS.md to draft this.*
   Yes. `strip` / `sanitize` now work on JPEG (segment removal, in-place IFD entry deletion with scrub) and on classic TIFF and DNG (in place, same length). Each output is audited by the repo's own audit and by ExifTool, with strip, tile and raw data, and JPEG scan data, checked byte-identical, and fuzzed by `rewrite_jpeg` and `rewrite_tiff`. Two limits are recorded as DEC-008 questions: multi-page TIFFs are refused under AllPii/All/Everything, and DNG identity tags have no category.
 
 - **How many specs did it actually take?**
-  Four against the four framed (019 to 022). Total 4,836,427 tokens, 31.91 USD (019: 933,873; 020: 904,003; 021: 2,330,487 over five verify rounds; 022: 668,064).
+  Four against the four framed (019 to 022). Total 4,921,119 tokens, 32.47 USD (019: 933,873; 020: 904,003; 021: 2,330,487 over five verify rounds; 022: 752,756).
 
 - **How many outlines survived unchanged?**
   3 of 4 framed scopes held (019, 020, 022). SPEC-021 kept its goal but became the stage's cost outlier because the in-place engine had many refusal shapes (hidden pointers, blob carriers, shared bytes).
