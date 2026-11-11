@@ -4,7 +4,7 @@ Panic-free, pure-Rust, zero-copy EXIF/XMP/IPTC/ICC metadata reader, writer and s
 
 | Piece | Status | License |
 |---|---|---|
-| `exif-core` | reader and read-only audit model (M1a/M1b); no writer yet | MIT/Apache-2.0 |
+| `exif-core` | reader, read-only audit model and a strip writer for JPEG, TIFF and DNG (M1a to M1c); PNG, WebP and `set` operations not yet | MIT/Apache-2.0 |
 | `exif-audit` CLI (read-only scanner) | built (SPEC-016): `cargo build --release --bin exif-audit` | free |
 | `exif-pro` (compliance tier) | scaffold only | paid |
 
@@ -13,7 +13,11 @@ What works today:
 - **Reader:** strict TIFF/IFD parsing with a tolerant walk (a corrupt sub-IFD becomes a reported issue, not a failure). It reaches the Exif, GPS and Interop IFDs, labels each IFD by how it was reached, and decodes ASCII (borrowed from the input), signed-integer and float values. A total entry budget bounds memory on overlapping IFDs.
 - **JPEG:** a panic-free segment walker (markers, APPn kinds by signature, scan region, trailer; damage becomes per-segment issues). `jpeg::read` hands each Exif segment to the same TIFF engine and locates, without decoding, the XMP, extended XMP, ICC, IPTC and JUMBF regions.
 - **Audit model:** `exif_core::audit` does container sniffing, a tag and region inventory, PII findings by category and strip-policy previews. Text, JSON and CSV renderers and an incremental `ReportBuilder` produce the reports.
-- **Verification:** five fuzz targets and an ExifTool read-parity oracle (live and replayed), shown able to fail by mutated-copy red-proofs. Inventory parity against ExifTool covers 178 distinct inputs.
+- **Strip writer:** `exif_core::strip` (and `sanitize`, which returns only the bytes) takes input bytes and a `StripPolicy` (`Gps`, `GpsAndDevice`, `AllPii`, `All`, `Everything`, or any set of categories) and returns new bytes or a typed refusal. It fails closed: the output is audited again and compared with the input's audit before it is returned, and it is never longer than the input.
+  - **JPEG:** whole segments are removed; inside an Exif segment, matching IFD entries are deleted in place. Nothing grows or moves, and a Multi-Picture index stays consistent.
+  - **TIFF and DNG:** the same in-place deletion, with scrubbed values zeroed. Strip and tile offsets, strip and tile data, SubIFDs and JPEG data stay byte-identical. When that cannot be guaranteed the writer refuses with a reason (a hidden pointer, shared bytes, or a thumbnail it cannot locate).
+  - **Known limits:** multi-page TIFFs are refused under `AllPii`, `All` and `Everything` until the page-versus-thumbnail rule is decided (DEC-008), and DNG identity tags (serials, camera model) have no strip category yet. PNG and WebP are not handled.
+- **Verification:** seven fuzz targets (`tiff_ifd`, `jpeg_segments`, `audit`, `audit_render`, `cli_args`, `rewrite_jpeg`, `rewrite_tiff`) and an ExifTool oracle for reads, inventory and strip output (live and replayed), shown able to fail by mutated-copy red-proofs. Inventory parity against ExifTool covers 178 distinct inputs.
 - **CLI:** `exif-audit`, a read-only privacy scan with exit codes a CI job can act on (below).
 
 See `CLAUDE.md` and `AGENTS.md`. First decision: DEC-001 (tolerant-walk policy).
@@ -103,7 +107,7 @@ just test               # cargo test (oracle tests skip LOUDLY without exiftool)
 just lint               # fmt check + clippy
 just deny               # license policy (permissive-only dependencies)
 just forbid-unsafe      # re-check that no unsafe code exists
-just fuzz-smoke [TARGET]  # 60 s smoke per fuzz target (tiff_ifd, jpeg_segments, audit, audit_render, cli_args)
+just fuzz-smoke [TARGET]  # 60 s smoke per fuzz target (tiff_ifd, jpeg_segments, rewrite_jpeg, rewrite_tiff, audit, audit_render, cli_args)
 just oracle-record      # re-record ExifTool output for the parity fixtures
 just mutation-oracle    # mutated-copy red-proofs against the committed ExifTool records
 ```
