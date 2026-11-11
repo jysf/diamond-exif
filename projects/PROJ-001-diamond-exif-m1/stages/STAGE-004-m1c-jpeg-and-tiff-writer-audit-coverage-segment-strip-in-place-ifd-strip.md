@@ -44,7 +44,12 @@ value_contribution:
 # that is a division you cannot observe, so any per-spec number is invented.
 # Warn-only, never a gate. A null here is honest; a guess is not. (DEC-013 §5)
 orchestration_cost:
-  sessions: []                      # - tokens_total: N
+  sessions:
+    - tokens_total: null
+      estimated_usd: null
+      recorded_at: 2026-11-10
+      notes: "Orchestrator conversations (SPEC-019 to SPEC-022 designs, dispatch, ship, stage close) are not metered in this harness: null on purpose, not estimated (DEC-013 section 5). Sub-agent costs are per spec."
+                                    # - tokens_total: N
                                     #   estimated_usd: N
                                     #   recorded_at: YYYY-MM-DD
                                     #   notes: "framing + spec breakdown"
