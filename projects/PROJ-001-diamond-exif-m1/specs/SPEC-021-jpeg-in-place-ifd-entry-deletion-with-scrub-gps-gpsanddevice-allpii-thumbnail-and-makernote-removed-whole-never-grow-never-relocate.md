@@ -73,7 +73,7 @@ cost:
       estimated_usd: 5.91
       duration_minutes: 144
       recorded_at: 2026-11-10
-      notes: "Cost transcribed by the orchestrator from the harness final cumulative subagent_tokens after the third follow-up (895,690; 847,188 after the second, 782,540 after the first, 746,836 at the first build report) at 6.60 USD per Mtok = 5.91 USD. Duration is the sum of the four runs reported by the harness: 3,942,831 + 1,149,869 + 2,246,227 + 1,278,112 ms = 143.6 min, rounded to 144. Token cumulativity is derived (each resume added tokens in proportion to its tool uses), not confirmed by the harness. Follow-ups: joined-stray-bytes harness fix (56bd4a6, 9315047); verify round 1 punch list H1 H2 M1 L1-L5 (1cf8bd1); verify round 2 punch list H3 M2 L6-L8 (4911058). Nothing was pushed, no PR, no cycle advanced. FOLLOW-UP 4 (verify round 3 punch list, c1958b2) is NOT included in the token figure: the harness never delivered a final usage line for it (the agent kept re-notifying and was stopped by the orchestrator; last interim reading 141,727 tokens, 168 tool uses, 36.8 min, which did not agree with the earlier cumulative readings, so it was not added). The recorded figure is therefore a lower bound for the build session."
+      notes: "Cost transcribed by the orchestrator from the harness final cumulative subagent_tokens after the third follow-up (895,690; 847,188 after the second, 782,540 after the first, 746,836 at the first build report) at 6.60 USD per Mtok = 5.91 USD. Duration is the sum of the four runs reported by the harness: 3,942,831 + 1,149,869 + 2,246,227 + 1,278,112 ms = 143.6 min, rounded to 144. Token cumulativity is derived (each resume added tokens in proportion to its tool uses), not confirmed by the harness. Follow-ups: joined-stray-bytes harness fix (56bd4a6, 9315047); verify round 1 punch list H1 H2 M1 L1-L5 (1cf8bd1); verify round 2 punch list H3 M2 L6-L8 (4911058). Nothing was pushed, no PR, no cycle advanced. FOLLOW-UP 4 (c1958b2) and FOLLOW-UP 5 (8386559, verify round 4 punch list) are NOT included in the token figure: follow-up 4 never got a final usage line (the agent kept re-notifying and was stopped by the orchestrator; last interim reading 141,727 tokens, 168 tool uses, 36.8 min); follow-up 5 reported 328,026 tokens, 125 tool uses, 31.0 min, which reads as a per-resume figure, not cumulative like the earlier ones. The harness's readings for this one agent are inconsistent, so nothing was added. The recorded figure (895,690 tokens, 144 min) is a lower bound for the build session; adding the two unconfirmed readings would give about 1.37M tokens, about 9.0 USD at 6.60 per Mtok."
     - cycle: verify
       handoff: HANDOFF-042
       agent: claude-opus-5-5
@@ -257,34 +257,16 @@ Written first, red, in design order. Names are the contract.
 
 ## Reflection
 
-*Appended during **ship**. Three questions, short answers.*
-
 1. **What would I do differently next time?**
-   — <answer>
+   — State the removal rule as a closed world in the design, not as a list of cases: "a removed or deleted structure is handled only if every field of it is on a stated allow-list of tags AND field types, and anything a kept structure points to is protected; everything else refuses." The design listed 14 leak inputs and the build passed them, then four independent verify rounds each found a new sibling of one class (the planner acting as if it knew everything a structure points to): H1 straddling value, H2 second thumbnail pair, H3 off-list offset tags, M3 field type 13, H4 four ExifTool sub-IFD pointer tags. Each fix was an instance until round 3 forced a rule. Next time: ask the verifier for an independent random differential in round 1 (it found nothing the unit tests had, but it proved the end state: 32.8M strips, 0 violations), and scan the oracle's pointer set (all 65,536 tags against ExifTool) at design time instead of at the last verify.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — Yes, none done this session, all recorded as open questions: a DEC-013 note for the closed-world rule, the ratified extra refusals (`HiddenPointer` with the ExifTool subdirectory set, `NestedIfd`, `PayloadUnreadable`, `ThumbnailNotLocated` for kept-category tags, `MpfNotIndexed` for overlap), and the MakerNote and opaque-tag internal-offset limit (`makernote-internal-offsets`); a DEC-005 note for the ExifTool pointer set (`exiftool-subdirectory-pointer-tags`); DEC-008 decisions (`preview-outside-ifd1-not-thumbnail`, `field-type-129-utf8`). Process: a cost-recording rule for resumed agents (the harness's `subagent_tokens` was cumulative for some resumes and per-resume for others, so one build session's cost is recorded as a lower bound), and builder agents must stop cleanly (one stuck in a monitor loop re-notified for an hour). No constraint change.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — Yes: SPEC-022 (TIFF/DNG in-place strip) reuses `plan_block` and is next, after deciding `allpii-refuses-ifd1-with-a-following-ifd` and `strip-keeps-orientation` (TIFF chains make the first common). Before the writer reaches users: a clean 24 h `rewrite_jpeg` gate (only 5 minute runs so far) and a threat-model review of the whole writer by a reviewer of a different kind than the builder and verifier agents used here.
 
-4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
-   the defect-escape distribution is greppable across specs:
-   `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
-   `none` (clean first try).
-   — <one word>
-   *(Runtime/operational defects — the escape-prone class — only exist once the
-   artifact meets its real host. `escaped` here is a signal to strengthen the
-   §12 behavioral pre-flight for that surface.)*
+4. **Where was the worst defect caught?** — verify
+   *(H4: a GPS IFD behind ExifTool-only pointer tag 0x0190 survived `Gps` with `Ok`, found by the round-4 verifier's scan of all tags against ExifTool; H1/H2 in round 1 were the same class.)*
 
-5. **What can a user do now that they couldn't before?** — one sentence,
-   before → after; quote the confirming number if one exists, name the outcome
-   if not. Write `none` if this spec has no user-visible outcome — that is a
-   real, greppable result, not a blank. This is the line a downstream work-log's
-   `impact` field is transcribed from, and both halves are already written above
-   (## Context is the before, ## Goal is the after): confirm the prediction,
-   don't reconstruct it from memory.
-   — <answer | none>
+5. **What can a user do now that they couldn't before?** — A library caller can now remove just the GPS, device-identifying or all personal Exif entries from a JPEG in place (same length, scan region byte-identical, removed values zeroed) or get a typed refusal: on the user's own files `Gps` and `GpsAndDevice` give 13 of 13 JPEGs with the audit clean, `AllPii` 12 of 13 (one refused with `ChainAfterThumbnail`), and ExifTool by pipe shows the GPS group gone from exactly the 4 files that had it with Orientation and Multi-Picture groups untouched.
