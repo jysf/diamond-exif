@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: verifier             # implementer | verifier
   created_at: 2026-11-10
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                  # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-022
@@ -46,157 +46,135 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                     # completed | blocked | rejected
+  agent: claude-opus-5-5                      # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
-  verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
+  verdict: punch-list                    # verify handoffs: approved | punch-list | rejected
+  basis: agent-result                      # transcript | agent-result | slash-cost | api-usage | estimate
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
-  branch: null
+  branch: claude/spec-022-tiff-dng-strips-26c250
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-10               # YYYY-MM-DD
+  notes: "tokens_total, estimated_usd and duration_minutes left null on purpose: the verifier (a subagent) cannot see its own metered token count; the orchestrator transcribes the harness subagent_tokens and duration. Verdict PUNCH LIST at a9ead7a (code fd5a2c3): no High; three Medium (ExifTool oracle blind to XMP/IPTC/ICC; Custom(Jumbf) is a silent no-op on a TIFF holding a 0xCD41 JUMBF entry; DNG identity tags outside DEC-008 survive Everything) plus a Medium usability follow-up (multi-page TIFF refused by the three presets that include Thumbnail); Lows on DEC-013 D.3/D.4 wording and verify_tiff using the output walk only. Core property held: 264,579 Ok strips from an independent input-walk differential, 0 violations; fuzz 315,498 runs clean. No code changed, nothing pushed, no cycle advanced."
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
-# HANDOFF-047: <Task Title — same as the spec's title>
+# HANDOFF-047: TIFF and DNG in-place strip: never touch strip or tile offsets, SubIFDs, TIFF writer fuzz target
 
 ## Delegation Summary
 
-One sentence: `<from_agent>` (acting as `<from_role>`) hands `SPEC-022`
-to `<to_agent>` (acting as `<to_role>`) for the **`<cycle>`** cycle.
+`claude-opus-5-5` (acting as `architect`) hands `SPEC-022` to
+`claude-opus-5-5` (acting as `verifier`) for the **`verify`** cycle (round 1,
+cold, adversarial; HANDOFF-046 was the build).
 
 ## Context the Receiving Agent Needs
 
-The receiving agent MUST read these before starting work. Keep the
-list tight, but don't omit anything necessary.
-
-### Primary
-
-- **Project brief:** `./projects/PROJ-001-<slug>/brief.md`
-- **Stage:** `./projects/PROJ-001-<slug>/stages/STAGE-004-<slug>.md`
-- **Spec:** `./projects/PROJ-001-<slug>/specs/SPEC-022-<slug>.md`
-- **Reviewer brief (OPTIONAL, verify handoffs):** `./guidance/agents/<lens>.md` —
-  pick a lens if this review should look at one thing hard. Omit for a
-  general review; see `./guidance/agents/README.md`.
-- **Toolchain brief:** `./guidance/toolchain-brief.md` — this repo's test
-  framework, lint quirks, runtime globals and gotchas. Read it; it exists so a
-  cold agent doesn't rediscover them (DEC-004 rule 5).
-
-### Decisions that apply
-
-- `DEC-NNN` — <one-line summary of why this matters here>
-- `DEC-MMM` — <one-line summary>
-
-### Constraints that apply
-
-Check `./guidance/constraints.yaml` for full text. These constraints
-apply to the paths touched by this task:
-
-- `constraint-id-1` — <one-line summary>
-- `constraint-id-2` — <one-line summary>
-
-### Prior related work
-
-- `HANDOFF-YYY` — <one-line summary, if relevant>
-- `PR #NNN` — <link, if relevant>
-
-## Expected Deliverables
-
-*(For a `verify` handoff, replace this block with the verify contract below.)*
-
-- Code changes implementing SPEC-022's Acceptance Criteria.
-- All failing tests in SPEC-022 now passing.
-- Any new tests required to cover edge cases.
-- A PR against `main` from branch `feat/spec-XXX-<slug>`.
-- PR description referencing: this handoff ID, the spec ID, the stage
-  ID, the project ID, all referenced `DEC-*`, and any new `DEC-*`
-  created during implementation.
-
-### If `cycle: verify` — the verify contract
-
-You are **not** the agent that implemented this. Review it cold.
-
-- Acceptance criteria met? Tests actually pass? Build reflection answered
-  honestly (*"nothing was unclear"* is suspicious)?
-- Decision drift — run `just decisions-audit --changed`.
-- Constraint violations; non-trivial choices missing a `DEC-*`.
-- For any criterion claiming **runtime behavior** (a component registers, a hook
-  fires, a binary resolves on PATH, a config takes effect), confirm the
-  *behavioral* surface was exercised — not just the shape validated. That is the
-  defect class that escapes (AGENTS.md §12).
-- Output exactly ONE of: ✅ APPROVED / ⚠ PUNCH LIST / ❌ REJECTED.
+- Spec: `projects/PROJ-001-diamond-exif-m1/specs/SPEC-022-tiff-and-dng-in-place-strip-never-touch-strip-or-tile-offsets-subifds-tiff-writer-fuzz-target.md` (Design section)
+- `AGENTS.md` sections 8, 12, 13, 15; `guidance/toolchain-brief.md`
+- DEC-013 (incl. amendment D), DEC-008, DEC-009
+- Diff under review: `git diff 023f5cc..HEAD -- src tests fuzz examples`
 
 ## Out of Scope
 
-Explicit list of what this handoff does NOT include. If the receiving agent
-thinks any of these need to happen, they should create a new spec in
-the stage's backlog, not expand this handoff.
-
-- ...
-
-## Return Criteria — how to hand back
-
-**Completing this handoff means filling in the `handback:` front-matter block
-above AND the `## Handback` section below.** An unfilled handback is an
-incomplete cycle, and `just handback-sync` will tell the orchestrator so.
-
-On success:
-1. Fill the `handback:` front-matter — **including a real `tokens_total`**.
-2. Fill the `## Handback` section (the reflection is part of it, not optional).
-3. Set `handoff.status` → `completed` and `handback.status` → `completed`.
-4. Open a PR (build) or return your verdict (verify).
-
-If you cannot complete the task:
-1. Fill the `## Handback` section with what was done and what blocked you.
-2. Set `handoff.status` → `rejected`, `handback.status` → `blocked`.
-3. **Still report your token usage** — blocked work costs money too.
-4. Set the spec's `task.blocked: true` and add a question to
-   `/guidance/questions.yaml`.
+Fixing code, pushing, opening a PR, advancing the cycle.
 
 ---
 
 ## Handback
 
-*Filled in by the receiving agent. The orchestrator does not reconstruct any of
-this — it transcribes it. The reflection questions are part of completion.*
-
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `claude/spec-022-tiff-dng-strips-26c250`, no PR (per instruction)
+- **Completed at:** 2026-11-10
+- **All acceptance criteria met?** Mostly. Items 1-4, 6, 7, 9 and 10 are met. Item 5 ("check this against the audit as oracle and against ExifTool" for the XMP/IPTC/ICC carriers) and item 8 (the ExifTool oracle) are only partly met: see M1.
+- **Verdict:** ⚠ PUNCH LIST at `a9ead7a` (code at `fd5a2c3`)
+
+#### Gates run by the verifier (host: Apple silicon, `~/.cargo/bin` first in PATH)
+
+| Gate | Result |
+|---|---|
+| `cargo +1.90.0 fmt --all -- --check` + `rustfmt --check fuzz/shared/*.rs` | clean |
+| `cargo +1.90.0 clippy --all-targets -- -D warnings` (clippy 0.1.90) | clean |
+| `cargo +1.90.0 rustc --lib -- -F unsafe_code` | clean |
+| `just lint-no-allow` (the five lints `-F`) | clean |
+| `cargo +1.90.0 test` (ExifTool 13.55 on PATH, live oracles ran) | 907 passed, 0 failed, 9 ignored, 22 result lines |
+| `just validate` | 22 artifacts valid, 95 parse |
+| `just fuzz-smoke rewrite_tiff` | 315,498 runs in 61 s, exit 0, no crash |
+| `just mutation-oracle` | 58 passed, 1 ignored |
+| `just lint-red-proof` | control clean, injection rejected, all five lints fired (exit 0) |
+| `strip_tiff_oracle` with ExifTool off PATH | loud `SKIP`; with `DIAMOND_EXIF_REQUIRE_ORACLE=1` it fails, as designed |
+| `cargo run --example fuzz_seeds` | rewrites 98 `rewrite_tiff` seeds (and the others) byte-identically (git clean) |
+| `just decisions-audit --changed` | advisory: DEC-013 governs the touched files; amendment D is consistent with B |
+
+#### Independent differential (verifier's own, scratch crate, not committed)
+
+All 14 `-none` seeds and the 10 shapes, 20,000 random mutations each (byte set, bit flip, increment, zero, 10 % truncation), every input under 19 policies (5 presets, `Custom(none)`, one per category). 264,579 `Ok`, 155,421 typed refusals, **0 violations** of: same length; every strip/tile/free/JPEG range of the **input's** walk byte-identical (IFD1's 0x0201 range skipped when Thumbnail is removed); no finding of a removed category in the output audit. No `VerifyFailed` and no untyped error. Refusals: BlockNotClean 89,187; PayloadUnreadable 31,080; SharedBytes 18,119; ThumbnailNotLocated 10,790; NestedIfd 852; HiddenPointer 17; NotJpeg 4,872 and BigTIFF 504 (mutated magic). Not covered: real-world DNG/TIFF files, BigTIFF, MakerNote-internal absolute offsets.
+
+#### Findings
+
+**High:** none.
+
+**M1 (Medium) — the ExifTool oracle cannot see the XMP, IPTC or ICC carriers.**
+`tests/support/tiff_records.rs:131-142`: `names()` returns `&[]` for `Xmp`, `Iptc` and `Icc`; `policies()` (lines 29-40) records no policy that removes only one of them. The fixture carriers are canary text, not valid structures, so ExifTool parses none of them. It prints only warnings (`[minor] Empty XMP`, `Bad IPTC data tag`, `Bad length ICC_Profile`), and `check()` ignores warnings. Reproducer: add `XMP-dc	Creator	CANARY-LEAK`, `IPTC	By-line	CANARY-LEAK` and `ICC_Profile	ProfileDescription	CANARY-LEAK` under `## everything` in `tests/oracle-fixtures/exiftool-strip-tiff/stripped-le.txt`, then run `cargo test --test strip_tiff_oracle recorded`. Result: `ok. 1 passed`. A planted SubIFD `Artist` line, by contrast, is caught (`SubIFD:Artist survives Authorship`). The removal itself is correct: the canary byte-search in `tests/strip_tiff.rs:106-113` proves it. What is missing is the ExifTool evidence that spec item 5 asks for. Fix: give the fixtures a minimal valid XMP packet, IPTC record and ICC header; check them by group (`XMP-*`, `IPTC`, `Photoshop`, `ICC_*`) and treat their warnings as findings; record `Custom(Xmp)`, `Custom(Iptc)` and `Custom(Icc)`.
+
+**M2 (Medium) — `Custom(Jumbf)` reports success on a TIFF that holds a JUMBF entry but does not remove it.**
+`src/write/tiff.rs:59-61` returns `Planned::empty()` when `mode(spec) == Untouched` (`src/write/exif.rs:796-803`: Jumbf is not in `can_occur`). That skips the `EXIFTOOL_BLOB_CARRIER_TAGS` guard in `plan_block` (`exif.rs:359-365`), which exists to refuse a policy when "an entry of a removed category could sit behind it". Reproducer: IFD0 with strips plus `0xCD41` UNDEFINED `"....jumbPROBE-C2PA-MANIFEST..."`. The audit has 0 findings. `strip(Custom{Jumbf})` returns `Ok` with the output byte-identical to the input, so the C2PA/JUMBF blob is kept. `Everything` refuses this file (`HiddenPointer`, offset 34). The same path exists for JPEG since SPEC-021 (an Exif 0xCD41 under `Custom(Jumbf)`), but in a bare TIFF that tag is the only place JUMBF can be. Fix: run the hidden-pointer and blob-carrier guard, or refuse, whenever the spec names `Jumbf` and the walk holds 0xCD41 (or name it in DEC-013 D.5 as a stated limit).
+
+**M3 (Medium, follow-up, not this spec's code) — DNG identity tags outside DEC-008 survive every preset.**
+DNG IFD0 with `UniqueCameraModel` 0xC614, `LocalizedCameraModel` 0xC615, `OriginalRawFileName` 0xC68B and `DNGPrivateData` 0xC634 (Adobe `MakN`, a copy of the original MakerNote, serials included). Under `GpsAndDevice`, `AllPii` and `Everything`, all four are kept in both byte orders. ExifTool on the `Everything` output prints `IFD0:UniqueCameraModel`, `IFD0:LocalizedCameraModel` and `IFD0:OriginalRawFileName`. The writer follows the audit, as the spec requires ("do not invent categories"), but now that DNG support exists, `Everything` and the MakerNote and CameraModel categories promise more than they deliver on real DNGs, which always carry 0xC614. Record a `guidance/questions.yaml` entry or a DEC-008 note, and add one sentence to DEC-013 D.5.
+
+**M4 (Medium, usability; the decision itself is defensible) — multi-page TIFFs are refused by `AllPii`, `All` and `Everything`.**
+Refusing is fail-closed and is documented in DEC-013 D.3, so it is not a defect for this spec. It does make the main privacy presets unusable on a common class of file (scans, faxes). The cause is upstream: the audit's IFD1-with-strips rule calls page 2's `StripOffsets` a `Thumbnail`, while ExifTool names it `IFD1:StripOffsets` (record `multipage-le.txt:13`), so even a planner that kept the page would fail self-check (a). Follow-up: in a bare TIFF, IFD1 with strips is a page, not a thumbnail (a DEC-008 note), after which page-keeping becomes possible.
+
+**L1 (Low) — D.3 does not describe the refusals exactly.**
+- A **tiled** IFD1 page (TileOffsets and TileByteCounts, no 0x0111, no 0x0201) gets **0** `Thumbnail` findings from the audit, but `AllPii` still refuses it with `ThumbnailNotLocated` at offset 50. `plan_block` refuses any IFD1 that is not a single JPEG pair (`exif.rs:415-431`). This over-refuses in a fail-closed direction and is not documented.
+- An IFD1 page stored as old-style JPEG (Compression 6, 640x480, 0x0201/0x0202, no strips) is **zeroed** under `AllPii` as a thumbnail. That matches spec item 3 and ExifTool's naming, but "the writer never cuts a page" in D.3 is then not strictly true. Rewrite D.3 to say "never cuts a page held in strips or tiles".
+
+**L2 (Low) — D.4 claims a header check that `verify_tiff` does not make.**
+D.4 says (c) is "same length, same header, and ...", but `verify_tiff` (`src/write/verify.rs:149-198`) compares the length and the protected ranges, not bytes 0..8. A changed header is caught only indirectly, by Walk or Entries. The fuzz target does assert the header. Either add the 8-byte compare or reword D.4.
+
+**L3 (Low) — `verify_tiff` and the fuzz oracle take the protected ranges from the output's walk only.**
+See `verify.rs:171` and `rewrite_tiff.rs::protected`. Together with (g) Entries this is sound, because offset entries are never deletable and only GPS IFDs and the thumbnail IFD1 can leave the walk; my input-walk differential agrees. Comparing the input walk as well would make the check independent of what the plan did to the tables.
+
+**L4 (Low) — naming and bookkeeping.**
+- `strip` still returns `StripError::NotJpeg` for empty or unknown input (`src/write/mod.rs:358`), now that TIFF is accepted.
+- The spec's `references.decisions` lists DEC-008, DEC-009 and DEC-010 but not DEC-013, which this spec amends (D).
+- `hostile_inputs_*` (`tests/strip_tiff.rs:211-236`) runs only under `Gps`. The differential above covers the other policies.
+
+#### Focus answers
+
+1. **Image data, length:** no strip, tile, raw or JPEG data change, move or length change found, by code reading (`offset_targets` in `keep`, kept tables in `must_stay`, table rewrites checked against `keep`, any walk issue refused) or by test (the differential, 315k fuzz runs, hostile seeds: offset into an IFD table and strip over a GPS value give `SharedBytes`; SubIFD cycle and truncation give `BlockNotClean`). An offsets array that cannot be read is refused even with no edit.
+2. **Leaks:** the audited categories are removed in IFD0, the Exif IFD, SubIFDs and chain pages. Out-of-line values are zeroed; a shared value is refused. Outside the audit's view: M2 and M3.
+3. **Fail-closed and panic-free:** five-lint deny set clean, `-F unsafe_code` clean, no indexing or arithmetic in `tiff.rs` or the `verify.rs` additions; fuzz and differential found no panic.
+4. **`verify_tiff`:** no bad output passed it in the differential; L2 and L3 are wording and independence points, not holes found.
+5. **Page versus thumbnail:** defensible and documented (D.3); see M4 and L1.
+6. **Oracle and wiring:** the comparator red-proof is genuine for the categories it names, and blind for XMP, IPTC and ICC (M1). CI fuzz matrix, `app.just`, `fuzz_layout`, `oracle-record` and the CI record diff are consistent. On the JPEG path, `jpeg.rs` only loses one `#[cfg(test)]`, `entries()` moved its GPS-pointer code into `gps_pointers` with the same logic, and the JPEG strip and oracle tests pass. `rewrite_jpeg` now skips TIFF input, which `rewrite_tiff` covers.
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null. A subagent cannot see its own metered count; the orchestrator transcribes the harness `subagent_tokens`.
+- **Estimated USD:** null
+- **Duration (minutes):** null (harness figure to be transcribed)
+- **Source of the number:** harness report (orchestrator)
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
-- **Deviations from spec:**
-  - [list]
+- **New decisions emitted:** none
+- **Deviations from spec:** item 5's "against ExifTool" for the XMP/IPTC/ICC carriers is not shown (M1).
 - **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - DEC-008 note: IFD1 with strips in a bare TIFF is a page (M4).
+  - DEC-008 gap: DNG identity tags 0xC614, 0xC615, 0xC68B and 0xC634 (M3).
+  - The JUMBF Untouched-mode guard, if not fixed here (M2).
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — Item 5 says "follow what the audit/preset says"; it is not clear whether ExifTool parity for the IFD0 carriers was required. I read it as required.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — DEC-013 (amended by D) is missing from the spec's `references.decisions`.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Start with the planted-record red-proof for every category, which found M1 in one step, before doing the structural fuzzing.
