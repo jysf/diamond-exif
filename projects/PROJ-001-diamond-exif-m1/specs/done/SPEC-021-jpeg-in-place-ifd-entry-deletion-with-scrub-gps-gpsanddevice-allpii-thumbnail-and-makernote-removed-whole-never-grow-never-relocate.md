@@ -115,10 +115,20 @@ cost:
       duration_minutes: 34
       recorded_at: 2026-11-10
       notes: "Cost transcribed by the orchestrator from the harness final subagent_tokens 343,329 at 6.60 USD per Mtok = 2.27 USD; duration 2,062,990 ms = 34.4 min rounded to 34. tokens_total, estimated_usd and duration_minutes left null on purpose: the verifier cannot see its own token count; the orchestrator transcribes the harness's metered subagent_tokens and duration. Verdict PUNCH LIST at dbf3567 (code c1958b2): one High (IFD pointer tags that ExifTool follows but the walk and the HiddenPointer guard do not know, 0x0190 GlobalParametersIFD first; a GPS IFD behind it survives Gps and AllPii with ExifTool still printing GPS:GPSLatitude), one Medium (category tags inside the Interop IFD; ExifTool prints InteropIFD:Artist after an Authorship strip; DEC-008 scope), Lows (target of a removed GPS IFD's next-word left; kept-target protection by tag only; five surviving mutants). No code changed, nothing pushed, no cycle advanced."
+    - cycle: verify
+      handoff: null
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 232027
+      estimated_usd: 1.53
+      duration_minutes: 37
+      recorded_at: 2026-11-10
+      notes: "Round-5 narrow verify (after ship, on PR 32). No handoff file: the brief was a scratchpad file (h46.md), not committed. Cost transcribed by the orchestrator from the harness final subagent_tokens 232,027 at 6.60 USD per Mtok = 1.53 USD; duration 2,206,389 ms = 36.8 min rounded to 37. Verdict PUNCH LIST at 47e615a (code 8386559): H4/M4/L13/L15 fixes correct; new High H5 (0xC51B embedded-TIFF blob carrier hides GPS or Artist from the walk and audit while ExifTool reads it), M5 (0x8568 AFCP_IPTC), L16 (0xCD41 JUMBF), L17 (0xC6F5 aborts ExifTool), L18 (no test for H4 tags in Interop or GPS). No code changed, nothing pushed."
   totals:
-    tokens_total: 2098460
-    estimated_usd: 13.85
-    session_count: 5
+    tokens_total: 2330487
+    estimated_usd: 15.38
+    session_count: 6
 shipped_at: 2026-11-10
 ---
 
