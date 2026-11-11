@@ -6,18 +6,19 @@
 task:
   id: SPEC-022
   type: story                      # epic | story | task | bug | chore
-  cycle: verify  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
-  complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
+  complexity_actual: M             # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: approved  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
                                    #   rejects anything" stops being a hunch and becomes a number.
+  verify_rounds: [approved]
 
 project:
   id: PROJ-001
@@ -84,10 +85,30 @@ cost:
       duration_minutes: 8
       recorded_at: 2026-11-10
       notes: "tokens_total, estimated_usd and duration_minutes left null on purpose: the verifier (a subagent) cannot see its own metered token count; the orchestrator transcribes the harness subagent_tokens and duration. Verdict PUNCH LIST at a9ead7a (code fd5a2c3): no High; three Medium (ExifTool oracle blind to XMP/IPTC/ICC; Custom(Jumbf) is a silent no-op on a TIFF holding a 0xCD41 JUMBF entry; DNG identity tags outside DEC-008 survive Everything) plus a Medium usability follow-up (multi-page TIFF refused by the three presets that include Thumbnail); Lows on DEC-013 D.3/D.4 wording and verify_tiff using the output walk only. Core property held: 264,579 Ok strips from an independent input-walk differential, 0 violations; fuzz 315,498 runs clean. No code changed, nothing pushed, no cycle advanced."
+    - cycle: verify
+      handoff: HANDOFF-047
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 102905
+      estimated_usd: 0.68
+      duration_minutes: 8
+      recorded_at: 2026-11-10
+      notes: "Round 2 (narrow), harness subagent_tokens 102,905, 23 tool uses, 451,615 ms. APPROVED at b19d9b8: M1 and M2 closed, header check real, 909 tests, both fuzz smokes clean. Two Lows (jumbf() fixture box length; guard now runs for any removing policy, no test)."
+    - cycle: ship
+      agent: claude-opus-5-5
+      interface: claude-code
+      basis: estimate
+      tokens_total: null
+      estimated_usd: null
+      duration_minutes: null
+      recorded_at: 2026-11-10
+      notes: "Un-metered main-loop cycles (design, orchestration, ship) not measured: null on purpose."
   totals:
-    tokens_total: 565159
-    estimated_usd: 3.73
-    session_count: 2
+    tokens_total: 668064
+    estimated_usd: 4.41
+    session_count: 4
+shipped_at: 2026-11-10
 ---
 
 # SPEC-022: TIFF and DNG in-place strip: never touch strip or tile offsets, SubIFDs, TIFF writer fuzz target
@@ -147,22 +168,19 @@ Written first in intent, built in one pass (the planner and tests landed togethe
 *Appended during **ship**. Three questions, short answers.*
 
 1. **What would I do differently next time?**
-   — <answer>
+   — Make the builder write the failing tests first (it wrote planner and tests together and proved red afterwards by mutation), and put XMP/IPTC/ICC carrier validity for ExifTool into the design: the oracle was blind to them until verify round 1.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — DEC-013 amended (D.1 to D.5: TIFF branch, protected ranges, page-versus-thumbnail refusal, verify_tiff, JUMBF guard). Two DEC-008 questions opened (`dng-identity-tags-have-no-category`, `tiff-ifd1-strips-is-a-page`). Process: a builder's self-reported tokens can count cache reads (10.27M vs harness 249,601); record only the harness figure.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — Yes, in M1d or a DEC-008 patch: audit-side page-versus-thumbnail rule so multi-page TIFFs can be stripped under AllPii/All/Everything, and a category for DNG identity tags (UniqueCameraModel, OriginalRawFileName, DNGPrivateData).
 
 4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
    the defect-escape distribution is greppable across specs:
    `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
    `none` (clean first try).
-   — <one word>
+   — verify
    *(Runtime/operational defects — the escape-prone class — only exist once the
    artifact meets its real host. `escaped` here is a signal to strengthen the
    §12 behavioral pre-flight for that surface.)*
@@ -174,4 +192,4 @@ Written first in intent, built in one pass (the planner and tests landed togethe
    `impact` field is transcribed from, and both halves are already written above
    (## Context is the before, ## Goal is the after): confirm the prediction,
    don't reconstruct it from memory.
-   — <answer | none>
+   — Before: `strip` refused TIFF and DNG; after: it removes GPS, device and PII entries from TIFF and DNG in place, same length, with strip, tile and raw data verified byte-identical (about 265,000 random strips, 0 violations).

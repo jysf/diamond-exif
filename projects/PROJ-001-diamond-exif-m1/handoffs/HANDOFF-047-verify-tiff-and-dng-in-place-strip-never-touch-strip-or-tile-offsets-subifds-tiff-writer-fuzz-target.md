@@ -51,9 +51,9 @@ handback:
                                    #   to_agent above is a prediction from tier_map
   verdict: punch-list                    # verify handoffs: approved | punch-list | rejected
   basis: agent-result
-  tokens_total: 197870
-  estimated_usd: 1.31
-  duration_minutes: 8
+  tokens_total: 300775
+  estimated_usd: 1.99
+  duration_minutes: 15
   branch: claude/spec-022-tiff-dng-strips-26c250
   pr: null
   completed_at: 2026-11-10               # YYYY-MM-DD
