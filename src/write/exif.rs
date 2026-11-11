@@ -48,6 +48,17 @@ const POINTER_TAGS: [u16; 4] = [0x014A, 0x8769, TAG_GPS_POINTER, 0xA005];
 /// tags, in any IFD and of any type, makes a partial policy refuse
 /// (`HiddenPointer`), because an entry of a removed category could sit behind it.
 const EXIFTOOL_SUBDIRECTORY_TAGS: [u16; 4] = [0x0190, 0x888A, 0x8290, 0xFE00];
+/// Tags whose VALUE is a blob that ExifTool 13.55 reads as metadata the walk
+/// and the audit never see (a blob, not an offset to an IFD, so nothing here
+/// can follow it): 0xC51B HasselbladExif (an UNDEFINED blob parsed as an
+/// embedded TIFF with the Exif table, so a GPS IFD or an Artist inside it is
+/// reported), 0x8568 AFCP_IPTC (an IPTC carrier inside Exif), 0xCD41 JUMBF, and
+/// 0xC6F5 ProfileIFD (ExifTool aborts on a JPEG that holds it, so the oracle is
+/// blind, and it may lead to a GPS IFD). The real fix is audit-side parsing
+/// (a DEC-008 note, question `audit-blob-carrier-parsing`); until then an entry
+/// with one of these tags, in any IFD kind and of any type, makes a partial
+/// policy refuse with `HiddenPointer`, as for the sub-IFD tags above.
+const EXIFTOOL_BLOB_CARRIER_TAGS: [u16; 4] = [0xC51B, 0x8568, 0xCD41, 0xC6F5];
 /// The tags an IFD1 may hold when it is removed whole (the allow-list; any
 /// other tag is refused as `ThumbnailNotLocated`). Each is a tag whose only
 /// offset to data is its own out-of-line value (which the planner zeroes), or
@@ -346,11 +357,10 @@ pub(super) fn plan_block(
     // inside the Exif IFD), where an entry of the policy's categories could be
     // left behind.
     for ifd in ifds {
-        if let Some(e) = ifd
-            .entries()
-            .iter()
-            .find(|e| EXIFTOOL_SUBDIRECTORY_TAGS.contains(&e.tag()))
-        {
+        if let Some(e) = ifd.entries().iter().find(|e| {
+            EXIFTOOL_SUBDIRECTORY_TAGS.contains(&e.tag())
+                || EXIFTOOL_BLOB_CARRIER_TAGS.contains(&e.tag())
+        }) {
             return Err(refuse(UneditableReason::HiddenPointer, start_of(e)));
         }
         for tag in POINTER_TAGS {

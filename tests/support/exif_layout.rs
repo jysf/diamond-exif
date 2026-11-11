@@ -1302,3 +1302,81 @@ pub fn gps_with_a_next_word(be: bool) -> Build {
     ));
     b
 }
+
+// ── HANDOFF-046 (round 5) ───────────────────────────────────────────────────
+
+/// A small embedded TIFF (what ExifTool reads inside 0xC51B): IFD0 with an
+/// Artist (`kind == "artist"`) or a pointer to a GPS IFD with a canaried
+/// latitude (`kind == "gps"`).
+fn embedded_tiff(be: bool, kind: &str) -> Vec<u8> {
+    let w16 = |v: u16| u16b(be, v).to_vec();
+    let w32 = |v: u32| u32b(be, v).to_vec();
+    let mut t = if be { b"MM".to_vec() } else { b"II".to_vec() };
+    t.extend(w16(42));
+    t.extend(w32(8));
+    if kind == "artist" {
+        t.extend(w16(1));
+        t.extend(w16(0x013B));
+        t.extend(w16(ASCII));
+        t.extend(w32(K_ARTIST.len() as u32 + 1));
+        t.extend(w32(26));
+        t.extend(w32(0));
+        t.extend(K_ARTIST);
+        t.push(0);
+    } else {
+        // IFD0 at 8 (one pointer entry, 18 bytes), GPS IFD at 26 (one RATIONAL
+        // entry, 18 bytes) and its three rationals at 44.
+        t.extend(w16(1));
+        t.extend(w16(0x8825));
+        t.extend(w16(LONG));
+        t.extend(w32(1));
+        t.extend(w32(26));
+        t.extend(w32(0));
+        t.extend(w16(1));
+        t.extend(w16(0x0002));
+        t.extend(w16(RATIONAL));
+        t.extend(w32(3));
+        t.extend(w32(44));
+        t.extend(w32(0));
+        for (n, d) in K_LAT {
+            t.extend(w32(n));
+            t.extend(w32(d));
+        }
+    }
+    t
+}
+
+/// IFD0 holds `tag` as an UNDEFINED blob: an embedded TIFF with a GPS IFD or an
+/// Artist (`what` is "gps" or "artist"), or IPTC-looking bytes ("iptc") or
+/// JUMBF-looking bytes ("jumbf").
+pub fn blob_carrier(be: bool, tag: u16, what: &str) -> Build {
+    let bytes = match what {
+        "gps" | "artist" => embedded_tiff(be, what),
+        "iptc" => [&[0x1C, 0x02, 0x50, 0x00, 0x12][..], b"CANARY-BYLINE-0019"].concat(),
+        _ => [&b"\0\0\0\x20jumb"[..], b"CANARY-JUMBF-0020"].concat(),
+    };
+    let mut e = undefined(tag, &bytes);
+    e.canary = Some(match what {
+        "gps" => K_LAT[0].0.to_be_bytes().to_vec(),
+        "artist" => K_ARTIST.to_vec(),
+        "iptc" => b"CANARY-BYLINE-0019".to_vec(),
+        _ => b"CANARY-JUMBF-0020".to_vec(),
+    });
+    Build {
+        be,
+        ifds: vec![ifd("ifd0", vec![short(be, 0x0112, 1), e], None)],
+        thumb: None,
+        pad_to: None,
+    }
+}
+
+/// An H4 tag (0x8290) inside the Interop IFD (`host == "interop"`) or inside
+/// the GPS IFD (`host == "gps"`), leading to an IFD with a canaried Artist.
+pub fn h4_tag_in_a_leaf_ifd(be: bool, host: &str) -> Build {
+    let mut b = full(be);
+    let f = b.ifds.iter_mut().find(|f| f.name == host).unwrap();
+    f.ents.push(ptr(0x8290, "hidden"));
+    b.ifds
+        .push(ifd("hidden", vec![ascii(0x013B, K_SUBARTIST)], None));
+    b
+}

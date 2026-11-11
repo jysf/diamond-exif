@@ -1080,6 +1080,16 @@ mod rewrite_invariants {
         }) {
             return None;
         }
+        // Blob carriers ExifTool 13.55 reads and the audit does not: 0xC51B
+        // HasselbladExif (an embedded TIFF), 0x8568 AFCP_IPTC, 0xCD41 JUMBF,
+        // 0xC6F5 ProfileIFD. Refused in any IFD, of any type.
+        if ifds.iter().any(|i| {
+            i.ents
+                .iter()
+                .any(|e| [0xC51B, 0x8568, 0xCD41, 0xC6F5].contains(&e.tag))
+        }) {
+            return None;
+        }
         // The audit reports nothing in Interop (DEC-008): a tag that would be a
         // finding of the policy's categories in IFD0 or Exif is refused there.
         if ifds.iter().any(|i| {
