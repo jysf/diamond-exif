@@ -441,6 +441,70 @@ pub fn leak_inputs_jpeg() -> Vec<(&'static str, Vec<u8>)> {
             "subdirectory_fe00_artist_be",
             one(exif_layout::exiftool_subdirectory(true, 0xFE00, "artist").layout()),
         ),
+        (
+            "blob_carrier_c51b_gps_le",
+            one(exif_layout::blob_carrier(false, 0xC51B, "gps").layout()),
+        ),
+        (
+            "blob_carrier_c51b_artist_le",
+            one(exif_layout::blob_carrier(false, 0xC51B, "artist").layout()),
+        ),
+        (
+            "blob_carrier_8568_iptc_le",
+            one(exif_layout::blob_carrier(false, 0x8568, "iptc").layout()),
+        ),
+        (
+            "blob_carrier_cd41_jumbf_le",
+            one(exif_layout::blob_carrier(false, 0xCD41, "jumbf").layout()),
+        ),
+        (
+            "profile_ifd_gps_le",
+            one(exif_layout::exiftool_subdirectory(false, 0xC6F5, "gps").layout()),
+        ),
+        (
+            "profile_ifd_artist_le",
+            one(exif_layout::exiftool_subdirectory(false, 0xC6F5, "artist").layout()),
+        ),
+        (
+            "h4_tag_in_interop_le",
+            one(exif_layout::h4_tag_in_a_leaf_ifd(false, "interop").layout()),
+        ),
+        (
+            "h4_tag_in_gps_le",
+            one(exif_layout::h4_tag_in_a_leaf_ifd(false, "gps").layout()),
+        ),
+        (
+            "blob_carrier_c51b_gps_be",
+            one(exif_layout::blob_carrier(true, 0xC51B, "gps").layout()),
+        ),
+        (
+            "blob_carrier_c51b_artist_be",
+            one(exif_layout::blob_carrier(true, 0xC51B, "artist").layout()),
+        ),
+        (
+            "blob_carrier_8568_iptc_be",
+            one(exif_layout::blob_carrier(true, 0x8568, "iptc").layout()),
+        ),
+        (
+            "blob_carrier_cd41_jumbf_be",
+            one(exif_layout::blob_carrier(true, 0xCD41, "jumbf").layout()),
+        ),
+        (
+            "profile_ifd_gps_be",
+            one(exif_layout::exiftool_subdirectory(true, 0xC6F5, "gps").layout()),
+        ),
+        (
+            "profile_ifd_artist_be",
+            one(exif_layout::exiftool_subdirectory(true, 0xC6F5, "artist").layout()),
+        ),
+        (
+            "h4_tag_in_interop_be",
+            one(exif_layout::h4_tag_in_a_leaf_ifd(true, "interop").layout()),
+        ),
+        (
+            "h4_tag_in_gps_be",
+            one(exif_layout::h4_tag_in_a_leaf_ifd(true, "gps").layout()),
+        ),
         ("exif_second_block_unclean", second_block_unclean()),
         ("exif_first_block_unclean", first_block_unclean()),
         ("exif_middle_block_unclean", middle_block_unclean()),

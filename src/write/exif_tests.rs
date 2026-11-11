@@ -1518,3 +1518,133 @@ fn l15_mt_a_kept_type_13_entry_protects_its_target_to_the_blob_end() {
         assert_eq!(err.at, 98);
     }
 }
+
+// ── HANDOFF-046 (round 5) ───────────────────────────────────────────────────
+
+/// IFD0 {0x0112, `tag` of `ty` with `count` over `val`}; a blob at 60 so the
+/// entry has something to point at.
+fn blob_carrier_in_ifd0(be: bool, tag: u16, ty: u16, count: u32) -> Blob {
+    let mut b = Blob::new(be, 8);
+    let es = vec![
+        b.short(0x0112, 1),
+        E {
+            tag,
+            ty,
+            count,
+            val: b.w32(60),
+        },
+    ];
+    b.ifd(8, &es, 0);
+    b.data(60, &[0xE7; 24]);
+    b
+}
+
+fn assert_hidden_at(b: &Blob, at: usize, what: &str) {
+    let err = run(&b.bytes, &Selection::default()).unwrap_err();
+    assert_eq!(
+        err,
+        Refusal {
+            reason: UneditableReason::HiddenPointer,
+            at
+        },
+        "{what}"
+    );
+}
+
+/// H5: 0xC51B (HasselbladExif) is an UNDEFINED blob ExifTool parses as an
+/// embedded TIFF with the Exif table; the walk never reads it.
+#[test]
+fn h5_a_hasselblad_exif_blob_is_a_hidden_pointer() {
+    for be in [false, true] {
+        for (ty, count) in [(7u16, 24u32), (1, 24), (4, 1), (13, 1)] {
+            let b = blob_carrier_in_ifd0(be, 0xC51B, ty, count);
+            assert_hidden_at(&b, 8 + 2 + 12, &format!("0xC51B type {ty} be={be}"));
+        }
+    }
+}
+
+/// M5: 0x8568 (AFCP_IPTC) is an IPTC carrier inside Exif the audit does not
+/// categorise.
+#[test]
+fn m5_an_afcp_iptc_blob_is_a_hidden_pointer() {
+    for be in [false, true] {
+        for (ty, count) in [(7u16, 24u32), (1, 24), (4, 1)] {
+            let b = blob_carrier_in_ifd0(be, 0x8568, ty, count);
+            assert_hidden_at(&b, 8 + 2 + 12, &format!("0x8568 type {ty} be={be}"));
+        }
+    }
+}
+
+/// L16: 0xCD41 (JUMBF) inside Exif is not categorised.
+#[test]
+fn l16_a_jumbf_blob_in_exif_is_a_hidden_pointer() {
+    for be in [false, true] {
+        for (ty, count) in [(7u16, 24u32), (1, 24), (4, 1)] {
+            let b = blob_carrier_in_ifd0(be, 0xCD41, ty, count);
+            assert_hidden_at(&b, 8 + 2 + 12, &format!("0xCD41 type {ty} be={be}"));
+        }
+    }
+}
+
+/// L17: 0xC6F5 (ProfileIFD) aborts ExifTool on a JPEG that holds it (the oracle
+/// is blind) and may lead to a GPS IFD.
+#[test]
+fn l17_a_profile_ifd_tag_is_a_hidden_pointer() {
+    for be in [false, true] {
+        for (ty, count) in [(4u16, 1u32), (13, 1), (7, 24)] {
+            let b = blob_carrier_in_ifd0(be, 0xC6F5, ty, count);
+            assert_hidden_at(&b, 8 + 2 + 12, &format!("0xC6F5 type {ty} be={be}"));
+        }
+    }
+}
+
+/// The four blob-carrier tags are refused in the Exif IFD as well; a tag next
+/// to them is not.
+#[test]
+fn h5_the_blob_carrier_tags_are_refused_in_the_exif_ifd_too() {
+    for be in [false, true] {
+        for tag in [0xC51Bu16, 0x8568, 0xCD41, 0xC6F5] {
+            let mut b = Blob::new(be, 8);
+            let es = vec![b.short(0x0112, 1), b.long(0x8769, 40)];
+            b.ifd(8, &es, 0);
+            let ex = vec![b.short(0xA001, 1), b.out(tag, 7, 24, 100)];
+            b.ifd(40, &ex, 0);
+            b.data(100, &[0xE7; 24]);
+            assert_hidden_at(&b, 40 + 2 + 12, &format!("Exif {tag:#x} be={be}"));
+        }
+        let b = blob_carrier_in_ifd0(be, 0xC51C, 7, 24);
+        assert!(run(&b.bytes, &Selection::default()).is_ok());
+    }
+}
+
+/// L18: each H4 tag inside an Interop IFD and inside a GPS IFD is refused
+/// too (the guard is not filtered by IFD kind).
+#[test]
+fn l18_the_h4_tags_are_refused_in_interop_and_gps_ifds() {
+    for be in [false, true] {
+        for tag in [0x0190u16, 0x888A, 0x8290, 0xFE00] {
+            // IFD0 -> Exif -> Interop {0x0001, tag -> IFD{Artist}}.
+            let mut b = Blob::new(be, 8);
+            let es = vec![b.short(0x0112, 1), b.long(0x8769, 40)];
+            b.ifd(8, &es, 0);
+            let ex = vec![b.long(0xA005, 60)];
+            b.ifd(40, &ex, 0);
+            let io = vec![b.inl(0x0001, b"R9\0"), b.long(tag, 100)];
+            b.ifd(60, &io, 0);
+            let sub = vec![b.out(0x013B, 2, 7, 120)];
+            b.ifd(100, &sub, 0);
+            b.data(120, ARTIST);
+            assert_hidden_at(&b, 60 + 2 + 12, &format!("Interop {tag:#x} be={be}"));
+            // IFD0 -> GPS {0x0001, tag -> IFD{Artist}}.
+            let mut b = Blob::new(be, 8);
+            let es = vec![b.short(0x0112, 1), b.long(0x8825, 40)];
+            b.ifd(8, &es, 0);
+            let gps = vec![b.inl(0x0001, b"N\0"), b.long(tag, 100)];
+            b.ifd(40, &gps, 0);
+            let sub = vec![b.out(0x013B, 2, 7, 120)];
+            b.ifd(100, &sub, 0);
+            b.data(120, ARTIST);
+            assert_hidden_at(&b, 40 + 2 + 12, &format!("GPS {tag:#x} be={be}"));
+        }
+    }
+}

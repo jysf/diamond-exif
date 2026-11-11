@@ -2437,6 +2437,50 @@ fn leak_inputs() -> Vec<Leak> {
                 }),
         )
         .chain(
+            [
+                (0xC51Bu16, "gps", "gps"),
+                (0xC51B, "artist", "authorship"),
+                (0x8568, "iptc", "iptc"),
+                (0xCD41, "jumbf", "gps"),
+            ]
+            .into_iter()
+            .map(move |(tag, what, cat)| Leak {
+                name: "exiftool_blob_carrier",
+                layout: exif_layout::blob_carrier(be, tag, what).layout(),
+                cats: if cat == "gps" {
+                    &["gps"]
+                } else if cat == "iptc" {
+                    &["iptc"]
+                } else {
+                    &["authorship"]
+                },
+                reason: UneditableReason::HiddenPointer,
+                at: None,
+            }),
+        )
+        .chain(
+            [("gps", "gps"), ("artist", "authorship")]
+                .into_iter()
+                .map(move |(behind, cat)| Leak {
+                    name: "profile_ifd",
+                    layout: exif_layout::exiftool_subdirectory(be, 0xC6F5, behind).layout(),
+                    cats: if cat == "gps" {
+                        &["gps"]
+                    } else {
+                        &["authorship"]
+                    },
+                    reason: UneditableReason::HiddenPointer,
+                    at: None,
+                }),
+        )
+        .chain(["interop", "gps"].into_iter().map(move |host| Leak {
+            name: "h4_tag_in_a_leaf_ifd",
+            layout: exif_layout::h4_tag_in_a_leaf_ifd(be, host).layout(),
+            cats: &["authorship"],
+            reason: UneditableReason::HiddenPointer,
+            at: None,
+        }))
+        .chain(
             [0x0144u16, 0x0207, 0x0120, 0xF123]
                 .into_iter()
                 .map(|tag| Leak {
