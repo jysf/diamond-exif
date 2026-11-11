@@ -45,10 +45,10 @@ value_contribution:
 # Warn-only, never a gate. A null here is honest; a guess is not. (DEC-013 §5)
 orchestration_cost:
   sessions:
-    - tokens_total: null
-      estimated_usd: null
+    - tokens_total: 2259684
+      estimated_usd: 14.91
       recorded_at: 2026-11-10
-      notes: "Orchestrator conversations (SPEC-019 to SPEC-022 designs, dispatch, ship, stage close) are not metered in this harness: null on purpose, not estimated (DEC-013 section 5). Sub-agent costs are per spec."
+      notes: "Measured by the orchestrator from raw transcripts, the STAGE-003 method (input + output + cache_creation, de-duplicated by message id with the largest output per id, cache_read excluded, 6.60 USD/Mtok). Window: messages after the STAGE-003 close commit (d7a5587, 2026-11-06T22:43:46-08:00). Two sessions: 1cd6e68e (the long-lived orchestrator, 356 messages: 838 in + 1,738,269 cache_creation + 361,514 out = 2,100,621) and c6de7258 (SPEC-022 orchestration, 52 messages: 119 + 124,556 + 34,388 = 159,063; read live, so a floor: the closing turns after the read are not included). Cache reads are excluded as for STAGE-003 (they were 94.3M and 7.35M in the two sessions). The window may include a little non-STAGE-004 orchestration in 1cd6e68e (the STAGE-003 merge turns); four unrelated side sessions (readme update, template PR review, token spike, PR 32 file review) are not counted. Sub-agent costs are per spec, not here."
                                     # - tokens_total: N
                                     #   estimated_usd: N
                                     #   recorded_at: YYYY-MM-DD
