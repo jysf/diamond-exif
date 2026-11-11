@@ -7,9 +7,10 @@
 //!
 //! * the only edits are whole-range removals and same-length patches
 //!   ([`EditPlan`]); the output is never longer than the input;
-//! * the unit of removal is the JPEG segment; the Exif segment is all or
-//!   nothing in this stage (a policy that needs to edit inside it gets
-//!   [`StripError::NeedsEntryEdit`]);
+//! * the unit of removal is the JPEG segment; inside an Exif segment a policy
+//!   that names some of its categories deletes the matching IFD entries in
+//!   place, never growing or moving anything (SPEC-021, DEC-013 amendment B);
+//!   when it cannot do that exactly it returns [`StripError::Uneditable`];
 //! * a Multi-Picture index and its images go together, or stay together with
 //!   the index patched;
 //! * no byte is both removed and kept ([`StripError::Overlap`]);
@@ -22,6 +23,7 @@
 //! Provenance (DEC-003, class 1): net-new code written from DEC-013 over this
 //! crate's own reader and audit. No ExifTool source is read.
 
+mod exif;
 mod jpeg;
 mod plan;
 mod verify;
@@ -30,6 +32,7 @@ use core::fmt;
 
 use crate::audit::{sniff, Category, ContainerKind, Sniffed};
 use crate::policy::{StripPolicy, StripSpec};
+use crate::tiff::IfdKind;
 
 pub use plan::{Edit, EditPlan, PlanError};
 
@@ -78,7 +81,22 @@ pub struct Removal {
     pub len: usize,
 }
 
-/// One patched field, in **output** coordinates.
+/// What a patch is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PatchKind {
+    /// A Multi-Picture index offset or size field (DEC-013 part 5).
+    MpfField,
+    /// An IFD table rewritten after entries were deleted from it (or after its
+    /// next-IFD word was cut): count word, surviving entries, next word, and
+    /// the freed tail zeroed.
+    IfdTable,
+    /// Bytes overwritten with zeros: a deleted entry's out-of-line value, a
+    /// removed IFD's table, a removed thumbnail.
+    Scrub,
+}
+
+/// One patched range, in **output** coordinates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct PatchRecord {
@@ -86,6 +104,53 @@ pub struct PatchRecord {
     pub offset: usize,
     /// Number of bytes patched.
     pub len: usize,
+    /// What the patch is for.
+    pub kind: PatchKind,
+}
+
+/// One deleted IFD entry, in **input** coordinates (SPEC-021): a policy target,
+/// a GPS pointer entry, or an entry of a removed GPS IFD or IFD1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct EntryRecord {
+    /// The Exif block (index into the JPEG's Exif blocks).
+    pub block: usize,
+    /// How the IFD that held the entry was reached.
+    pub ifd: IfdKind,
+    /// The IFD's index in that block's walk.
+    pub ifd_index: usize,
+    /// The tag number.
+    pub tag: u16,
+    /// The declared TIFF field type.
+    pub field_type: u16,
+    /// The declared value count.
+    pub count: u32,
+    /// Input offset of the entry's 12 bytes.
+    pub offset: usize,
+}
+
+/// Why a range was zeroed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ScrubReason {
+    /// The out-of-line value of a deleted entry.
+    EntryValue,
+    /// The table of a removed IFD (GPS or IFD1).
+    IfdTable,
+    /// The JPEG bytes of a removed thumbnail.
+    Thumbnail,
+}
+
+/// One zeroed range, in **output** coordinates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ScrubRecord {
+    /// Output offset of the first zeroed byte.
+    pub offset: usize,
+    /// Number of bytes zeroed.
+    pub len: usize,
+    /// Why.
+    pub reason: ScrubReason,
 }
 
 /// The result of a successful strip.
@@ -95,6 +160,8 @@ pub struct Stripped {
     bytes: Vec<u8>,
     removals: Vec<Removal>,
     patches: Vec<PatchRecord>,
+    entries: Vec<EntryRecord>,
+    scrubs: Vec<ScrubRecord>,
 }
 
 impl Stripped {
@@ -113,9 +180,22 @@ impl Stripped {
         &self.removals
     }
 
-    /// The patched fields (Multi-Picture offsets and sizes), in output order.
+    /// Every patch (Multi-Picture fields, rewritten IFD tables, scrubbed
+    /// ranges) with its kind, in output order.
     pub fn patches(&self) -> &[PatchRecord] {
         &self.patches
+    }
+
+    /// One record per deleted IFD entry (policy targets, GPS pointer entries,
+    /// and every entry of a removed child IFD), in input order.
+    pub fn entries(&self) -> &[EntryRecord] {
+        &self.entries
+    }
+
+    /// The zeroed ranges, in output order (also listed in [`Stripped::patches`]
+    /// with kind [`PatchKind::Scrub`]).
+    pub fn scrubs(&self) -> &[ScrubRecord] {
+        &self.scrubs
     }
 }
 
@@ -137,11 +217,13 @@ pub enum StripError {
         /// The input offset of the first such fault.
         offset: usize,
     },
-    /// The policy needs entry-level editing inside an Exif segment, which this
-    /// writer cannot do yet.
-    NeedsEntryEdit {
-        /// The categories that need the edit.
-        categories: StripSpec,
+    /// An Exif entry edit cannot be made exactly (DEC-013 amendment B.4).
+    Uneditable {
+        /// Why.
+        reason: UneditableReason,
+        /// The input offset of the fault (a block's segment, or the first
+        /// byte in conflict).
+        offset: usize,
     },
     /// A removal would cut bytes that must be kept.
     Overlap {
@@ -174,6 +256,42 @@ pub enum UnstrippableReason {
     RangeOverflow,
 }
 
+/// Why an Exif entry edit is refused (DEC-013 amendment B.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum UneditableReason {
+    /// The block's walk reported an issue, or the block could not be read, or
+    /// the bytes at a patch site are not the entry the walk read.
+    BlockNotClean,
+    /// More Exif segments than the audit parses (16).
+    TooManyExifSegments,
+    /// The audit's inventory hit its cap.
+    InventoryTruncated,
+    /// The Exif segment lies after the first scan.
+    AfterScan,
+    /// A zeroed range touches bytes that must stay (a kept value, a kept IFD
+    /// table, the TIFF header, a kept thumbnail), or two IFD tables overlap.
+    SharedBytes,
+    /// The thumbnail's bytes cannot be located (strips form, missing length).
+    ThumbnailNotLocated,
+    /// IFD1 has a following IFD, so cutting it would change the chain.
+    ChainAfterThumbnail,
+    /// A removed child IFD is not pointed to by exactly one entry of its
+    /// parent.
+    PointerNotInParent,
+    /// An IFD would be left with no entry and the writer does not allow it.
+    EmptiedIfd,
+    /// A removed IFD has IFDs of its own (a pointer tag inside it).
+    NestedIfd,
+    /// A deleted entry's value cannot be sized (an unknown field type), so it
+    /// cannot be zeroed.
+    PayloadUnreadable,
+    /// A pointer tag (`SubIFDs`, Exif, GPS, Interop) the walk did not follow:
+    /// a second entry with the tag, or one in an IFD kind that does not follow
+    /// it. What it points to was never audited.
+    HiddenPointer,
+}
+
 /// The self-check of DEC-013 part 7.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
@@ -190,6 +308,11 @@ pub enum Check {
     Idempotent,
     /// A Multi-Picture field is stale or cannot be computed.
     MpfFields,
+    /// (g) The output's tag inventory is not the input's minus the deleted
+    /// entries (SPEC-021).
+    Entries,
+    /// (h) A zeroed range does not read all zero in the output (SPEC-021).
+    Scrubbed,
 }
 
 impl fmt::Display for StripError {
@@ -205,10 +328,9 @@ impl fmt::Display for StripError {
                     "the JPEG cannot be cut safely ({reason:?} at offset {offset})"
                 )
             }
-            StripError::NeedsEntryEdit { categories } => write!(
+            StripError::Uneditable { reason, offset } => write!(
                 f,
-                "the policy needs an edit inside the Exif segment for {} categories",
-                categories.len()
+                "an Exif entry edit cannot be made exactly ({reason:?} at offset {offset})"
             ),
             StripError::Overlap { offset } => {
                 write!(f, "a removal would cut kept bytes (offset {offset})")
@@ -257,19 +379,41 @@ fn finish(data: &[u8], spec: StripSpec, planned: jpeg::Planned) -> Result<Stripp
         .map_err(|_| StripError::VerifyFailed {
             check: Check::MpfFields,
         })?;
-    verify::verify(data, &bytes, spec).map_err(|check| StripError::VerifyFailed { check })?;
-    let patches = planned
+    // Output coordinates of the patched and zeroed ranges.
+    let at = |offset: usize| planned.plan.output_offset(data.len(), offset);
+    let mut patches: Vec<PatchRecord> = planned
         .patches
         .iter()
-        .filter_map(|&(offset, len)| {
-            let at = planned.plan.output_offset(data.len(), offset)?;
-            Some(PatchRecord { offset: at, len })
+        .filter_map(|&(offset, len, kind)| {
+            Some(PatchRecord {
+                offset: at(offset)?,
+                len,
+                kind,
+            })
         })
         .collect();
+    patches.sort_by_key(|p| p.offset);
+    let mut scrubs: Vec<ScrubRecord> = planned
+        .scrubs
+        .iter()
+        .filter_map(|&(offset, len, reason)| {
+            Some(ScrubRecord {
+                offset: at(offset)?,
+                len,
+                reason,
+            })
+        })
+        .collect();
+    scrubs.sort_by_key(|s| s.offset);
+    let zeroed: Vec<(usize, usize)> = scrubs.iter().map(|s| (s.offset, s.len)).collect();
+    verify::verify(data, &bytes, spec, &zeroed)
+        .map_err(|check| StripError::VerifyFailed { check })?;
     Ok(Stripped {
         bytes,
         removals: planned.removals,
         patches,
+        entries: planned.entries,
+        scrubs,
     })
 }
 

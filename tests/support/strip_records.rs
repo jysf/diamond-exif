@@ -299,6 +299,19 @@ pub fn warnings(lines: &[Line], stderr: &[String]) -> BTreeSet<String> {
 pub fn removed_ranges(shape: &Shape, spec: StripSpec) -> Option<Vec<std::ops::Range<usize>>> {
     match model(shape, spec) {
         Expect::Ok { removals, .. } => Some(removals.into_iter().map(|r| r.range).collect()),
+        // An Exif entry edit removes the same segments as the model of a file
+        // whose Exif holds nothing the policy names (the entries are edited in
+        // place; no segment goes).
+        Expect::EntryEdit => {
+            let mut plain = shape.clone();
+            plain.exif.cats.clear();
+            match model(&plain, spec) {
+                Expect::Ok { removals, .. } => {
+                    Some(removals.into_iter().map(|r| r.range).collect())
+                }
+                _ => None,
+            }
+        }
         _ => None,
     }
 }
@@ -417,4 +430,286 @@ pub fn check_mpf_fields(
     // The bytes at the new positions start FF D8 (checked by the caller on
     // the output, which has them).
     Ok(())
+}
+
+// ═══ SPEC-021: Exif entry edits, at tag level ══════════════════════════════
+//
+// The expected tag set per group is declared by hand below (ExifTool's names
+// for the fixtures' tags, measured with 13.55 on the inputs, see the SPEC-021
+// handback), from the layout record and the independent edit model in
+// `exif_layout` (never from the library).
+
+use crate::exif_layout::{del_for, Cat, Del, Layout};
+use crate::exif_records::{exif_policies, model_refusal, Jpg};
+
+/// ExifTool's group for an IFD name of the fixtures (measured).
+pub fn exif_group(ifd: &str) -> &'static str {
+    match ifd {
+        "ifd0" => "IFD0",
+        "exif" => "ExifIFD",
+        "interop" => "InteropIFD",
+        "gps" => "GPS",
+        "ifd1" => "IFD1",
+        "ifd2" => "IFD2",
+        "sub" => "SubIFD",
+        other => panic!("no ExifTool group for IFD {other}"),
+    }
+}
+
+const EXIF_GROUPS: [&str; 7] = [
+    "IFD0",
+    "IFD1",
+    "IFD2",
+    "ExifIFD",
+    "InteropIFD",
+    "GPS",
+    "SubIFD",
+];
+
+/// The line ExifTool prints for an entry, by tag id: `Some(name)`, or `None`
+/// for entries that print nothing (pointers, the MakerNote, an XMP tag whose
+/// content is no XMP). Measured on the inputs of the fixtures.
+pub fn exif_tag_name(ifd: &str, tag: u16) -> Option<&'static str> {
+    let name = match (ifd, tag) {
+        // Pointers print nothing.
+        (_, 0x014A | 0x8769 | 0x8825 | 0xA005) if ifd != "interop" => return None,
+        // The MakerNote is not a tag line (a warning when it is unrecognised),
+        // and the XMP tag is read as XMP (nothing in an Exif group).
+        ("exif", 0x927C) | ("ifd0", 0x02BC) => return None,
+        ("gps", 0x0000) => "GPSVersionID",
+        ("gps", 0x0001) => "GPSLatitudeRef",
+        ("gps", 0x0002) => "GPSLatitude",
+        ("gps", 0x0003) => "GPSLongitudeRef",
+        ("gps", 0x0004) => "GPSLongitude",
+        ("gps", 0x001C) => "GPSAreaInformation",
+        ("interop", 0x0001) => "InteropIndex",
+        ("exif", 0x9003) => "DateTimeOriginal",
+        ("exif", 0x829A) => "ExposureTime",
+        ("exif", 0x9286) => "UserComment",
+        ("exif", 0xA431) => "SerialNumber",
+        ("exif", 0xA420) => "ImageUniqueID",
+        ("exif", 0xA435) => "LensSerialNumber",
+        ("exif", 0xA434) => "LensModel",
+        ("exif", 0xA001) => "ColorSpace",
+        ("ifd1", 0x0201) => "ThumbnailOffset",
+        ("ifd1", 0x0202) => "ThumbnailLength",
+        (_, 0x010F) => "Make",
+        (_, 0x0110) => "Model",
+        (_, 0x0131) => "Software",
+        (_, 0x0132) => "ModifyDate",
+        (_, 0x013B) => "Artist",
+        (_, 0x8298) => "Copyright",
+        (_, 0x010E) => "ImageDescription",
+        (_, 0x0112) => "Orientation",
+        (_, 0x011A) => "XResolution",
+        (_, 0x0128) => "ResolutionUnit",
+        (_, 0x0100) => "ImageWidth",
+        (_, 0x0103) => "Compression",
+        (_, 0xC62F) => "CameraSerialNumber",
+        other => panic!("no ExifTool name declared for {other:?}"),
+    };
+    Some(name)
+}
+
+/// The `(group, tag)` pairs ExifTool must print for `layouts` after the edit
+/// `dels` (one per layout), sorted. A kept IFD1 with both thumbnail pointers
+/// also prints the derived `ThumbnailImage`.
+pub fn exif_declared(layouts: &[Layout], dels: &[Del]) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for (l, d) in layouts.iter().zip(dels) {
+        for f in &l.ifds {
+            if d.whole.contains(&f.name) {
+                continue;
+            }
+            for (i, e) in f.ents.iter().enumerate() {
+                if d.entries.contains(&(f.name, i)) {
+                    continue;
+                }
+                if let Some(n) = exif_tag_name(f.name, e.tag) {
+                    out.push((exif_group(f.name).to_string(), n.to_string()));
+                }
+            }
+            if f.name == "ifd1"
+                && f.ents.iter().any(|e| e.tag == 0x0201)
+                && f.ents.iter().any(|e| e.tag == 0x0202)
+            {
+                out.push(("IFD1".to_string(), "ThumbnailImage".to_string()));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// Every `(group, tag, value)` line of an Exif group, sorted.
+fn exif_lines(section: &Section) -> Vec<(String, String, String)> {
+    let mut v: Vec<_> = section
+        .lines
+        .iter()
+        .filter(|l| EXIF_GROUPS.contains(&l.group.as_str()))
+        .map(|l| (l.group.clone(), l.tag.clone(), l.value.clone()))
+        .collect();
+    v.sort();
+    v
+}
+
+fn composites(section: &Section) -> BTreeSet<String> {
+    section
+        .lines
+        .iter()
+        .filter(|l| l.group == "Composite")
+        .map(|l| l.tag.clone())
+        .collect()
+}
+
+/// The Composite tags the edit may lose: those derived from a removed source
+/// (the GPS group gives `GPSLatitude`, `GPSLongitude` and `GPSPosition`).
+fn lost_composites(dels: &[Del]) -> BTreeSet<String> {
+    let gps = dels.iter().any(|d| d.whole.contains(&"gps"));
+    if gps {
+        ["GPSLatitude", "GPSLongitude", "GPSPosition"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+    } else {
+        BTreeSet::new()
+    }
+}
+
+/// The declared `(group, tag)` set against the output, the output's Composite
+/// tags against the input's minus the declared losses, and no new warning.
+pub fn check_exif_tags(
+    layouts: &[Layout],
+    cats: &[Cat],
+    section: &Section,
+    input: &Section,
+) -> Result<(), String> {
+    let dels: Vec<Del> = layouts.iter().map(|l| del_for(l, cats)).collect();
+    let want = exif_declared(layouts, &dels);
+    let got: Vec<(String, String)> = exif_lines(section)
+        .into_iter()
+        .map(|(g, t, _)| (g, t))
+        .collect();
+    if got != want {
+        let extra: Vec<_> = got.iter().filter(|x| !want.contains(x)).collect();
+        let missing: Vec<_> = want.iter().filter(|x| !got.contains(x)).collect();
+        return Err(format!(
+            "tag set differs: extra {extra:?}, missing {missing:?} (got {} lines, want {})",
+            got.len(),
+            want.len()
+        ));
+    }
+    let mut want_comp = composites(input);
+    for lost in lost_composites(&dels) {
+        want_comp.remove(&lost);
+    }
+    let got_comp = composites(section);
+    if got_comp != want_comp {
+        return Err(format!("Composite tags {got_comp:?}, want {want_comp:?}"));
+    }
+    Ok(())
+}
+
+/// Every kept tag's value equals the input's: the output's Exif lines are the
+/// input's minus one line per removed `(group, tag)`, value for value (so an
+/// entry that moved and now reads garbage fails, naming the right tag or not).
+pub fn check_exif_values(
+    layouts: &[Layout],
+    cats: &[Cat],
+    section: &Section,
+    input: &Section,
+) -> Result<(), String> {
+    let dels: Vec<Del> = layouts.iter().map(|l| del_for(l, cats)).collect();
+    let mut want = exif_lines(input);
+    for (l, d) in layouts.iter().zip(&dels) {
+        for f in &l.ifds {
+            for (i, e) in f.ents.iter().enumerate() {
+                let gone = d.whole.contains(&f.name) || d.entries.contains(&(f.name, i));
+                if !gone {
+                    continue;
+                }
+                if let Some(n) = exif_tag_name(f.name, e.tag) {
+                    let g = exif_group(f.name);
+                    if let Some(p) = want.iter().position(|(g2, t, _)| g2 == g && t == n) {
+                        want.remove(p);
+                    }
+                }
+            }
+            if d.whole.contains(&f.name) && f.name == "ifd1" {
+                want.retain(|(g, t, _)| !(g == "IFD1" && t == "ThumbnailImage"));
+            }
+        }
+    }
+    let got = exif_lines(section);
+    if got != want {
+        let diff: Vec<_> = got
+            .iter()
+            .filter(|x| !want.contains(x))
+            .chain(want.iter().filter(|x| !got.contains(x)))
+            .collect();
+        return Err(format!("values differ from the input: {diff:?}"));
+    }
+    Ok(())
+}
+
+/// No warning kind (digits normalised) the input did not have.
+pub fn check_exif_warnings(section: &Section, input: &Section) -> Result<(), String> {
+    let new: Vec<String> = warnings(&section.lines, &section.stderr)
+        .difference(&warnings(&input.lines, &input.stderr))
+        .cloned()
+        .collect();
+    if new.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("new warnings: {new:?}"))
+    }
+}
+
+/// The record text of one Exif fixture: the input, then the output of every
+/// policy of the grid for which the library strips.
+pub fn exif_record_text(name: &str, jpg: &Jpg, version: &str) -> Result<String, String> {
+    let mut out = format!(
+        "# command: {}\n# exiftool-version: {version}\n# fixture: exif-{name}\n",
+        command_line()
+    );
+    let mut add = |label: &str, bytes: &[u8]| -> Result<(), String> {
+        let (lines, stderr) = run_exiftool(&format!("exif-{name}-{label}"), bytes)?;
+        out.push_str(&format!("## {label}\n"));
+        for w in stderr {
+            out.push_str(&format!("# stderr: {w}\n"));
+        }
+        for l in lines {
+            out.push_str(&format!("{}\t{}\t{}\n", l.group, l.tag, l.value));
+        }
+        Ok(())
+    };
+    add("input", &jpg.bytes)?;
+    for (pname, _, policy) in exif_policies() {
+        if let Ok(stripped) = exif_core::strip(&jpg.bytes, policy) {
+            add(pname, stripped.bytes())?;
+        }
+    }
+    Ok(out)
+}
+
+/// The policies of the grid the model says strip `name` (the others are a
+/// refusal the model names).
+pub fn exif_stripped_policies(name: &str) -> Vec<&'static str> {
+    exif_policies()
+        .into_iter()
+        .filter(|(_, cats, _)| model_refusal(name, cats).is_none())
+        .map(|(n, _, _)| n)
+        .collect()
+}
+
+/// All three comparisons on one output section.
+pub fn check_exif_section(
+    layouts: &[Layout],
+    cats: &[Cat],
+    section: &Section,
+    input: &Section,
+) -> Result<(), String> {
+    check_exif_tags(layouts, cats, section, input)?;
+    check_exif_values(layouts, cats, section, input)?;
+    check_exif_warnings(section, input)
 }

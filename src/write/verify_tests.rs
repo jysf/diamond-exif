@@ -12,6 +12,11 @@
 use super::*;
 use crate::write::EditPlan;
 
+/// The SPEC-020 checks, with no zeroed range to check.
+fn verify(input: &[u8], output: &[u8], spec: StripSpec) -> Result<(), Check> {
+    super::verify(input, output, spec, &[])
+}
+
 fn seg(marker: u8, payload: &[u8]) -> Vec<u8> {
     let mut v = vec![0xFF, marker];
     v.extend_from_slice(&u16::try_from(payload.len() + 2).unwrap().to_be_bytes());
@@ -282,4 +287,255 @@ fn a_clean_plan_passes_every_check() {
         p.patch(off_at, &(word(off_at) - gone).to_le_bytes());
     });
     assert_eq!(verify(&input, &out, spec(&[Category::FreeText])), Ok(()));
+}
+
+// ── the Exif entry checks (SPEC-021) ────────────────────────────────────────
+
+/// A little-endian TIFF blob: IFD0 at 8 with Make (out of line at 66),
+/// Orientation (inline), Software (out of line at 72) and Artist (at 79);
+/// table 8..62.
+fn exif_blob() -> Vec<u8> {
+    let mut b = b"II*\0\x08\0\0\0".to_vec();
+    b.extend_from_slice(&4u16.to_le_bytes());
+    let mut ent = |tag: u16, ty: u16, count: u32, val: [u8; 4]| {
+        b.extend_from_slice(&tag.to_le_bytes());
+        b.extend_from_slice(&ty.to_le_bytes());
+        b.extend_from_slice(&count.to_le_bytes());
+        b.extend_from_slice(&val);
+    };
+    ent(0x010F, 2, 6, 66u32.to_le_bytes());
+    ent(0x0112, 3, 1, [6, 0, 0, 0]);
+    ent(0x0131, 2, 7, 72u32.to_le_bytes());
+    ent(0x013B, 2, 7, 79u32.to_le_bytes());
+    b.extend_from_slice(&[0; 4]);
+    b.resize(66, 0);
+    b.extend_from_slice(b"MAKE1\0SOFTW1\0ARTIS1\0");
+    b
+}
+
+/// The JPEG holding `exif_blob`, and the input offset of the blob.
+fn exif_input() -> (Vec<u8>, usize) {
+    let input = jpeg(&[
+        jfif(),
+        seg(0xE1, &[&b"Exif\0\0"[..], &exif_blob()].concat()),
+    ]);
+    let blob_at = at(&input, b"II*\0");
+    (input, blob_at)
+}
+
+/// The output of a plan that deletes IFD0 entries `gone` (and zeroes the
+/// values at `scrub`, blob offsets), with `tweak` applied to the new table.
+fn exif_output(
+    input: &[u8],
+    blob_at: usize,
+    gone: &[usize],
+    scrub: Option<std::ops::Range<usize>>,
+    tweak: impl Fn(&mut Vec<u8>),
+) -> Vec<u8> {
+    let entry = |i: usize| input[blob_at + 10 + 12 * i..blob_at + 22 + 12 * i].to_vec();
+    let mut table = Vec::new();
+    let kept: Vec<usize> = (0..4).filter(|i| !gone.contains(i)).collect();
+    table.extend_from_slice(&u16::try_from(kept.len()).unwrap().to_le_bytes());
+    for i in &kept {
+        table.extend_from_slice(&entry(*i));
+    }
+    table.extend_from_slice(&[0; 4]);
+    table.resize(54, 0);
+    tweak(&mut table);
+    apply(input, |p| {
+        p.patch(blob_at + 8, &table);
+        if let Some(r) = scrub {
+            p.patch(blob_at + r.start, &vec![0; r.len()]);
+        }
+    })
+}
+
+fn make_spec() -> StripSpec {
+    spec(&[Category::CameraModel])
+}
+
+#[test]
+fn a_clean_exif_plan_passes_every_check_including_the_two_new_ones() {
+    let (input, at) = exif_input();
+    let out = exif_output(&input, at, &[0], Some(66..72), |_| {});
+    assert_eq!(
+        super::verify(&input, &out, make_spec(), &[(at + 66, 6)]),
+        Ok(())
+    );
+}
+
+#[test]
+fn a_plan_that_corrupts_a_kept_entry_value_fails_check_entries() {
+    let (input, at) = exif_input();
+    // Orientation is the first survivor: its inline value sits at 2 + 8.
+    let out = exif_output(&input, at, &[0], Some(66..72), |t| t[10] = 3);
+    assert_eq!(
+        super::verify(&input, &out, make_spec(), &[(at + 66, 6)]),
+        Err(Check::Entries)
+    );
+}
+
+#[test]
+fn a_plan_that_deletes_a_kept_entry_fails_check_entries() {
+    let (input, at) = exif_input();
+    // The Orientation entry (no category) goes with the Make.
+    let out = exif_output(&input, at, &[0, 1], Some(66..72), |_| {});
+    assert_eq!(
+        super::verify(&input, &out, make_spec(), &[(at + 66, 6)]),
+        Err(Check::Entries)
+    );
+}
+
+#[test]
+fn a_plan_that_deletes_a_kept_exif_finding_fails_check_kept() {
+    // The Artist (Authorship, not the policy's) goes with the Make: the audit
+    // sees a kept finding lost. The exemption of check (b) is for a removed
+    // Exif segment only, never for an entry edit.
+    let (input, at) = exif_input();
+    let out = exif_output(&input, at, &[0, 3], Some(66..72), |_| {});
+    assert_eq!(
+        super::verify(&input, &out, make_spec(), &[(at + 66, 6)]),
+        Err(Check::Kept)
+    );
+}
+
+#[test]
+fn l1_scrubbed_checks_every_range_not_only_the_first() {
+    let (input, at) = exif_input();
+    let out = exif_output(&input, at, &[0], Some(66..72), |_| {});
+    // The first range is zero; the second is the (kept) Software value, which
+    // is not. Only a check that reads past the first range sees it.
+    assert_eq!(
+        super::verify(&input, &out, make_spec(), &[(at + 66, 6), (at + 72, 7)]),
+        Err(Check::Scrubbed)
+    );
+    // Control: the first range alone passes.
+    assert_eq!(
+        super::verify(&input, &out, make_spec(), &[(at + 66, 6)]),
+        Ok(())
+    );
+}
+
+#[test]
+fn a_plan_that_leaves_a_deleted_entry_fails_check_preview() {
+    let (input, at) = exif_input();
+    let out = exif_output(&input, at, &[], None, |_| {});
+    assert_eq!(out, input);
+    assert_eq!(
+        super::verify(&input, &out, make_spec(), &[]),
+        Err(Check::Preview)
+    );
+}
+
+#[test]
+fn a_scrub_that_leaves_a_byte_fails_check_scrubbed() {
+    let (input, at) = exif_input();
+    // The value of the deleted Make is zeroed except its first byte.
+    let out = exif_output(&input, at, &[0], Some(67..72), |_| {});
+    assert_eq!(
+        super::verify(&input, &out, make_spec(), &[(at + 66, 6)]),
+        Err(Check::Scrubbed)
+    );
+    // Without the recorded range nothing notices (the check is the range).
+    assert_eq!(super::verify(&input, &out, make_spec(), &[]), Ok(()));
+    // A range that is not inside the output is a failure too.
+    assert_eq!(
+        super::verify(&input, &out, make_spec(), &[(out.len() - 2, 9)]),
+        Err(Check::Scrubbed)
+    );
+}
+
+#[test]
+fn entries_check_compares_type_count_and_value_not_only_the_tag() {
+    let (input, at) = exif_input();
+    // Each change keeps the tag and the walk; the Orientation entry is the
+    // first survivor: type at 2 + 2, count at 2 + 4, value at 2 + 8.
+    type Tweak = fn(&mut Vec<u8>);
+    let tweaks: [(&str, Tweak); 4] = [
+        ("type", |t| t[4] = 8),
+        ("count", |t| t[6] = 2),
+        ("value", |t| t[10] = 7),
+        ("out-of-line value", |t| t[2 + 24 + 8] ^= 1),
+    ];
+    for (what, tweak) in tweaks {
+        let out = exif_output(&input, at, &[0], Some(66..72), tweak);
+        assert_eq!(
+            super::verify(&input, &out, make_spec(), &[(at + 66, 6)]),
+            Err(Check::Entries),
+            "{what}"
+        );
+    }
+}
+
+#[test]
+fn an_empty_plan_on_an_input_with_targets_is_still_refused() {
+    let (input, _) = exif_input();
+    let s = make_spec();
+    assert_eq!(
+        crate::write::finish(&input, s, crate::write::jpeg::Planned::empty()).unwrap_err(),
+        crate::write::StripError::VerifyFailed {
+            check: Check::Preview
+        }
+    );
+    // The real planner deletes the entry.
+    assert!(crate::write::strip(&input, crate::StripPolicy::Custom(s)).is_ok());
+}
+
+#[test]
+fn the_seven_old_checks_still_pass_and_fail_as_before() {
+    // One wrong plan per SPEC-020 check, with the check it must trip; the
+    // order of the checks is the documented one (the new ones come after Walk
+    // and before Idempotent).
+    let xmp_in = jpeg(&[jfif(), xmp(), com()]);
+    let none = apply(&xmp_in, |_| {});
+    assert_eq!(
+        verify(&xmp_in, &none, spec(&[Category::Xmp])),
+        Err(Check::Preview)
+    );
+    let two = jpeg(&[jfif(), xmp(), icc()]);
+    let (x, i) = (at(&two, &xmp()), at(&two, &icc()));
+    let both = apply(&two, |p| {
+        p.remove(x..x + xmp().len());
+        p.remove(i..i + icc().len());
+    });
+    assert_eq!(
+        verify(&two, &both, spec(&[Category::Xmp])),
+        Err(Check::Kept)
+    );
+    let scan_byte = at(&xmp_in, &[0x12, 0x34, 0x56, 0x78]) + 1;
+    let x = at(&xmp_in, &xmp());
+    let cut = apply(&xmp_in, |p| {
+        p.remove(x..x + xmp().len());
+        p.patch(scan_byte, &[0xEE]);
+    });
+    assert_eq!(
+        verify(&xmp_in, &cut, spec(&[Category::Xmp])),
+        Err(Check::Scan)
+    );
+    let broken = apply(&xmp_in, |p| {
+        p.remove(x..x + xmp().len());
+        p.patch(3, &[0x01]);
+    });
+    assert_eq!(
+        verify(&xmp_in, &broken, spec(&[Category::Xmp])),
+        Err(Check::Walk)
+    );
+    let short = seg(0xE1, b"http://ns.adobe.com/xmp/extension/\0short");
+    let short_in = jpeg(&[jfif(), short]);
+    let unchanged = apply(&short_in, |_| {});
+    assert_eq!(
+        verify(&short_in, &unchanged, spec(&[Category::Xmp])),
+        Err(Check::Idempotent)
+    );
+    let stale = mpo();
+    let c = at(&stale, &com());
+    let moved = apply(&stale, |p| p.remove(c..c + com().len()));
+    assert_eq!(
+        verify(&stale, &moved, spec(&[Category::FreeText])),
+        Err(Check::MpfFields)
+    );
+    let ok = jpeg(&[jfif(), xmp()]);
+    let x = at(&ok, &xmp());
+    let clean = apply(&ok, |p| p.remove(x..x + xmp().len()));
+    assert_eq!(verify(&ok, &clean, spec(&[Category::Xmp])), Ok(()));
 }

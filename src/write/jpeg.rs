@@ -6,9 +6,9 @@
 //! index. It returns a typed refusal whenever it cannot do exactly that.
 //!
 //! Order of refusals, pinned (the fuzz harness predicts the same order): a
-//! walk that cannot be trusted (`Unstrippable`), an Exif edit the writer
-//! cannot make (`NeedsEntryEdit`), an unindexed Multi-Picture segment that
-//! would be left wrong (`MpfNotIndexed`), a removal that cuts kept bytes
+//! walk that cannot be trusted (`Unstrippable`), an Exif entry edit the writer
+//! cannot make (`Uneditable`), an unindexed Multi-Picture segment that would
+//! be left wrong (`MpfNotIndexed`), a removal that cuts kept bytes
 //! (`Overlap`), then a Multi-Picture field that cannot be computed.
 
 use core::ops::Range;
@@ -17,30 +17,24 @@ use crate::audit::{audit, Category};
 use crate::error::Error;
 use crate::jpeg::{self, JpegMetadata, Region, SegmentKind};
 use crate::policy::StripSpec;
+use crate::tiff::{Container, Ifd};
 
+use super::exif::{exif9, mode, plan_entries, ExifEdits, Mode};
 use super::plan::{merge_ranges, removed_in};
-use super::{Check, EditPlan, Removal, RemovalKind, StripError, UnstrippableReason};
+use super::{
+    Check, EditPlan, EntryRecord, PatchKind, Removal, RemovalKind, ScrubReason, StripError,
+    UnstrippableReason,
+};
 
-/// The nine categories an Exif segment can hold (DEC-013 part 4), typed here by
-/// hand from the decision.
-const EXIF9: [Category; 9] = [
-    Category::Gps,
-    Category::DeviceId,
-    Category::Authorship,
-    Category::FreeText,
-    Category::Timestamps,
-    Category::CameraModel,
-    Category::Thumbnail,
-    Category::MakerNote,
-    Category::Software,
-];
-
-/// A planned strip: the plan, the removal records (input order) and the
-/// patched fields as `(input offset, length)`.
+/// A planned strip: the plan, the removal records (input order), the patched
+/// ranges as `(input offset, length, kind)`, the zeroed ranges as `(input
+/// offset, length, reason)` and the deleted entries.
 pub(super) struct Planned {
     pub plan: EditPlan,
     pub removals: Vec<Removal>,
-    pub patches: Vec<(usize, usize)>,
+    pub patches: Vec<(usize, usize, PatchKind)>,
+    pub scrubs: Vec<(usize, usize, ScrubReason)>,
+    pub entries: Vec<EntryRecord>,
 }
 
 impl Planned {
@@ -51,12 +45,10 @@ impl Planned {
             plan: EditPlan::new(),
             removals: Vec::new(),
             patches: Vec::new(),
+            scrubs: Vec::new(),
+            entries: Vec::new(),
         }
     }
-}
-
-fn exif9() -> StripSpec {
-    EXIF9.iter().fold(StripSpec::none(), |s, c| s.include(*c))
 }
 
 /// One thing the plan removes.
@@ -73,7 +65,7 @@ pub(super) fn plan(data: &[u8], spec: StripSpec) -> Result<Planned, StripError> 
 
     let mut targets: Vec<Target> = Vec::new();
     segment_targets(&meta, spec, &mut targets)?;
-    exif_targets(data, &meta, spec, &mut targets)?;
+    let exif_edits = exif_targets(data, &meta, spec, &mut targets)?;
     region_targets(&meta, spec, &mut targets)?;
     targets.sort_by_key(|t| (t.range.start, t.range.end));
 
@@ -85,7 +77,15 @@ pub(super) fn plan(data: &[u8], spec: StripSpec) -> Result<Planned, StripError> 
     for t in &targets {
         plan.remove(t.range.clone());
     }
-    let patches = mpf_patches(data, &meta, spec, &removals_merged, &mut plan)?;
+    let mut patches = mpf_patches(data, &meta, spec, &removals_merged, &mut plan)?;
+    let mut scrubs = Vec::new();
+    for (offset, bytes, kind, reason) in &exif_edits.patches {
+        plan.patch(*offset, bytes);
+        patches.push((*offset, bytes.len(), *kind));
+        if let Some(reason) = reason {
+            scrubs.push((*offset, bytes.len(), *reason));
+        }
+    }
     let removals = targets
         .iter()
         .map(|t| Removal {
@@ -99,6 +99,8 @@ pub(super) fn plan(data: &[u8], spec: StripSpec) -> Result<Planned, StripError> 
         plan,
         removals,
         patches,
+        scrubs,
+        entries: exif_edits.entries,
     })
 }
 
@@ -167,13 +169,16 @@ fn segment_range(seg: &jpeg::Segment<'_>, offset: usize) -> Result<Range<usize>,
     })
 }
 
-/// Rule 4 (DEC-013 part 4): the Exif segments, all or nothing.
+/// Rule 4 (DEC-013 part 4) and SPEC-021: the Exif segments are removed whole
+/// (every Exif category in the policy), left alone (no category an Exif entry
+/// can have), or edited entry by entry (anything between; the edits come back
+/// as [`ExifEdits`]).
 fn exif_targets(
     data: &[u8],
     meta: &JpegMetadata<'_>,
     spec: StripSpec,
     out: &mut Vec<Target>,
-) -> Result<(), StripError> {
+) -> Result<ExifEdits, StripError> {
     let segments = meta.jpeg().segments();
     let exif_segments: Vec<usize> = segments
         .iter()
@@ -182,7 +187,7 @@ fn exif_targets(
         .map(|(i, _)| i)
         .collect();
     if exif_segments.is_empty() {
-        return Ok(());
+        return Ok(ExifEdits::default());
     }
     let all9 = exif9();
     let audited = audit(data);
@@ -200,51 +205,21 @@ fn exif_targets(
             .map_or(Category::Thumbnail, |f| f.category)
     };
 
-    if all9.is_subset_of(spec) {
-        for &i in &exif_segments {
-            let Some(seg) = segments.get(i) else { continue };
-            out.push(Target {
-                range: segment_range(seg, seg.offset())?,
-                category: block_category(i),
-                kind: RemovalKind::Exif,
-            });
-        }
-        return Ok(());
-    }
-
-    // Some or none of EXIF9: leave the segments alone when the audit can show
-    // there is nothing to remove from them, else ask for the entry edit.
-    let in_exif = |f: &crate::audit::Finding<'_>| f.at.origin().block.is_some();
-    let unreadable = spec.intersects(all9)
-        && (audited.health().failed_blocks > 0
-            || audited.health().exif_issues > 0
-            || exif_segments.len() > meta.exif_blocks().len());
-    // Findings the audit made inside an Exif block in a category the policy
-    // removes. (An Exif IFD can also hold the tags the audit files under `Xmp`,
-    // `Iptc` and `Icc`; a segment-level writer cannot take those out of a kept
-    // Exif segment either.)
-    let found = audited
-        .findings()
-        .iter()
-        .filter(|f| in_exif(f) && spec.contains(f.category))
-        .fold(StripSpec::none(), |s, f| s.include(f.category));
-    if unreadable || !found.is_empty() {
-        let extra = found.categories().fold(StripSpec::none(), |s, c| {
-            if all9.contains(c) {
-                s
-            } else {
-                s.include(c)
+    match mode(spec) {
+        Mode::Whole => {
+            for &i in &exif_segments {
+                let Some(seg) = segments.get(i) else { continue };
+                out.push(Target {
+                    range: segment_range(seg, seg.offset())?,
+                    category: block_category(i),
+                    kind: RemovalKind::Exif,
+                });
             }
-        });
-        let mut categories = extra;
-        for c in all9.categories() {
-            if spec.contains(c) {
-                categories = categories.include(c);
-            }
+            Ok(ExifEdits::default())
         }
-        return Err(StripError::NeedsEntryEdit { categories });
+        Mode::Untouched => Ok(ExifEdits::default()),
+        Mode::Partial => plan_entries(meta, spec, &audited),
     }
-    Ok(())
 }
 
 /// Rule 5: trailers and embedded images, and the MPF index with the images.
@@ -427,14 +402,14 @@ fn overlap(
 }
 
 /// Rule 6, first half: when the images stay, patch the index so it still points
-/// where it did. Returns the patched fields as `(input offset, length)`.
+/// where it did. Returns the patched fields as `(input offset, length, kind)`.
 fn mpf_patches(
     data: &[u8],
     meta: &JpegMetadata<'_>,
     spec: StripSpec,
     removals: &[Range<usize>],
     plan: &mut EditPlan,
-) -> Result<Vec<(usize, usize)>, StripError> {
+) -> Result<Vec<(usize, usize, PatchKind)>, StripError> {
     let mut patched = Vec::new();
     let Some(index) = meta.mpf() else {
         return Ok(patched);
@@ -449,17 +424,47 @@ fn mpf_patches(
         .jpeg()
         .eoi_offset()
         .map_or(data.len(), |e| e.saturating_add(2));
+    // Where a field may NOT be patched: the index's own TIFF header and IFD0
+    // table (a field that lands on the MPEntry tag's count would rewrite the
+    // index), and every located image (a patch would change a kept image). A
+    // hostile index whose entries lie on its own structure is refused here,
+    // typed, rather than by the self-check afterwards.
+    let seg = meta.jpeg().segments().get(index.segment());
+    let seg_at = seg.map_or(0, |s| s.offset());
+    let mut forbidden: Vec<Range<usize>> = Vec::new();
+    let base = index.header_start();
+    forbidden.push(base..base.saturating_add(8));
+    if let Some(tiff) = seg.and_then(|s| s.payload().get(4..)) {
+        if let Some(table) = Container::parse(tiff)
+            .ok()
+            .and_then(|c| c.ifd0().and_then(Ifd::table_range))
+        {
+            forbidden.push(base.saturating_add(table.start)..base.saturating_add(table.end));
+        }
+    }
+    for r in meta.regions() {
+        if let Region::EmbeddedImage { offset, data, .. } = *r {
+            forbidden.push(offset..offset.saturating_add(data.len()));
+        }
+    }
     let mut put = |field: usize, old: u32, removed: usize| -> Result<(), StripError> {
         let removed = u32::try_from(removed).map_err(|_| stale.clone())?;
         let new = old.checked_sub(removed).ok_or_else(|| stale.clone())?;
         if new != old {
+            let field_end = field.saturating_add(4);
+            if forbidden
+                .iter()
+                .any(|r| field < r.end && r.start < field_end)
+            {
+                return Err(StripError::MpfNotIndexed { offset: seg_at });
+            }
             let bytes = if index.big_endian() {
                 new.to_be_bytes()
             } else {
                 new.to_le_bytes()
             };
             plan.patch(field, &bytes);
-            patched.push((field, bytes.len()));
+            patched.push((field, bytes.len(), PatchKind::MpfField));
         }
         Ok(())
     };

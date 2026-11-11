@@ -1,0 +1,152 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# exiftool-version: 13.55
+# fixture: exif-no-gps-no-thumb
+## input
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Orientation	6
+ExifIFD	DateTimeOriginal	2032:03:04 05:06:07
+ExifIFD	SerialNumber	CANARY-BODYSERIAL-0008
+## gps
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Orientation	6
+ExifIFD	DateTimeOriginal	2032:03:04 05:06:07
+ExifIFD	SerialNumber	CANARY-BODYSERIAL-0008
+## gps_and_device
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Orientation	6
+ExifIFD	DateTimeOriginal	2032:03:04 05:06:07
+## all_pii
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Orientation	6
+## xmp
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Orientation	6
+ExifIFD	DateTimeOriginal	2032:03:04 05:06:07
+ExifIFD	SerialNumber	CANARY-BODYSERIAL-0008
+## software
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Orientation	6
+ExifIFD	DateTimeOriginal	2032:03:04 05:06:07
+ExifIFD	SerialNumber	CANARY-BODYSERIAL-0008
+## timestamps+gps
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Orientation	6
+ExifIFD	SerialNumber	CANARY-BODYSERIAL-0008
+## maker_note
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Orientation	6
+ExifIFD	DateTimeOriginal	2032:03:04 05:06:07
+ExifIFD	SerialNumber	CANARY-BODYSERIAL-0008
+## thumbnail
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Orientation	6
+ExifIFD	DateTimeOriginal	2032:03:04 05:06:07
+ExifIFD	SerialNumber	CANARY-BODYSERIAL-0008
+## camera_model
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Orientation	6
+ExifIFD	DateTimeOriginal	2032:03:04 05:06:07
+ExifIFD	SerialNumber	CANARY-BODYSERIAL-0008
+## authorship
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Orientation	6
+ExifIFD	DateTimeOriginal	2032:03:04 05:06:07
+ExifIFD	SerialNumber	CANARY-BODYSERIAL-0008
+## free_text+device
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Orientation	6
+ExifIFD	DateTimeOriginal	2032:03:04 05:06:07

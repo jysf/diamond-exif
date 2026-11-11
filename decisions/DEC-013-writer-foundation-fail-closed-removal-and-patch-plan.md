@@ -25,6 +25,7 @@ affected_scope:
   - "src/write/**"
   - "src/jpeg/**"
   - "tests/strip*.rs"
+  - "src/write/exif*.rs"
   - "fuzz/fuzz_targets/rewrite_jpeg.rs"
 
 tags:
@@ -101,3 +102,25 @@ Revisit when SPEC-021 can edit inside the Exif segment (the all-or-nothing rule 
 - Related specs: SPEC-020 (implements for JPEG), SPEC-021, SPEC-022, SPEC-019 (the regions)
 - Related decisions: DEC-006 (regions), DEC-008 (categories), DEC-009 (presets, dispositions), DEC-012 (what the audit names)
 - Evidence: SPIKE-001 (Multi-Picture offsets, relocation hazard); questions `writer-in-place-delete-and-scrub`, `strip-keeps-orientation`, `writer-stray-bytes`
+
+## Amendment (2026-11-10, from the SPEC-020 verify; SPEC-021 design)
+
+SPEC-020 shipped with part 4 as written. Its build and verify showed three things the contract must now say, and SPEC-021 adds the one editing operation part 4 deferred. No edit kind is added: an entry deletion is a **same-length patch** (part 1 stands), so `output.len() <= input.len()` and "no insert, grow or move" still hold.
+
+**A. Ratified as built (SPEC-020 deviations 4 and 5; closes four `dec-013-*` questions).**
+
+1. **Refusal order is part of the contract:** `Unstrippable`, then `Uneditable` (below; it replaces `NeedsEntryEdit`), then `MpfNotIndexed` (an index's own unlocated entries first, then any other `MPF\0` segment), then `Overlap`, then `VerifyFailed`. The self-check order is Preview, MpfFields, Kept, Scan, Walk, Idempotent.
+2. **`MpfNotIndexed` (part 5) has four more cases, all refusals:** (a) a removed unindexed `MPF\0` segment is exempt; (b) "a removal after it" means any removed byte past its end; (c) when the index is removed, a kept `MPF\0` segment behind it is refused (a reader would take it for the index); (d) an index entry that is no located image and points inside the input, with a removal between the index header and the byte it points at (inclusive), is refused at the index segment. In-segment edits never move an offset, so none of this changes with SPEC-021.
+3. **A removable segment after the first scan stays `Overlap`** (the walk puts it inside the scan region; part 6). Rare, fail closed, no change.
+4. **`VerifyFailed { MpfFields }` stays the answer to a primary-size field smaller than the bytes removed from the primary;** a dedicated variant is decided with `writer-stray-bytes`, not here.
+
+**B. Part 4 for partial policies is replaced by entry editing (SPEC-021).** "Partial" means `S ∩ EXIF9` is non-empty and `EXIF9 ⊄ S`, **or** `S` holds `Xmp`, `Iptc` or `Icc` and the Exif blocks carry those tags (DEC-008 files tags 0x02BC, 0x83BB, 0x8649 and 0x8773 under them even inside Exif). `All` and `Everything` are unchanged: every Exif segment is removed whole, Orientation included (`strip-keeps-orientation` stays open; with entry editing it becomes a policy refinement, not new machinery). For a partial policy:
+
+1. **What is deleted:** exactly the Exif IFD entries the audit reports as findings whose category is in `S` (the audit is the one definition), plus two derived removals: a **GPS IFD** when `Gps ∈ S` (its pointer entry is deleted from the parent IFD and the whole IFD table and its values are scrubbed) and an **IFD1 thumbnail** when `Thumbnail ∈ S` (IFD0's next-IFD word becomes 0, IFD1's table, values and the thumbnail bytes are scrubbed). A `MakerNote` entry is an ordinary entry whose value is scrubbed whole. Nothing else is touched: Orientation, exposure, colour space and every other uncategorised entry stay.
+2. **Deleting entries from an IFD** rewrites that IFD's table region (count word, entries, next-IFD word) in place as one patch: the count drops by *k*, the surviving entries move up in order, the next-IFD word follows them, and the freed 12*k* bytes are zero. No out-of-line value offset changes, so nothing is relocated. Byte order is the block's own.
+3. **Scrub:** every out-of-line value of a deleted entry, and every table or data range of a removed child IFD, is overwritten with zero bytes (a patch), so the bytes are gone from the file, not just unreferenced.
+4. **Fail closed, `Uneditable { reason, offset }`** (replaces `NeedsEntryEdit`; no bytes): an Exif block that is not clean (any walk issue, a failed block, more than 16 Exif segments, a truncated inventory); a scrub range that touches a byte that must stay (a kept entry's value, a kept IFD table, the TIFF header, the Interop IFD, a kept thumbnail); a `Thumbnail` finding whose bytes the audit could not locate (strip-form thumbnails); an IFD1 whose next-IFD word is not 0 when the thumbnail is removed (splicing the chain would change the kinds the audit assigns to later IFDs); a child IFD pointer that is not found in its parent's table. A block with a walk issue is refused for **every** partial policy, not only when a finding is visible (this closes the SPEC-020 verify Medium: a GPS IFD with a lying entry count returned `Ok` with the coordinates left in).
+5. **Self-check additions (part 7):** (g) the output's inventory of tag items equals the input's with exactly the deleted and removed-child items taken out, in order, each with the same type, count and value bytes (so a shift bug cannot corrupt a kept entry, and it does not depend on the audit's categories); (h) every scrub range reads all-zero in the output. Check 7(b)'s exemption for Exif-resident findings of kept categories applies only when the whole Exif segment was removed.
+6. **Records:** `Stripped` gains per-entry records (block, IFD kind and index, tag, type, count, input offset) and scrub ranges; patches carry a kind (`MpfField`, `IfdTable`, `Scrub`).
+
+**C. Honest limit, stated once:** a `MakerNote` or a thumbnail that stays under a policy that does not name it may still hold what the policy removes; the preview says `KeptUnread`, and the writer does not open it (DEC-009).

@@ -3,6 +3,10 @@
 //! expected output is computed from the builder's own record of what each byte
 //! range is, never from the library.
 
+#[path = "support/exif_layout.rs"]
+mod exif_layout;
+#[path = "support/exif_records.rs"]
+mod exif_records;
 #[path = "support/oracle_tiff.rs"]
 mod oracle_tiff;
 #[path = "support/real_shapes.rs"]
@@ -14,7 +18,9 @@ use std::ops::Range;
 
 use exif_core::audit::{audit, Category, ContainerKind, ItemKind, RegionKind, Sniffed};
 use exif_core::policy::{StripPolicy, StripSpec};
-use exif_core::write::{Check, RemovalKind, UnstrippableReason};
+use exif_core::write::{
+    Check, PatchKind, RemovalKind, ScrubReason, UneditableReason, UnstrippableReason,
+};
 use exif_core::{sanitize, strip, StripError, Stripped};
 use strip_shapes::{expected_bytes, model, spec_of, Expect, Shape, EXIF9, K, REMOVED_CANARIES};
 
@@ -377,8 +383,8 @@ fn custom_icc_removes_every_icc_chunk() {
 #[test]
 fn custom_iptc_removes_both_split_app13_segments() {
     let s = shape("kitchen-sink");
-    // `FreeText` is also asked for, so the kitchen sink (whose Exif has free
-    // text) would need the entry edit: use the file without Exif.
+    // The file without Exif: only segments go. (On the kitchen sink the Exif
+    // free text goes too, by an entry edit; see the end of this test.)
     let s2 = shape("no-exif");
     let out = check_ok(&s2, "iptc+free_text");
     assert!(!contains(out.bytes(), strip_shapes::C_IPTC1));
@@ -398,10 +404,13 @@ fn custom_iptc_removes_both_split_app13_segments() {
             .count(),
         2
     );
-    assert!(matches!(
-        strip(&s.bytes, policy("iptc+free_text")),
-        Err(StripError::NeedsEntryEdit { .. })
-    ));
+    // The kitchen sink: the IPTC segments and comments go as segments, the
+    // Exif UserComment and ImageDescription-style free text as entries.
+    let out = strip(&s.bytes, policy("iptc+free_text")).unwrap();
+    assert!(!contains(out.bytes(), strip_shapes::C_USERCOMMENT));
+    assert!(!contains(out.bytes(), strip_shapes::C_IPTC1));
+    assert!(contains(out.bytes(), strip_shapes::C_MAKE));
+    assert!(!out.entries().is_empty());
 }
 
 #[test]
@@ -426,13 +435,19 @@ fn custom_free_text_removes_comments_when_exif_has_no_free_text() {
 }
 
 #[test]
-fn custom_free_text_needs_entry_edit_when_exif_has_free_text() {
+fn custom_free_text_deletes_the_exif_free_text_entries_and_the_comments() {
+    // Was `NeedsEntryEdit` in SPEC-020 (rewritten for SPEC-021).
     let s = shape("kitchen-sink");
+    let out = strip(&s.bytes, policy("free_text")).unwrap();
+    assert!(!contains(out.bytes(), strip_shapes::C_USERCOMMENT));
+    assert!(!contains(out.bytes(), strip_shapes::C_COM1));
+    assert!(!contains(out.bytes(), strip_shapes::C_COM2));
+    // Everything else in the Exif is still there.
+    assert!(contains(out.bytes(), strip_shapes::C_MAKE));
+    assert!(contains(out.bytes(), strip_shapes::C_GPS));
     assert_eq!(
-        strip(&s.bytes, policy("free_text")).unwrap_err(),
-        StripError::NeedsEntryEdit {
-            categories: spec_of(&[Category::FreeText])
-        }
+        audit(out.bytes()).findings_in(Category::FreeText).count(),
+        0
     );
 }
 
@@ -482,86 +497,104 @@ fn gps_preset_is_the_identity_on_exif_without_findings_in_its_categories() {
 }
 
 #[test]
-fn gps_preset_needs_entry_edit_when_exif_has_gps() {
+fn gps_preset_edits_the_exif_when_it_has_gps() {
+    // Was `NeedsEntryEdit` in SPEC-020 (rewritten for SPEC-021).
     let s = shape("kitchen-sink");
-    assert_eq!(
-        strip(&s.bytes, StripPolicy::Gps).unwrap_err(),
-        StripError::NeedsEntryEdit {
-            categories: spec_of(&[Category::Gps])
-        }
-    );
-    assert_eq!(
-        strip(&s.bytes, StripPolicy::GpsAndDevice).unwrap_err(),
-        StripError::NeedsEntryEdit {
-            categories: spec_of(&[Category::Gps, Category::DeviceId])
-        }
-    );
+    let out = strip(&s.bytes, StripPolicy::Gps).unwrap();
+    assert!(!contains(out.bytes(), strip_shapes::C_GPS));
+    assert_eq!(audit(out.bytes()).findings_in(Category::Gps).count(), 0);
+    assert!(contains(out.bytes(), strip_shapes::C_MAKE));
+    assert_eq!(out.bytes().len(), s.bytes.len());
+    let out = strip(&s.bytes, StripPolicy::GpsAndDevice).unwrap();
+    assert!(!contains(out.bytes(), strip_shapes::C_SERIAL));
+    assert!(contains(out.bytes(), strip_shapes::C_MODEL));
 }
 
 #[test]
-fn all_pii_needs_entry_edit_and_names_its_categories() {
+fn all_pii_edits_the_exif_and_leaves_software() {
     let s = shape("kitchen-sink");
-    // AllPii is EXIF9 minus Software: the categories reported are exactly
-    // S intersect EXIF9, not all of S (mutant 29 reports more) and not EXIF9.
-    let want = spec_of(&[
-        Category::Gps,
-        Category::DeviceId,
-        Category::Authorship,
-        Category::FreeText,
-        Category::Timestamps,
-        Category::CameraModel,
-        Category::Thumbnail,
-        Category::MakerNote,
-    ]);
-    assert_eq!(
-        strip(&s.bytes, StripPolicy::AllPii).unwrap_err(),
-        StripError::NeedsEntryEdit { categories: want }
-    );
-    // A custom set with Xmp too: the Xmp category is not an Exif category.
+    let out = strip(&s.bytes, StripPolicy::AllPii).unwrap();
+    let spec = StripPolicy::AllPii.spec();
+    assert!(audit(out.bytes())
+        .findings()
+        .iter()
+        .all(|f| !spec.contains(f.category)));
+    // Software is not in AllPii; it stays, with the Exif segment itself.
+    assert!(contains(out.bytes(), strip_shapes::C_SOFTWARE));
+    assert!(out.removals().iter().all(|r| r.kind != RemovalKind::Exif));
+    // A custom set with Xmp and Icc too: nothing of those is in the Exif here.
     let custom = StripPolicy::Custom(spec_of(&[Category::Gps, Category::Xmp, Category::Icc]));
-    assert_eq!(
-        strip(&s.bytes, custom).unwrap_err(),
-        StripError::NeedsEntryEdit {
-            categories: spec_of(&[Category::Gps])
-        }
-    );
+    let out = strip(&s.bytes, custom).unwrap();
+    assert!(!contains(out.bytes(), strip_shapes::C_GPS));
+    assert!(!contains(out.bytes(), strip_shapes::C_XMP));
 }
 
 #[test]
-fn an_unreadable_exif_block_needs_entry_edit_for_partial_policies() {
+fn an_unreadable_exif_block_is_uneditable_for_partial_policies() {
     let s = shape("unreadable-exif");
-    assert!(matches!(
-        strip(&s.bytes, StripPolicy::Gps),
-        Err(StripError::NeedsEntryEdit { .. })
-    ));
-    // A policy with no Exif category does not care.
-    let out = strip(&s.bytes, policy("xmp")).unwrap();
-    assert!(!contains(out.bytes(), strip_shapes::C_XMP));
+    let at = s.parts_of(K::Exif)[0].start;
+    for name in ["gps", "xmp", "icc", "free_text", "iptc+free_text"] {
+        assert_eq!(
+            strip(&s.bytes, policy(name)).unwrap_err(),
+            StripError::Uneditable {
+                reason: UneditableReason::BlockNotClean,
+                offset: at
+            },
+            "{name}"
+        );
+    }
+    // A policy with no category an Exif entry can have does not care.
+    let out = strip(&s.bytes, policy("jumbf")).unwrap();
+    assert_eq!(out.bytes(), &s.bytes[..]);
     // Removing every Exif category removes the unreadable block too.
     let out = strip(&s.bytes, StripPolicy::All).unwrap();
     assert!(out.removals().iter().any(|r| r.kind == RemovalKind::Exif));
 }
 
 #[test]
-fn a_block_with_a_walk_issue_needs_entry_edit_for_partial_policies() {
-    // Found by the verifier: a GPS IFD declaring 0xFFFF entries gives no GPS
-    // finding and no failed block, only a TIFF-layer issue, yet the latitude
-    // and longitude bytes are in the file.
+fn a_block_with_a_walk_issue_is_uneditable_for_every_partial_policy() {
+    // Found by the verifier of SPEC-020: a GPS IFD declaring 0xFFFF entries
+    // gives no GPS finding and no failed block, only a TIFF-layer issue, yet
+    // the latitude and longitude bytes are in the file. A bad IFD1 pointer and
+    // a bad Exif pointer are the same class.
     let s = shape("gps-count-overflow");
     assert!(contains(&s.bytes, strip_shapes::C_GPSNUM));
     assert_eq!(audit(&s.bytes).findings_in(Category::Gps).count(), 0);
+    let at = s.parts_of(K::Exif)[0].start;
     for p in [
         StripPolicy::Gps,
         StripPolicy::GpsAndDevice,
         StripPolicy::AllPii,
+        policy("xmp"),
     ] {
-        assert!(
-            matches!(strip(&s.bytes, p), Err(StripError::NeedsEntryEdit { .. })),
+        assert_eq!(
+            strip(&s.bytes, p).unwrap_err(),
+            StripError::Uneditable {
+                reason: UneditableReason::BlockNotClean,
+                offset: at
+            },
             "{p:?}"
         );
     }
-    // A policy with no Exif category does not care; All removes the block whole.
-    assert!(strip(&s.bytes, policy("xmp")).is_ok());
+    for l in [
+        exif_layout::bad_ifd1_pointer(),
+        exif_layout::bad_exif_pointer(),
+    ] {
+        let bytes = jpeg_with(&[l.bytes]);
+        for p in [StripPolicy::Gps, StripPolicy::AllPii, policy("free_text")] {
+            assert!(
+                matches!(
+                    strip(&bytes, p),
+                    Err(StripError::Uneditable {
+                        reason: UneditableReason::BlockNotClean,
+                        ..
+                    })
+                ),
+                "{p:?}"
+            );
+        }
+    }
+    // All removes the block whole.
     let out = strip(&s.bytes, StripPolicy::All).unwrap();
     assert!(!contains(out.bytes(), strip_shapes::C_GPSNUM));
 }
@@ -950,9 +983,22 @@ fn output_equals_the_input_minus_the_listed_removals_plus_the_listed_patches() {
                 }
             }
             (Expect::Unstrippable, Err(StripError::Unstrippable { .. })) => {}
-            (Expect::NeedsEntryEdit(c), Err(StripError::NeedsEntryEdit { categories })) => {
-                assert_eq!(c, categories, "{} {name}", s.name)
+            (
+                Expect::Uneditable(o),
+                Err(StripError::Uneditable {
+                    reason: UneditableReason::BlockNotClean,
+                    offset,
+                }),
+            ) => {
+                assert_eq!(o, offset, "{} {name}", s.name)
             }
+            // The exact bytes of an entry edit are computed from the layout
+            // record in the tests below; here only the library's own
+            // invariants (the tests after this one) apply.
+            (Expect::EntryEdit, Ok(out)) => {
+                assert!(!out.entries().is_empty(), "{} {name}", s.name);
+            }
+            (Expect::EntryEdit, Err(StripError::Uneditable { .. })) => {}
             (Expect::MpfNotIndexed(o), Err(StripError::MpfNotIndexed { offset })) => {
                 assert_eq!(o, offset, "{} {name}", s.name)
             }
@@ -1076,8 +1122,9 @@ fn output_is_never_longer_and_equal_only_for_an_empty_plan() {
         // Removal records may nest (an image inside a COM): the bytes removed
         // are at most their sum.
         if out.removals().is_empty() {
+            // Only same-length patches (Exif entry edits) can change anything.
             assert_eq!(out.bytes().len(), s.bytes.len(), "{} {name}", s.name);
-            assert!(out.patches().is_empty());
+            assert!(!out.patches().is_empty() || out.bytes() == &s.bytes[..]);
         } else {
             assert!(out.bytes().len() < s.bytes.len(), "{} {name}", s.name);
             assert!(
@@ -1221,4 +1268,1537 @@ fn verify_failed_displays_its_check() {
         check: Check::Preview,
     };
     assert!(e.to_string().contains("Preview"));
+}
+
+// ═══ SPEC-021: Exif entry editing, against the layout record ═══════════════
+//
+// Every expected byte below comes from `exif_layout::expected` (the fixture
+// builder's record of where each table, entry, value and thumbnail lies) and
+// `strip_shapes::expected_bytes`, never from the library or its walk.
+
+use exif_layout::{del_for, deleted_entries, expected, Cat, Layout};
+use exif_records::{
+    category_of, exif_fixtures, exif_policies, jfif_bytes, jpeg_of, jpeg_with, scan_bytes, Jpg,
+    ALL_PII,
+};
+
+use exif_records::model_refusal;
+
+/// The expected output of `strip` over `j` for the categories `spec`: the COM
+/// removed under `free_text`, every blob edited per the layout record.
+fn expected_jpeg(j: &Jpg, spec: &[Cat]) -> Vec<u8> {
+    let removals: Vec<Range<usize>> = j
+        .com
+        .iter()
+        .filter(|_| spec.contains(&"free_text"))
+        .cloned()
+        .collect();
+    let patches: Vec<(usize, Vec<u8>)> = j
+        .layouts
+        .iter()
+        .zip(&j.blobs)
+        .filter_map(|(l, at)| {
+            let d = del_for(l, spec);
+            (!d.is_empty()).then(|| (*at, expected(l, &d)))
+        })
+        .collect();
+    expected_bytes(&j.bytes, &removals, &patches)
+}
+
+type ExifRun = (&'static str, Jpg, &'static str, &'static [Cat], StripPolicy);
+
+fn exif_runs(com: bool) -> Vec<ExifRun> {
+    let mut v = Vec::new();
+    for (name, layouts) in exif_fixtures() {
+        for (pname, cats, p) in exif_policies() {
+            v.push((name, jpeg_of(&layouts, com), pname, cats, p));
+        }
+    }
+    v
+}
+
+#[test]
+fn the_expected_output_computed_from_the_fixture_layout_equals_the_library_output() {
+    let mut oks = 0;
+    for (name, j, pname, cats, p) in exif_runs(true) {
+        let got = strip(&j.bytes, p);
+        if let Some(reason) = model_refusal(name, cats) {
+            match got {
+                Err(StripError::Uneditable { reason: r, .. }) => {
+                    assert_eq!(r, reason, "{name} {pname}")
+                }
+                other => panic!("{name} {pname}: {other:?}"),
+            }
+            continue;
+        }
+        let out = got.unwrap_or_else(|e| panic!("{name} {pname}: {e}"));
+        assert_eq!(out.bytes(), &expected_jpeg(&j, cats)[..], "{name} {pname}");
+        oks += 1;
+    }
+    assert!(oks > 100, "{oks}");
+}
+
+#[test]
+fn output_length_equals_input_length_when_only_exif_entries_go() {
+    for (name, j, pname, cats, p) in exif_runs(false) {
+        if model_refusal(name, cats).is_some() {
+            continue;
+        }
+        let out = strip(&j.bytes, p).unwrap();
+        assert_eq!(out.bytes().len(), j.bytes.len(), "{name} {pname}");
+        assert!(out.removals().is_empty(), "{name} {pname}");
+    }
+}
+
+#[test]
+fn gps_removes_the_gps_ifd_and_keeps_everything_else() {
+    for be in [false, true] {
+        let l = exif_layout::full(be).layout();
+        let j = jpeg_of(std::slice::from_ref(&l), false);
+        let out = strip(&j.bytes, StripPolicy::Gps).unwrap();
+        let o = out.bytes();
+        // The GPS values and the pointer are gone.
+        assert!(!contains(o, exif_layout::K_GPSAREA), "be={be}");
+        let lat: Vec<u8> = l
+            .ifd("gps")
+            .ents
+            .iter()
+            .filter_map(|e| e.canary.clone())
+            .flatten()
+            .collect();
+        assert!(!contains(o, &lat[..8.min(lat.len())]), "be={be}");
+        let a = audit(o);
+        assert_eq!(a.findings_in(Category::Gps).count(), 0);
+        assert!(!a
+            .items()
+            .iter()
+            .any(|i| matches!(i.kind(), ItemKind::Tag { tag: 0x8825, .. })));
+        // Everything else is as it was: every other canary, the thumbnail,
+        // the Orientation entry bytes.
+        for f in l.ifds.iter().filter(|f| f.name != "gps") {
+            for e in &f.ents {
+                if e.tag == 0x8825 {
+                    continue;
+                }
+                if let Some(c) = &e.canary {
+                    assert!(contains(o, c), "be={be} {} {:#x}", f.name, e.tag);
+                }
+            }
+        }
+        assert!(contains(o, exif_layout::K_THUMB));
+        assert_eq!(a.findings_in(Category::Thumbnail).count(), 1);
+        assert_eq!(o.len(), j.bytes.len());
+        // Six GPS entries and the pointer, one table patch, the values.
+        assert_eq!(out.entries().len(), 1 + 6);
+    }
+}
+
+#[test]
+fn gps_and_device_removes_the_four_device_ids_too() {
+    let l = exif_layout::full_le().layout();
+    let j = jpeg_of(&[l], false);
+    let out = strip(&j.bytes, StripPolicy::GpsAndDevice).unwrap();
+    for c in [
+        exif_layout::K_BODYSERIAL,
+        exif_layout::K_UID,
+        exif_layout::K_LENSSERIAL,
+        exif_layout::K_CAMSERIAL,
+        exif_layout::K_GPSAREA,
+    ] {
+        assert!(!contains(out.bytes(), c), "{}", String::from_utf8_lossy(c));
+    }
+    for c in [
+        exif_layout::K_MAKE,
+        exif_layout::K_LENS,
+        exif_layout::K_SOFTWARE,
+        exif_layout::K_ARTIST,
+        exif_layout::K_USERCOMMENT,
+        exif_layout::K_NOTE,
+        exif_layout::K_THUMB,
+    ] {
+        assert!(contains(out.bytes(), c), "{}", String::from_utf8_lossy(c));
+    }
+    assert_eq!(
+        audit(out.bytes()).findings_in(Category::DeviceId).count(),
+        0
+    );
+}
+
+#[test]
+fn all_pii_matches_the_policy_table_entry_by_entry() {
+    for be in [false, true] {
+        let l = exif_layout::full(be).layout();
+        let j = jpeg_of(std::slice::from_ref(&l), false);
+        let out = strip(&j.bytes, StripPolicy::AllPii).unwrap();
+        let d = del_for(&l, ALL_PII);
+        // The records are exactly the model's deleted entries, in blob order.
+        let want: Vec<(u16, usize)> = deleted_entries(&l, &d)
+            .iter()
+            .map(|(_, tag, at)| (*tag, j.blobs[0] + at))
+            .collect();
+        let got: Vec<(u16, usize)> = out.entries().iter().map(|e| (e.tag, e.offset)).collect();
+        assert_eq!(got, want, "be={be}");
+        // The inventory of the output: every surviving entry, nothing else.
+        let kept: Vec<(u16, u16)> = {
+            let mut v = Vec::new();
+            for f in &l.ifds {
+                for (i, e) in f.ents.iter().enumerate() {
+                    if !d.whole.contains(&f.name) && !d.entries.contains(&(f.name, i)) {
+                        v.push((e.tag, e.ty));
+                    }
+                }
+            }
+            v.sort();
+            v
+        };
+        let mut have: Vec<(u16, u16)> = audit(out.bytes())
+            .items()
+            .iter()
+            .filter_map(|i| match i.kind() {
+                ItemKind::Tag {
+                    tag, field_type, ..
+                } => Some((tag, field_type)),
+                _ => None,
+            })
+            .collect();
+        have.sort();
+        assert_eq!(have, kept, "be={be}");
+    }
+}
+
+#[test]
+fn all_pii_keeps_software_and_orientation_and_exif_resident_xmp() {
+    let mut b = exif_layout::full_le();
+    b.ifds[0].ents.push(exif_layout::Ent {
+        tag: 0x02BC,
+        ty: exif_layout::BYTE,
+        count: exif_layout::K_XMPTAG.len() as u32,
+        val: exif_layout::Val::Data(exif_layout::K_XMPTAG.to_vec()),
+        canary: Some(exif_layout::K_XMPTAG.to_vec()),
+    });
+    let l = b.layout();
+    let j = jpeg_of(std::slice::from_ref(&l), false);
+    let out = strip(&j.bytes, StripPolicy::AllPii).unwrap();
+    let o = out.bytes();
+    assert!(contains(o, exif_layout::K_SOFTWARE));
+    assert!(contains(o, exif_layout::K_XMPTAG));
+    let orientation = l.ifd("ifd0").ents.iter().find(|e| e.tag == 0x0112).unwrap();
+    assert!(contains(o, &l.bytes[orientation.at..orientation.at + 12]));
+    let a = audit(o);
+    assert_eq!(a.findings_in(Category::Software).count(), 1);
+    assert_eq!(a.findings_in(Category::Xmp).count(), 1);
+    assert_eq!(a.findings_in(Category::Gps).count(), 0);
+    assert_eq!(a.findings_in(Category::MakerNote).count(), 0);
+    assert_eq!(a.findings_in(Category::Thumbnail).count(), 0);
+}
+
+/// An XMP segment (with a canary) after the Exif of `l`, for the custom-Xmp
+/// test; the XMP tag lives in IFD0 of `l`.
+fn jpeg_with_xmp_segment(l: &Layout) -> Vec<u8> {
+    let mut v = vec![0xFF, 0xD8];
+    v.extend_from_slice(&jfif_bytes());
+    v.extend_from_slice(&real_shapes::exif_app1(&l.bytes));
+    v.extend_from_slice(&real_shapes::seg(
+        0xE1,
+        &[
+            &b"http://ns.adobe.com/xap/1.0/\0<x:xmpmeta>"[..],
+            strip_shapes::C_XMP,
+            b"</x:xmpmeta>",
+        ]
+        .concat(),
+    ));
+    v.extend_from_slice(&scan_bytes());
+    v
+}
+
+#[test]
+fn custom_xmp_deletes_the_exif_resident_xmp_tag_and_the_segments() {
+    let l = exif_layout::xmp_tag_inside().layout();
+    let bytes = jpeg_with_xmp_segment(&l);
+    let p = policy("xmp");
+    let out = strip(&bytes, p).unwrap();
+    let o = out.bytes();
+    assert!(!contains(o, exif_layout::K_XMPTAG));
+    assert!(!contains(o, strip_shapes::C_XMP));
+    // All the Exif entries of other categories stay.
+    assert!(contains(o, exif_layout::K_MAKE));
+    let a = audit(o);
+    assert_eq!(a.findings_in(Category::Xmp).count(), 0);
+    assert_eq!(a.findings_in(Category::CameraModel).count(), 1);
+    assert_eq!(out.entries().len(), 1);
+    assert_eq!(out.entries()[0].tag, 0x02BC);
+    assert_eq!(out.removals().len(), 1);
+    // The Exif edit: model bytes at the Exif blob.
+    let d = del_for(&l, &["xmp"]);
+    assert_eq!(
+        &o[10 + jfif_bytes().len() + 2..][..l.bytes.len()],
+        &expected(&l, &d)[..]
+    );
+}
+
+fn only(cats: &'static [Cat]) -> StripPolicy {
+    StripPolicy::Custom(
+        cats.iter()
+            .fold(StripSpec::none(), |s, c| s.include(category_of(c))),
+    )
+}
+
+#[test]
+fn custom_software_only() {
+    let l = exif_layout::full_le().layout();
+    let j = jpeg_of(&[l], false);
+    let out = strip(&j.bytes, only(&["software"])).unwrap();
+    assert!(!contains(out.bytes(), exif_layout::K_SOFTWARE));
+    for c in [
+        exif_layout::K_MAKE,
+        exif_layout::K_ARTIST,
+        exif_layout::K_GPSAREA,
+        exif_layout::K_NOTE,
+        exif_layout::K_THUMB,
+    ] {
+        assert!(contains(out.bytes(), c));
+    }
+    assert_eq!(out.entries().len(), 1);
+    assert_eq!(out.entries()[0].tag, 0x0131);
+}
+
+#[test]
+fn custom_timestamps_and_gps() {
+    let l = exif_layout::full_be().layout();
+    let j = jpeg_of(&[l], false);
+    let out = strip(&j.bytes, only(&["timestamps", "gps"])).unwrap();
+    for c in [
+        exif_layout::K_DATETIME,
+        exif_layout::K_DTO,
+        exif_layout::K_GPSAREA,
+    ] {
+        assert!(!contains(out.bytes(), c), "{}", String::from_utf8_lossy(c));
+    }
+    assert!(contains(out.bytes(), exif_layout::K_MAKE));
+    assert_eq!(
+        audit(out.bytes()).findings_in(Category::Timestamps).count(),
+        0
+    );
+}
+
+#[test]
+fn custom_makernote_only() {
+    let l = exif_layout::full_le().layout();
+    let j = jpeg_of(std::slice::from_ref(&l), false);
+    let out = strip(&j.bytes, only(&["maker_note"])).unwrap();
+    assert!(!contains(out.bytes(), exif_layout::K_NOTE));
+    assert!(contains(out.bytes(), exif_layout::K_GPSAREA));
+    assert!(contains(out.bytes(), exif_layout::K_THUMB));
+    assert_eq!(out.entries().len(), 1);
+    // The MakerNote's 64 bytes are scrubbed (one scrub record of that length).
+    assert!(out
+        .scrubs()
+        .iter()
+        .any(|s| s.len == 64 && s.reason == ScrubReason::EntryValue));
+    let note = l.ifd("exif").ents.iter().find(|e| e.tag == 0x927C).unwrap();
+    assert_eq!(out.entries()[0].offset, j.blobs[0] + note.at);
+}
+
+#[test]
+fn custom_thumbnail_only() {
+    let l = exif_layout::full_le().layout();
+    let j = jpeg_of(std::slice::from_ref(&l), false);
+    let out = strip(&j.bytes, only(&["thumbnail"])).unwrap();
+    assert!(!contains(out.bytes(), exif_layout::K_THUMB));
+    assert!(contains(out.bytes(), exif_layout::K_GPSAREA));
+    assert_eq!(
+        audit(out.bytes()).findings_in(Category::Thumbnail).count(),
+        0
+    );
+    let t = l.thumb.clone().unwrap();
+    assert!(out
+        .scrubs()
+        .iter()
+        .any(|s| s.reason == ScrubReason::Thumbnail && s.len == t.len()));
+    // IFD1 is gone whole: its four entries are recorded.
+    assert_eq!(out.entries().len(), 4);
+}
+
+#[test]
+fn exif_64k_block_does_not_grow_and_stays_valid() {
+    let l = exif_layout::at_the_ceiling().layout();
+    assert_eq!(l.bytes.len(), exif_layout::CEILING_BLOB);
+    let j = jpeg_of(&[l], false);
+    // The segment's length word is 0xFFFF.
+    assert_eq!(&j.bytes[j.first_exif + 2..j.first_exif + 4], &[0xFF, 0xFF]);
+    for (name, p) in [("gps", StripPolicy::Gps), ("all_pii", StripPolicy::AllPii)] {
+        let out = strip(&j.bytes, p).unwrap();
+        assert_eq!(out.bytes().len(), j.bytes.len(), "{name}");
+        assert_eq!(
+            &out.bytes()[j.first_exif..j.first_exif + 4],
+            &j.bytes[j.first_exif..j.first_exif + 4],
+            "{name}"
+        );
+        let a = audit(out.bytes());
+        assert!(a.health().clean, "{name}: {:?}", a.health());
+    }
+}
+
+#[test]
+fn no_removed_canary_survives_anywhere_in_the_output() {
+    let mut checked = 0;
+    for (name, j, pname, cats, p) in exif_runs(true) {
+        if model_refusal(name, cats).is_some() {
+            continue;
+        }
+        let out = strip(&j.bytes, p).unwrap();
+        for l in &j.layouts {
+            let d = del_for(l, cats);
+            for f in &l.ifds {
+                for (i, e) in f.ents.iter().enumerate() {
+                    let removed = d.whole.contains(&f.name) || d.entries.contains(&(f.name, i));
+                    if let (true, Some(c)) = (removed, &e.canary) {
+                        assert!(
+                            !contains(out.bytes(), c),
+                            "{name} {pname}: {} {:#x} left",
+                            f.name,
+                            e.tag
+                        );
+                        checked += 1;
+                    }
+                }
+            }
+            if d.thumb {
+                assert!(
+                    !contains(out.bytes(), exif_layout::K_THUMB),
+                    "{name} {pname}"
+                );
+            }
+        }
+        if cats.contains(&"free_text") {
+            assert!(
+                !contains(out.bytes(), strip_shapes::C_COM1),
+                "{name} {pname}"
+            );
+        }
+    }
+    assert!(checked > 200, "{checked}");
+}
+
+#[test]
+fn every_kept_canary_survives() {
+    for (name, j, pname, cats, p) in exif_runs(true) {
+        if model_refusal(name, cats).is_some() {
+            continue;
+        }
+        let out = strip(&j.bytes, p).unwrap();
+        for l in &j.layouts {
+            let d = del_for(l, cats);
+            for f in &l.ifds {
+                for (i, e) in f.ents.iter().enumerate() {
+                    let removed = d.whole.contains(&f.name) || d.entries.contains(&(f.name, i));
+                    if removed {
+                        continue;
+                    }
+                    if let Some(c) = &e.canary {
+                        assert!(
+                            contains(out.bytes(), c),
+                            "{name} {pname}: {} {:#x}",
+                            f.name,
+                            e.tag
+                        );
+                    }
+                    // A kept entry's own 12 bytes (inline values included).
+                    assert!(
+                        contains(out.bytes(), &l.bytes[e.at..e.at + 12]),
+                        "{name} {pname}: {} {:#x} entry",
+                        f.name,
+                        e.tag
+                    );
+                }
+            }
+            if !d.thumb && l.thumb.is_some() {
+                assert!(
+                    contains(out.bytes(), exif_layout::K_THUMB),
+                    "{name} {pname}"
+                );
+            }
+        }
+        if !cats.contains(&"free_text") {
+            assert!(
+                contains(out.bytes(), strip_shapes::C_COM1),
+                "{name} {pname}"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_output_equals_the_input_outside_the_recorded_patches_and_removals() {
+    for (name, j, pname, _cats, p) in exif_runs(true) {
+        let Ok(out) = strip(&j.bytes, p) else {
+            continue;
+        };
+        // Input bytes that survive, in order, with their input offsets.
+        let mut gone = vec![false; j.bytes.len()];
+        for r in out.removals() {
+            for g in &mut gone[r.offset..r.offset + r.len] {
+                *g = true;
+            }
+        }
+        let kept: Vec<usize> = (0..j.bytes.len()).filter(|i| !gone[*i]).collect();
+        assert_eq!(kept.len(), out.bytes().len(), "{name} {pname}");
+        let mut patched = vec![false; out.bytes().len()];
+        for pr in out.patches() {
+            for x in &mut patched[pr.offset..pr.offset + pr.len] {
+                *x = true;
+            }
+        }
+        for (o, i) in kept.iter().enumerate() {
+            if !patched[o] {
+                assert_eq!(out.bytes()[o], j.bytes[*i], "{name} {pname} byte {o}");
+            }
+        }
+    }
+}
+
+#[test]
+fn scan_region_and_kept_segments_are_byte_identical() {
+    for (name, j, pname, _cats, p) in exif_runs(true) {
+        let Ok(out) = strip(&j.bytes, p) else {
+            continue;
+        };
+        let scan = scan_bytes();
+        assert!(out.bytes().ends_with(&scan), "{name} {pname}");
+        assert!(out.bytes().starts_with(&[0xFF, 0xD8]), "{name} {pname}");
+        assert!(contains(out.bytes(), &jfif_bytes()), "{name} {pname}");
+        // The Exif segments keep their marker and length words.
+        for (k, at) in j.blobs.iter().enumerate() {
+            let seg = at - 10;
+            let shift = if out.removals().is_empty() {
+                0
+            } else {
+                j.com.clone().map_or(0, |c| c.len())
+            };
+            let _ = k;
+            let o = seg - if out.removals().is_empty() { 0 } else { shift };
+            assert_eq!(
+                &out.bytes()[o..o + 4],
+                &j.bytes[seg..seg + 4],
+                "{name} {pname}"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_output_audit_has_no_finding_in_the_policy_and_the_same_kept_findings() {
+    for (name, j, pname, cats, p) in exif_runs(false) {
+        let Ok(out) = strip(&j.bytes, p) else {
+            continue;
+        };
+        let spec = p.spec();
+        let before = audit(&j.bytes);
+        let after = audit(out.bytes());
+        assert!(
+            after.findings().iter().all(|f| !spec.contains(f.category)),
+            "{name} {pname}"
+        );
+        let key = |a: &exif_core::audit::FileAudit<'_>| {
+            let mut v: Vec<(String, Option<Vec<u8>>)> = a
+                .findings()
+                .iter()
+                .filter(|f| !spec.contains(f.category))
+                .map(|f| {
+                    (
+                        format!(
+                            "{:?}/{}",
+                            f.category,
+                            match f.at.kind() {
+                                ItemKind::Tag { ifd, tag, .. } => format!("{ifd:?}{tag}"),
+                                ItemKind::Region { kind, .. } => format!("{kind:?}"),
+                            }
+                        ),
+                        f.at.value().map(|v| v.to_vec()),
+                    )
+                })
+                .collect();
+            v.sort();
+            v
+        };
+        assert_eq!(key(&before), key(&after), "{name} {pname} {cats:?}");
+    }
+}
+
+#[test]
+fn strip_is_idempotent_and_a_wider_policy_composes() {
+    for (name, j, pname, _cats, p) in exif_runs(true) {
+        let Ok(out) = strip(&j.bytes, p) else {
+            continue;
+        };
+        let twice = strip(out.bytes(), p).unwrap();
+        assert_eq!(twice.bytes(), out.bytes(), "{name} {pname}");
+        assert!(
+            twice.removals().is_empty() && twice.patches().is_empty() && twice.entries().is_empty(),
+            "{name} {pname}"
+        );
+    }
+    // A narrow strip followed by a wide one equals the wide one alone.
+    for (name, layouts) in exif_fixtures() {
+        let j = jpeg_of(&layouts, true);
+        if name == "chain-ifd2" {
+            continue;
+        }
+        let narrow = strip(&j.bytes, StripPolicy::Gps).unwrap();
+        let wide_after = strip(narrow.bytes(), StripPolicy::AllPii).unwrap();
+        let wide = strip(&j.bytes, StripPolicy::AllPii).unwrap();
+        assert_eq!(wide_after.bytes(), wide.bytes(), "{name}");
+    }
+}
+
+#[test]
+fn whole_and_none_policies_are_byte_identical_to_spec_020_outputs() {
+    // SPEC-020's behaviour for a whole policy is the segments gone; for a none
+    // policy the input back. (The old fixtures run the same grid in
+    // `output_equals_the_input_minus_the_listed_removals_plus_the_listed_patches`.)
+    for (name, layouts) in exif_fixtures() {
+        let j = jpeg_of(&layouts, true);
+        for p in [StripPolicy::All, StripPolicy::Everything] {
+            let out = strip(&j.bytes, p).unwrap();
+            let mut gone: Vec<Range<usize>> = j.com.iter().cloned().collect();
+            for (k, l) in layouts.iter().enumerate() {
+                let at = j.blobs[k] - 10;
+                gone.push(at..at + 10 + l.bytes.len());
+            }
+            assert_eq!(
+                out.bytes(),
+                &expected_bytes(&j.bytes, &gone, &[])[..],
+                "{name} {p:?}"
+            );
+            assert!(
+                out.patches().is_empty() && out.entries().is_empty(),
+                "{name}"
+            );
+        }
+        for spec in [
+            StripSpec::none(),
+            exif_core::StripPolicy::Custom(StripSpec::none()).spec(),
+        ] {
+            let out = strip(&j.bytes, StripPolicy::Custom(spec)).unwrap();
+            assert_eq!(out.bytes(), &j.bytes[..], "{name}");
+        }
+        // A policy with only non-Exif-capable categories leaves Exif alone too.
+        let out = strip(&j.bytes, policy("jumbf")).unwrap();
+        assert_eq!(out.bytes(), &j.bytes[..], "{name}");
+    }
+}
+
+#[test]
+fn a_walk_issue_in_an_ifd_with_no_target_still_refuses() {
+    let l = exif_layout::walk_issue_in_a_kept_ifd().layout();
+    let j = jpeg_of(&[l], false);
+    // The issue is in the Exif IFD's Interop pointer; the policy targets only
+    // GPS, which is fine. Still a refusal, for every partial policy.
+    for (pname, _, p) in exif_policies() {
+        assert_eq!(
+            strip(&j.bytes, p).unwrap_err(),
+            StripError::Uneditable {
+                reason: UneditableReason::BlockNotClean,
+                offset: j.first_exif
+            },
+            "{pname}"
+        );
+    }
+}
+
+#[test]
+fn exif_after_the_first_scan_is_uneditable() {
+    let l = exif_layout::full_le().layout();
+    let mut v = vec![0xFF, 0xD8];
+    v.extend_from_slice(&jfif_bytes());
+    v.extend_from_slice(&real_shapes::seg(0xDA, &[1, 1, 0, 0, 0x3F, 0]));
+    v.extend_from_slice(&[0x12, 0x34]);
+    let at = v.len();
+    v.extend_from_slice(&real_shapes::exif_app1(&l.bytes));
+    v.extend_from_slice(&real_shapes::EOI);
+    for p in [StripPolicy::Gps, StripPolicy::AllPii, policy("xmp")] {
+        assert_eq!(
+            strip(&v, p).unwrap_err(),
+            StripError::Uneditable {
+                reason: UneditableReason::AfterScan,
+                offset: at
+            }
+        );
+    }
+}
+
+#[test]
+fn seventeen_exif_segments_are_uneditable() {
+    let l = exif_layout::first_entry_target().layout();
+    let blobs: Vec<Vec<u8>> = (0..17).map(|_| l.bytes.clone()).collect();
+    let v = jpeg_with(&blobs);
+    let seventeenth = 2 + jfif_bytes().len() + 16 * (4 + 6 + l.bytes.len());
+    assert_eq!(
+        strip(&v, StripPolicy::Gps).unwrap_err(),
+        StripError::Uneditable {
+            reason: UneditableReason::TooManyExifSegments,
+            offset: seventeenth
+        }
+    );
+    // Sixteen is fine.
+    assert!(strip(&jpeg_with(&blobs[..16]), StripPolicy::Gps).is_ok());
+}
+
+#[test]
+fn an_inventory_over_budget_is_uneditable() {
+    // 13 blocks of 5,459 entries: 70,967 tag items, past the audit's 65,536.
+    let ents = (0..5459)
+        .map(|i| exif_layout::short(false, 0x9000 + (i % 100) as u16, 1))
+        .collect();
+    let big = exif_layout::Build {
+        be: false,
+        ifds: vec![exif_layout::ifd("ifd0", ents, None)],
+        thumb: None,
+        pad_to: None,
+    }
+    .layout();
+    assert!(big.bytes.len() <= exif_layout::CEILING_BLOB);
+    let blobs: Vec<Vec<u8>> = (0..13).map(|_| big.bytes.clone()).collect();
+    let v = jpeg_with(&blobs);
+    assert!(audit(&v).health().inventory_truncated);
+    assert_eq!(
+        strip(&v, StripPolicy::Gps).unwrap_err(),
+        StripError::Uneditable {
+            reason: UneditableReason::InventoryTruncated,
+            offset: 2 + jfif_bytes().len()
+        }
+    );
+}
+
+#[test]
+fn two_exif_blocks_only_the_targeted_one_changes() {
+    let two = exif_layout::two_blocks();
+    let (a, b) = (two.0.layout(), two.1.layout());
+    let j = jpeg_of(&[a.clone(), b.clone()], false);
+    let out = strip(&j.bytes, only(&["camera_model"])).unwrap();
+    let o = out.bytes();
+    // The first blob is the edit the record predicts; the second is untouched.
+    let d = del_for(&a, &["camera_model"]);
+    assert_eq!(
+        &o[j.blobs[0]..j.blobs[0] + a.bytes.len()],
+        &expected(&a, &d)[..]
+    );
+    assert_eq!(&o[j.blobs[1]..j.blobs[1] + b.bytes.len()], &b.bytes[..]);
+    assert_eq!(out.entries().len(), 1);
+    assert_eq!(out.entries()[0].block, 0);
+    // Targeting both: the records name block 1 too.
+    let out = strip(&j.bytes, only(&["camera_model", "software"])).unwrap();
+    assert!(out.entries().iter().all(|e| e.block == 0));
+}
+
+#[test]
+fn chain_ifd_and_sub_ifd_targets_are_deleted() {
+    // IFD2 of the chain: the Artist goes, IFD0 and IFD1 are as they were.
+    let l = exif_layout::chain_ifd2().layout();
+    let j = jpeg_of(std::slice::from_ref(&l), false);
+    let out = strip(&j.bytes, only(&["authorship"])).unwrap();
+    assert!(!contains(out.bytes(), exif_layout::K_CHAINARTIST));
+    assert!(contains(out.bytes(), exif_layout::K_THUMB));
+    assert_eq!(out.entries().len(), 1);
+    assert_eq!(out.entries()[0].ifd, exif_core::tiff::IfdKind::Chain);
+    let d = del_for(&l, &["authorship"]);
+    assert_eq!(
+        &out.bytes()[j.blobs[0]..][..l.bytes.len()],
+        &expected(&l, &d)[..]
+    );
+    // A SubIFD.
+    let l = exif_layout::subifd().layout();
+    let j = jpeg_of(std::slice::from_ref(&l), false);
+    let out = strip(&j.bytes, only(&["authorship"])).unwrap();
+    assert!(!contains(out.bytes(), exif_layout::K_SUBARTIST));
+    assert_eq!(out.entries()[0].ifd, exif_core::tiff::IfdKind::Sub);
+    let d = del_for(&l, &["authorship"]);
+    assert_eq!(
+        &out.bytes()[j.blobs[0]..][..l.bytes.len()],
+        &expected(&l, &d)[..]
+    );
+}
+
+#[test]
+fn stripped_records_list_every_entry_scrub_and_patch_with_kinds() {
+    let l = exif_layout::full_le().layout();
+    let j = jpeg_of(std::slice::from_ref(&l), true);
+    let out = strip(&j.bytes, StripPolicy::AllPii).unwrap();
+    let com = j.com.clone().unwrap().len();
+    // Entries: input coordinates, input order, the pointer included.
+    let d = del_for(&l, ALL_PII);
+    let want: Vec<(u16, usize)> = deleted_entries(&l, &d)
+        .iter()
+        .map(|(_, tag, at)| (*tag, j.blobs[0] + at))
+        .collect();
+    let got: Vec<(u16, usize)> = out.entries().iter().map(|e| (e.tag, e.offset)).collect();
+    assert_eq!(got, want);
+    assert!(out.entries().windows(2).all(|w| w[0].offset < w[1].offset));
+    // Patches: output coordinates (the COM before the Exif shifted them),
+    // sorted, tagged.
+    assert!(out.patches().windows(2).all(|w| w[0].offset < w[1].offset));
+    let tables: Vec<_> = out
+        .patches()
+        .iter()
+        .filter(|p| p.kind == PatchKind::IfdTable)
+        .collect();
+    // IFD0 and the Exif IFD lose entries (IFD1 and GPS go whole, scrubbed).
+    assert_eq!(tables.len(), 2);
+    assert_eq!(
+        tables[0].offset,
+        j.blobs[0] + l.ifd("ifd0").table.start - com
+    );
+    assert_eq!(tables[0].len, l.ifd("ifd0").table.len());
+    let scrub_patches: Vec<(usize, usize)> = out
+        .patches()
+        .iter()
+        .filter(|p| p.kind == PatchKind::Scrub)
+        .map(|p| (p.offset, p.len))
+        .collect();
+    let scrubs: Vec<(usize, usize)> = out.scrubs().iter().map(|s| (s.offset, s.len)).collect();
+    assert_eq!(scrub_patches, scrubs);
+    assert!(out
+        .scrubs()
+        .iter()
+        .any(|s| s.reason == ScrubReason::IfdTable));
+    assert!(out
+        .scrubs()
+        .iter()
+        .any(|s| s.reason == ScrubReason::EntryValue));
+    assert!(out
+        .scrubs()
+        .iter()
+        .any(|s| s.reason == ScrubReason::Thumbnail));
+    // Every scrub range reads zero in the output.
+    for s in out.scrubs() {
+        assert!(out.bytes()[s.offset..s.offset + s.len]
+            .iter()
+            .all(|b| *b == 0));
+    }
+    // The COM goes (FreeText): one removal, in input coordinates.
+    assert_eq!(out.removals().len(), 1);
+    assert_eq!(out.removals()[0].offset, j.com.unwrap().start);
+}
+
+#[test]
+fn uneditable_errors_name_reason_and_offset_and_return_no_bytes() {
+    let l = exif_layout::value_shared_with_kept_entry().layout();
+    let j = jpeg_of(std::slice::from_ref(&l), false);
+    let sw = l.ifd("ifd0").ents.iter().find(|e| e.tag == 0x0131).unwrap();
+    let at = j.blobs[0] + sw.value.clone().unwrap().start;
+    let err = strip(&j.bytes, only(&["camera_model"])).unwrap_err();
+    assert_eq!(
+        err,
+        StripError::Uneditable {
+            reason: UneditableReason::SharedBytes,
+            offset: at
+        }
+    );
+    let text = err.to_string();
+    assert!(
+        text.contains("SharedBytes") && text.contains(&at.to_string()),
+        "{text}"
+    );
+    assert_eq!(
+        sanitize(&j.bytes, only(&["camera_model"])).unwrap_err(),
+        err
+    );
+}
+
+#[test]
+fn the_refusal_order_is_unstrippable_uneditable_mpf_not_indexed_overlap_verify_failed() {
+    // Unstrippable beats Uneditable: a bad length word and an unreadable Exif.
+    let mut v = vec![0xFF, 0xD8];
+    v.extend_from_slice(&jfif_bytes());
+    v.extend_from_slice(&[0xFF, 0xFE, 0x00, 0x01]);
+    v.extend_from_slice(&real_shapes::exif_app1(b"not a tiff header"));
+    v.extend_from_slice(&scan_bytes());
+    assert!(matches!(
+        strip(&v, StripPolicy::Gps),
+        Err(StripError::Unstrippable { .. })
+    ));
+    // Uneditable beats MpfNotIndexed: an unreadable Exif, then an MPF segment
+    // the audit cannot index, then a segment the policy removes.
+    let mut v = vec![0xFF, 0xD8];
+    v.extend_from_slice(&jfif_bytes());
+    v.extend_from_slice(&real_shapes::exif_app1(b"not a tiff header"));
+    v.extend_from_slice(&real_shapes::seg(0xE2, b"MPF\0this is not a tiff header"));
+    v.extend_from_slice(&real_shapes::seg(0xFE, strip_shapes::C_COM1));
+    v.extend_from_slice(&scan_bytes());
+    assert!(matches!(
+        strip(&v, only(&["free_text"])),
+        Err(StripError::Uneditable { .. })
+    ));
+    // Without the Exif problem the same file is MpfNotIndexed (the next in
+    // the order), and `com_over_embedded` is Overlap (the one after).
+    let s = shape("unindexed-mpf");
+    assert!(matches!(
+        strip(&s.bytes, policy("xmp")),
+        Err(StripError::MpfNotIndexed { .. })
+    ));
+    let s = shape("com-over-embedded");
+    assert!(matches!(
+        strip(&s.bytes, policy("free_text")),
+        Err(StripError::Overlap { .. })
+    ));
+}
+
+#[test]
+fn mpf_patches_and_exif_patches_compose_in_one_call() {
+    let l = exif_layout::full_le().layout();
+    let com = real_shapes::seg(0xFE, strip_shapes::C_COM1);
+    let s = strip_shapes::mpo_shape(
+        "mpo-with-full-exif",
+        false,
+        vec![(K::Exif, real_shapes::exif_app1(&l.bytes))],
+        vec![(K::Com, com.clone())],
+        vec![
+            (Vec::new(), real_shapes::nikon_extra()),
+            (Vec::new(), real_shapes::iphone_extra()),
+        ],
+        Vec::new(),
+        strip_shapes::ExifFacts::default(),
+    );
+    let m = s.mpf.clone().unwrap();
+    let exif_at = s.parts_of(K::Exif)[0].start + 10;
+    let com_range = s.parts_of(K::Com)[0].clone();
+    // Gps (Exif entry edit) and FreeText (the COM after the index, plus the
+    // Exif free-text entries).
+    let cats: &[Cat] = &["gps", "free_text"];
+    let out = strip(&s.bytes, only(cats)).unwrap();
+    let gone = com.len() as u32;
+    let enc = |v: u32| v.to_le_bytes().to_vec();
+    let mut patches: Vec<(usize, Vec<u8>)> = vec![
+        (m.fields[0].0, enc(m.entries[0].0 - gone)),
+        (m.fields[1].1, enc(m.entries[1].1 - gone)),
+        (m.fields[2].1, enc(m.entries[2].1 - gone)),
+    ];
+    patches.push((exif_at, expected(&l, &del_for(&l, cats))));
+    assert_eq!(
+        out.bytes(),
+        &expected_bytes(&s.bytes, &[com_range], &patches)[..]
+    );
+    // Three MPF fields, plus the Exif patches; the kinds say which is which.
+    let kinds = |k: PatchKind| out.patches().iter().filter(|p| p.kind == k).count();
+    assert_eq!(kinds(PatchKind::MpfField), 3);
+    assert!(kinds(PatchKind::IfdTable) >= 2);
+    assert!(kinds(PatchKind::Scrub) >= 3);
+    let a = audit(out.bytes());
+    assert_eq!(a.findings_in(Category::EmbeddedImage).count(), 2);
+    assert_eq!(a.health().jpeg_issues, 0);
+}
+
+#[test]
+fn a_com_segment_and_an_exif_entry_go_in_the_same_call() {
+    let l = exif_layout::full_le().layout();
+    let j = jpeg_of(std::slice::from_ref(&l), true);
+    let cats: &[Cat] = &["gps", "free_text"];
+    let out = strip(&j.bytes, only(cats)).unwrap();
+    assert_eq!(out.bytes(), &expected_jpeg(&j, cats)[..]);
+    assert!(!contains(out.bytes(), strip_shapes::C_COM1));
+    assert!(!contains(out.bytes(), exif_layout::K_GPSAREA));
+    assert_eq!(out.removals().len(), 1);
+    assert_eq!(out.removals()[0].kind, RemovalKind::Comment);
+    // The Exif patches are in output coordinates: the COM is before the Exif.
+    let com = j.com.clone().unwrap().len();
+    let first_patch = out.patches()[0].offset;
+    assert!(first_patch >= j.blobs[0] - com);
+    assert_eq!(out.bytes().len(), j.bytes.len() - com);
+}
+
+// ── the leak inputs (SPEC-021): each refuses or is correct, never Ok with a
+// canary left ──────────────────────────────────────────────────────────────
+
+struct Leak {
+    name: &'static str,
+    layout: Layout,
+    /// The policy (category names) the refusal is pinned for.
+    cats: &'static [Cat],
+    reason: UneditableReason,
+    /// The blob offset of the fault, if the test pins one.
+    at: Option<usize>,
+}
+
+fn leak_inputs() -> Vec<Leak> {
+    let note = |l: &Layout| {
+        l.ifd("exif")
+            .ents
+            .iter()
+            .find(|e| e.tag == 0x927C)
+            .unwrap()
+            .value
+            .clone()
+            .unwrap()
+            .start
+    };
+    let sw_value = |l: &Layout| {
+        l.ifd("ifd0")
+            .ents
+            .iter()
+            .find(|e| e.tag == 0x0131)
+            .unwrap()
+            .value
+            .clone()
+            .unwrap()
+            .start
+    };
+    let strips = exif_layout::thumbnail_strips_form().layout();
+    let ifd1 = strips.ifd("ifd1").table.start;
+    let l1 = exif_layout::value_shared_with_kept_entry().layout();
+    let l2 = exif_layout::value_inside_kept_ifd_table().layout();
+    let l3 = exif_layout::value_overlaps_tiff_header().layout();
+    let l4 = exif_layout::thumbnail_range_overlaps_makernote().layout();
+    vec![
+        Leak {
+            name: "gps_ifd_pointed_to_twice",
+            layout: exif_layout::gps_ifd_pointed_to_twice().layout(),
+            cats: &["gps"],
+            reason: UneditableReason::HiddenPointer,
+            at: None,
+        },
+        Leak {
+            name: "gps_pointer_missing_in_parent",
+            layout: exif_layout::gps_pointer_hidden_behind_a_zero().layout(),
+            cats: &["gps"],
+            reason: UneditableReason::HiddenPointer,
+            at: None,
+        },
+        Leak {
+            name: "value_shared_with_kept_entry",
+            at: Some(sw_value(&l1)),
+            layout: l1,
+            cats: &["camera_model"],
+            reason: UneditableReason::SharedBytes,
+        },
+        Leak {
+            name: "value_inside_kept_ifd_table",
+            layout: l2,
+            cats: &["camera_model"],
+            reason: UneditableReason::SharedBytes,
+            at: Some(40),
+        },
+        Leak {
+            name: "value_overlaps_tiff_header",
+            layout: l3,
+            cats: &["camera_model"],
+            reason: UneditableReason::SharedBytes,
+            at: Some(4),
+        },
+        Leak {
+            name: "thumbnail_range_overlaps_makernote",
+            at: Some(note(&l4)),
+            layout: l4,
+            cats: &["thumbnail"],
+            reason: UneditableReason::SharedBytes,
+        },
+        Leak {
+            name: "thumbnail_strips_form",
+            layout: strips,
+            cats: &["thumbnail"],
+            reason: UneditableReason::ThumbnailNotLocated,
+            at: Some(ifd1),
+        },
+        Leak {
+            name: "thumbnail_with_ifd2_after_it",
+            layout: exif_layout::thumbnail_with_ifd2_after_it().layout(),
+            cats: &["thumbnail"],
+            reason: UneditableReason::ChainAfterThumbnail,
+            at: None,
+        },
+        Leak {
+            name: "exif_walk_issue_in_a_kept_ifd",
+            layout: exif_layout::walk_issue_in_a_kept_ifd().layout(),
+            cats: &["gps"],
+            reason: UneditableReason::BlockNotClean,
+            at: None,
+        },
+    ]
+    .into_iter()
+    .chain([false, true].into_iter().flat_map(|be| {
+        // HANDOFF-042 H1 and H2, in both byte orders.
+        vec![
+            Leak {
+                name: "straddling_artist",
+                layout: exif_layout::straddling_artist(be).layout(),
+                cats: &["authorship"],
+                reason: UneditableReason::PayloadUnreadable,
+                at: None,
+            },
+            Leak {
+                name: "straddling_gps_value",
+                layout: exif_layout::straddling_gps_value(be).layout(),
+                cats: &["gps"],
+                reason: UneditableReason::PayloadUnreadable,
+                at: None,
+            },
+            Leak {
+                name: "thumbnail_second_pair",
+                layout: exif_layout::thumbnail_second_pair(be).layout(),
+                cats: &["thumbnail"],
+                reason: UneditableReason::ThumbnailNotLocated,
+                at: None,
+            },
+            Leak {
+                name: "thumbnail_with_strips",
+                layout: exif_layout::thumbnail_with_strips(be).layout(),
+                cats: &["thumbnail"],
+                reason: UneditableReason::ThumbnailNotLocated,
+                at: None,
+            },
+            Leak {
+                name: "thumbnail_two_offsets",
+                layout: exif_layout::thumbnail_two_offsets(be).layout(),
+                cats: &["thumbnail"],
+                reason: UneditableReason::ThumbnailNotLocated,
+                at: None,
+            },
+            Leak {
+                name: "gps_unknown_tag",
+                layout: exif_layout::gps_hidden_offset(be).layout(),
+                cats: &["gps"],
+                reason: UneditableReason::PayloadUnreadable,
+                at: None,
+            },
+            Leak {
+                name: "typed_ifd1",
+                layout: exif_layout::typed_offset_entry(be, "ifd1").layout(),
+                cats: &["thumbnail"],
+                reason: UneditableReason::PayloadUnreadable,
+                at: None,
+            },
+            Leak {
+                name: "typed_gps",
+                layout: exif_layout::typed_offset_entry(be, "gps").layout(),
+                cats: &["gps"],
+                reason: UneditableReason::PayloadUnreadable,
+                at: None,
+            },
+            Leak {
+                name: "typed_ifd0",
+                layout: exif_layout::typed_offset_entry(be, "ifd0").layout(),
+                cats: &["authorship"],
+                reason: UneditableReason::PayloadUnreadable,
+                at: None,
+            },
+            Leak {
+                name: "kept_strip_target",
+                layout: exif_layout::kept_strip_target_overlapped(be).layout(),
+                cats: &["authorship"],
+                reason: UneditableReason::SharedBytes,
+                at: None,
+            },
+            Leak {
+                name: "ifd1_kept_category",
+                layout: exif_layout::thumbnail_ifd1_with_a_kept_category_tag(be).layout(),
+                cats: &["thumbnail"],
+                reason: UneditableReason::ThumbnailNotLocated,
+                at: None,
+            },
+            Leak {
+                name: "interop_category_tag",
+                layout: exif_layout::interop_with_a_category_tag(be).layout(),
+                cats: &["authorship"],
+                reason: UneditableReason::PayloadUnreadable,
+                at: None,
+            },
+            Leak {
+                name: "gps_next_word",
+                layout: exif_layout::gps_with_a_next_word(be).layout(),
+                cats: &["gps"],
+                reason: UneditableReason::NestedIfd,
+                at: None,
+            },
+            Leak {
+                name: "kept_straddling_make",
+                layout: exif_layout::kept_straddling_value(be).layout(),
+                cats: &["authorship"],
+                reason: UneditableReason::SharedBytes,
+                at: Some(60),
+            },
+        ]
+        .into_iter()
+        .chain(
+            [0x0190u16, 0x888A, 0x8290, 0xFE00]
+                .into_iter()
+                .flat_map(|tag| {
+                    [("gps", "gps"), ("artist", "authorship")].into_iter().map(
+                        move |(behind, cat)| Leak {
+                            name: "exiftool_subdirectory",
+                            layout: exif_layout::exiftool_subdirectory(be, tag, behind).layout(),
+                            cats: if cat == "gps" {
+                                &["gps"]
+                            } else {
+                                &["authorship"]
+                            },
+                            reason: UneditableReason::HiddenPointer,
+                            at: None,
+                        },
+                    )
+                }),
+        )
+        .chain(
+            [
+                (0xC51Bu16, "gps", "gps"),
+                (0xC51B, "artist", "authorship"),
+                (0x8568, "iptc", "iptc"),
+                (0xCD41, "jumbf", "gps"),
+            ]
+            .into_iter()
+            .map(move |(tag, what, cat)| Leak {
+                name: "exiftool_blob_carrier",
+                layout: exif_layout::blob_carrier(be, tag, what).layout(),
+                cats: if cat == "gps" {
+                    &["gps"]
+                } else if cat == "iptc" {
+                    &["iptc"]
+                } else {
+                    &["authorship"]
+                },
+                reason: UneditableReason::HiddenPointer,
+                at: None,
+            }),
+        )
+        .chain(
+            [("gps", "gps"), ("artist", "authorship")]
+                .into_iter()
+                .map(move |(behind, cat)| Leak {
+                    name: "profile_ifd",
+                    layout: exif_layout::exiftool_subdirectory(be, 0xC6F5, behind).layout(),
+                    cats: if cat == "gps" {
+                        &["gps"]
+                    } else {
+                        &["authorship"]
+                    },
+                    reason: UneditableReason::HiddenPointer,
+                    at: None,
+                }),
+        )
+        .chain(["interop", "gps"].into_iter().map(move |host| Leak {
+            name: "h4_tag_in_a_leaf_ifd",
+            layout: exif_layout::h4_tag_in_a_leaf_ifd(be, host).layout(),
+            cats: &["authorship"],
+            reason: UneditableReason::HiddenPointer,
+            at: None,
+        }))
+        .chain(
+            [0x0144u16, 0x0207, 0x0120, 0xF123]
+                .into_iter()
+                .map(|tag| Leak {
+                    name: "thumbnail_hidden_offset",
+                    layout: exif_layout::thumbnail_hidden_offset(be, tag).layout(),
+                    cats: &["thumbnail"],
+                    reason: UneditableReason::ThumbnailNotLocated,
+                    at: None,
+                }),
+        )
+        .collect::<Vec<_>>()
+    }))
+    .collect()
+}
+
+#[test]
+fn leak_inputs_refuse_with_the_named_reason_and_offset() {
+    for leak in leak_inputs() {
+        let j = jpeg_of(std::slice::from_ref(&leak.layout), false);
+        let err = strip(&j.bytes, only(leak.cats)).unwrap_err();
+        let StripError::Uneditable { reason, offset } = err else {
+            panic!("{}: {err:?}", leak.name)
+        };
+        assert_eq!(reason, leak.reason, "{}", leak.name);
+        if let Some(at) = leak.at {
+            assert_eq!(offset, j.blobs[0] + at, "{}", leak.name);
+        }
+    }
+}
+
+#[test]
+fn no_leak_input_is_ok_with_a_canary_left_under_any_policy() {
+    let mut refused = 0;
+    let mut ok = 0;
+    for leak in leak_inputs() {
+        let j = jpeg_of(std::slice::from_ref(&leak.layout), false);
+        for (pname, cats, p) in exif_policies() {
+            match strip(&j.bytes, p) {
+                Err(_) => refused += 1,
+                Ok(out) => {
+                    ok += 1;
+                    // Whatever the policy removes by category is gone.
+                    let d = del_for(&leak.layout, cats);
+                    for f in &leak.layout.ifds {
+                        for (i, e) in f.ents.iter().enumerate() {
+                            let removed =
+                                d.whole.contains(&f.name) || d.entries.contains(&(f.name, i));
+                            if let (true, Some(c)) = (removed, &e.canary) {
+                                assert!(
+                                    !contains(out.bytes(), c),
+                                    "{} {pname}: {} {:#x} left",
+                                    leak.name,
+                                    f.name,
+                                    e.tag
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(refused > 40 && ok > 0, "{refused} {ok}");
+    // The existing leak input of SPEC-020.
+    let s = shape("gps-count-overflow");
+    for (_, _, p) in exif_policies() {
+        assert!(strip(&s.bytes, p).is_err());
+    }
+}
+
+/// The input offset of the `n`th Exif segment of `jpeg`.
+fn exif_segment_offset(jpeg: &[u8], n: usize) -> usize {
+    let m = exif_core::jpeg::read(jpeg).unwrap();
+    m.jpeg()
+        .segments()
+        .iter()
+        .filter(|s| s.kind() == exif_core::jpeg::SegmentKind::Exif)
+        .nth(n)
+        .unwrap()
+        .offset()
+}
+
+#[test]
+fn a_later_block_with_a_walk_issue_still_refuses_under_every_partial_policy() {
+    // HANDOFF-042 M1: a clean first block, then a second whose GPS IFD
+    // declares 0xFFFF entries, with coordinates behind it. A check that looks
+    // at the first block only would return Ok with the canary left.
+    let j = exif_records::second_block_unclean();
+    let second = exif_segment_offset(&j, 1);
+    assert!(contains(&j, b"CANA"));
+    for (pname, _, p) in exif_policies() {
+        assert_eq!(
+            strip(&j, p).unwrap_err(),
+            StripError::Uneditable {
+                reason: UneditableReason::BlockNotClean,
+                offset: second
+            },
+            "{pname}"
+        );
+    }
+    // Control: the first block alone strips.
+    let first = exif_layout::first_entry_target().layout();
+    assert!(strip(&jpeg_with(&[first.bytes]), StripPolicy::Gps).is_ok());
+}
+
+#[test]
+fn an_unclean_block_anywhere_refuses_first_middle_or_last() {
+    // HANDOFF-043 M2: a check that looks at the last block only (or skips
+    // the first) would return Ok with the coordinates left in.
+    let first = exif_records::first_block_unclean();
+    for (what, j, n) in [
+        ("first of two", first, 0usize),
+        ("middle of three", exif_records::middle_block_unclean(), 1),
+    ] {
+        let at = exif_segment_offset(&j, n);
+        for (pname, _, p) in exif_policies() {
+            assert_eq!(
+                strip(&j, p).unwrap_err(),
+                StripError::Uneditable {
+                    reason: UneditableReason::BlockNotClean,
+                    offset: at
+                },
+                "{what} {pname}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_later_block_after_the_first_scan_is_uneditable() {
+    let j = exif_records::second_block_after_scan();
+    let second = exif_segment_offset(&j, 1);
+    for (pname, _, p) in exif_policies() {
+        assert_eq!(
+            strip(&j, p).unwrap_err(),
+            StripError::Uneditable {
+                reason: UneditableReason::AfterScan,
+                offset: second
+            },
+            "{pname}"
+        );
+    }
+}
+
+#[test]
+fn repeated_tags_are_all_deleted_or_refused_never_the_first_only() {
+    // HANDOFF-042 sweep: a repeated MakerNote or Artist tag is one finding per
+    // entry, so every copy goes with its value.
+    let mut b = exif_layout::full_le();
+    let exif = b.ifds.iter_mut().find(|f| f.name == "exif").unwrap();
+    exif.ents.push(exif_layout::undefined(
+        0x927C,
+        b"CANARY-SECOND-NOTE-000000000",
+    ));
+    b.ifds[0]
+        .ents
+        .push(exif_layout::ascii(0x013B, b"CANARY-SECOND-ARTIST"));
+    let l = b.layout();
+    let j = jpeg_of(std::slice::from_ref(&l), false);
+    let out = strip(&j.bytes, only(&["maker_note", "authorship"])).unwrap();
+    for c in [
+        &b"CANARY-SECOND-NOTE"[..],
+        b"CANARY-SECOND-ARTIST",
+        exif_layout::K_NOTE,
+        exif_layout::K_ARTIST,
+    ] {
+        assert!(!contains(out.bytes(), c), "{}", String::from_utf8_lossy(c));
+    }
+    // A repeated pointer tag is refused (the walk follows the first only).
+    let mut b = exif_layout::full_le();
+    b.ifds[0].ents.push(exif_layout::ptr(0x8769, "exif"));
+    let j = jpeg_of(&[b.layout()], false);
+    assert!(matches!(
+        strip(&j.bytes, StripPolicy::Gps),
+        Err(StripError::Uneditable {
+            reason: UneditableReason::HiddenPointer,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn an_empty_gps_ifd_behind_a_present_pointer_is_removed_with_it() {
+    // HANDOFF-042 L2, pinned at the file level.
+    let b = exif_layout::Build {
+        be: false,
+        ifds: vec![
+            exif_layout::ifd(
+                "ifd0",
+                vec![
+                    exif_layout::ascii(0x010F, exif_layout::K_MAKE),
+                    exif_layout::ptr(0x8825, "gps"),
+                ],
+                None,
+            ),
+            exif_layout::ifd("gps", vec![], None),
+        ],
+        thumb: None,
+        pad_to: None,
+    };
+    let l = b.layout();
+    let j = jpeg_of(std::slice::from_ref(&l), false);
+    let out = strip(&j.bytes, StripPolicy::Gps).unwrap();
+    assert_eq!(out.entries().len(), 1);
+    assert_eq!(out.entries()[0].tag, 0x8825);
+    let t = &l.ifd("gps").table;
+    let at = j.blobs[0];
+    assert!(out.bytes()[at + t.start..at + t.end]
+        .iter()
+        .all(|b| *b == 0));
+    assert!(contains(out.bytes(), exif_layout::K_MAKE));
+    assert!(audit(out.bytes()).health().clean);
+}
+
+// ── HANDOFF-045 L15: hostile Multi-Picture indexes (ML, MN) ─────────────────
+
+/// A JPEG with an Exif segment (removed under `All`, so the index must be
+/// patched), then an MPF segment holding the TIFF blob `t`, then the scan. When
+/// `primary_at` is given, the u32 at that offset of `t` is set to the file's
+/// total length (the primary's size).
+fn hostile_mpf_jpeg(be: bool, t: &[u8], primary_at: Option<usize>) -> Vec<u8> {
+    let seg = |m: u8, p: &[u8]| {
+        let mut v = vec![0xFF, m];
+        v.extend(((p.len() + 2) as u16).to_be_bytes());
+        v.extend_from_slice(p);
+        v
+    };
+    let w16 = |x: u16| if be { x.to_be_bytes() } else { x.to_le_bytes() };
+    let w32 = |x: u32| if be { x.to_be_bytes() } else { x.to_le_bytes() };
+    let mut eb = vec![0u8; 60];
+    eb[0..2].copy_from_slice(if be { b"MM" } else { b"II" });
+    eb[2..4].copy_from_slice(&w16(42));
+    eb[4..8].copy_from_slice(&w32(8));
+    eb[8..10].copy_from_slice(&w16(1));
+    eb[10..12].copy_from_slice(&w16(0x013B));
+    eb[12..14].copy_from_slice(&w16(2));
+    eb[14..18].copy_from_slice(&w32(16));
+    eb[18..22].copy_from_slice(&w32(40));
+    eb[40..56].copy_from_slice(b"CNRYmpfaCNRYmpfa");
+    let mut exif = b"Exif\0\0".to_vec();
+    exif.extend(&eb);
+    let mut f = vec![0xFF, 0xD8];
+    f.extend(seg(0xE1, &exif));
+    let mut mp = b"MPF\0".to_vec();
+    mp.extend_from_slice(t);
+    // The index header (the TIFF header of `t`) starts after the marker, the
+    // length and "MPF\0".
+    let header = f.len() + 4 + 4;
+    f.extend(seg(0xE2, &mp));
+    f.extend(seg(0xDA, &[1, 1, 0, 0, 0x3F, 0]));
+    f.extend([0x12, 0x34, 0xFF, 0xD9]);
+    if let Some(at) = primary_at {
+        let total = f.len() as u32;
+        f[header + at..header + at + 4].copy_from_slice(&w32(total));
+    }
+    f
+}
+
+/// An MP index TIFF blob of 160 bytes: header, IFD0 at `ifd0` with MPFVersion,
+/// NumberOfImages (2) and an MPEntry of 32 bytes at `array`.
+fn mp_index(be: bool, ifd0: usize, array: usize) -> Vec<u8> {
+    let w16 = |x: u16| if be { x.to_be_bytes() } else { x.to_le_bytes() };
+    let w32 = |x: u32| if be { x.to_be_bytes() } else { x.to_le_bytes() };
+    let mut t = vec![0u8; 160];
+    t[0..2].copy_from_slice(if be { b"MM" } else { b"II" });
+    t[2..4].copy_from_slice(&w16(42));
+    t[4..8].copy_from_slice(&w32(ifd0 as u32));
+    t[ifd0..ifd0 + 2].copy_from_slice(&w16(3));
+    let mut p = ifd0 + 2;
+    for (tag, ty, count, val) in [
+        (0xB000u16, 7u16, 4u32, *b"0100"),
+        (0xB001, 4, 1, w32(2)),
+        (0xB002, 7, 32, w32(array as u32)),
+    ] {
+        t[p..p + 2].copy_from_slice(&w16(tag));
+        t[p + 2..p + 4].copy_from_slice(&w16(ty));
+        t[p + 4..p + 8].copy_from_slice(&w32(count));
+        t[p + 8..p + 12].copy_from_slice(&val);
+        p += 12;
+    }
+    t
+}
+
+/// ML: a located secondary image whose bytes hold the MP entry array: the
+/// primary-size patch would land inside a kept image. Refused up front.
+#[test]
+fn l15_ml_a_secondary_image_over_the_mp_entry_array_is_mpf_not_indexed() {
+    for be in [false, true] {
+        let w32 = |x: u32| if be { x.to_be_bytes() } else { x.to_le_bytes() };
+        let mut t = mp_index(be, 8, 58);
+        // The secondary (entry 1): size 42, offset 50 from the header; its bytes
+        // FF D8 .. FF D9 are t[50..92], which hold the entry array at 58..90.
+        t[50..58].copy_from_slice(&[0xFF, 0xD8, 0xFF, 0xFE, 0x00, 0x04, 0x00, 0x00]);
+        t[58..62].copy_from_slice(&w32(0x2003_0000));
+        t[78..82].copy_from_slice(&w32(42));
+        t[82..86].copy_from_slice(&w32(50));
+        t[90..92].copy_from_slice(&[0xFF, 0xD9]);
+        let j = hostile_mpf_jpeg(be, &t[..92], Some(62));
+        let err = strip(&j, StripPolicy::All).unwrap_err();
+        assert!(
+            matches!(err, StripError::MpfNotIndexed { .. }),
+            "be={be}: {err:?}"
+        );
+    }
+}
+
+/// MN: an MPEntry value at header offset 0: the primary-size field is the TIFF
+/// header's IFD0-offset word, which a patch would rewrite. Refused up front.
+#[test]
+fn l15_mn_an_mp_entry_array_on_the_tiff_header_is_mpf_not_indexed() {
+    for be in [false, true] {
+        // IFD0 at 100: the word at header offset 4 is 100, read as the size.
+        let t = mp_index(be, 100, 0);
+        let j = hostile_mpf_jpeg(be, &t, None);
+        let err = strip(&j, StripPolicy::All).unwrap_err();
+        assert!(
+            matches!(err, StripError::MpfNotIndexed { .. }),
+            "be={be}: {err:?}"
+        );
+    }
 }

@@ -171,6 +171,12 @@ impl Entry {
         self.count
     }
 
+    /// Offset, inside the blob the container was parsed from, of this entry's
+    /// 4-byte value field (the entry itself starts 8 bytes earlier).
+    pub fn value_at(&self) -> usize {
+        self.value_at
+    }
+
     /// Total payload size in bytes, or `None` for an unknown field type or a
     /// `count × size` that overflows.
     pub fn byte_len(&self) -> Option<u64> {
@@ -298,6 +304,24 @@ impl Ifd {
     /// Every entry, in file order.
     pub fn entries(&self) -> &[Entry] {
         &self.entries
+    }
+
+    /// The bytes of this IFD's table in the blob: the count word, the entries
+    /// and the next-IFD word (`offset .. offset + 2 + 12 * entries + 4`).
+    /// `None` if that end does not fit `usize`.
+    pub fn table_range(&self) -> Option<core::ops::Range<usize>> {
+        let start = usize::try_from(self.offset).ok()?;
+        let end = start
+            .checked_add(2)?
+            .checked_add(self.entries.len().checked_mul(ENTRY_SIZE)?)?
+            .checked_add(4)?;
+        Some(start..end)
+    }
+
+    /// Blob offset of this IFD's next-IFD word (the last four bytes of the
+    /// table). `None` if the table range does not fit `usize`.
+    pub fn next_at(&self) -> Option<usize> {
+        self.table_range()?.end.checked_sub(4)
     }
 
     /// The first entry with this tag, if present.
@@ -830,6 +854,21 @@ impl<'a> Container<'a> {
             let end = at.checked_add(len).ok_or(Error::Truncated { at, len })?;
             self.data.get(at..end).ok_or(Error::Truncated { at, len })
         }
+    }
+
+    /// Where an entry's **out-of-line** payload lies in the blob: `Some` only
+    /// when the value does not fit the 4-byte field and the whole payload is
+    /// inside the blob. `None` for an inline value and for an unreadable one
+    /// (an unknown type, an overflowing size, a range outside the blob).
+    pub fn payload_range(&self, entry: &Entry) -> Option<core::ops::Range<usize>> {
+        let len = usize::try_from(entry.byte_len()?).ok()?;
+        if len <= 4 {
+            return None;
+        }
+        let at = offset_to_usize(self.byte_order.u32(entry.value)).ok()?;
+        let end = at.checked_add(len)?;
+        self.data.get(at..end)?;
+        Some(at..end)
     }
 
     /// First value of `tag` in `ifd`, or `None` when the tag is absent.
@@ -3051,3 +3090,7 @@ mod tests {
         assert_eq!(tags::DATE_TIME_ORIGINAL, 0x9003);
     }
 }
+
+#[cfg(test)]
+#[path = "accessor_tests.rs"]
+mod accessor_tests;

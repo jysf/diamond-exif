@@ -11,21 +11,30 @@
 //! category the policy keeps has the same findings by kind (kept `Trailer`
 //! regions by their total byte count, because removing the images between two
 //! pieces joins them); (c) the scan region is byte-identical; (d) the output
-//! walks and has no new kind of issue; (e) stripping the output again would
-//! change nothing.
+//! walks and has no new kind of issue; (g) the Exif tag inventory is the
+//! input's minus the deleted entries; (h) every zeroed range reads zero; (e)
+//! stripping the output again would change nothing.
 
 use core::mem::{discriminant, Discriminant};
+use std::collections::{BTreeMap, BTreeSet};
 
-use crate::audit::{audit, Category, ItemKind, RegionKind};
+use crate::audit::{audit, Category, FileAudit, ItemKind, RegionKind};
 use crate::error::Error;
 use crate::jpeg::{self, Jpeg, Region};
 use crate::policy::StripSpec;
+use crate::tiff::IfdKind;
 
 use super::jpeg::plan;
 use super::Check;
 
-/// Check `output` against `input` for the categories `spec`.
-pub(super) fn verify(input: &[u8], output: &[u8], spec: StripSpec) -> Result<(), Check> {
+/// Check `output` against `input` for the categories `spec`. `scrubs` are the
+/// `(offset, length)` ranges, in output coordinates, that the plan zeroed.
+pub(super) fn verify(
+    input: &[u8],
+    output: &[u8],
+    spec: StripSpec,
+    scrubs: &[(usize, usize)],
+) -> Result<(), Check> {
     let before = audit(input);
     let after = audit(output);
 
@@ -81,10 +90,127 @@ pub(super) fn verify(input: &[u8], output: &[u8], spec: StripSpec) -> Result<(),
         _ => return Err(Check::Walk),
     }
 
+    // (g) The Exif tag inventory is the input's minus the deleted entries. When
+    // every Exif category is removed the segments are gone whole (nothing to
+    // compare).
+    if !exif_gone {
+        entries(input, spec, &before, &after)?;
+    }
+
+    // (h) Every range the plan zeroed reads zero in the output.
+    for &(offset, len) in scrubs {
+        let zero = offset
+            .checked_add(len)
+            .and_then(|end| output.get(offset..end))
+            .is_some_and(|bytes| bytes.iter().all(|b| *b == 0));
+        if !zero {
+            return Err(Check::Scrubbed);
+        }
+    }
+
     // (e) Idempotence: the plan for the output is empty.
     match plan(output, spec) {
         Ok(p) if p.plan.is_empty() => Ok(()),
         _ => Err(Check::Idempotent),
+    }
+}
+
+/// One tag of the inventory, as compared: its block, the IFD kind, the tag, the
+/// declared type and count, and the raw value bytes.
+type TagKey<'a> = (Option<usize>, IfdKind, u16, u16, u32, Option<&'a [u8]>);
+
+/// A tag item's place: the block, the IFD's index in the walk, and the entry's
+/// ordinal inside that IFD.
+type Place = (Option<usize>, usize, usize);
+
+/// Every tag item of an audit with its place, in item order.
+fn tag_items<'a>(audited: &FileAudit<'a>) -> Vec<Option<(Place, TagKey<'a>)>> {
+    let mut seen: BTreeMap<(Option<usize>, usize), usize> = BTreeMap::new();
+    audited
+        .items()
+        .iter()
+        .map(|item| {
+            let ItemKind::Tag {
+                ifd,
+                ifd_index,
+                tag,
+                field_type,
+                count,
+            } = item.kind()
+            else {
+                return None;
+            };
+            let block = item.origin().block;
+            let n = seen.entry((block, ifd_index)).or_insert(0);
+            let place = (block, ifd_index, *n);
+            *n = n.saturating_add(1);
+            Some((place, (block, ifd, tag, field_type, count, item.value())))
+        })
+        .collect()
+}
+
+/// (g) The output's tag inventory equals the input's minus exactly what the
+/// policy deletes, in order, each with the same type, count and value bytes.
+/// What is deleted is derived here from the input's audit (the findings in the
+/// policy's categories, IFD1 when the thumbnail goes, the GPS pointer entry
+/// when GPS goes), not from the plan.
+fn entries(
+    input: &[u8],
+    spec: StripSpec,
+    before: &FileAudit<'_>,
+    after: &FileAudit<'_>,
+) -> Result<(), Check> {
+    let items = tag_items(before);
+    let mut gone: BTreeSet<Place> = BTreeSet::new();
+    for f in before.findings() {
+        if !spec.contains(f.category) {
+            continue;
+        }
+        if let Some((place, _)) = f.item.and_then(|i| items.get(i)).and_then(Option::as_ref) {
+            gone.insert(*place);
+        }
+    }
+    if spec.contains(Category::Thumbnail) {
+        for (place, key) in items.iter().flatten() {
+            if key.1 == IfdKind::Ifd1 {
+                gone.insert(*place);
+            }
+        }
+    }
+    if spec.contains(Category::Gps) {
+        let meta = jpeg::read(input).map_err(|_| Check::Entries)?;
+        for (b, block) in meta.exif_blocks().iter().enumerate() {
+            let Ok(container) = block.container() else {
+                continue;
+            };
+            for ifd in container.ifds().iter().filter(|i| i.kind() == IfdKind::Gps) {
+                let pointer = ifd
+                    .parent()
+                    .and_then(|p| {
+                        let holder = container.ifds().get(p)?;
+                        let n = holder.entries().iter().position(|e| e.tag() == 0x8825)?;
+                        Some((p, n))
+                    })
+                    .ok_or(Check::Entries)?;
+                gone.insert((Some(b), pointer.0, pointer.1));
+            }
+        }
+    }
+    let expected: Vec<TagKey<'_>> = items
+        .iter()
+        .flatten()
+        .filter(|(place, _)| !gone.contains(place))
+        .map(|(_, key)| *key)
+        .collect();
+    let actual: Vec<TagKey<'_>> = tag_items(after)
+        .into_iter()
+        .flatten()
+        .map(|(_, key)| key)
+        .collect();
+    if expected == actual {
+        Ok(())
+    } else {
+        Err(Check::Entries)
     }
 }
 

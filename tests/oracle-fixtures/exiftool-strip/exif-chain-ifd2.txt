@@ -1,0 +1,161 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# exiftool-version: 13.55
+# fixture: exif-chain-ifd2
+## input
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Orientation	6
+IFD1	ThumbnailOffset	170
+IFD1	ThumbnailLength	25
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+IFD2	Artist	CANARY-CHAINARTIST-0015
+IFD2	Orientation	1
+## gps
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Orientation	6
+IFD1	ThumbnailOffset	170
+IFD1	ThumbnailLength	25
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+IFD2	Artist	CANARY-CHAINARTIST-0015
+IFD2	Orientation	1
+## gps_and_device
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Orientation	6
+IFD1	ThumbnailOffset	170
+IFD1	ThumbnailLength	25
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+IFD2	Artist	CANARY-CHAINARTIST-0015
+IFD2	Orientation	1
+## xmp
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Orientation	6
+IFD1	ThumbnailOffset	170
+IFD1	ThumbnailLength	25
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+IFD2	Artist	CANARY-CHAINARTIST-0015
+IFD2	Orientation	1
+## software
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Orientation	6
+IFD1	ThumbnailOffset	170
+IFD1	ThumbnailLength	25
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+IFD2	Artist	CANARY-CHAINARTIST-0015
+IFD2	Orientation	1
+## timestamps+gps
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Orientation	6
+IFD1	ThumbnailOffset	170
+IFD1	ThumbnailLength	25
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+IFD2	Artist	CANARY-CHAINARTIST-0015
+IFD2	Orientation	1
+## maker_note
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Orientation	6
+IFD1	ThumbnailOffset	170
+IFD1	ThumbnailLength	25
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+IFD2	Artist	CANARY-CHAINARTIST-0015
+IFD2	Orientation	1
+## camera_model
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Orientation	6
+IFD1	ThumbnailOffset	170
+IFD1	ThumbnailLength	25
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+IFD2	Artist	CANARY-CHAINARTIST-0015
+IFD2	Orientation	1
+## authorship
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Orientation	6
+IFD1	ThumbnailOffset	170
+IFD1	ThumbnailLength	25
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+IFD2	Orientation	1
+## free_text+device
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Orientation	6
+IFD1	ThumbnailOffset	170
+IFD1	ThumbnailLength	25
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+IFD2	Artist	CANARY-CHAINARTIST-0015
+IFD2	Orientation	1

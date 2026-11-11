@@ -98,11 +98,19 @@ const JUMBF_HEADER: usize = 2 + 4;
 #[derive(Debug, Clone)]
 pub struct ExifBlock<'a> {
     segment: usize,
+    tiff_at: usize,
     tiff: &'a [u8],
     container: Result<Container<'a>, Error>,
 }
 
 impl<'a> ExifBlock<'a> {
+    /// Input offset of the first byte of [`ExifBlock::tiff`]: the segment's
+    /// offset plus the marker, the length word and the Exif header (the writer
+    /// adds it to every offset the TIFF walk reports, SPEC-021).
+    pub fn tiff_at(&self) -> usize {
+        self.tiff_at
+    }
+
     /// Index into [`Jpeg::segments`] of the Exif segment.
     pub fn segment(&self) -> usize {
         self.segment
@@ -725,6 +733,7 @@ fn extract<'a>(jpeg: Jpeg<'a>, data: &'a [u8], embedded: bool) -> JpegMetadata<'
                     if let Some(tiff) = after(EXIF_HEADER_LEN) {
                         exif_blocks.push(ExifBlock {
                             segment: index,
+                            tiff_at: at.saturating_add(4).saturating_add(EXIF_HEADER_LEN),
                             tiff,
                             container: Container::parse(tiff),
                         });

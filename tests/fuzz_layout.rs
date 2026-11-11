@@ -16,6 +16,11 @@ mod real_shapes;
 // SPEC-020: the strip fixtures, for the `rewrite_jpeg` harness plants and seeds.
 #[path = "support/strip_shapes.rs"]
 mod strip_shapes;
+// SPEC-021: the Exif entry fixtures and leak inputs.
+#[path = "support/exif_layout.rs"]
+mod exif_layout;
+#[path = "support/exif_records.rs"]
+mod exif_records;
 
 use exif_core::jpeg::{Jpeg, SegmentKind, MAX_JPEG_ISSUES, MAX_JPEG_SEGMENTS};
 use exif_core::tiff::{Container, Entry, IfdKind, MAX_IFDS, MAX_ISSUES, MAX_TAG_VALUES};
@@ -5606,9 +5611,21 @@ fn rewrite_degenerate() -> Vec<Vec<u8>> {
 }
 
 #[test]
-fn rewrite_jpeg_harness_holds_on_every_seed_and_degenerate_inputs() {
+fn rewrite_jpeg_harness_holds_on_every_seed_including_the_entry_seeds() {
     let seeds = rewrite_seed_files();
     assert!(seeds.len() >= 60, "{} seeds", seeds.len());
+    let entry_names: std::collections::BTreeSet<String> = exif_records::entry_seeds()
+        .into_iter()
+        .map(|(n, _)| n)
+        .collect();
+    assert!(
+        seeds
+            .iter()
+            .filter(|(n, _)| entry_names.contains(n))
+            .count()
+            >= 60,
+        "at least 60 entry seeds"
+    );
     for (name, data) in &seeds {
         // The seed as committed, and with every policy byte in front of it.
         rewrite_invariants::check(data);
@@ -5660,6 +5677,16 @@ fn rewrite_plant_input(name: &str) -> Vec<u8> {
         "unindexed" => strip_shapes::unindexed_mpf().bytes,
         "bad-length" => strip_shapes::bad_length().bytes,
         "empty-plan" => strip_shapes::comment_only().bytes,
+        "exif-full" => exif_records::jpeg_of(&[exif_layout::full_le().layout()], false).bytes,
+        "exif-full-be" => exif_records::jpeg_of(&[exif_layout::full_be().layout()], false).bytes,
+        "exif-unclean" => strip_shapes::gps_count_overflow().bytes,
+        "exif-hidden-pointer" => {
+            exif_records::leak_inputs_jpeg()
+                .into_iter()
+                .find(|(n, _)| *n == "gps_ifd_pointed_to_twice")
+                .unwrap()
+                .1
+        }
         other => panic!("no plant input {other}"),
     }
 }
@@ -5672,10 +5699,9 @@ fn out_mut(f: &mut rewrite_invariants::Facts) -> &mut rewrite_invariants::OutFac
     f.out.as_mut().expect("output facts")
 }
 
-#[test]
-fn each_rewrite_guard_goes_red_alone_when_planted() {
+fn rewrite_plants() -> Vec<RewritePlant> {
     use rewrite_invariants::{ErrFact, Guard};
-    let plants: Vec<RewritePlant> = vec![
+    vec![
         // Prediction: the output bytes, in both directions (a wrong byte, a
         // missing byte).
         RewritePlant {
@@ -5708,6 +5734,7 @@ fn each_rewrite_guard_goes_red_alone_when_planted() {
                     bytes: vec![0xFF, 0xD8],
                     removals: vec![],
                     patches: vec![],
+                    scrubs: vec![],
                 });
             },
         },
@@ -5868,15 +5895,11 @@ fn each_rewrite_guard_goes_red_alone_when_planted() {
         },
         // Refusal classes, in both directions.
         RewritePlant {
-            name: "NeedsEntryEdit names too many categories",
-            input: "needs-edit",
+            name: "a walk fault is reported as an Exif refusal",
+            input: "bad-length",
             head: &[2],
             guard: Guard::ErrClass,
-            apply: |f| {
-                f.result = Err(ErrFact::NeedsEntryEdit(
-                    exif_core::audit::Category::ALL.to_vec(),
-                ))
-            },
+            apply: |f| f.result = Err(ErrFact::Uneditable("block-not-clean", 0)),
         },
         RewritePlant {
             name: "an Overlap is reported at the wrong offset",
@@ -5914,6 +5937,115 @@ fn each_rewrite_guard_goes_red_alone_when_planted() {
                 }
             },
         },
+        // ── SPEC-021: the entry guards ──────────────────────────────────────
+        // EntryPrediction: a wrong byte in the Exif table, and a restored byte
+        // in a zeroed range (both leave the bytes outside the Exif segment).
+        RewritePlant {
+            name: "a byte of the rewritten IFD0 table is wrong",
+            input: "exif-full",
+            head: &[0],
+            guard: Guard::EntryPrediction,
+            apply: |f| ok_mut(f).bytes[20 + 10 + 8 + 5] ^= 0x01,
+        },
+        RewritePlant {
+            name: "a byte of a deleted value is left behind",
+            input: "exif-full-be",
+            head: &[2],
+            guard: Guard::EntryPrediction,
+            apply: |f| {
+                let at = ok_mut(f).scrubs[0].0;
+                ok_mut(f).bytes[at] = 0x41;
+            },
+        },
+        // LibraryOkNaiveUnclean: `Ok` on a block with a walk issue, and `Ok`
+        // on a block with a pointer the walk never followed.
+        RewritePlant {
+            name: "Ok on a block with a walk issue",
+            input: "exif-unclean",
+            head: &[0],
+            guard: Guard::LibraryOkNaiveUnclean,
+            apply: |f| {
+                let bytes = strip_shapes::gps_count_overflow().bytes;
+                f.result = Ok(rewrite_invariants::OkFacts {
+                    bytes,
+                    removals: vec![],
+                    patches: vec![],
+                    scrubs: vec![],
+                });
+            },
+        },
+        RewritePlant {
+            name: "Ok on a block with a hidden GPS pointer",
+            input: "exif-hidden-pointer",
+            head: &[2],
+            guard: Guard::LibraryOkNaiveUnclean,
+            apply: |f| {
+                let bytes = rewrite_plant_input("exif-hidden-pointer");
+                f.result = Ok(rewrite_invariants::OkFacts {
+                    bytes,
+                    removals: vec![],
+                    patches: vec![],
+                    scrubs: vec![],
+                });
+            },
+        },
+        // ScrubbedZero.
+        RewritePlant {
+            name: "the first zeroed range holds a byte",
+            input: "exif-full",
+            head: &[0],
+            guard: Guard::ScrubbedZero,
+            apply: |f| {
+                let (at, _) = ok_mut(f).scrubs[0];
+                ok_mut(f).bytes[at] = 0x7F;
+            },
+        },
+        RewritePlant {
+            name: "the last byte of the last zeroed range holds a byte",
+            input: "exif-full",
+            head: &[2],
+            guard: Guard::ScrubbedZero,
+            apply: |f| {
+                let (at, len) = *ok_mut(f).scrubs.last().unwrap();
+                ok_mut(f).bytes[at + len - 1] = 0x7F;
+            },
+        },
+        // KeptEntriesIntact: a kept value changed, a kept entry's tag changed.
+        RewritePlant {
+            name: "a kept value is changed",
+            input: "exif-full",
+            head: &[0],
+            guard: Guard::KeptEntriesIntact,
+            apply: |f| {
+                let b = &mut ok_mut(f).bytes;
+                let at = b.windows(11).position(|w| w == b"CANARY-MAKE").unwrap();
+                b[at + 3] ^= 0x01;
+            },
+        },
+        RewritePlant {
+            name: "a kept entry's tag is changed",
+            input: "exif-full-be",
+            head: &[1],
+            guard: Guard::KeptEntriesIntact,
+            apply: |f| ok_mut(f).bytes[20 + 10 + 8 + 3] ^= 0x01,
+        },
+        // LengthUnchanged, both directions.
+        RewritePlant {
+            name: "an entry edit grows the file",
+            input: "exif-full",
+            head: &[0],
+            guard: Guard::LengthUnchanged,
+            apply: |f| ok_mut(f).bytes.push(0),
+        },
+        RewritePlant {
+            name: "an entry edit shortens the file",
+            input: "exif-full",
+            head: &[2],
+            guard: Guard::LengthUnchanged,
+            apply: |f| {
+                ok_mut(f).bytes.pop();
+            },
+        },
         // VerifyFailed where the prediction is fine.
         RewritePlant {
             name: "VerifyFailed on a clean file",
@@ -5924,21 +6056,18 @@ fn each_rewrite_guard_goes_red_alone_when_planted() {
         },
         RewritePlant {
             name: "VerifyFailed on a refusal",
-            input: "needs-edit",
-            head: &[2],
+            input: "overlap",
+            head: &[6, 0x08, 0x00],
             guard: Guard::VerifyAllowed,
             apply: |f| f.result = Err(ErrFact::VerifyFailed("kept")),
         },
-    ];
+    ]
+}
 
-    // Every guard has at least two plants, and the iff guards have plants in
-    // both directions (their names say which).
-    for g in rewrite_invariants::GUARDS {
-        let n = plants.iter().filter(|p| p.guard == g).count();
-        assert!(n >= 2, "{g:?} has {n} plants");
-    }
-
-    for p in &plants {
+/// Plant every wrong answer and check that its guard rejects it (the control,
+/// the unplanted answer, satisfies every guard first).
+fn check_plants(plants: &[RewritePlant]) {
+    for p in plants {
         let input = rewrite_plant_input(p.input);
         let mut seed = p.head.to_vec();
         seed.extend_from_slice(&input);
@@ -5965,6 +6094,111 @@ fn each_rewrite_guard_goes_red_alone_when_planted() {
         let others = rewrite_invariants::failures(jpeg, spec, &bad, &pred);
         assert!(others.contains(&p.guard), "{}: {others:?}", p.name);
     }
+}
+
+#[test]
+fn each_rewrite_guard_goes_red_alone_when_planted() {
+    let plants = rewrite_plants();
+    // Every guard has at least two plants, and the iff guards have plants in
+    // both directions (their names say which).
+    for g in rewrite_invariants::GUARDS {
+        let n = plants.iter().filter(|p| p.guard == g).count();
+        assert!(n >= 2, "{g:?} has {n} plants");
+    }
+    check_plants(&plants);
+}
+
+#[test]
+fn each_entry_guard_goes_red_alone_when_planted() {
+    use rewrite_invariants::Guard;
+    // The guards SPEC-021 added to `rewrite_jpeg`, two plants each.
+    let entry = [
+        Guard::EntryPrediction,
+        Guard::LibraryOkNaiveUnclean,
+        Guard::ScrubbedZero,
+        Guard::KeptEntriesIntact,
+        Guard::LengthUnchanged,
+    ];
+    let plants: Vec<RewritePlant> = rewrite_plants()
+        .into_iter()
+        .filter(|p| entry.contains(&p.guard))
+        .collect();
+    for g in entry {
+        let n = plants.iter().filter(|p| p.guard == g).count();
+        assert!(n >= 2, "{g:?} has {n} plants");
+    }
+    check_plants(&plants);
+    // The refusal direction is fine: a library that refuses where the naive
+    // editor accepts (fail closed) satisfies every guard.
+    let input = rewrite_plant_input("exif-full");
+    let mut seed = vec![0u8];
+    seed.extend_from_slice(&input);
+    let (policy, jpeg) = rewrite_invariants::decode(&seed);
+    let spec = policy.spec();
+    let pred = rewrite_invariants::predict(jpeg, spec);
+    let mut f = rewrite_invariants::facts(jpeg, policy);
+    f.result = Err(rewrite_invariants::ErrFact::Uneditable("shared-bytes", 99));
+    f.out = None;
+    assert!(rewrite_invariants::failures(jpeg, spec, &f, &pred).is_empty());
+}
+
+#[test]
+fn the_naive_tiff_reader_agrees_with_the_walk_on_every_clean_fixture() {
+    let mut blobs: Vec<Vec<u8>> = Vec::new();
+    for (_, layouts) in exif_records::exif_fixtures() {
+        blobs.extend(layouts.into_iter().map(|l| l.bytes));
+    }
+    for (_, jpeg) in exif_records::leak_inputs_jpeg() {
+        if let Ok(m) = exif_core::jpeg::read(&jpeg) {
+            blobs.extend(m.exif_blocks().iter().map(|b| b.tiff().to_vec()));
+        }
+    }
+    for s in strip_shapes::all() {
+        if let Ok(m) = exif_core::jpeg::read(&s.bytes) {
+            blobs.extend(m.exif_blocks().iter().map(|b| b.tiff().to_vec()));
+        }
+    }
+    // Every seed of the TIFF target too (clean or not).
+    for entry in fs::read_dir(root().join("fuzz/seeds/tiff_ifd")).unwrap() {
+        let p = entry.unwrap().path();
+        if p.file_name().is_some_and(|n| n == "two-hop-cycle") {
+            continue;
+        }
+        blobs.push(fs::read(p).unwrap());
+    }
+    assert!(blobs.len() > 60, "{} blobs", blobs.len());
+    let role = |k: IfdKind| match k {
+        IfdKind::Ifd0 => "ifd0",
+        IfdKind::Ifd1 => "ifd1",
+        IfdKind::Chain => "chain",
+        IfdKind::Sub => "sub",
+        IfdKind::Exif => "exif",
+        IfdKind::Gps => "gps",
+        IfdKind::Interop => "interop",
+        _ => "other",
+    };
+    let (mut clean, mut unclean) = (0, 0);
+    for blob in &blobs {
+        let lib = Container::parse(blob).ok().filter(|c| c.is_clean());
+        let naive = rewrite_invariants::naive_summary(blob);
+        assert_eq!(lib.is_some(), naive.is_some(), "clean or not");
+        if let (Some(c), Some(n)) = (lib, naive) {
+            let want: Vec<(&str, u16, u16, u32)> = c
+                .ifds()
+                .iter()
+                .flat_map(|i| {
+                    i.entries()
+                        .iter()
+                        .map(move |e| (role(i.kind()), e.tag(), e.field_type(), e.count()))
+                })
+                .collect();
+            assert_eq!(want, n, "the same entries in the same order");
+            clean += 1;
+        } else {
+            unclean += 1;
+        }
+    }
+    assert!(clean > 30 && unclean > 3, "{clean} clean, {unclean} not");
 }
 
 #[test]
@@ -5996,7 +6230,6 @@ fn rewrite_guards_are_not_constant() {
 #[test]
 fn rewrite_seeds_are_committed_and_cover_every_fixture_and_policy_class() {
     let seeds = rewrite_seed_files();
-    assert_eq!(seeds.len(), 186, "the rewrite_jpeg seed count is pinned");
     let names: Vec<&str> = seeds.iter().map(|(n, _)| n.as_str()).collect();
     // Every SPEC-019 shape and every strip fixture, under All, Everything and a
     // custom mask.
@@ -6053,7 +6286,7 @@ fn rewrite_seeds_are_committed_and_cover_every_fixture_and_policy_class() {
         ("strip-halted-walk", "Unstrippable"),
         ("strip-com-over-embedded", "Overlap"),
         ("strip-unindexed-mpf", "MpfNotIndexed"),
-        ("strip-kitchen-sink", "NeedsEntryEdit"),
+        ("strip-gps-count-overflow", "Uneditable"),
     ];
     let mut seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
     for (fixture, class) in expected_classes {
@@ -6066,7 +6299,7 @@ fn rewrite_seeds_are_committed_and_cover_every_fixture_and_policy_class() {
                 Err(exif_core::StripError::Unstrippable { .. }) => "Unstrippable",
                 Err(exif_core::StripError::Overlap { .. }) => "Overlap",
                 Err(exif_core::StripError::MpfNotIndexed { .. }) => "MpfNotIndexed",
-                Err(exif_core::StripError::NeedsEntryEdit { .. }) => "NeedsEntryEdit",
+                Err(exif_core::StripError::Uneditable { .. }) => "Uneditable",
                 _ => "",
             };
             if got == class {
@@ -6080,6 +6313,226 @@ fn rewrite_seeds_are_committed_and_cover_every_fixture_and_policy_class() {
         let (p, j) = rewrite_invariants::decode(d);
         exif_core::strip(j, p).is_ok_and(|s| !s.patches().is_empty())
     }));
+}
+
+use exif_records::joined_stray_bytes_input;
+
+#[test]
+fn a_removal_that_joins_stray_bytes_into_a_marker_is_refused_and_excused_exactly() {
+    let input = joined_stray_bytes_input();
+    // Control: the input walks as JFIF, XMP, MPF; removing the XMP leaves
+    // fill bytes in front of the stray ones.
+    let m = exif_core::jpeg::read(&input).unwrap();
+    assert_eq!(m.jpeg().segments().len(), 3);
+    assert!(m.mpf().is_some());
+    // The library refuses (fail closed): the output would walk without the
+    // index it had.
+    let xmp = exif_core::StripPolicy::Custom(
+        exif_core::StripSpec::none().include(exif_core::audit::Category::Xmp),
+    );
+    assert!(matches!(
+        exif_core::strip(&input, xmp),
+        Err(exif_core::StripError::VerifyFailed { .. })
+    ));
+    // The harness: the naive prediction is Ok, but its output walks as a
+    // different set of segments than the input's minus the removed one, so
+    // the refusal is excused (only then).
+    let mut seed = vec![6, 0x40, 0x00];
+    seed.extend_from_slice(&input);
+    rewrite_invariants::check(&seed);
+    // The committed seed is this input.
+    let committed = rewrite_seed_files()
+        .into_iter()
+        .find(|(n, _)| n == "mask0040-joined-stray-bytes")
+        .expect("the seed is committed");
+    assert_eq!(committed.1, seed);
+    // The crash as found, verbatim, is a seed too, and the harness holds on it.
+    let crash = rewrite_seed_files()
+        .into_iter()
+        .find(|(n, _)| n == "crash-mpf-fields-joined-stray")
+        .expect("the crash seed is committed");
+    assert_eq!(crash.1, exif_records::CRASH_MPF_FIELDS);
+    rewrite_invariants::check(&crash.1);
+    assert!(matches!(
+        exif_core::strip(
+            rewrite_invariants::decode(&crash.1).1,
+            rewrite_invariants::decode(&crash.1).0
+        ),
+        Err(exif_core::StripError::VerifyFailed { .. })
+    ));
+    // Strictness: the excuse is not a blanket one. The same input with the
+    // refusal planted on a policy that removes nothing joined is rejected.
+    let policy = exif_core::StripPolicy::Custom(
+        exif_core::StripSpec::none().include(exif_core::audit::Category::Icc),
+    );
+    let spec = policy.spec();
+    let pred = rewrite_invariants::predict(&input, spec);
+    let mut f = rewrite_invariants::facts(&input, policy);
+    f.result = Err(rewrite_invariants::ErrFact::VerifyFailed("mpf-fields"));
+    f.out = None;
+    assert!(!rewrite_invariants::holds(
+        rewrite_invariants::Guard::VerifyAllowed,
+        &input,
+        spec,
+        &f,
+        &pred
+    ));
+    // The second crash of the class (found by the 60 s smoke after the L4
+    // restriction): the self-check refused with `Entries`, because the removals
+    // change the number of Exif blocks the output walk finds.
+    let crash2 = rewrite_seed_files()
+        .into_iter()
+        .find(|(n, _)| n == "crash-entries-joined-stray")
+        .expect("the second crash seed is committed");
+    assert_eq!(crash2.1, exif_records::CRASH_ENTRIES);
+    let (p2, j2) = rewrite_invariants::decode(&crash2.1);
+    assert!(matches!(
+        exif_core::strip(j2, p2),
+        Err(exif_core::StripError::VerifyFailed {
+            check: exif_core::write::Check::Entries
+        })
+    ));
+    rewrite_invariants::check(&crash2.1);
+    // HANDOFF-044 L12: an index whose entry array lies on its own IFD table. The
+    // primary-size patch would rewrite the MPEntry tag's count; refused up front.
+    let (p3, j3) = rewrite_invariants::decode(exif_records::CRASH_MPF_TABLE);
+    assert!(matches!(
+        exif_core::strip(j3, p3),
+        Err(exif_core::StripError::MpfNotIndexed { offset: 150 })
+    ));
+    rewrite_invariants::check(exif_records::CRASH_MPF_TABLE);
+
+    // A kept offset array that cannot be read does not matter when nothing is
+    // edited: the library returns the input unchanged and the harness agrees.
+    let (p4, j4) = rewrite_invariants::decode(exif_records::CRASH_NOTHING_TO_EDIT);
+    let out = exif_core::strip(j4, p4).expect("nothing to edit is Ok");
+    assert_eq!(out.bytes(), j4, "the block is untouched");
+    rewrite_invariants::check(exif_records::CRASH_NOTHING_TO_EDIT);
+    // L4: on the joined input itself only the checks that see a changed walk
+    // are excused; a refusal by any other check is not.
+    let xspec = xmp.spec();
+    let xpred = rewrite_invariants::predict(&input, xspec);
+    for (check, excused) in [
+        ("mpf-fields", true),
+        ("walk", true),
+        ("preview", false),
+        ("kept", false),
+        ("scan", false),
+        ("entries", true),
+        ("scrubbed", false),
+        ("idempotent", false),
+    ] {
+        let mut f = rewrite_invariants::facts(&input, xmp);
+        f.result = Err(rewrite_invariants::ErrFact::VerifyFailed(check));
+        f.out = None;
+        assert_eq!(
+            rewrite_invariants::holds(
+                rewrite_invariants::Guard::VerifyAllowed,
+                &input,
+                xspec,
+                &f,
+                &xpred
+            ),
+            excused,
+            "{check}"
+        );
+    }
+}
+
+/// SPEC-020's 186 seeds plus SPEC-021's 198 entry seeds plus the two
+/// joined-stray seeds, the nothing-to-edit crash and the 180 seeds of the
+/// round-4 leak inputs (HANDOFF-045) and the 144 seeds of the round-5 ones
+/// (HANDOFF-046).
+const REWRITE_SEEDS: usize = 1037;
+
+#[test]
+fn seed_count_is_pinned() {
+    let seeds = rewrite_seed_files();
+    assert_eq!(seeds.len(), REWRITE_SEEDS, "the rewrite_jpeg seed count");
+    // The committed files are exactly what the generator writes.
+    let want: std::collections::BTreeMap<String, Vec<u8>> =
+        exif_records::entry_seeds().into_iter().collect();
+    let mut entry = 0;
+    for (n, d) in &seeds {
+        if let Some(w) = want.get(n) {
+            assert_eq!(
+                d, w,
+                "{n} differs from the generator (cargo run --example fuzz_seeds)"
+            );
+            entry += 1;
+        }
+    }
+    assert_eq!(want.len(), entry, "every generated entry seed is committed");
+    assert_eq!(
+        entry,
+        REWRITE_SEEDS - 186,
+        "SPEC-020's 186 plus the entry seeds"
+    );
+}
+
+#[test]
+fn entry_seeds_are_committed_and_cover_every_fixture_leak_input_and_policy_family() {
+    let seeds = rewrite_seed_files();
+    let names: Vec<&str> = seeds.iter().map(|(n, _)| n.as_str()).collect();
+    // Every fixture under the three narrow presets and five custom masks (the
+    // 64 KB ceiling fixture under two, to keep the seed set small).
+    let masks = ["mask0040", "mask0800", "mask0201", "mask0020", "mask0010"];
+    for (name, _) in exif_records::exif_fixtures() {
+        let heads: Vec<&str> = if name == "at-the-ceiling" {
+            vec!["gps", "all_pii"]
+        } else {
+            ["gps", "gps_and_device", "all_pii"]
+                .into_iter()
+                .chain(masks)
+                .collect()
+        };
+        for h in heads {
+            let want = format!("{h}-exif-{name}");
+            assert!(names.contains(&want.as_str()), "{want}");
+        }
+    }
+    // Every leak input of SPEC-021 under the same heads, and under `All`.
+    for (name, _) in exif_records::leak_inputs_jpeg() {
+        for h in ["gps", "gps_and_device", "all_pii", "allpreset"]
+            .into_iter()
+            .chain(masks)
+        {
+            let want = format!("{h}-leak-{name}");
+            assert!(names.contains(&want.as_str()), "{want}");
+        }
+    }
+    // SPEC-020's leak input, under the narrow presets (already seeded), and
+    // the 850 KB inventory input is a deterministic test, not a seed.
+    assert!(names.contains(&"gps-strip-gps-count-overflow"));
+    assert!(!names.iter().any(|n| n.contains("over_budget")));
+    // The head bytes cover the presets and the custom mask.
+    let entry_names: std::collections::BTreeSet<String> = exif_records::entry_seeds()
+        .into_iter()
+        .map(|(n, _)| n)
+        .collect();
+    let heads: std::collections::BTreeSet<u8> = seeds
+        .iter()
+        .filter(|(n, _)| entry_names.contains(n))
+        .filter_map(|(_, d)| d.first().copied())
+        .collect();
+    assert_eq!(
+        heads.into_iter().collect::<Vec<_>>(),
+        vec![0, 1, 2, 3, 6, 7]
+    );
+    // The seeds exercise both outcomes: strips and refusals.
+    let (mut ok, mut refused) = (0, 0);
+    for (n, d) in &seeds {
+        if !entry_names.contains(n) {
+            continue;
+        }
+        let (p, j) = rewrite_invariants::decode(d);
+        match exif_core::strip(j, p) {
+            Ok(_) => ok += 1,
+            Err(exif_core::StripError::Uneditable { .. }) => refused += 1,
+            Err(_) => {}
+        }
+    }
+    assert!(ok > 60 && refused > 20, "{ok} Ok, {refused} Uneditable");
 }
 
 #[test]

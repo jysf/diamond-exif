@@ -994,7 +994,7 @@ questions:
   - id: dec-013-exif-resident-xmp-iptc-icc-tags
     question: "An Exif IFD can hold the tags DEC-008 files under Xmp (0x02BC), Iptc (0x83BB, 0x8649) and Icc (0x8773), which are not in EXIF9; what should a segment-level strip do with them?"
     priority: medium
-    status: open
+    status: answered
     raised_by: claude-sonnet-5-5
     raised_at: 2026-11-10
     assigned_to: null
@@ -1006,11 +1006,12 @@ questions:
       the self-check would return VerifyFailed). When every EXIF9 category is removed the Exif segments go
       whole, and the self-check (7b) does not count the Exif-resident findings of the kept categories as
       lost (an Icc-category tag inside a removed Exif segment is gone with it). Confirm or amend part 4.
+      Answered 2026-11-10 in DEC-013 amendment 2026-11-10 (A and B): ratified as built / resolved by entry editing.
 
   - id: dec-013-unlocated-mpf-entries
     question: "An MPF index entry the audit could not locate (outside the input, or not FF D8) is never patched; if a removal lies between the index header and the byte it points at, it would silently point at other bytes. Refuse (MpfNotIndexed at the index segment, as built) or patch it too?"
     priority: medium
-    status: open
+    status: answered
     raised_by: claude-sonnet-5-5
     raised_at: 2026-11-10
     assigned_to: null
@@ -1021,11 +1022,12 @@ questions:
       "no VerifyFailed on any seed" forbids. Built: MpfNotIndexed {offset of the index segment} when the
       entry points inside the input and a removal intersects [header start, pointed-at byte]. Entries that
       point outside the input stay unpatched and unrefused (they stay outside).
+      Answered 2026-11-10 in DEC-013 amendment 2026-11-10 (A and B): ratified as built / resolved by entry editing.
 
   - id: dec-013-mpf-segment-after-a-removed-index
     question: "When the real MP index is removed (EmbeddedImage in the policy) and another APP2 MPF segment stays behind it, the next reader takes that segment for the index; DEC-013 part 5 does not say. Refuse as built?"
     priority: low
-    status: open
+    status: answered
     raised_by: claude-sonnet-5-5
     raised_at: 2026-11-10
     assigned_to: null
@@ -1034,11 +1036,12 @@ questions:
       images through it (a second, formerly ignored index becomes the first). Also built: an unindexed MPF
       segment that is itself removed (OtherSegment in the policy) is exempt from the "removal at or after
       its end offset" rule, since nothing is left to be wrong.
+      Answered 2026-11-10 in DEC-013 amendment 2026-11-10 (A and B): ratified as built / resolved by entry editing.
 
   - id: dec-013-removable-segment-after-the-first-scan
     question: "A removable segment that lies after the first SOS (inside the scan region, e.g. an Exif or XMP segment between two progressive scans) makes the strip refuse with Overlap; should such segments be removable?"
     priority: low
-    status: open
+    status: answered
     raised_by: claude-sonnet-5-5
     raised_at: 2026-11-10
     assigned_to: null
@@ -1046,6 +1049,7 @@ questions:
       Rule 7 protects the scan region from SOS through EOI, and the walk puts a segment found between
       scans inside it. A strip of the committed seeds exif-after-scan and app-after-scan therefore returns
       Overlap. No file in the local corpus hits it (counts in the HANDOFF-039 handback).
+      Answered 2026-11-10 in DEC-013 amendment 2026-11-10 (A and B): ratified as built / resolved by entry editing.
 
   - id: dec-013-mpf-primary-size-underflow
     question: "A primary-size field smaller than the bytes removed from the primary cannot be patched (it would go below zero); the spec says VerifyFailed {MpfFields}. Prefer a dedicated typed refusal?"
@@ -1072,3 +1076,207 @@ questions:
       read from a lowercase exif signature, with a minor warning). The writer is correct by DEC-013 part 3
       (the audit is the single definition of what is in the file), so this is an audit gap from SPEC-019 and
       Everything removes all three. Decide before the writer is offered to users.
+
+  - id: allpii-refuses-ifd1-with-a-following-ifd
+    question: "One of the 13 local JPEGs (short hash a3b66f84) has IFD0, IFD1 (a thumbnail) and a third IFD behind IFD1 in the top-level chain; AllPii and any set naming Thumbnail refuse it as Uneditable ChainAfterThumbnail (rule 7). Is the refusal acceptable, or should a thumbnail be removable when a chain IFD follows IFD1?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      Found by the SPEC-021 corpus run (counts only: Gps and GpsAndDevice 13 of 13 Ok, AllPii 12 Ok and
+      1 Uneditable ChainAfterThumbnail). The structure is Ifd0(next) | Exif | Interop | Ifd1(next) | Chain.
+      DEC-013 amendment B.4 refuses it on purpose: splicing IFD0's next word past IFD1 would make the
+      audit call the third IFD `Ifd1` (the walk assigns kinds by position), changing what it reports.
+      Options: keep the refusal (fail closed; the other 12 strip), or define a rule that removes IFD1's
+      entries and thumbnail but keeps an empty IFD1 in the chain (count 0, next kept). The second keeps the
+      chain and the kinds; it needs ExifTool measured on an empty IFD1 with a following IFD.
+
+  - id: writer-self-check-fires-on-segments-joined-by-stray-bytes
+    question: "Removing a segment can join the fill bytes in front of it with stray bytes behind it into a marker that swallows later segments; the self-check then refuses (VerifyFailed). Is the refusal the right answer?"
+    priority: medium
+    status: answered
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      Found by a 270 s and then by the coordinator's 60 s rewrite_jpeg run; it reproduces on the SPEC-020
+      library (6518356). Root cause: the walk skips bytes between segments (stray runs) and keeps them.
+      In the crash, `FF FF` fill precedes an XMP segment and the 67 stray bytes behind it start with a
+      non-marker byte. With the XMP gone, the fill meets those bytes and `FF FF <byte> <len>` reads as a
+      marker with length 27,760: the output walks as JFIF only (Truncated) and the MPF index is gone, so the
+      MpfFields check refuses. The library is right (fail closed on an output that is not the input minus the
+      targets); the harness predicted Ok because it excuses VerifyFailed only for broken invariants it checks.
+      Fixed in the harness (SPEC-021 follow-up): VerifyAllowed also accepts a VerifyFailed when the naive
+      prediction re-walks as a different segment list (marker and payload length, in order) than the input's
+      segments less the removed ones; the guard stays strict otherwise (a test plants the refusal where no
+      segment is removed). Seeds: crash-mpf-fields-joined-stray (verbatim) and mask0040-joined-stray-bytes (built
+      by hand); test a_removal_that_joins_stray_bytes_into_a_marker_is_refused_and_excused_exactly. The open
+      question writer-stray-bytes (keep, or refuse earlier with a typed error) is unchanged.
+
+  - id: preview-outside-ifd1-not-thumbnail
+    question: "A JPEG preview stored in IFD2 or in a SubIFD is not a Thumbnail under DEC-008 (the category is IFD1's 0x0201 and the strips form), so AllPii keeps it. Does DEC-008 need a category (or a rule) before the writer reaches users?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      Found by the HANDOFF-044 verifier: local file a3b66f84 (the one AllPii already refuses for
+      ChainAfterThumbnail) has a JPEG preview in its third chain IFD. The audit does not file it, the preview
+      does not mention it, and a policy that removes the Thumbnail category leaves it. The writer cannot
+      remove what the audit does not name (DEC-013 part 3), so this is an audit/DEC-008 gap, not a writer
+      defect. Related: makernote-internal-offsets.
+
+  - id: field-type-129-utf8
+    question: "Exif 3.0 adds field type 129 (UTF-8 string). The writer refuses a deleted or removed entry of any type outside 1 to 12 (PayloadUnreadable), so a UTF-8 tag of a removed category is refused rather than stripped. Accept type 129?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      Chosen in HANDOFF-041 round 4: not accepted. The walk (`type_size`) does not know 129, so its payload
+      has no range, and the closed-world type rule (only data types 1 to 12; 13 and 18 carry offsets) is the
+      fail-closed answer. Accepting it needs the walk to size type 129 as one byte per count and a test; no
+      local file has one.
+
+  - id: makernote-internal-offsets
+    question: "A MakerNote's own structure can hold offsets to data outside its declared range; a MakerNote deleted under MakerNote or AllPii is zeroed over its declared range only. Note it in DEC-013?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      The writer treats a MakerNote as one opaque out-of-line value (DEC-009 KeptUnread, rule 14) and scrubs the
+      bytes the entry declares. Many vendor notes carry an internal IFD whose entries point, by absolute or
+      note-relative offsets, at data inside the Exif blob but outside the note's declared range (Canon, Nikon,
+      Sony notes with preview images or serial tables are known cases). Those bytes are not zeroed when the
+      MakerNote entry goes, and the audit does not see them. Closing it needs MakerNote parsing per vendor,
+      which is out of scope for M1. Suggested DEC-013 wording: a removed MakerNote is scrubbed over its declared
+      range only; the preview says KeptUnread for what a policy that keeps it does not open, and says nothing
+      about data a removed note pointed to elsewhere in the block.
+      HANDOFF-045 (L14), same class: kept opaque tags with internal offsets, e.g. 0xC634 (DNGPrivateData) or
+      a kept 0x0190, 0x8290, 0xFE00 or 0x888A (the last four are refused as HiddenPointer under a partial
+      policy), are protected by their own value range only. A kept 0xC634 whose payload overlaps a deleted
+      value gets its target zeroed (integrity, not a leak); the test
+      l14_a_kept_opaque_tag_is_protected_by_its_own_value_only pins this. Safe to ship with this note.
+
+  - id: writer-refusals-beyond-the-spec
+    question: "The build added three Uneditable reasons the spec did not list: HiddenPointer, NestedIfd, PayloadUnreadable. Ratify them in the DEC-013 amendment?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      HiddenPointer: an Exif block with a pointer tag (SubIFDs, Exif, GPS, Interop) that the walk did not
+      follow: a second entry with the tag (the walk takes the first), or one in an IFD kind that does not
+      follow it. What it points to was never audited, so a GPS IFD behind `0x8825` = 0 plus a second `0x8825`
+      would survive `Gps` with the audit seeing nothing. The spec's leak input gps_pointer_missing_in_parent
+      cannot be built through the walk (a GPS IFD is found only through its pointer), so this is the form
+      that exists; it refuses with HiddenPointer, not PointerNotInParent (which stays for the unit-level
+      case of a pointer that stops naming the IFD).
+      NestedIfd: a removed IFD (GPS, IFD1) that has IFDs of its own (the walk follows SubIFDs from any IFD).
+      PayloadUnreadable: a deleted entry of an unknown field type, whose value cannot be sized to zero.
+      HANDOFF-042 (verify punch list) widened two existing reasons, no new one:
+      PayloadUnreadable is also returned for a deleted entry (or an entry of a removed GPS IFD or IFD1) whose
+      value does not fit the 4-byte field and is not wholly inside the blob (it runs past the end: the in-blob
+      part is data and was left unzeroed); ThumbnailNotLocated is also returned unless IFD1 has exactly one
+      0x0201, exactly one 0x0202 and no 0x0111 or 0x0117 (a second pair or strips leave image bytes
+      unreferenced). Sweep of the same class: a repeated MakerNote, Artist or other categorised tag is one
+      finding per entry, so every copy and its value go (tested); repeated pointer tags are HiddenPointer;
+      the `select` cross-check that the audit's tag equals the walk's tag at the same position is equivalent
+      code (both come from one container), kept as a guard and not testable.
+      HANDOFF-043 (second verify) made the rule closed-world: a removed IFD1 is handled only if every entry is
+      on an allow-list of offset-free tags (THUMB_IFD_TAGS in src/write/exif.rs, one place, each group
+      commented; any other tag, including tiles, JPEGQTables, free offsets and unknown tags, is
+      ThumbnailNotLocated), and a removed GPS IFD only if every tag is 0x0000..=0x001F (else PayloadUnreadable,
+      an existing reason). A KEPT entry whose value cannot be located (runs past the blob end, or an unknown
+      field type) now keeps its in-blob bytes (clipped), so a scrub or table patch touching them is
+      SharedBytes; the same for a kept IFD1 whose thumbnail range runs past the end. No real IFD1 or GPS IFD in the local
+      corpus (5 and 4 IFDs) has an off-list tag.
+      HANDOFF-044 round: (1) a closed-world TYPE rule: every deleted entry and every entry of a removed IFD must
+      have a field type 1 to 12, else PayloadUnreadable (types 13 and 18 carry an offset whatever the tag;
+      the GPS pointer entries deleted with their IFD are exempt); a KEPT entry of type 13 or 18 keeps the
+      bytes from its offset to the end of the blob. (2) Protection, not refusal: the targets of KEPT offset tags
+      (0x0111/0x0117, 0x0144/0x0145, 0x0120/0x0121, every 0x0201/0x0202 pair, 0x0207 to 0x0209) are added to the
+      keep set (clipped; an offset with no length runs to the blob end) so a scrub touching them is SharedBytes;
+      an array of offsets that cannot be read is a refusal (PayloadUnreadable). (3) A removed IFD1 holding a
+      tag of a category the policy keeps is ThumbnailNotLocated (typed), not a VerifyFailed Kept. (4) An MPF
+      index whose primary-size or offset field would be patched on its own TIFF header or IFD0 table, or
+      inside a located image, is MpfNotIndexed (typed) instead of a VerifyFailed MpfFields.
+      Also built beyond the spec: the check that no two IFD tables overlap runs for every partial policy
+      whether or not anything is edited (the harness guard LibraryOkNaiveUnclean names it).
+      HANDOFF-045 round (no new reason): (H4) an entry with 0x0190 (GlobalParametersIFD), 0x888A
+      (LeafSubIFD), 0x8290 (KodakIFD) or 0xFE00 (KDC_IFD), in any IFD kind and of any type, is HiddenPointer
+      under every partial policy (EXIFTOOL_SUBDIRECTORY_TAGS in src/write/exif.rs; nothing is followed). The
+      four come from a scan of every tag id 0x0000..=0xFFFF as a LONG pointer in IFD0, the Exif IFD, IFD1 and
+      GPS against ExifTool 13.55: no other tag opened an IFD. Whole policies are unchanged. (M4) an entry in
+      an Interop IFD whose tag the audit table would categorise in the policy's set (as in IFD0 or Exif) is
+      PayloadUnreadable (the nearest existing reason): the audit reports nothing in Interop (DEC-008), so the
+      entry cannot be deleted and the policy cannot be honoured. Neither the audit nor DEC-008 changed.
+      (L13) a removed GPS IFD whose next-IFD word is non-zero is NestedIfd (nothing reads that word, so the
+      IFD it names would be left behind; IFD1's word is ChainAfterThumbnail). No local file has any of these
+      (counts: 0 entries with the four tags, 0 category tags in Interop, 0 GPS next words).
+      HANDOFF-046 round: the same HiddenPointer refusal also covers four BLOB-carrier tags,
+      EXIFTOOL_BLOB_CARRIER_TAGS = 0xC51B (HasselbladExif: an embedded TIFF with the Exif table), 0x8568
+      (AFCP_IPTC), 0xCD41 (JUMBF) and 0xC6F5 (ProfileIFD; ExifTool aborts on a JPEG holding it): in any IFD kind
+      and of any type, under every partial policy; whole policies unchanged. The H4 tags are refused inside
+      Interop and GPS IFDs as well (tested). No local file holds any of the eight tags.
+
+  - id: exiftool-subdirectory-pointer-tags
+    question: "The set of IFD pointer tags ExifTool opens (0x014A, 0x8769, 0x8825, 0xA005 plus 0x0190, 0x888A, 0x8290, 0xFE00) is wider than DEC-005's four. Record the ExifTool-derived set in a DEC-005 note so the audit can name what it does not read?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      The walk follows the four DEC-005 tags only; the writer refuses the other four (HiddenPointer, H4)
+      because ExifTool opens them as sub-IFDs (0x0190 with the Exif table, so a GPS IFD behind it is printed
+      as GPS:GPSLatitude). The audit still reports nothing under them (read parity since SPEC-019). Options:
+      (a) DEC-005 note listing the ExifTool 13.55 set (the scan script is a 40-line generator over all 65,536
+      tag ids), the writer keeps refusing; (b) the walk follows them (changes the audit, DEC-008 scope).
+      The scan covered pointer entries in IFD0, the Exif IFD, IFD1 and a GPS IFD; Interop and SubIFD hosts
+      were not scanned.
+      Round-5 verifier scan (Interop, SubIFD, IFD0 and Exif hosts): only the four tags above open an IFD; a
+      GPS host opens none. Separately, four tags carry a BLOB (not an offset to an IFD) that ExifTool 13.55
+      reads and the walk and audit never see: 0xC51B HasselbladExif (an UNDEFINED blob parsed as an embedded
+      TIFF with the Exif table, so a GPS IFD or an Artist inside it is reported), 0x8568 AFCP_IPTC (an IPTC
+      carrier), 0xCD41 JUMBF, and 0xC6F5 ProfileIFD (ExifTool aborts on any JPEG holding it, so the oracle
+      is blind). The writer refuses them under every partial policy (EXIFTOOL_BLOB_CARRIER_TAGS, HiddenPointer,
+      any IFD kind and type); see `audit-blob-carrier-parsing` for the real fix.
+
+  - id: audit-blob-carrier-parsing
+    question: "The audit does not parse the embedded blobs ExifTool reads; category findings inside them are invisible to every writer rule. Parse them audit-side (a DEC-008 amendment)?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      Blobs ExifTool reads as metadata and the audit does not: 0xC51B HasselbladExif (an embedded TIFF with the
+      Exif table), 0x8568 AFCP_IPTC, 0x83BB and 0x8649 (IPTC, which the audit does list as a region but does
+      not open), 0xCD41 JUMBF, 0xCEA1 SEAL (xml), and the MakerNote. A GPS IFD or an Artist inside any of them
+      is reported by ExifTool and is not an audit finding, so no writer rule (which is defined from the audit)
+      can know it is there. The real fix is audit-side parsing and needs DEC-008. Until then the writer refuses
+      0xC51B, 0x8568, 0xCD41 and 0xC6F5 under every partial policy (HiddenPointer); the others are the
+      existing categories (0x83BB, 0x8649, 0x927C) or not yet reachable.
+
+  - id: partial-policy-refuses-unreadable-exif-for-xmp-icc-iptc
+    question: "Custom sets that name only Xmp, Iptc or Icc are now partial (those tags can sit in an Exif IFD), so an Exif block with a walk issue refuses them as Uneditable; under SPEC-020 they returned Ok. Intended?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-10
+    assigned_to: null
+    notes: |
+      DEC-013 amendment B calls a policy partial when it holds Xmp, Iptc or Icc and the Exif blocks carry
+      those tags, and rule 3 refuses an unclean block for every partial policy. The planner cannot tell
+      whether an unreadable block carries them, so it refuses. Consequence: strip of unreadable-exif and
+      gps-count-overflow under {Xmp}, {Icc} and {FreeText} changed from Ok to Uneditable (the SPEC-020 grid
+      tests and their ExifTool records were updated). Policies with no category an Exif entry can have
+      (Jumbf, EmbeddedImage, OtherSegment) still return Ok on those files.
