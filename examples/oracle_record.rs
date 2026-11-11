@@ -47,6 +47,10 @@ mod real_shapes;
 mod strip_records;
 #[path = "../tests/support/strip_shapes.rs"]
 mod strip_shapes;
+#[path = "../tests/support/tiff_records.rs"]
+mod tiff_records;
+#[path = "../tests/support/tiff_shapes.rs"]
+mod tiff_shapes;
 #[path = "../tests/support/tools.rs"]
 mod tools;
 
@@ -199,6 +203,22 @@ fn main() {
 
     record_inventory(&root, &version);
     record_strip(&root, &version);
+    record_strip_tiff(&root, &version);
+}
+
+/// SPEC-022: the same for the TIFF and DNG fixtures, into
+/// `tests/oracle-fixtures/exiftool-strip-tiff/<fixture>.txt`.
+fn record_strip_tiff(root: &std::path::Path, version: &str) {
+    let dir = root.join("tests/oracle-fixtures/exiftool-strip-tiff");
+    fs::create_dir_all(&dir).expect("create strip-tiff record dir");
+    let mut n = 0;
+    for s in tiff_shapes::all() {
+        let text =
+            tiff_records::record_text(&s, version).unwrap_or_else(|e| panic!("{}: {e}", s.name));
+        fs::write(dir.join(format!("{}.txt", s.name)), text).expect("write strip-tiff record");
+        n += 1;
+    }
+    println!("oracle-record: wrote {n} strip-tiff records");
 }
 
 /// SPEC-020: for every strip fixture, ExifTool (`-a -u -G1 -s -t -n`) on the

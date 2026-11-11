@@ -1,0 +1,81 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# exiftool-version: 13.55
+# fixture: thumb-be
+## input
+ExifTool	Warning	Invalid EXIF text encoding for GPSAreaInformation
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	134
+IFD0	Orientation	1
+IFD0	StripByteCounts	256
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	52.5041666666667
+GPS	GPSAreaInformation	CANARY-TIFF-GPS-AREA...
+IFD1	Compression	6
+IFD1	ThumbnailOffset	480
+IFD1	ThumbnailLength	25
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+Composite	GPSLatitude	52.5041666666667
+## gps
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	134
+IFD0	Orientation	1
+IFD0	StripByteCounts	256
+IFD1	Compression	6
+IFD1	ThumbnailOffset	480
+IFD1	ThumbnailLength	25
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+## gps_and_device
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	134
+IFD0	Orientation	1
+IFD0	StripByteCounts	256
+IFD1	Compression	6
+IFD1	ThumbnailOffset	480
+IFD1	ThumbnailLength	25
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+## all_pii
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	StripOffsets	134
+IFD0	Orientation	1
+IFD0	StripByteCounts	256
+## everything
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	StripOffsets	134
+IFD0	Orientation	1
+IFD0	StripByteCounts	256
+## software
+ExifTool	Warning	Invalid EXIF text encoding for GPSAreaInformation
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	134
+IFD0	Orientation	1
+IFD0	StripByteCounts	256
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	52.5041666666667
+GPS	GPSAreaInformation	CANARY-TIFF-GPS-AREA...
+IFD1	Compression	6
+IFD1	ThumbnailOffset	480
+IFD1	ThumbnailLength	25
+IFD1	ThumbnailImage	(Binary data 25 bytes, use -b option to extract)
+Composite	GPSLatitude	52.5041666666667

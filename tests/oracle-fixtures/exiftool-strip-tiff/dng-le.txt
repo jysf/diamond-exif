@@ -1,0 +1,162 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# exiftool-version: 13.55
+# fixture: dng-le
+## input
+ExifTool	Warning	Invalid EXIF text encoding for GPSAreaInformation
+ExifTool	Warning	Invalid EXIF text encoding for UserComment
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	II
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	326
+IFD0	Orientation	1
+IFD0	StripByteCounts	180
+IFD0	DNGVersion	1 4 0 0
+IFD0	ColorMatrix1	0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9
+IFD0	CameraSerialNumber	CANARY-DNG-SERIAL
+SubIFD	Compression	7
+SubIFD	Artist	CANARY-SUBIFD-ARTIST
+SubIFD	TileWidth	64
+SubIFD	TileLength	64
+SubIFD	TileOffsets	626 2126 3626
+SubIFD	TileByteCounts	1500 1500 1500
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	52.5041666666667
+GPS	GPSAreaInformation	CANARY-SUBIFD-GPS-AREA...
+SubIFD1	Compression	7
+SubIFD1	PreviewImageStart	5242
+SubIFD1	Orientation	1
+SubIFD1	SamplesPerPixel	3
+SubIFD1	PreviewImageLength	400
+SubIFD1	PreviewImage	(Binary data 400 bytes, use -b option to extract)
+ExifIFD	DateTimeOriginal	2032:07:08 09:10:11
+ExifIFD	UserComment	CANARY-TIFF-USERCOMMENT."3DU
+Composite	GPSLatitude	52.5041666666667
+## gps
+ExifTool	Warning	Invalid EXIF text encoding for UserComment
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	II
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	326
+IFD0	Orientation	1
+IFD0	StripByteCounts	180
+IFD0	DNGVersion	1 4 0 0
+IFD0	ColorMatrix1	0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9
+IFD0	CameraSerialNumber	CANARY-DNG-SERIAL
+SubIFD	Compression	7
+SubIFD	Artist	CANARY-SUBIFD-ARTIST
+SubIFD	TileWidth	64
+SubIFD	TileLength	64
+SubIFD	TileOffsets	626 2126 3626
+SubIFD	TileByteCounts	1500 1500 1500
+SubIFD1	Compression	7
+SubIFD1	PreviewImageStart	5242
+SubIFD1	Orientation	1
+SubIFD1	SamplesPerPixel	3
+SubIFD1	PreviewImageLength	400
+SubIFD1	PreviewImage	(Binary data 400 bytes, use -b option to extract)
+ExifIFD	DateTimeOriginal	2032:07:08 09:10:11
+ExifIFD	UserComment	CANARY-TIFF-USERCOMMENT."3DU
+## gps_and_device
+ExifTool	Warning	Invalid EXIF text encoding for UserComment
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	II
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	326
+IFD0	Orientation	1
+IFD0	StripByteCounts	180
+IFD0	DNGVersion	1 4 0 0
+IFD0	ColorMatrix1	0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9
+SubIFD	Compression	7
+SubIFD	Artist	CANARY-SUBIFD-ARTIST
+SubIFD	TileWidth	64
+SubIFD	TileLength	64
+SubIFD	TileOffsets	626 2126 3626
+SubIFD	TileByteCounts	1500 1500 1500
+SubIFD1	Compression	7
+SubIFD1	PreviewImageStart	5242
+SubIFD1	Orientation	1
+SubIFD1	SamplesPerPixel	3
+SubIFD1	PreviewImageLength	400
+SubIFD1	PreviewImage	(Binary data 400 bytes, use -b option to extract)
+ExifIFD	DateTimeOriginal	2032:07:08 09:10:11
+ExifIFD	UserComment	CANARY-TIFF-USERCOMMENT."3DU
+## all_pii
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	II
+IFD0	StripOffsets	326
+IFD0	Orientation	1
+IFD0	StripByteCounts	180
+IFD0	DNGVersion	1 4 0 0
+IFD0	ColorMatrix1	0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9
+SubIFD	Compression	7
+SubIFD	TileWidth	64
+SubIFD	TileLength	64
+SubIFD	TileOffsets	626 2126 3626
+SubIFD	TileByteCounts	1500 1500 1500
+SubIFD1	Compression	7
+SubIFD1	PreviewImageStart	5242
+SubIFD1	Orientation	1
+SubIFD1	SamplesPerPixel	3
+SubIFD1	PreviewImageLength	400
+SubIFD1	PreviewImage	(Binary data 400 bytes, use -b option to extract)
+## everything
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	II
+IFD0	StripOffsets	326
+IFD0	Orientation	1
+IFD0	StripByteCounts	180
+IFD0	DNGVersion	1 4 0 0
+IFD0	ColorMatrix1	0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9
+SubIFD	Compression	7
+SubIFD	TileWidth	64
+SubIFD	TileLength	64
+SubIFD	TileOffsets	626 2126 3626
+SubIFD	TileByteCounts	1500 1500 1500
+SubIFD1	Compression	7
+SubIFD1	PreviewImageStart	5242
+SubIFD1	Orientation	1
+SubIFD1	SamplesPerPixel	3
+SubIFD1	PreviewImageLength	400
+SubIFD1	PreviewImage	(Binary data 400 bytes, use -b option to extract)
+## software
+ExifTool	Warning	Invalid EXIF text encoding for GPSAreaInformation
+ExifTool	Warning	Invalid EXIF text encoding for UserComment
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	II
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	326
+IFD0	Orientation	1
+IFD0	StripByteCounts	180
+IFD0	DNGVersion	1 4 0 0
+IFD0	ColorMatrix1	0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9
+IFD0	CameraSerialNumber	CANARY-DNG-SERIAL
+SubIFD	Compression	7
+SubIFD	Artist	CANARY-SUBIFD-ARTIST
+SubIFD	TileWidth	64
+SubIFD	TileLength	64
+SubIFD	TileOffsets	626 2126 3626
+SubIFD	TileByteCounts	1500 1500 1500
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	52.5041666666667
+GPS	GPSAreaInformation	CANARY-SUBIFD-GPS-AREA...
+SubIFD1	Compression	7
+SubIFD1	PreviewImageStart	5242
+SubIFD1	Orientation	1
+SubIFD1	SamplesPerPixel	3
+SubIFD1	PreviewImageLength	400
+SubIFD1	PreviewImage	(Binary data 400 bytes, use -b option to extract)
+ExifIFD	DateTimeOriginal	2032:07:08 09:10:11
+ExifIFD	UserComment	CANARY-TIFF-USERCOMMENT."3DU
+Composite	GPSLatitude	52.5041666666667

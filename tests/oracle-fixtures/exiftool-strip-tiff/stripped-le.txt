@@ -1,0 +1,135 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# exiftool-version: 13.55
+# fixture: stripped-le
+## input
+ExifTool	Warning	[minor] Empty XMP
+ExifTool	Warning	Bad IPTC data tag (marker 0x43)
+ExifTool	Warning	Bad Photoshop IRB resource "CANA"
+ExifTool	Warning	Invalid EXIF text encoding for UserComment
+ExifTool	Warning	[minor] Unrecognized MakerNotes
+ExifTool	Warning	Bad length ICC_Profile (length 1128353345)
+ExifTool	Warning	Invalid EXIF text encoding for GPSAreaInformation
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	II
+File	CurrentIPTCDigest	0b146c9c6e5917d8ff9576a9c986d9e2
+IFD0	ImageDescription	CANARY-TIFF-DESCRIPTION
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	Model	CANARY-TIFF-MODEL
+IFD0	StripOffsets	320 620
+IFD0	Orientation	1
+IFD0	StripByteCounts	300 200
+IFD0	Software	CANARY-TIFF-SOFTWARE
+IFD0	ModifyDate	2031:02:03 04:05:06
+IFD0	Artist	CANARY-TIFF-ARTIST
+IFD0	DNGVersion	1 4 0 0
+ExifIFD	DateTimeOriginal	2032:07:08 09:10:11
+ExifIFD	UserComment	CANARY-TIFF-USERCOMMENT."3DU
+ExifIFD	SerialNumber	CANARY-TIFF-SERIAL
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	52.5041666666667
+GPS	GPSAreaInformation	CANARY-TIFF-GPS-AREA...
+Composite	GPSLatitude	52.5041666666667
+## gps
+ExifTool	Warning	[minor] Empty XMP
+ExifTool	Warning	Bad IPTC data tag (marker 0x43)
+ExifTool	Warning	Bad Photoshop IRB resource "CANA"
+ExifTool	Warning	Invalid EXIF text encoding for UserComment
+ExifTool	Warning	[minor] Unrecognized MakerNotes
+ExifTool	Warning	Bad length ICC_Profile (length 1128353345)
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	II
+File	CurrentIPTCDigest	0b146c9c6e5917d8ff9576a9c986d9e2
+IFD0	ImageDescription	CANARY-TIFF-DESCRIPTION
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	Model	CANARY-TIFF-MODEL
+IFD0	StripOffsets	320 620
+IFD0	Orientation	1
+IFD0	StripByteCounts	300 200
+IFD0	Software	CANARY-TIFF-SOFTWARE
+IFD0	ModifyDate	2031:02:03 04:05:06
+IFD0	Artist	CANARY-TIFF-ARTIST
+IFD0	DNGVersion	1 4 0 0
+ExifIFD	DateTimeOriginal	2032:07:08 09:10:11
+ExifIFD	UserComment	CANARY-TIFF-USERCOMMENT."3DU
+ExifIFD	SerialNumber	CANARY-TIFF-SERIAL
+## gps_and_device
+ExifTool	Warning	[minor] Empty XMP
+ExifTool	Warning	Bad IPTC data tag (marker 0x43)
+ExifTool	Warning	Bad Photoshop IRB resource "CANA"
+ExifTool	Warning	Invalid EXIF text encoding for UserComment
+ExifTool	Warning	[minor] Unrecognized MakerNotes
+ExifTool	Warning	Bad length ICC_Profile (length 1128353345)
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	II
+File	CurrentIPTCDigest	0b146c9c6e5917d8ff9576a9c986d9e2
+IFD0	ImageDescription	CANARY-TIFF-DESCRIPTION
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	Model	CANARY-TIFF-MODEL
+IFD0	StripOffsets	320 620
+IFD0	Orientation	1
+IFD0	StripByteCounts	300 200
+IFD0	Software	CANARY-TIFF-SOFTWARE
+IFD0	ModifyDate	2031:02:03 04:05:06
+IFD0	Artist	CANARY-TIFF-ARTIST
+IFD0	DNGVersion	1 4 0 0
+ExifIFD	DateTimeOriginal	2032:07:08 09:10:11
+ExifIFD	UserComment	CANARY-TIFF-USERCOMMENT."3DU
+## all_pii
+ExifTool	Warning	[minor] Empty XMP
+ExifTool	Warning	Bad IPTC data tag (marker 0x43)
+ExifTool	Warning	Bad Photoshop IRB resource "CANA"
+ExifTool	Warning	Bad length ICC_Profile (length 1128353345)
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	II
+File	CurrentIPTCDigest	0b146c9c6e5917d8ff9576a9c986d9e2
+IFD0	StripOffsets	320 620
+IFD0	Orientation	1
+IFD0	StripByteCounts	300 200
+IFD0	Software	CANARY-TIFF-SOFTWARE
+IFD0	DNGVersion	1 4 0 0
+## everything
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	II
+IFD0	StripOffsets	320 620
+IFD0	Orientation	1
+IFD0	StripByteCounts	300 200
+IFD0	DNGVersion	1 4 0 0
+## software
+ExifTool	Warning	[minor] Empty XMP
+ExifTool	Warning	Bad IPTC data tag (marker 0x43)
+ExifTool	Warning	Bad Photoshop IRB resource "CANA"
+ExifTool	Warning	Invalid EXIF text encoding for UserComment
+ExifTool	Warning	[minor] Unrecognized MakerNotes
+ExifTool	Warning	Bad length ICC_Profile (length 1128353345)
+ExifTool	Warning	Invalid EXIF text encoding for GPSAreaInformation
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	II
+File	CurrentIPTCDigest	0b146c9c6e5917d8ff9576a9c986d9e2
+IFD0	ImageDescription	CANARY-TIFF-DESCRIPTION
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	Model	CANARY-TIFF-MODEL
+IFD0	StripOffsets	320 620
+IFD0	Orientation	1
+IFD0	StripByteCounts	300 200
+IFD0	ModifyDate	2031:02:03 04:05:06
+IFD0	Artist	CANARY-TIFF-ARTIST
+IFD0	DNGVersion	1 4 0 0
+ExifIFD	DateTimeOriginal	2032:07:08 09:10:11
+ExifIFD	UserComment	CANARY-TIFF-USERCOMMENT."3DU
+ExifIFD	SerialNumber	CANARY-TIFF-SERIAL
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	52.5041666666667
+GPS	GPSAreaInformation	CANARY-TIFF-GPS-AREA...
+Composite	GPSLatitude	52.5041666666667

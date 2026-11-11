@@ -1,0 +1,70 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# exiftool-version: 13.55
+# fixture: multipage-le
+## input
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	II
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	188
+IFD0	Orientation	1
+IFD0	StripByteCounts	200
+IFD1	StripOffsets	388 538
+IFD1	Orientation	1
+IFD1	StripByteCounts	150 150
+IFD1	Software	CANARY-PAGE1-SOFTWARE
+IFD2	StripOffsets	726
+IFD2	Orientation	1
+IFD2	StripByteCounts	100
+IFD2	Artist	CANARY-TIFF-ARTIST
+## gps
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	II
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	188
+IFD0	Orientation	1
+IFD0	StripByteCounts	200
+IFD1	StripOffsets	388 538
+IFD1	Orientation	1
+IFD1	StripByteCounts	150 150
+IFD1	Software	CANARY-PAGE1-SOFTWARE
+IFD2	StripOffsets	726
+IFD2	Orientation	1
+IFD2	StripByteCounts	100
+IFD2	Artist	CANARY-TIFF-ARTIST
+## gps_and_device
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	II
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	188
+IFD0	Orientation	1
+IFD0	StripByteCounts	200
+IFD1	StripOffsets	388 538
+IFD1	Orientation	1
+IFD1	StripByteCounts	150 150
+IFD1	Software	CANARY-PAGE1-SOFTWARE
+IFD2	StripOffsets	726
+IFD2	Orientation	1
+IFD2	StripByteCounts	100
+IFD2	Artist	CANARY-TIFF-ARTIST
+## software
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	II
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	188
+IFD0	Orientation	1
+IFD0	StripByteCounts	200
+IFD1	StripOffsets	388 538
+IFD1	Orientation	1
+IFD1	StripByteCounts	150 150
+IFD2	StripOffsets	726
+IFD2	Orientation	1
+IFD2	StripByteCounts	100
+IFD2	Artist	CANARY-TIFF-ARTIST

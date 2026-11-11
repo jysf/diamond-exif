@@ -249,7 +249,9 @@ fn bigtiff_is_still_unsupported() {
 #[test]
 fn the_jpeg_path_is_unchanged() {
     let mut jpeg = vec![0xFF, 0xD8, 0xFF, 0xFE, 0x00, 0x06, b'h', b'i', b'!', b'!'];
-    jpeg.extend_from_slice(&[0xFF, 0xDA, 0x00, 0x08, 1, 1, 0, 0, 0x3F, 0, 1, 2, 0xFF, 0xD9]);
+    jpeg.extend_from_slice(&[
+        0xFF, 0xDA, 0x00, 0x08, 1, 1, 0, 0, 0x3F, 0, 1, 2, 0xFF, 0xD9,
+    ]);
     let out = sanitize(&jpeg, StripPolicy::All).unwrap();
     assert!(out.len() < jpeg.len());
     assert!(!contains(&out, b"hi!!"));

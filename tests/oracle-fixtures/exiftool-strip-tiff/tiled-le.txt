@@ -1,0 +1,71 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# exiftool-version: 13.55
+# fixture: tiled-le
+## input
+ExifTool	Warning	Invalid EXIF text encoding for GPSAreaInformation
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	II
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	TileWidth	16
+IFD0	TileLength	16
+IFD0	TileOffsets	104 360 616 872
+IFD0	TileByteCounts	256 256 256 128
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	52.5041666666667
+GPS	GPSAreaInformation	CANARY-TIFF-GPS-AREA...
+Composite	GPSLatitude	52.5041666666667
+## gps
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	II
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	TileWidth	16
+IFD0	TileLength	16
+IFD0	TileOffsets	104 360 616 872
+IFD0	TileByteCounts	256 256 256 128
+## gps_and_device
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	II
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	TileWidth	16
+IFD0	TileLength	16
+IFD0	TileOffsets	104 360 616 872
+IFD0	TileByteCounts	256 256 256 128
+## all_pii
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	II
+IFD0	TileWidth	16
+IFD0	TileLength	16
+IFD0	TileOffsets	104 360 616 872
+IFD0	TileByteCounts	256 256 256 128
+## everything
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	II
+IFD0	TileWidth	16
+IFD0	TileLength	16
+IFD0	TileOffsets	104 360 616 872
+IFD0	TileByteCounts	256 256 256 128
+## software
+ExifTool	Warning	Invalid EXIF text encoding for GPSAreaInformation
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	II
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	TileWidth	16
+IFD0	TileLength	16
+IFD0	TileOffsets	104 360 616 872
+IFD0	TileByteCounts	256 256 256 128
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	52.5041666666667
+GPS	GPSAreaInformation	CANARY-TIFF-GPS-AREA...
+Composite	GPSLatitude	52.5041666666667
