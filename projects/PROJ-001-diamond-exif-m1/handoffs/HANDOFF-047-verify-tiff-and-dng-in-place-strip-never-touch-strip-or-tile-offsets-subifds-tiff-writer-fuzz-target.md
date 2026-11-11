@@ -50,15 +50,15 @@ handback:
   agent: claude-opus-5-5                      # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: punch-list                    # verify handoffs: approved | punch-list | rejected
-  basis: agent-result                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: null
+  basis: agent-result
+  tokens_total: 197870
+  estimated_usd: 1.31
+  duration_minutes: 8
   branch: claude/spec-022-tiff-dng-strips-26c250
   pr: null
   completed_at: 2026-11-10               # YYYY-MM-DD
   notes: "tokens_total, estimated_usd and duration_minutes left null on purpose: the verifier (a subagent) cannot see its own metered token count; the orchestrator transcribes the harness subagent_tokens and duration. Verdict PUNCH LIST at a9ead7a (code fd5a2c3): no High; three Medium (ExifTool oracle blind to XMP/IPTC/ICC; Custom(Jumbf) is a silent no-op on a TIFF holding a 0xCD41 JUMBF entry; DNG identity tags outside DEC-008 survive Everything) plus a Medium usability follow-up (multi-page TIFF refused by the three presets that include Thumbnail); Lows on DEC-013 D.3/D.4 wording and verify_tiff using the output walk only. Core property held: 264,579 Ok strips from an independent input-walk differential, 0 violations; fuzz 315,498 runs clean. No code changed, nothing pushed, no cycle advanced."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-10
 ---
 
 # HANDOFF-047: TIFF and DNG in-place strip: never touch strip or tile offsets, SubIFDs, TIFF writer fuzz target

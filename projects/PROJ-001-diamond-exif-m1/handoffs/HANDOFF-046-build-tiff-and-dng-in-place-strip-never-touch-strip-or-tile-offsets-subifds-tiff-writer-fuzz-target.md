@@ -51,13 +51,13 @@ handback:
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
   basis: agent-result                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: 249601               # REAL combined count — what cost-audit reads
-  estimated_usd: 1.65              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: 13
+  tokens_total: 367289               # REAL combined count — what cost-audit reads
+  estimated_usd: 2.42              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  duration_minutes: 19
   branch: claude/spec-022-tiff-dng-strips-26c250
   pr: null
   completed_at: 2026-11-10               # YYYY-MM-DD
-  notes: "Orchestrator correction: tokens_total is the harness subagent_tokens (249,601; 54 tool uses; 806,266 ms = 13.4 min), the same basis as earlier specs, at 6.60 USD per Mtok = 1.65 USD. The builder self-reported 10,270,000 from its transcript counting every cache read, which is not comparable with the other specs, so it is NOT used. Builder original note: Floor, summed live from the session transcript (62 deduplicated messages: input + cache creation + cache read + output, max output per message id); about 55 tool calls. estimated_usd left null: no rates applied. Items 1-10 done; no PR (per instruction)."                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  notes: "Cumulative: build 249,601 + punch-list follow-up 1 (d8679ec) 117,688 = 367,289 tokens, 6.60 USD/Mtok = 2.42 USD; 806,266 ms + 343,173 ms = 19.2 min. Orchestrator correction: tokens_total is the harness subagent_tokens (249,601; 54 tool uses; 806,266 ms = 13.4 min), the same basis as earlier specs, at 6.60 USD per Mtok = 1.65 USD. The builder self-reported 10,270,000 from its transcript counting every cache read, which is not comparable with the other specs, so it is NOT used. Builder original note: Floor, summed live from the session transcript (62 deduplicated messages: input + cache creation + cache read + output, max output per message id); about 55 tool calls. estimated_usd left null: no rates applied. Items 1-10 done; no PR (per instruction)."                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
   synced_at: 2026-11-10
 ---
 
