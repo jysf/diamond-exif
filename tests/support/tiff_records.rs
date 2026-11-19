@@ -142,13 +142,13 @@ pub fn parse_record(text: &str) -> Vec<Section> {
 /// ExifTool tag names per category (the carriers of the fixtures), by hand.
 fn names(c: Category) -> &'static [&'static str] {
     match c {
-        Category::FreeText => &["ImageDescription", "UserComment"],
-        Category::CameraModel => &["Make", "Model"],
+        Category::FreeText => &["ImageDescription", "UserComment", "OriginalRawFileName"],
+        Category::CameraModel => &["Make", "Model", "UniqueCameraModel", "LocalizedCameraModel"],
         Category::Software => &["Software"],
         Category::Timestamps => &["ModifyDate", "DateTimeOriginal"],
         Category::Authorship => &["Artist"],
         Category::DeviceId => &["SerialNumber", "BodySerialNumber", "CameraSerialNumber"],
-        Category::MakerNote => &["MakerNote"],
+        Category::MakerNote => &["MakerNote", "DNGPrivateData"],
         Category::Xmp => &["Creator"],
         Category::Iptc => &["By-line"],
         Category::Icc => &["ProfileDescription"],
@@ -198,8 +198,13 @@ pub fn check(spec: StripSpec, out: &Section, input: &Section) -> Result<(), Stri
         }
     }
     for tag in STRUCTURAL {
-        // A removed IFD1 thumbnail takes its own Compression with it.
-        let skip = |l: &Line| spec.contains(Category::Thumbnail) && l.group == "IFD1";
+        // A removed IFD1 thumbnail takes its own Compression with it. A page
+        // IFD1 (no ThumbnailOffset) stays and is compared (SPEC-023).
+        let jpeg_thumb = input
+            .lines
+            .iter()
+            .any(|l| l.group == "IFD1" && l.tag == "ThumbnailOffset");
+        let skip = |l: &Line| spec.contains(Category::Thumbnail) && jpeg_thumb && l.group == "IFD1";
         let (a, b) = (
             tag_set(input, |l| l.tag == tag && !skip(l)),
             tag_set(out, |l| l.tag == tag && !skip(l)),

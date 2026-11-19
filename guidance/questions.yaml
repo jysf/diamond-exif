@@ -1294,7 +1294,8 @@ questions:
     assigned_to: null
     notes: |
       DECIDED 2026-11-11 (user took the recommendation): yes, add the categories via a DEC-008
-      amendment, using the candidate mapping below. Not yet implemented: needs its own spec (audit
+      amendment, using the candidate mapping below. Implemented by SPEC-023 (answered).
+      Was: needs its own spec (audit
       table, oracle rows against ExifTool, a DNG fixture with all four tags, and a check that
       Everything now leaves none of them).
       Found by the SPEC-022 verify (M3). Under GpsAndDevice, AllPii and Everything all four survive in
@@ -1314,7 +1315,8 @@ questions:
     notes: |
       DECIDED 2026-11-11 (user took the recommendation): yes, make the rule container-aware. In a
       bare TIFF an IFD1 is a Thumbnail only when it holds the JPEG pair 0x0201/0x0202 and no strips
-      or tiles; an IFD1 with strips or tiles is a page and is kept. Not yet implemented: needs its
+      or tiles; an IFD1 with strips or tiles is a page and is kept. Implemented by SPEC-023 (answered).
+      Was: needs its
       own spec (audit rule, planner keeps the page, the D.3 refusal narrows, multi-page fixtures
       stripped under AllPii/All/Everything with the oracle, and the tiled-IFD1 case).
       Found by the SPEC-022 verify (M4). ExifTool names page 2's strips IFD1:StripOffsets (record

@@ -258,8 +258,18 @@ fn entries(
         }
     }
     if spec.contains(Category::Thumbnail) {
+        // IFD1 goes only in a block where the audit calls it a thumbnail: a
+        // bare TIFF's page IFD1 is kept (SPEC-023).
+        let thumb_blocks: BTreeSet<Option<usize>> = before
+            .findings()
+            .iter()
+            .filter(|f| f.category == Category::Thumbnail)
+            .filter_map(|f| f.item.and_then(|i| items.get(i)).and_then(Option::as_ref))
+            .filter(|(_, key)| key.1 == IfdKind::Ifd1)
+            .map(|(place, _)| place.0)
+            .collect();
         for (place, key) in items.iter().flatten() {
-            if key.1 == IfdKind::Ifd1 {
+            if key.1 == IfdKind::Ifd1 && thumb_blocks.contains(&place.0) {
                 gone.insert(*place);
             }
         }

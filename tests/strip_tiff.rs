@@ -47,11 +47,11 @@ fn contains(hay: &[u8], needle: &[u8]) -> bool {
     hay.windows(needle.len()).any(|w| w == needle)
 }
 
-/// The policy's expected result for a shape: a refusal when the shape's IFD1 is
-/// a page and the policy removes `Thumbnail` (the audit calls a strips IFD1 a
-/// thumbnail; cutting it would destroy a page).
-fn expect_refusal(s: &Shape, spec: StripSpec) -> bool {
-    s.ifd1_page && spec.contains(Category::Thumbnail)
+/// The policy's expected result for a shape. SPEC-023: no shape in `all()` is
+/// refused any more (a bare TIFF's page IFD1 is kept, not a thumbnail); the one
+/// refused shape, `page_and_jpeg`, has its own test.
+fn expect_refusal(_s: &Shape, _spec: StripSpec) -> bool {
+    false
 }
 
 fn offsets_of(bytes: &[u8]) -> Vec<(u16, Vec<u32>)> {
@@ -184,14 +184,9 @@ fn a_page_ifd1_is_never_removed_and_a_jpeg_thumbnail_is() {
     let out = sanitize(&page.bytes, sw).unwrap();
     assert!(!contains(&out, tiff_shapes::C_SOFTWARE1));
     assert_eq!(offsets_of(&out), page.offsets);
-    // A policy with Thumbnail is refused: fail closed.
-    assert!(matches!(
-        strip(&page.bytes, StripPolicy::AllPii),
-        Err(StripError::Uneditable {
-            reason: UneditableReason::ThumbnailNotLocated,
-            ..
-        })
-    ));
+    // SPEC-023: a policy with Thumbnail keeps the page (it used to be refused).
+    let out = sanitize(&page.bytes, StripPolicy::AllPii).unwrap();
+    assert_eq!(offsets_of(&out), page.offsets);
     // A JPEG thumbnail goes: the bytes are zero, the IFD is cut off the chain.
     let t = tiff_shapes::thumb(false);
     let r = strip(&t.bytes, StripPolicy::AllPii).unwrap();
@@ -315,5 +310,126 @@ fn a_custom_jumbf_policy_on_a_tiff_with_a_jumbf_entry_is_refused() {
         // A policy that removes nothing is still the identity.
         let r = strip(&s.bytes, StripPolicy::Custom(StripSpec::none())).unwrap();
         assert_eq!(r.bytes(), &s.bytes[..]);
+    }
+}
+
+/// SPEC-023 replaces the SPEC-022 refusal of a multi-page TIFF under a
+/// Thumbnail policy: pages are kept byte-identical, entries go by category.
+#[test]
+fn multipage_and_tiled_page_tiffs_strip_under_all_pii_all_everything() {
+    for be in [false, true] {
+        for s in [tiff_shapes::multipage(be), tiff_shapes::tiled_page(be)] {
+            for p in [
+                StripPolicy::AllPii,
+                StripPolicy::All,
+                StripPolicy::Everything,
+            ] {
+                let ctx = format!("{} under {p:?}", s.name);
+                let out = strip(&s.bytes, p)
+                    .unwrap_or_else(|e| panic!("{ctx}: {e:?}"))
+                    .into_bytes();
+                for part in s.parts.iter().filter(|x| x.kind == K::Image) {
+                    assert_eq!(
+                        &out[part.range.clone()],
+                        &s.bytes[part.range.clone()],
+                        "{ctx}"
+                    );
+                }
+                assert_eq!(offsets_of(&out), s.offsets, "{ctx}");
+                // Software is in All and Everything only (AllPii keeps it).
+                assert_eq!(
+                    contains(&out, tiff_shapes::C_SOFTWARE1),
+                    p == StripPolicy::AllPii,
+                    "{ctx}: page Software"
+                );
+                assert!(!contains(&out, tiff_shapes::C_MAKE), "{ctx}: Make");
+                assert_eq!(sanitize(&out, p).unwrap(), out, "{ctx}: idempotent");
+            }
+        }
+    }
+}
+
+#[test]
+fn tiled_page_ifd1_strips() {
+    // The tiled IFD1 page was refused before SPEC-023.
+    let s = tiff_shapes::tiled_page(false);
+    assert!(strip(&s.bytes, StripPolicy::Everything).is_ok());
+}
+
+#[test]
+fn ifd1_with_jpeg_pair_and_strips_is_still_refused() {
+    for be in [false, true] {
+        let s = tiff_shapes::page_and_jpeg(be);
+        for p in [
+            StripPolicy::AllPii,
+            StripPolicy::All,
+            StripPolicy::Everything,
+        ] {
+            assert!(
+                matches!(
+                    strip(&s.bytes, p),
+                    Err(StripError::Uneditable {
+                        reason: UneditableReason::ThumbnailNotLocated,
+                        ..
+                    })
+                ),
+                "{} {p:?}",
+                s.name
+            );
+        }
+        // Without Thumbnail it is kept untouched where nothing applies.
+        assert!(strip(&s.bytes, StripPolicy::Gps).is_ok());
+    }
+}
+
+#[test]
+fn dng_identity_tags_go_under_everything_and_all_pii_stay_under_gps_and_device() {
+    let tags = [0xC614u16, 0xC615, 0xC634, 0xC68B];
+    let canaries: [&[u8]; 7] = [
+        tiff_shapes::C_UCM,
+        tiff_shapes::C_LCM,
+        tiff_shapes::C_ORF,
+        tiff_shapes::C_DPD,
+        tiff_shapes::C_SUB_UCM,
+        tiff_shapes::C_SUB_ORF,
+        tiff_shapes::C_SUB_DPD,
+    ];
+    for be in [false, true] {
+        let s = tiff_shapes::dng_identity(be);
+        let has = |bytes: &[u8], tag: u16| {
+            Container::parse(bytes)
+                .unwrap()
+                .ifds()
+                .iter()
+                .any(|i| i.has(tag))
+        };
+        for tag in tags {
+            assert!(has(&s.bytes, tag), "fixture has {tag:#x}");
+        }
+        for p in [StripPolicy::AllPii, StripPolicy::Everything] {
+            let out = strip(&s.bytes, p).unwrap().into_bytes();
+            for tag in tags {
+                assert!(!has(&out, tag), "{} {p:?}: {tag:#x} left", s.name);
+            }
+            for c in canaries {
+                assert!(
+                    !contains(&out, c),
+                    "{} {p:?}: {}",
+                    s.name,
+                    String::from_utf8_lossy(c)
+                );
+            }
+            for part in s.parts.iter().filter(|x| x.kind == K::Image) {
+                assert_eq!(&out[part.range.clone()], &s.bytes[part.range.clone()]);
+            }
+            assert_eq!(offsets_of(&out), s.offsets);
+            assert_eq!(sanitize(&out, p).unwrap(), out, "idempotent");
+        }
+        // GpsAndDevice and Gps keep all four, byte-identical (MakerNote is not
+        // in GpsAndDevice).
+        for p in [StripPolicy::GpsAndDevice, StripPolicy::Gps] {
+            let out = strip(&s.bytes, p).unwrap().into_bytes();
+            assert_eq!(out, s.bytes, "{} {p:?}", s.name);
+        }
     }
 }

@@ -10,7 +10,7 @@ mod oracle_jpeg;
 #[path = "support/oracle_tiff.rs"]
 mod oracle_tiff;
 
-use exif_core::audit::{audit, ContainerKind, FileAudit, ItemKind, MAX_INVENTORY_ITEMS};
+use exif_core::audit::{audit, Category, ContainerKind, FileAudit, ItemKind, MAX_INVENTORY_ITEMS};
 use exif_core::tiff::IfdKind;
 use std::path::PathBuf;
 
@@ -118,12 +118,10 @@ fn audit_never_panics_on_every_committed_seed() {
             seen[slot] += 1;
         }
     }
-    assert_eq!(seen, [32, 37 + 17, 78 + 17]);
+    assert_eq!(seen, [32, 37 + 17, 81 + 17]);
 }
 
 // ── SPEC-013, carried from the SPEC-012 verify (HANDOFF-024 F2/F3/F4) ───────
-
-use exif_core::audit::Category;
 
 /// A JPEG: SOI, the `before_scan` segments, a start-of-scan header with two
 /// scan bytes, the `after_scan` segments, EOI.
@@ -282,5 +280,48 @@ fn thumbnail_pointer_needs_short_or_long_types() {
     ];
     for (label, offset, length, want) in cases {
         assert_eq!(range_of(&build(offset, length)), want, "{label}");
+    }
+}
+
+// ── SPEC-023: the container-aware page rule ─────────────────────────────────
+
+#[path = "support/tiff_shapes.rs"]
+mod tiff_shapes;
+
+fn thumbs(a: &FileAudit<'_>) -> usize {
+    a.findings_in(Category::Thumbnail).count()
+}
+
+/// A JPEG whose APP1 is `tiff`.
+fn in_jpeg(tiff: &[u8]) -> Vec<u8> {
+    let mut v = vec![0xFF, 0xD8];
+    v.extend(oracle_jpeg::exif_app1(tiff));
+    v.extend(oracle_jpeg::sos_header());
+    v.extend_from_slice(&[1, 2, 0xFF, 0xD9]);
+    v
+}
+
+#[test]
+fn bare_tiff_ifd1_with_strips_is_a_page() {
+    for be in [false, true] {
+        let (m, t, j) = (
+            tiff_shapes::multipage(be),
+            tiff_shapes::tiled_page(be),
+            tiff_shapes::thumb(be),
+        );
+        assert_eq!(thumbs(&audit(&m.bytes)), 0);
+        assert_eq!(thumbs(&audit(&t.bytes)), 0);
+        assert_eq!(thumbs(&audit(&j.bytes)), 1);
+    }
+}
+
+#[test]
+fn jpeg_exif_ifd1_with_strips_stays_a_thumbnail() {
+    for be in [false, true] {
+        let m = tiff_shapes::multipage(be);
+        let jpeg = in_jpeg(&m.bytes);
+        let a = audit(&jpeg);
+        assert_eq!(a.kind(), ContainerKind::Jpeg);
+        assert_eq!(thumbs(&a), 1);
     }
 }

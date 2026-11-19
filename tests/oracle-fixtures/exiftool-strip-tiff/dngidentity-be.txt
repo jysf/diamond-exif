@@ -1,0 +1,178 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# exiftool-version: 13.55
+# fixture: dngidentity-be
+## input
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	242
+IFD0	Orientation	1
+IFD0	StripByteCounts	180
+IFD0	DNGVersion	1 4 0 0
+IFD0	UniqueCameraModel	CANARY-DNG-UNIQUE-CAMERA
+IFD0	LocalizedCameraModel	CANARY-DNG-LOCALIZED-CAMERA
+IFD0	DNGPrivateData	(Binary data 28 bytes, use -b option to extract)
+IFD0	OriginalRawFileName	CANARY-DNG-ORIGINAL-RAW-NAME
+SubIFD	Compression	7
+SubIFD	TileWidth	64
+SubIFD	TileLength	64
+SubIFD	TileOffsets	534 2034
+SubIFD	TileByteCounts	1500 1500
+SubIFD	UniqueCameraModel	CANARY-SUBIFD-UNIQUE-CAMERA
+SubIFD	DNGPrivateData	(Binary data 31 bytes, use -b option to extract)
+## gps
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	242
+IFD0	Orientation	1
+IFD0	StripByteCounts	180
+IFD0	DNGVersion	1 4 0 0
+IFD0	UniqueCameraModel	CANARY-DNG-UNIQUE-CAMERA
+IFD0	LocalizedCameraModel	CANARY-DNG-LOCALIZED-CAMERA
+IFD0	DNGPrivateData	(Binary data 28 bytes, use -b option to extract)
+IFD0	OriginalRawFileName	CANARY-DNG-ORIGINAL-RAW-NAME
+SubIFD	Compression	7
+SubIFD	TileWidth	64
+SubIFD	TileLength	64
+SubIFD	TileOffsets	534 2034
+SubIFD	TileByteCounts	1500 1500
+SubIFD	UniqueCameraModel	CANARY-SUBIFD-UNIQUE-CAMERA
+SubIFD	DNGPrivateData	(Binary data 31 bytes, use -b option to extract)
+## gps_and_device
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	242
+IFD0	Orientation	1
+IFD0	StripByteCounts	180
+IFD0	DNGVersion	1 4 0 0
+IFD0	UniqueCameraModel	CANARY-DNG-UNIQUE-CAMERA
+IFD0	LocalizedCameraModel	CANARY-DNG-LOCALIZED-CAMERA
+IFD0	DNGPrivateData	(Binary data 28 bytes, use -b option to extract)
+IFD0	OriginalRawFileName	CANARY-DNG-ORIGINAL-RAW-NAME
+SubIFD	Compression	7
+SubIFD	TileWidth	64
+SubIFD	TileLength	64
+SubIFD	TileOffsets	534 2034
+SubIFD	TileByteCounts	1500 1500
+SubIFD	UniqueCameraModel	CANARY-SUBIFD-UNIQUE-CAMERA
+SubIFD	DNGPrivateData	(Binary data 31 bytes, use -b option to extract)
+## all_pii
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	MM
+IFD0	StripOffsets	242
+IFD0	Orientation	1
+IFD0	StripByteCounts	180
+IFD0	DNGVersion	1 4 0 0
+SubIFD	Compression	7
+SubIFD	TileWidth	64
+SubIFD	TileLength	64
+SubIFD	TileOffsets	534 2034
+SubIFD	TileByteCounts	1500 1500
+## everything
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	MM
+IFD0	StripOffsets	242
+IFD0	Orientation	1
+IFD0	StripByteCounts	180
+IFD0	DNGVersion	1 4 0 0
+SubIFD	Compression	7
+SubIFD	TileWidth	64
+SubIFD	TileLength	64
+SubIFD	TileOffsets	534 2034
+SubIFD	TileByteCounts	1500 1500
+## xmp
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	242
+IFD0	Orientation	1
+IFD0	StripByteCounts	180
+IFD0	DNGVersion	1 4 0 0
+IFD0	UniqueCameraModel	CANARY-DNG-UNIQUE-CAMERA
+IFD0	LocalizedCameraModel	CANARY-DNG-LOCALIZED-CAMERA
+IFD0	DNGPrivateData	(Binary data 28 bytes, use -b option to extract)
+IFD0	OriginalRawFileName	CANARY-DNG-ORIGINAL-RAW-NAME
+SubIFD	Compression	7
+SubIFD	TileWidth	64
+SubIFD	TileLength	64
+SubIFD	TileOffsets	534 2034
+SubIFD	TileByteCounts	1500 1500
+SubIFD	UniqueCameraModel	CANARY-SUBIFD-UNIQUE-CAMERA
+SubIFD	DNGPrivateData	(Binary data 31 bytes, use -b option to extract)
+## iptc
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	242
+IFD0	Orientation	1
+IFD0	StripByteCounts	180
+IFD0	DNGVersion	1 4 0 0
+IFD0	UniqueCameraModel	CANARY-DNG-UNIQUE-CAMERA
+IFD0	LocalizedCameraModel	CANARY-DNG-LOCALIZED-CAMERA
+IFD0	DNGPrivateData	(Binary data 28 bytes, use -b option to extract)
+IFD0	OriginalRawFileName	CANARY-DNG-ORIGINAL-RAW-NAME
+SubIFD	Compression	7
+SubIFD	TileWidth	64
+SubIFD	TileLength	64
+SubIFD	TileOffsets	534 2034
+SubIFD	TileByteCounts	1500 1500
+SubIFD	UniqueCameraModel	CANARY-SUBIFD-UNIQUE-CAMERA
+SubIFD	DNGPrivateData	(Binary data 31 bytes, use -b option to extract)
+## icc
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	242
+IFD0	Orientation	1
+IFD0	StripByteCounts	180
+IFD0	DNGVersion	1 4 0 0
+IFD0	UniqueCameraModel	CANARY-DNG-UNIQUE-CAMERA
+IFD0	LocalizedCameraModel	CANARY-DNG-LOCALIZED-CAMERA
+IFD0	DNGPrivateData	(Binary data 28 bytes, use -b option to extract)
+IFD0	OriginalRawFileName	CANARY-DNG-ORIGINAL-RAW-NAME
+SubIFD	Compression	7
+SubIFD	TileWidth	64
+SubIFD	TileLength	64
+SubIFD	TileOffsets	534 2034
+SubIFD	TileByteCounts	1500 1500
+SubIFD	UniqueCameraModel	CANARY-SUBIFD-UNIQUE-CAMERA
+SubIFD	DNGPrivateData	(Binary data 31 bytes, use -b option to extract)
+## software
+File	FileType	DNG
+File	FileTypeExtension	DNG
+File	MIMEType	image/x-adobe-dng
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	242
+IFD0	Orientation	1
+IFD0	StripByteCounts	180
+IFD0	DNGVersion	1 4 0 0
+IFD0	UniqueCameraModel	CANARY-DNG-UNIQUE-CAMERA
+IFD0	LocalizedCameraModel	CANARY-DNG-LOCALIZED-CAMERA
+IFD0	DNGPrivateData	(Binary data 28 bytes, use -b option to extract)
+IFD0	OriginalRawFileName	CANARY-DNG-ORIGINAL-RAW-NAME
+SubIFD	Compression	7
+SubIFD	TileWidth	64
+SubIFD	TileLength	64
+SubIFD	TileOffsets	534 2034
+SubIFD	TileByteCounts	1500 1500
+SubIFD	UniqueCameraModel	CANARY-SUBIFD-UNIQUE-CAMERA
+SubIFD	DNGPrivateData	(Binary data 31 bytes, use -b option to extract)

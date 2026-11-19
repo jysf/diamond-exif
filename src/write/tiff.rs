@@ -16,11 +16,14 @@
 //! and tile offset and byte-count entries are structural, not privacy: no
 //! category names them, so no policy deletes them.
 //!
-//! IFD1 of a TIFF is a thumbnail only when it is one the audit calls so and the
-//! planner can locate (a JPEG pair 0x0201/0x0202 and no strips). An IFD1 that
-//! holds strips or tiles is a page: the audit still reports it under
-//! `Thumbnail`, so a policy that removes `Thumbnail` is refused
-//! (`ThumbnailNotLocated`, the strips form), never silently left and never cut.
+//! IFD1 of a TIFF is a thumbnail only when the audit calls it one (SPEC-023: in
+//! a bare TIFF, a JPEG pair 0x0201/0x0202 and no strips or tiles) and the
+//! planner can locate it. An IFD1 that holds strips or tiles is a page: the
+//! audit reports no `Thumbnail`, so the page is kept whole, its entries go by
+//! their own categories and its strip and tile data stay protected. An IFD1
+//! with both the JPEG pair and strips is neither: a policy that removes
+//! `Thumbnail` is refused (`ThumbnailNotLocated`), never silently left and
+//! never cut.
 //!
 //! Provenance (DEC-003, class 1): net-new code over this crate's own planner.
 //! No ExifTool source is read.

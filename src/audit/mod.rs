@@ -505,7 +505,13 @@ impl<'a> Builder<'a> {
             for entry in ifd.entries() {
                 let tag = entry.tag();
                 let category = match ifd.kind() {
-                    IfdKind::Ifd1 if tag == TAG_STRIP_OFFSETS && !has_jpeg_pointer => {
+                    // A strips IFD1 is a thumbnail only inside a JPEG's Exif
+                    // block; in a bare TIFF it is a page (SPEC-023, DEC-008).
+                    IfdKind::Ifd1
+                        if tag == TAG_STRIP_OFFSETS
+                            && !has_jpeg_pointer
+                            && origin.block.is_some() =>
+                    {
                         Some(Category::Thumbnail)
                     }
                     kind => categorize(kind, tag),
@@ -1074,7 +1080,7 @@ mod tests {
     }
 
     #[test]
-    fn an_ifd1_with_strips_and_no_jpeg_pointer_is_a_thumbnail_finding() {
+    fn an_ifd1_with_strips_is_a_thumbnail_in_a_jpeg_and_a_page_in_a_bare_tiff() {
         let strips = build(
             &[
                 (vec![ascii(0x010F, b"Cam")], Some(1)),
@@ -1082,7 +1088,10 @@ mod tests {
             ],
             &[],
         );
-        let a = audit(&strips);
+        // SPEC-023: only inside a JPEG's Exif block; a bare TIFF's is a page.
+        assert_eq!(audit(&strips).findings_in(Category::Thumbnail).count(), 0);
+        let wrapped = jpeg(&[exif_seg(&strips)]);
+        let a = audit(&wrapped);
         let f: Vec<_> = a.findings_in(Category::Thumbnail).collect();
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].thumbnail.unwrap().range, None);

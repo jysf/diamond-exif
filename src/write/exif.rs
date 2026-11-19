@@ -926,7 +926,20 @@ pub(super) fn select(
         .unwrap_or(0);
     let mut sel = Selection {
         gps: spec.contains(Category::Gps),
-        thumbnail: spec.contains(Category::Thumbnail),
+        // Only when the audit calls an IFD1 of this block a thumbnail: a page
+        // IFD1 of a bare TIFF (SPEC-023) is kept, never removed whole.
+        thumbnail: spec.contains(Category::Thumbnail)
+            && audited.findings().iter().any(|f| {
+                f.category == Category::Thumbnail
+                    && f.at.origin().block == b
+                    && matches!(
+                        f.at.kind(),
+                        ItemKind::Tag {
+                            ifd: IfdKind::Ifd1,
+                            ..
+                        }
+                    )
+            }),
         ..Selection::default()
     };
     for (g, ifd) in container.ifds().iter().enumerate() {

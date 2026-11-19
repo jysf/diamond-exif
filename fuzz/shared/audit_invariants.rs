@@ -222,7 +222,7 @@ mod audit_invariants {
     /// DEC-008, typed again: the category of a tag id outside GPS and Interop
     /// IFDs, where the id decides.
     fn by_id(tag: u16) -> Option<&'static str> {
-        let table: [(u16, &str); 40] = [
+        let table: [(u16, &str); 44] = [
             (0x010E, "FreeText"),
             (0x010F, "CameraModel"),
             (0x0110, "CameraModel"),
@@ -247,6 +247,10 @@ mod audit_invariants {
             (0xA433, "CameraModel"),
             (0xA434, "CameraModel"),
             (0xC62F, "DeviceId"),
+            (0xC614, "CameraModel"),
+            (0xC615, "CameraModel"),
+            (0xC68B, "FreeText"),
+            (0xC634, "MakerNote"),
             (0x9C9B, "FreeText"),
             (0x9C9C, "FreeText"),
             (0x9C9E, "FreeText"),
@@ -396,7 +400,9 @@ mod audit_invariants {
                     Some("Gps")
                 } else if kind == "Interop" {
                     None
-                } else if kind == "Ifd1" && (tag == 0x0201 || (tag == 0x0111 && !has_0201)) {
+                } else if kind == "Ifd1"
+                    && (tag == 0x0201 || (tag == 0x0111 && !has_0201 && block.is_some()))
+                {
                     Some("Thumbnail")
                 } else {
                     by_id(tag)

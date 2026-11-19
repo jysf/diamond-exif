@@ -1405,7 +1405,7 @@ fn audit_seed(name: &str) -> Vec<u8> {
     fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
-const AUDIT_NEW_SEEDS: [&str; 9] = [
+const AUDIT_NEW_SEEDS: [&str; 12] = [
     "audit-png-magic",
     "audit-bigtiff-magic",
     "audit-empty-marker",
@@ -1416,6 +1416,10 @@ const AUDIT_NEW_SEEDS: [&str; 9] = [
     // SPEC-015 (carried SPEC-014 F1): the two full-house inputs.
     "audit-full-house-tiff",
     "audit-full-house-jpeg",
+    // SPEC-023 (verify L2): the DNG identity and page-IFD1 seeds.
+    "audit-dng-identity-le",
+    "audit-dng-identity-be",
+    "audit-page-identity-le",
 ];
 
 #[test]
@@ -1492,10 +1496,14 @@ fn audit_seeds_are_committed_and_have_the_shapes_they_claim() {
         .collect();
     assert_eq!(blocks, vec![Some(0), Some(1)]);
 
-    // An IFD1 of strips with no JPEG pointer: a Thumbnail finding on 0x0111,
-    // with no range (the shape the real-target plant needed; see the handback).
+    // An IFD1 of strips with no JPEG pointer: in a bare TIFF a page (SPEC-023),
+    // in a JPEG's Exif block a Thumbnail finding on 0x0111 with no range.
     let strips = audit_seed("audit-ifd1-strips");
     let a = audit(&strips);
+    assert!(a.health().clean, "{:?}", a.health());
+    assert_eq!(a.findings_in(Category::Thumbnail).count(), 0);
+    let wrapped = jpeg_ifd1_strips();
+    let a = audit(&wrapped);
     assert!(a.health().clean, "{:?}", a.health());
     let t: Vec<_> = a.findings_in(Category::Thumbnail).collect();
     assert_eq!(t.len(), 1);
@@ -1563,8 +1571,8 @@ fn audit_harness_holds_on_every_seed_and_degenerate_inputs() {
     }
     assert_eq!(
         seen,
-        78 + 17,
-        "32 TIFF + 37 JPEG + 9 new + 17 SPEC-019 shapes"
+        81 + 17,
+        "32 TIFF + 37 JPEG + 12 new + 17 SPEC-019 shapes"
     );
     for data in audit_degenerate_inputs() {
         audit_invariants::check(&data);
@@ -1604,9 +1612,28 @@ fn big_inventory() -> Vec<u8> {
     out
 }
 
+/// SPEC-023: the `audit-ifd1-strips` TIFF inside a JPEG's Exif block, where an
+/// IFD1 of strips is still a `Thumbnail` (in the bare TIFF it is a page).
+const GENERATED_JPEG_IFD1_STRIPS: &str = "generated:jpeg-ifd1-strips";
+
+fn jpeg_ifd1_strips() -> Vec<u8> {
+    let tiff = audit_seed("audit-ifd1-strips");
+    let payload = [&b"Exif\0\0"[..], &tiff[..]].concat();
+    let len = u16::try_from(payload.len() + 2).expect("fits one segment");
+    let mut v = vec![0xFF, 0xD8, 0xFF, 0xE1];
+    v.extend_from_slice(&len.to_be_bytes());
+    v.extend_from_slice(&payload);
+    v.extend_from_slice(&[
+        0xFF, 0xDA, 0x00, 0x08, 1, 1, 0, 0, 0x3F, 0, 0x12, 0x34, 0xFF, 0xD9,
+    ]);
+    v
+}
+
 fn plant_input(name: &str) -> Vec<u8> {
     if name == GENERATED_BIG_INVENTORY {
         big_inventory()
+    } else if name == GENERATED_JPEG_IFD1_STRIPS {
+        jpeg_ifd1_strips()
     } else {
         audit_seed(name)
     }
@@ -2270,13 +2297,13 @@ fn plants_before_spec_019() -> Vec<Plant> {
         // The IFD1-strips rule, both directions.
         Plant {
             name: "an IFD1 strips entry with no thumbnail finding",
-            input: "audit-ifd1-strips",
+            input: GENERATED_JPEG_IFD1_STRIPS,
             guard: "findings",
             apply: |f| f.findings.retain(|x| x.category != "Thumbnail"),
         },
         Plant {
             name: "a thumbnail finding on the wrong IFD1 entry",
-            input: "audit-ifd1-strips",
+            input: GENERATED_JPEG_IFD1_STRIPS,
             guard: "findings",
             apply: |f| {
                 let i = thumb_finding(f);
@@ -2408,7 +2435,7 @@ fn tiff_harness_entry_budget_invariants_hold_on_every_seed() {
             seen += 1;
         }
     }
-    assert_eq!(seen, 32 + 78 + 17);
+    assert_eq!(seen, 32 + 81 + 17);
     // The degenerate inputs too, and the generated big inventory.
     for data in audit_degenerate_inputs() {
         entry_budget_invariants::check_input(&data);
@@ -2882,7 +2909,7 @@ fn preview_guards_hold_on_every_seed_and_degenerate_inputs() {
             inputs.push((path.display().to_string(), data));
         }
     }
-    assert_eq!(inputs.len(), 32 + 37 + 78 + 17 + 17);
+    assert_eq!(inputs.len(), 32 + 37 + 81 + 17 + 17);
     for (i, d) in audit_degenerate_inputs().into_iter().enumerate() {
         inputs.push((format!("degenerate {i}"), d));
     }
@@ -6443,7 +6470,7 @@ fn a_removal_that_joins_stray_bytes_into_a_marker_is_refused_and_excused_exactly
 /// joined-stray seeds, the nothing-to-edit crash and the 180 seeds of the
 /// round-4 leak inputs (HANDOFF-045) and the 144 seeds of the round-5 ones
 /// (HANDOFF-046).
-const REWRITE_SEEDS: usize = 1037;
+const REWRITE_SEEDS: usize = 1038;
 
 #[test]
 fn seed_count_is_pinned() {
@@ -6465,8 +6492,8 @@ fn seed_count_is_pinned() {
     assert_eq!(want.len(), entry, "every generated entry seed is committed");
     assert_eq!(
         entry,
-        REWRITE_SEEDS - 186,
-        "SPEC-020's 186 plus the entry seeds"
+        REWRITE_SEEDS - 187,
+        "SPEC-020's 186, SPEC-023's one CI crash seed, plus the entry seeds"
     );
 }
 

@@ -1,0 +1,125 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# exiftool-version: 13.55
+# fixture: tiledpage-be
+## input
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	146
+IFD0	Orientation	1
+IFD0	StripByteCounts	200
+IFD1	TileWidth	16
+IFD1	TileLength	16
+IFD1	TileOffsets	346 474
+IFD1	TileByteCounts	128 128
+IFD1	Software	CANARY-PAGE1-SOFTWARE
+## gps
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	146
+IFD0	Orientation	1
+IFD0	StripByteCounts	200
+IFD1	TileWidth	16
+IFD1	TileLength	16
+IFD1	TileOffsets	346 474
+IFD1	TileByteCounts	128 128
+IFD1	Software	CANARY-PAGE1-SOFTWARE
+## gps_and_device
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	146
+IFD0	Orientation	1
+IFD0	StripByteCounts	200
+IFD1	TileWidth	16
+IFD1	TileLength	16
+IFD1	TileOffsets	346 474
+IFD1	TileByteCounts	128 128
+IFD1	Software	CANARY-PAGE1-SOFTWARE
+## all_pii
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	StripOffsets	146
+IFD0	Orientation	1
+IFD0	StripByteCounts	200
+IFD1	TileWidth	16
+IFD1	TileLength	16
+IFD1	TileOffsets	346 474
+IFD1	TileByteCounts	128 128
+IFD1	Software	CANARY-PAGE1-SOFTWARE
+## everything
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	StripOffsets	146
+IFD0	Orientation	1
+IFD0	StripByteCounts	200
+IFD1	TileWidth	16
+IFD1	TileLength	16
+IFD1	TileOffsets	346 474
+IFD1	TileByteCounts	128 128
+## xmp
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	146
+IFD0	Orientation	1
+IFD0	StripByteCounts	200
+IFD1	TileWidth	16
+IFD1	TileLength	16
+IFD1	TileOffsets	346 474
+IFD1	TileByteCounts	128 128
+IFD1	Software	CANARY-PAGE1-SOFTWARE
+## iptc
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	146
+IFD0	Orientation	1
+IFD0	StripByteCounts	200
+IFD1	TileWidth	16
+IFD1	TileLength	16
+IFD1	TileOffsets	346 474
+IFD1	TileByteCounts	128 128
+IFD1	Software	CANARY-PAGE1-SOFTWARE
+## icc
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	146
+IFD0	Orientation	1
+IFD0	StripByteCounts	200
+IFD1	TileWidth	16
+IFD1	TileLength	16
+IFD1	TileOffsets	346 474
+IFD1	TileByteCounts	128 128
+IFD1	Software	CANARY-PAGE1-SOFTWARE
+## software
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	146
+IFD0	Orientation	1
+IFD0	StripByteCounts	200
+IFD1	TileWidth	16
+IFD1	TileLength	16
+IFD1	TileOffsets	346 474
+IFD1	TileByteCounts	128 128
