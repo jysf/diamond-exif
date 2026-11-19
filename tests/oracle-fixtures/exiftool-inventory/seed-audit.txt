@@ -2,6 +2,40 @@
 # exiftool-version: 13.55
 # corpus: seed-audit
 ## audit-bigtiff-magic
+## audit-dng-identity-be
+IFD0	0x010f	Make
+IFD0	0x0111	StripOffsets
+IFD0	0x0112	Orientation
+IFD0	0x0117	StripByteCounts
+IFD0	0xc612	DNGVersion
+IFD0	0xc614	UniqueCameraModel
+IFD0	0xc615	LocalizedCameraModel
+IFD0	0xc634	DNGPrivateData
+IFD0	0xc68b	OriginalRawFileName
+SubIFD	0x0103	Compression
+SubIFD	0x0142	TileWidth
+SubIFD	0x0143	TileLength
+SubIFD	0x0144	TileOffsets
+SubIFD	0x0145	TileByteCounts
+SubIFD	0xc614	UniqueCameraModel
+SubIFD	0xc634	DNGPrivateData
+## audit-dng-identity-le
+IFD0	0x010f	Make
+IFD0	0x0111	StripOffsets
+IFD0	0x0112	Orientation
+IFD0	0x0117	StripByteCounts
+IFD0	0xc612	DNGVersion
+IFD0	0xc614	UniqueCameraModel
+IFD0	0xc615	LocalizedCameraModel
+IFD0	0xc634	DNGPrivateData
+IFD0	0xc68b	OriginalRawFileName
+SubIFD	0x0103	Compression
+SubIFD	0x0142	TileWidth
+SubIFD	0x0143	TileLength
+SubIFD	0x0144	TileOffsets
+SubIFD	0x0145	TileByteCounts
+SubIFD	0xc614	UniqueCameraModel
+SubIFD	0xc634	DNGPrivateData
 ## audit-empty-marker
 ## audit-exif-gps-and-thumbnail
 IFD0	0x010f	Make
@@ -44,6 +78,20 @@ IFD0	0x010f	Make
 IFD1	0x0111	StripOffsets
 IFD1	0x0117	StripByteCounts
 ## audit-many-overlapping-ifds
+## audit-page-identity-le
+IFD0	0x010f	Make
+IFD0	0x0111	StripOffsets
+IFD0	0x0112	Orientation
+IFD0	0x0117	StripByteCounts
+IFD1	0x0110	Model
+IFD1	0x0111	StripOffsets
+IFD1	0x0112	Orientation
+IFD1	0x0117	StripByteCounts
+IFD1	0x0132	ModifyDate
+IFD1	0x013b	Artist
+GPS	0x0001	GPSLatitudeRef
+GPS	0x0002	GPSLatitude
+GPS	0x001c	GPSAreaInformation
 ## audit-png-magic
 ## audit-two-blocks-same-tag
 IFD0	0x010f	Make

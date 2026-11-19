@@ -1,0 +1,155 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# exiftool-version: 13.55
+# fixture: pageidentity-be
+## input
+ExifTool	Warning	Invalid EXIF text encoding for GPSAreaInformation
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	170
+IFD0	Orientation	1
+IFD0	StripByteCounts	200
+IFD1	Model	CANARY-TIFF-MODEL
+IFD1	StripOffsets	388
+IFD1	Orientation	1
+IFD1	StripByteCounts	150
+IFD1	ModifyDate	2031:02:03 04:05:06
+IFD1	Artist	CANARY-TIFF-ARTIST
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	52.5041666666667
+GPS	GPSAreaInformation	CANARY-TIFF-GPS-AREA...
+Composite	GPSLatitude	52.5041666666667
+## gps
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	170
+IFD0	Orientation	1
+IFD0	StripByteCounts	200
+IFD1	Model	CANARY-TIFF-MODEL
+IFD1	StripOffsets	388
+IFD1	Orientation	1
+IFD1	StripByteCounts	150
+IFD1	ModifyDate	2031:02:03 04:05:06
+IFD1	Artist	CANARY-TIFF-ARTIST
+## gps_and_device
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	170
+IFD0	Orientation	1
+IFD0	StripByteCounts	200
+IFD1	Model	CANARY-TIFF-MODEL
+IFD1	StripOffsets	388
+IFD1	Orientation	1
+IFD1	StripByteCounts	150
+IFD1	ModifyDate	2031:02:03 04:05:06
+IFD1	Artist	CANARY-TIFF-ARTIST
+## all_pii
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	StripOffsets	170
+IFD0	Orientation	1
+IFD0	StripByteCounts	200
+IFD1	StripOffsets	388
+IFD1	Orientation	1
+IFD1	StripByteCounts	150
+## everything
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	StripOffsets	170
+IFD0	Orientation	1
+IFD0	StripByteCounts	200
+IFD1	StripOffsets	388
+IFD1	Orientation	1
+IFD1	StripByteCounts	150
+## xmp
+ExifTool	Warning	Invalid EXIF text encoding for GPSAreaInformation
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	170
+IFD0	Orientation	1
+IFD0	StripByteCounts	200
+IFD1	Model	CANARY-TIFF-MODEL
+IFD1	StripOffsets	388
+IFD1	Orientation	1
+IFD1	StripByteCounts	150
+IFD1	ModifyDate	2031:02:03 04:05:06
+IFD1	Artist	CANARY-TIFF-ARTIST
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	52.5041666666667
+GPS	GPSAreaInformation	CANARY-TIFF-GPS-AREA...
+Composite	GPSLatitude	52.5041666666667
+## iptc
+ExifTool	Warning	Invalid EXIF text encoding for GPSAreaInformation
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	170
+IFD0	Orientation	1
+IFD0	StripByteCounts	200
+IFD1	Model	CANARY-TIFF-MODEL
+IFD1	StripOffsets	388
+IFD1	Orientation	1
+IFD1	StripByteCounts	150
+IFD1	ModifyDate	2031:02:03 04:05:06
+IFD1	Artist	CANARY-TIFF-ARTIST
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	52.5041666666667
+GPS	GPSAreaInformation	CANARY-TIFF-GPS-AREA...
+Composite	GPSLatitude	52.5041666666667
+## icc
+ExifTool	Warning	Invalid EXIF text encoding for GPSAreaInformation
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	170
+IFD0	Orientation	1
+IFD0	StripByteCounts	200
+IFD1	Model	CANARY-TIFF-MODEL
+IFD1	StripOffsets	388
+IFD1	Orientation	1
+IFD1	StripByteCounts	150
+IFD1	ModifyDate	2031:02:03 04:05:06
+IFD1	Artist	CANARY-TIFF-ARTIST
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	52.5041666666667
+GPS	GPSAreaInformation	CANARY-TIFF-GPS-AREA...
+Composite	GPSLatitude	52.5041666666667
+## software
+ExifTool	Warning	Invalid EXIF text encoding for GPSAreaInformation
+File	FileType	TIFF
+File	FileTypeExtension	TIF
+File	MIMEType	image/tiff
+File	ExifByteOrder	MM
+IFD0	Make	CANARY-TIFF-MAKE
+IFD0	StripOffsets	170
+IFD0	Orientation	1
+IFD0	StripByteCounts	200
+IFD1	Model	CANARY-TIFF-MODEL
+IFD1	StripOffsets	388
+IFD1	Orientation	1
+IFD1	StripByteCounts	150
+IFD1	ModifyDate	2031:02:03 04:05:06
+IFD1	Artist	CANARY-TIFF-ARTIST
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	52.5041666666667
+GPS	GPSAreaInformation	CANARY-TIFF-GPS-AREA...
+Composite	GPSLatitude	52.5041666666667

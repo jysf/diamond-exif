@@ -118,7 +118,7 @@ fn audit_never_panics_on_every_committed_seed() {
             seen[slot] += 1;
         }
     }
-    assert_eq!(seen, [32, 37 + 17, 78 + 17]);
+    assert_eq!(seen, [32, 37 + 17, 81 + 17]);
 }
 
 // ── SPEC-013, carried from the SPEC-012 verify (HANDOFF-024 F2/F3/F4) ───────

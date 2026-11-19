@@ -199,6 +199,10 @@ fn existing_records_and_seeds_are_byte_identical() {
         // SPEC-015: the two full-house inputs (carried SPEC-014 F1).
         "audit-full-house-tiff",
         "audit-full-house-jpeg",
+        // SPEC-023 (verify L2): the DNG identity and page-IFD1 seeds.
+        "audit-dng-identity-le",
+        "audit-dng-identity-be",
+        "audit-page-identity-le",
     ];
     new_audit.extend(shape_refs.iter().copied());
     check_dir("fuzz/seeds/audit", &OLD_AUDIT_SEEDS, &new_audit);

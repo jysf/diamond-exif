@@ -1200,6 +1200,21 @@ fn audit_seeds(
             ]),
         ),
         ("audit-ifd1-strips", tiff_ifd1_strips(&le)),
+        // SPEC-023 (verify L2): the four DNG identity tags (IFD0 and a SubIFD)
+        // and a page IFD1, so the fuzz model's new rows and the container-aware
+        // IFD1 rule are run by a seed.
+        (
+            "audit-dng-identity-le",
+            tiff_shapes::dng_identity(false).bytes,
+        ),
+        (
+            "audit-dng-identity-be",
+            tiff_shapes::dng_identity(true).bytes,
+        ),
+        (
+            "audit-page-identity-le",
+            tiff_shapes::page_identity(false).bytes,
+        ),
         ("audit-many-overlapping-ifds", many_overlapping_ifds(255)),
         // SPEC-015 (carried SPEC-014 F1): the two inputs that carry every
         // category, so the preview's may-hold relation is in the corpus.

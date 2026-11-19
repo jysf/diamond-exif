@@ -509,6 +509,28 @@ pub fn tiled_page(be: bool) -> Shape {
     b.finish(&name("tiledpage", be), true, false)
 }
 
+/// SPEC-023 (verify L1): two pages; IFD1 is a strips page that itself holds
+/// identity entries (Model, DateTime, Artist) and a GPS pointer, so "a kept
+/// page's entries go by their own categories" is guarded by a committed shape.
+pub fn page_identity(be: bool) -> Shape {
+    let mut b = B::new(be);
+    let p0 = b.ifd(4);
+    let p1 = b.ifd(7);
+    b.set_ifd0(p0);
+    b.next(p0, 4, p1 as u32);
+    b.text(p0, 0, 0x010F, C_MAKE, Some(Category::CameraModel));
+    b.data_entries(p0, 1, 3, (0x0111, 0x0117), &[200], 1);
+    b.short(p0, 2, 0x0112, 1);
+    b.text(p1, 0, 0x0110, C_MODEL, Some(Category::CameraModel));
+    b.data_entries(p1, 1, 3, (0x0111, 0x0117), &[150], 5);
+    b.short(p1, 2, 0x0112, 1);
+    b.text(p1, 4, 0x0132, C_DATETIME, Some(Category::Timestamps));
+    b.text(p1, 5, 0x013B, C_ARTIST, Some(Category::Authorship));
+    let g = b.gps(C_GPS);
+    b.long(p1, 6, 0x8825, g as u32);
+    b.finish(&name("pageidentity", be), true, false)
+}
+
 /// SPEC-023: IFD1 holds both the JPEG pair and strips. Not a removable
 /// thumbnail, not a page: the writer refuses it under a Thumbnail policy.
 /// Not in `all()`.
@@ -544,6 +566,7 @@ pub fn all() -> Vec<Shape> {
             dng(be),
             dng_identity(be),
             tiled_page(be),
+            page_identity(be),
         ]);
     }
     v

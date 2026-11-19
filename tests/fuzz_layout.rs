@@ -1405,7 +1405,7 @@ fn audit_seed(name: &str) -> Vec<u8> {
     fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
-const AUDIT_NEW_SEEDS: [&str; 9] = [
+const AUDIT_NEW_SEEDS: [&str; 12] = [
     "audit-png-magic",
     "audit-bigtiff-magic",
     "audit-empty-marker",
@@ -1416,6 +1416,10 @@ const AUDIT_NEW_SEEDS: [&str; 9] = [
     // SPEC-015 (carried SPEC-014 F1): the two full-house inputs.
     "audit-full-house-tiff",
     "audit-full-house-jpeg",
+    // SPEC-023 (verify L2): the DNG identity and page-IFD1 seeds.
+    "audit-dng-identity-le",
+    "audit-dng-identity-be",
+    "audit-page-identity-le",
 ];
 
 #[test]
@@ -1567,8 +1571,8 @@ fn audit_harness_holds_on_every_seed_and_degenerate_inputs() {
     }
     assert_eq!(
         seen,
-        78 + 17,
-        "32 TIFF + 37 JPEG + 9 new + 17 SPEC-019 shapes"
+        81 + 17,
+        "32 TIFF + 37 JPEG + 12 new + 17 SPEC-019 shapes"
     );
     for data in audit_degenerate_inputs() {
         audit_invariants::check(&data);
@@ -2431,7 +2435,7 @@ fn tiff_harness_entry_budget_invariants_hold_on_every_seed() {
             seen += 1;
         }
     }
-    assert_eq!(seen, 32 + 78 + 17);
+    assert_eq!(seen, 32 + 81 + 17);
     // The degenerate inputs too, and the generated big inventory.
     for data in audit_degenerate_inputs() {
         entry_budget_invariants::check_input(&data);
@@ -2905,7 +2909,7 @@ fn preview_guards_hold_on_every_seed_and_degenerate_inputs() {
             inputs.push((path.display().to_string(), data));
         }
     }
-    assert_eq!(inputs.len(), 32 + 37 + 78 + 17 + 17);
+    assert_eq!(inputs.len(), 32 + 37 + 81 + 17 + 17);
     for (i, d) in audit_degenerate_inputs().into_iter().enumerate() {
         inputs.push((format!("degenerate {i}"), d));
     }
