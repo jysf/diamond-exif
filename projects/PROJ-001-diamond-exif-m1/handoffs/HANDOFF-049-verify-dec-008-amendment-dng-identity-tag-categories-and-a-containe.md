@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: verifier             # implementer | verifier
   created_at: 2026-11-19
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-023
@@ -46,18 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                # completed | blocked | rejected
+  agent: claude-opus-5-5           # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
-  verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: null
-  branch: null
+  verdict: approved                # verify handoffs: approved | punch-list | rejected
+  basis: transcript                # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 4802409            # REAL combined count — what cost-audit reads
+  estimated_usd: 3.97              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  duration_minutes: 16
+  branch: claude/dec-008-dng-and-pages
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-19         # YYYY-MM-DD
+  notes: "Transcript subagents/agent-a52315611cf9f3036.jsonl, 37 messages deduplicated by message.id (max output per message): input 73, cache creation 163,801, cache read 4,612,837, output 25,698. Measured live before the handback edit and commit, so a floor. USD assumes Opus list rates of 5 USD/Mtok in and 25 USD/Mtok out (not in docs/cost-tracking.md); re-price if the Opus 5.5 rate differs. The harness subagent_tokens figure, the basis of earlier specs, is a different quantity."  # if unusual; double-quote it — an unquoted " #" starts a YAML comment
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -116,43 +116,48 @@ If you cannot complete the task:
 
 ## Handback
 
-*Filled in by the receiving agent. The orchestrator does not reconstruct any of
-this — it transcribes it. The reflection questions are part of completion.*
-
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `claude/dec-008-dng-and-pages`, no PR (verify cycle). Reviewed build commit `5582129` (diff `d534384..5582129`).
+- **Completed at:** 2026-11-19
+- **All acceptance criteria met?** yes. Every AC holds on the build commit, checked by the committed tests, by mutation and by an independent probe (below).
+- **For `verify`:** ✅ APPROVED at `5582129`. Three Low findings, none blocking.
+
+#### Findings
+
+- **L1 (Low), test gap: no committed fixture has a removable identity tag or a sub-IFD pointer inside a page IFD1.** `tests/support/tiff_shapes.rs:386` (`multipage`) and `:496` (`tiled_page`) put only Software in IFD1, so the AC "its IFD1-held Make/DateTime entries are deleted per policy" is not guarded by the suite. Behaviour is correct: a throwaway probe (bare TIFF, page IFD1 with strips, Model, Software, DateTime, Artist, DNGPrivateData, an Exif pointer to DateTimeOriginal, a GPS pointer, then a chain page with an Artist) stripped under all five presets in both byte orders with every canary gone exactly when its category is in the preset, strips identical, idempotent, self-check passing. Suggested fix: add Make, DateTime and a GPS pointer to `tiled_page`'s IFD1 (or a new shape) and let `every_shape_under_every_policy_keeps_the_image_data_and_the_length` cover it.
+- **L2 (Low), the independent fuzz model's four new rows are never exercised by a committed seed.** `fuzz/shared/audit_invariants.rs:250-253`. Mutation M2 (the four `by_id` rows reverted in `src/audit/category.rs`) turned the unit tests, `strip_tiff`, the live ExifTool tests and `report_render` red, but not `fuzz_layout`'s audit-harness replay, because `fuzz/seeds/audit/` has no file carrying 0xC614/0xC615/0xC68B/0xC634 (the dngidentity seeds went to `rewrite_tiff` only, whose invariants use the production audit). Also by design the replay oracle (`recorded_exiftool_agrees_with_every_stripped_output`) cannot see a library regression, since the records hold ExifTool's reading of the output at record time; only the live tests catch it. Suggested fix: emit a `tiff-dngidentity-*` seed into `fuzz/seeds/audit/` from `examples/fuzz_seeds.rs` so the model's rows are compared on every replay.
+- **L3 (Low), DEC-008 amendment wording overstates the page rule.** `decisions/DEC-008-audit-categories-and-severity.md:148`: "an IFD1 with strips or tiles is a page and yields no `Thumbnail` finding". The decided edge case (spec, Part 2) and the code keep a `Thumbnail` finding on 0x0201 when IFD1 holds the JPEG pair and strips (`page_and_jpeg`), and the same for the pair with tiles (probe: refused `ThumbnailNotLocated` under AllPii/All/Everything, both byte orders). Suggested fix: "an IFD1 with strips or tiles and no 0x0201 is a page ...; one with both is reported as today and the writer refuses it (DEC-013 D.3 amendment)."
+
+#### Handoff checks
+
+1. **Unrequested changes.** (a) `src/write/verify.rs:261-275`: the IFD1 set the self-check expects gone is derived from the input audit's IFD1 `Thumbnail` findings, the same source `select` uses (`src/write/exif.rs:929-942`), so a page IFD1 is expected kept and a thumbnail IFD1 expected gone. A writer that removed a page, or kept a thumbnail, still fails the check. Mutation M4 (IFD1 always expected gone) turned `strip_tiff` (4), `strip_tiff_oracle` (2) and `strip::no_fixture_or_seed_gives_verify_failed` red. The only asymmetry (verify keys on `f.item`, select on `f.at`) fails closed. (b) The fuzz model edit adds `block.is_some()`, the spec's rule typed again over the model's own walk. It still checks independently: M1 (old rule restored) turned `audit_harness_holds_on_every_seed_and_degenerate_inputs` red, and M1b (JPEG strips IFD1 never a thumbnail) turned `audit_harness_each_iff_invariant_goes_red_when_planted` and `rewrite_jpeg_harness_holds_on_every_seed_including_the_entry_seeds` red. Gap: L2.
+2. **Changed tests.** The multipage-refusal assertion becoming Ok and `expect_refusal` returning `false` follow AC 5 and 6: no shape in `all()` is refused now, and the one refused shape (`page_and_jpeg`) has its own test. The `audit-ifd1-strips` plants now use the generated JPEG-wrapped copy, which is right because the bare seed has no `Thumbnail` finding any more. The JPEG rule is guarded: M1b turns `audit_model::jpeg_exif_ifd1_with_strips_stays_a_thumbnail`, the lib unit test, three `fuzz_layout` tests and `strip::leak_inputs_refuse_with_the_named_reason_and_offset` red.
+3. **Oracle red-proofs.** `just oracle-record` with ExifTool 13.55 rewrote all 14 strip-tiff records (and the 23 strip and 12 exif-entry ones) byte-identical to the committed files, so the six new records are real ExifTool output. Reverting production turns the oracle red: M1 makes `recorded_exiftool_agrees_with_every_stripped_output` and `live_exiftool_agrees_on_the_spec_023_fixtures` fail; M2 makes `live_exiftool_agrees_on_the_spec_023_fixtures` and `live_exiftool_agrees_with_every_stripped_output` fail (replay stays green, see L2). M3 (`select` no longer gated on the audit) turned `strip_tiff` (5) and `strip_tiff_oracle` (2) red. Every mutation was a temporary edit reverted with `git checkout`; the tree is clean.
+4. **Probes (throwaway test, deleted).** (a) Page IFD1 with identity tags, Exif and GPS pointers, chain page after it: OK as L1 describes. (b) 0xC634, 0xC68B and 0xC614 whose out-of-line value lies inside a strip: refused `SharedBytes` under AllPii and Everything, both orders; image bytes never zeroed. The dngidentity fixture: canaries gone, image and SubIFD tile data identical. (c) JPEG pair + strips IFD1 and JPEG pair + tiles IFD1: refused `ThumbnailNotLocated`. A JPEG-pair thumbnail IFD1 holding a Make in a bare TIFF is removed whole (one IFD left, thumbnail and Make canaries gone). (d) AllPii keeps the page's Software, which matches DEC-009 line 64 and `src/policy.rs:117`; no doc says otherwise. (e) GpsAndDevice and Gps leave all four DNG tags byte-identical (`dng_identity_tags_go_under_everything_and_all_pii_stay_under_gps_and_device`, plus the probe for 0xC634 in a page IFD1).
+5. **Independent differential** (a throwaway test, not committed): every seed in `fuzz/seeds/rewrite_tiff/` (policy prefix removed), every shape in `tiff_shapes::all()` plus `page_and_jpeg`, and every `hostile()` input, under all five presets: **215 inputs, 1,075 runs; 662 Ok, 208 typed refusals, the other 205 runs (41 inputs, by subtraction) skipped as non-TIFF: the `soi-then-tiff-*` seeds sniff as JPEG, 0 assertion failures.** On every Ok: same length; every strip and tile range of the INPUT walk byte-identical (and the 0x0201 range when the preset keeps `Thumbnail`); no finding of a removed category in the output audit; a second strip returns the same bytes. Refusals: `ThumbnailNotLocated` only on the pagejpeg inputs (16 per Thumbnail preset), `SharedBytes` and `BlockNotClean` only on the hostile inputs (pre-existing).
+6. **Gates** (`~/.cargo/bin` first, `RUSTUP_TOOLCHAIN=1.90.0`, clippy 0.1.90): `just test` green (919 tests passed, 0 failed, ExifTool present so the live tests ran); `just lint`, `just lint-fuzz`, `just lint-no-allow`, `just forbid-unsafe`, `just deny`, `just deny-fuzz`, `just validate` all exit 0; `just fuzz-smoke rewrite_tiff` ran 496,839 executions in 61 s with no crash. Docs: the DEC-008 and DEC-013 D.3 amendments are short and accurate apart from L3; the README known-limits bullet now names only PNG and WebP; both `questions.yaml` entries are `answered` and name SPEC-023.
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** 4,802,409 (input 73 + cache creation 163,801 + cache read 4,612,837 + output 25,698, over 37 messages). A floor: measured before the handback edit and commit.
+- **Estimated USD:** 3.97, assuming Opus list rates of 5 USD/Mtok in and 25 USD/Mtok out, with cache reads at 0.10× and 5-minute cache writes at 1.25×.
+- **Duration (minutes):** 16
+- **Source of the number:** transcript (`subagents/agent-a52315611cf9f3036.jsonl` of session `c6de7258`), counted per `docs/cost-tracking.md` "Measuring a cycle". This is not the harness `subagent_tokens` basis that earlier specs used.
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
-- **Deviations from spec:**
-  - [list]
-- **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+- **New decisions emitted:** none.
+- **Deviations from spec:** none found in the build.
+- **Follow-up work identified:** L1 and L2 (test and seed additions) and L3 (a one-sentence DEC-008 wording fix) can go into one small chore or the next TIFF spec.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — Nothing material. The handoff says to use "strip, tile and raw-data ranges of the INPUT walk", while the fuzz target uses the OUTPUT walk; a removed thumbnail's range has to be left out of the input form, which I did.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — Replay records cannot catch a library regression, only the live run can. That should be stated wherever "oracle red-proof" is asked for, so verifiers mutate production with ExifTool present.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Write each mutation as a single, narrow edit from the start. The M3 edit (`&&` changed to `||`) was broader than needed. It was still red, but a narrower edit would show more precisely which tests depend on the gate.
