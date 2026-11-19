@@ -78,6 +78,7 @@ The design and porting brief are complete and carry named failure modes. The fir
 - [x] STAGE-003 (shipped on 2026-11-06) — `exif-audit` CLI: audit model, inventory parity, strip-policy preview, renderers + fuzz, the incremental report builder, the binary
 - [x] STAGE-004 (shipped on 2026-11-10) — M1c JPEG and TIFF writer: audit coverage of writer-relevant structures, segment-level strip, in-place IFD strip, TIFF/DNG strip (SPIKE-001 is the evidence); 4 specs, 4,921,119 tokens, 32.47 USD
 - [x] STAGE-005 (shipped on 2026-11-19) — DEC-008 audit gaps: DNG identity tag categories and a container-aware TIFF page rule; 1 spec, 561,674 tokens, 3.71 USD
+- [ ] STAGE-006 (proposed) — First public alpha: exif-audit binary release v0.1.0-alpha.1 (SPEC-024, designed; the tag push awaits the user's go-ahead)
 - [ ] (not yet defined) — M1d: PNG and WebP readers and writers, `set` operations, MakerNote rules
 - [ ] (not yet defined) — M1e/M1f: HEIC read, IPTC/ICC passthrough, 24 h fuzz gate, publish
 
