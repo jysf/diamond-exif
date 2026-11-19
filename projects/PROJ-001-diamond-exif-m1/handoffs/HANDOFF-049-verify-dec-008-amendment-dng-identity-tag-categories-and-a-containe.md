@@ -50,15 +50,15 @@ handback:
   agent: claude-opus-5-5           # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: approved                # verify handoffs: approved | punch-list | rejected
-  basis: transcript                # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: 4802409            # REAL combined count — what cost-audit reads
-  estimated_usd: 3.97              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: 16
+  basis: agent-result                # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 179858              # REAL combined count — what cost-audit reads
+  estimated_usd: 1.19              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  duration_minutes: 14
   branch: claude/dec-008-dng-and-pages
   pr: null
   completed_at: 2026-11-19         # YYYY-MM-DD
-  notes: "Transcript subagents/agent-a52315611cf9f3036.jsonl, 37 messages deduplicated by message.id (max output per message): input 73, cache creation 163,801, cache read 4,612,837, output 25,698. Measured live before the handback edit and commit, so a floor. USD assumes Opus list rates of 5 USD/Mtok in and 25 USD/Mtok out (not in docs/cost-tracking.md); re-price if the Opus 5.5 rate differs. The harness subagent_tokens figure, the basis of earlier specs, is a different quantity."  # if unusual; double-quote it — an unquoted " #" starts a YAML comment
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "Orchestrator correction: tokens_total is the harness subagent_tokens (179,858; 49 tool uses; 841,423 ms = 14.0 min) at 6.60 USD/Mtok = 1.19 USD, the same basis as earlier specs. The verifier self-reported 4,802,409 (transcript, cache reads included) and 3.97 USD at assumed rates; neither is used. Verdict APPROVED, three Low findings (L1 no fixture puts Make/DateTime/GPS pointer in a page IFD1; L2 no audit fuzz seed carries the four DNG tags; L3 DEC-008 wording, fixed in the ship commit)."
+  synced_at: 2026-11-19
 ---
 
 # HANDOFF-049: Verify SPEC-023 (DEC-008 amendment: DNG identity tags, container-aware TIFF page rule)

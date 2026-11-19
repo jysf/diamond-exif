@@ -145,4 +145,4 @@ Four DNG identity tags get categories (they apply in any non-GPS, non-Interop IF
 
 Residual: `GpsAndDevice` still leaves 0xC634 (as it leaves 0x927C), because `MakerNote` is not in that preset (DEC-009).
 
-The IFD1-with-strips rule is container-aware. In a JPEG's Exif block it is unchanged (an IFD1 with strips and no 0x0201 is a `Thumbnail`). In a bare TIFF an IFD1 is a `Thumbnail` only through its JPEG pair 0x0201/0x0202; an IFD1 with strips or tiles is a page and yields no `Thumbnail` finding. The discriminator is `Origin.block` (`None` for a bare TIFF).
+The IFD1-with-strips rule is container-aware. In a JPEG's Exif block it is unchanged (an IFD1 with strips and no 0x0201 is a `Thumbnail`). In a bare TIFF an IFD1 is a `Thumbnail` only through its JPEG pair 0x0201/0x0202; an IFD1 with strips or tiles and no 0x0201 is a page and yields no `Thumbnail` finding (one that holds both the JPEG pair and strips or tiles is still reported as a `Thumbnail`, and the writer refuses it). The discriminator is `Origin.block` (`None` for a bare TIFF).

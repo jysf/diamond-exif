@@ -6,19 +6,19 @@
 task:
   id: SPEC-023
   type: story                      # epic | story | task | bug | chore
-  cycle: verify  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
-  complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
+  complexity_actual: M          # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: approved  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
                                    #   rejects anything" stops being a hunch and becomes a number.
-  verify_rounds: []                # every verify outcome, oldest first, appended by
+  verify_rounds: [approved]  # every verify outcome, oldest first, appended by
                                    #   `just advance-cycle` each time the spec leaves verify.
                                    #   verify_verdict keeps only the LAST one, so a spec sent
                                    #   back and then approved read as "approved": irradiance's
@@ -79,10 +79,30 @@ cost:
       duration_minutes: 14
       recorded_at: 2026-11-19
       notes: "Orchestrator correction: tokens_total is the harness subagent_tokens (173,750; 42 tool uses; 827,609 ms = 13.8 min) at 6.60 USD/Mtok = 1.15 USD, the same basis as earlier specs. The builder reported an estimate of 230,000 and about 60 tool calls, which is not used."
+    - cycle: verify
+      handoff: HANDOFF-049
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 179858
+      estimated_usd: 1.19
+      duration_minutes: 14
+      recorded_at: 2026-11-19
+      notes: "Orchestrator correction: tokens_total is the harness subagent_tokens (179,858; 49 tool uses; 841,423 ms = 14.0 min) at 6.60 USD/Mtok = 1.19 USD, the same basis as earlier specs. The verifier self-reported 4,802,409 (transcript, cache reads included) and 3.97 USD at assumed rates; neither is used. Verdict APPROVED, three Low findings (L1 no fixture puts Make/DateTime/GPS pointer in a page IFD1; L2 no audit fuzz seed carries the four DNG tags; L3 DEC-008 wording, fixed in the ship commit)."
+    - cycle: ship
+      agent: claude-opus-5-5
+      interface: claude-code
+      basis: estimate
+      tokens_total: null
+      estimated_usd: null
+      duration_minutes: null
+      recorded_at: 2026-11-19
+      notes: "Un-metered main-loop cycles (design, orchestration, ship) not measured: null on purpose."
   totals:
-    tokens_total: 173750
-    estimated_usd: 1.15
-    session_count: 1
+    tokens_total: 353608
+    estimated_usd: 2.34
+    session_count: 3
+shipped_at: 2026-11-19
 ---
 
 # SPEC-023: DEC-008 amendment: DNG identity tag categories and a container-aware TIFF page rule
@@ -244,22 +264,19 @@ row, or restore the old IFD1 rule, and the oracle test fails).
 *Appended during **ship**. Three questions, short answers.*
 
 1. **What would I do differently next time?**
-   — <answer>
+   — Put the two out-of-spec edits the build needed (the `verify_tiff` entries self-check and the independent fuzz model's IFD1 rule) into the design: both follow from "the audit is the oracle", and the second weakens the independence of the model unless it is checked, which the verifier had to do. Also give the fuzz audit seed set a DNG-identity seed in the design, not as a finding.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — DEC-008 amended (four DNG rows, the GpsAndDevice residual, the container-aware IFD1 rule) and DEC-013 D.3 narrowed to JPEG. Process: both agents again self-reported token counts that include cache reads (verify 4,802,409 vs harness 179,858); record only the harness figure. `just lint` needs `RUSTUP_TOOLCHAIN=1.90.0` when `~/.cargo/bin` is first in PATH.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — Two Low test gaps, small enough for a patch: (L1) no fixture puts Make, DateTime or a GPS pointer inside a page IFD1, so "a page's identity entries go by category" is verified only by the verifier's throwaway probe; (L2) no `fuzz/seeds/audit/` file carries 0xC614, 0xC615, 0xC68B or 0xC634, so the fuzz model's four new rows are never run by a seed (and the replay oracle cannot see a library regression, only the live oracle tests can). L3 (DEC-008 wording) was fixed at ship.
 
 4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
    the defect-escape distribution is greppable across specs:
    `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
    `none` (clean first try).
-   — <one word>
+   — build
    *(Runtime/operational defects — the escape-prone class — only exist once the
    artifact meets its real host. `escaped` here is a signal to strengthen the
    §12 behavioral pre-flight for that surface.)*
@@ -271,4 +288,4 @@ row, or restore the old IFD1 rule, and the oracle test fails).
    `impact` field is transcribed from, and both halves are already written above
    (## Context is the before, ## Goal is the after): confirm the prediction,
    don't reconstruct it from memory.
-   — <answer | none>
+   — Before: `Everything` left DNG UniqueCameraModel, LocalizedCameraModel and OriginalRawFileName in a file and every multi-page or tiled-page TIFF was refused under `AllPii`, `All` and `Everything`; after: both strip, with page image data byte-identical and ExifTool printing none of the four DNG identity tags (1,075 differential runs, 0 violations).
