@@ -68,12 +68,16 @@ questions:
   - id: crates-io-name-availability
     question: "Are the crates.io names exif-core and diamond-exif free?"
     priority: medium
-    status: open
+    status: answered
     raised_by: claude
     raised_at: 2026-11-04
     assigned_to: null
     notes: |
       Check before any publish or README that names the crate publicly.
+      ANSWERED 2026-11-11: free. GET https://crates.io/api/v1/crates/<name> returned 404 for
+      exif-core, diamond-exif, exif-audit and exif_core, and a crates.io search for "exif-core"
+      returned no crates. The check is a point-in-time read: a name is only reserved by publishing,
+      so re-check (or publish a placeholder) just before the first release.
 
   - id: jpeg-placement-m1a
     question: "Should I1/I2 read parity and the JPEG parser move into STAGE-001, as design section 12 places them in M1a?"
@@ -1284,11 +1288,15 @@ questions:
   - id: dng-identity-tags-have-no-category
     question: "DNG identity tags 0xC614 UniqueCameraModel, 0xC615 LocalizedCameraModel, 0xC68B OriginalRawFileName and 0xC634 DNGPrivateData (Adobe MakN, a copy of the MakerNote with serials) have no DEC-008 category, so no preset removes them. Give them one (a DEC-008 amendment)?"
     priority: medium
-    status: open
+    status: answered
     raised_by: claude-sonnet-5-5
     raised_at: 2026-11-10
     assigned_to: null
     notes: |
+      DECIDED 2026-11-11 (user took the recommendation): yes, add the categories via a DEC-008
+      amendment, using the candidate mapping below. Not yet implemented: needs its own spec (audit
+      table, oracle rows against ExifTool, a DNG fixture with all four tags, and a check that
+      Everything now leaves none of them).
       Found by the SPEC-022 verify (M3). Under GpsAndDevice, AllPii and Everything all four survive in
       both byte orders; ExifTool on an Everything output still prints IFD0:UniqueCameraModel,
       LocalizedCameraModel and OriginalRawFileName. The writer follows the audit and does not invent
@@ -1299,11 +1307,16 @@ questions:
   - id: tiff-ifd1-strips-is-a-page
     question: "In a bare TIFF, IFD1 with strips is a page, not a Thumbnail, but the audit rule calls it Thumbnail. Make that rule container-aware (a DEC-008 note) so multi-page TIFFs can be stripped under AllPii, All and Everything?"
     priority: medium
-    status: open
+    status: answered
     raised_by: claude-sonnet-5-5
     raised_at: 2026-11-10
     assigned_to: null
     notes: |
+      DECIDED 2026-11-11 (user took the recommendation): yes, make the rule container-aware. In a
+      bare TIFF an IFD1 is a Thumbnail only when it holds the JPEG pair 0x0201/0x0202 and no strips
+      or tiles; an IFD1 with strips or tiles is a page and is kept. Not yet implemented: needs its
+      own spec (audit rule, planner keeps the page, the D.3 refusal narrows, multi-page fixtures
+      stripped under AllPii/All/Everything with the oracle, and the tiled-IFD1 case).
       Found by the SPEC-022 verify (M4). ExifTool names page 2's strips IFD1:StripOffsets (record
       multipage-le.txt), the audit reports them under Thumbnail, so the three presets that include
       Thumbnail refuse every multi-page TIFF (ThumbnailNotLocated, DEC-013 D.3). Fail-closed and
