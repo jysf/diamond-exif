@@ -1492,10 +1492,14 @@ fn audit_seeds_are_committed_and_have_the_shapes_they_claim() {
         .collect();
     assert_eq!(blocks, vec![Some(0), Some(1)]);
 
-    // An IFD1 of strips with no JPEG pointer: a Thumbnail finding on 0x0111,
-    // with no range (the shape the real-target plant needed; see the handback).
+    // An IFD1 of strips with no JPEG pointer: in a bare TIFF a page (SPEC-023),
+    // in a JPEG's Exif block a Thumbnail finding on 0x0111 with no range.
     let strips = audit_seed("audit-ifd1-strips");
     let a = audit(&strips);
+    assert!(a.health().clean, "{:?}", a.health());
+    assert_eq!(a.findings_in(Category::Thumbnail).count(), 0);
+    let wrapped = jpeg_ifd1_strips();
+    let a = audit(&wrapped);
     assert!(a.health().clean, "{:?}", a.health());
     let t: Vec<_> = a.findings_in(Category::Thumbnail).collect();
     assert_eq!(t.len(), 1);
@@ -1604,9 +1608,28 @@ fn big_inventory() -> Vec<u8> {
     out
 }
 
+/// SPEC-023: the `audit-ifd1-strips` TIFF inside a JPEG's Exif block, where an
+/// IFD1 of strips is still a `Thumbnail` (in the bare TIFF it is a page).
+const GENERATED_JPEG_IFD1_STRIPS: &str = "generated:jpeg-ifd1-strips";
+
+fn jpeg_ifd1_strips() -> Vec<u8> {
+    let tiff = audit_seed("audit-ifd1-strips");
+    let payload = [&b"Exif\0\0"[..], &tiff[..]].concat();
+    let len = u16::try_from(payload.len() + 2).expect("fits one segment");
+    let mut v = vec![0xFF, 0xD8, 0xFF, 0xE1];
+    v.extend_from_slice(&len.to_be_bytes());
+    v.extend_from_slice(&payload);
+    v.extend_from_slice(&[
+        0xFF, 0xDA, 0x00, 0x08, 1, 1, 0, 0, 0x3F, 0, 0x12, 0x34, 0xFF, 0xD9,
+    ]);
+    v
+}
+
 fn plant_input(name: &str) -> Vec<u8> {
     if name == GENERATED_BIG_INVENTORY {
         big_inventory()
+    } else if name == GENERATED_JPEG_IFD1_STRIPS {
+        jpeg_ifd1_strips()
     } else {
         audit_seed(name)
     }
@@ -2270,13 +2293,13 @@ fn plants_before_spec_019() -> Vec<Plant> {
         // The IFD1-strips rule, both directions.
         Plant {
             name: "an IFD1 strips entry with no thumbnail finding",
-            input: "audit-ifd1-strips",
+            input: GENERATED_JPEG_IFD1_STRIPS,
             guard: "findings",
             apply: |f| f.findings.retain(|x| x.category != "Thumbnail"),
         },
         Plant {
             name: "a thumbnail finding on the wrong IFD1 entry",
-            input: "audit-ifd1-strips",
+            input: GENERATED_JPEG_IFD1_STRIPS,
             guard: "findings",
             apply: |f| {
                 let i = thumb_finding(f);

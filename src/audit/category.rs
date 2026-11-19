@@ -173,6 +173,10 @@ fn by_id(tag: u16) -> Option<Category> {
         0x010E | 0x9286 | 0x9C9B | 0x9C9C | 0x9C9E | 0x9C9F | 0xA436 => Some(Category::FreeText),
         // CameraModel: Make, Model, LensMake, LensModel.
         0x010F | 0x0110 | 0xA433 | 0xA434 => Some(Category::CameraModel),
+        // DNG UniqueCameraModel, LocalizedCameraModel (DEC-008 amendment, SPEC-023).
+        0xC614 | 0xC615 => Some(Category::CameraModel),
+        // DNG OriginalRawFileName: a name a person chose, not a device id.
+        0xC68B => Some(Category::FreeText),
         // Software: Software, CameraFirmware, RAWDevelopingSoftware,
         // ImageEditingSoftware, MetadataEditingSoftware.
         0x0131 | 0xA439..=0xA43C => Some(Category::Software),
@@ -183,7 +187,8 @@ fn by_id(tag: u16) -> Option<Category> {
         }
         // Authorship: Artist, Copyright, CameraOwnerName, XPAuthor, ImageEditor.
         0x013B | 0x8298 | 0xA430 | 0x9C9D | 0xA437 | 0xA438 => Some(Category::Authorship),
-        0x927C => Some(Category::MakerNote),
+        // MakerNote; DNGPrivateData (Adobe MakN) is a copy of it.
+        0x927C | 0xC634 => Some(Category::MakerNote),
         // DeviceId: ImageUniqueID, BodySerialNumber, LensSerialNumber,
         // CameraSerialNumber (DNG).
         0xA420 | 0xA431 | 0xA435 | 0xC62F => Some(Category::DeviceId),
@@ -248,6 +253,10 @@ mod tests {
             (0xA433, "LensMake", CameraModel),
             (0xA434, "LensModel", CameraModel),
             (0xC62F, "CameraSerialNumber", DeviceId),
+            (0xC614, "UniqueCameraModel", CameraModel),
+            (0xC615, "LocalizedCameraModel", CameraModel),
+            (0xC68B, "OriginalRawFileName", FreeText),
+            (0xC634, "DNGPrivateData", MakerNote),
             (0x9C9B, "XPTitle", FreeText),
             (0x9C9C, "XPComment", FreeText),
             (0x9C9E, "XPKeywords", FreeText),
@@ -276,9 +285,19 @@ mod tests {
     ];
 
     #[test]
+    fn dng_identity_tags_categorize() {
+        for kind in [IfdKind::Ifd0, IfdKind::Sub, IfdKind::Exif] {
+            assert_eq!(categorize(kind, 0xC614), Some(Category::CameraModel));
+            assert_eq!(categorize(kind, 0xC615), Some(Category::CameraModel));
+            assert_eq!(categorize(kind, 0xC68B), Some(Category::FreeText));
+            assert_eq!(categorize(kind, 0xC634), Some(Category::MakerNote));
+        }
+    }
+
+    #[test]
     fn categorize_matches_the_dec_008_table_row_for_row() {
         let table = dec_008_table();
-        assert_eq!(table.len(), 40, "40 ids in the DEC-008 tag table");
+        assert_eq!(table.len(), 44, "44 ids in the DEC-008 tag table");
         for (id, name, want) in &table {
             // The id decides: the same category in every IFD kind the table covers.
             for kind in NON_GPS_KINDS {

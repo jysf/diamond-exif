@@ -160,23 +160,23 @@ is unchanged (an IFD1 with strips and no 0x0201 is still a `Thumbnail`). Writer 
 
 ## Acceptance Criteria
 
-- [ ] `categorize` and the audit report the four DNG tags under the categories in the table, in IFD0 and in a
+- [x] `categorize` and the audit report the four DNG tags under the categories in the table, in IFD0 and in a
       SubIFD, both byte orders.
-- [ ] `strip(dng_identity, Everything)` and `AllPii` leave none of the four tags (entries deleted, out-of-line
+- [x] `strip(dng_identity, Everything)` and `AllPii` leave none of the four tags (entries deleted, out-of-line
       bytes zeroed); `GpsAndDevice` and `Gps` leave them byte-identical; the strip, tile and SubIFD data stay
       byte-identical; the self-check passes.
-- [ ] ExifTool on the `Everything` output of the DNG fixture prints none of IFD0:UniqueCameraModel,
+- [x] ExifTool on the `Everything` output of the DNG fixture prints none of IFD0:UniqueCameraModel,
       LocalizedCameraModel, OriginalRawFileName (the case recorded in the question), and prints
       DNGPrivateData nowhere.
-- [ ] In a bare TIFF, an IFD1 with strips or tiles yields no `Thumbnail` finding; in a JPEG Exif block an IFD1
+- [x] In a bare TIFF, an IFD1 with strips or tiles yields no `Thumbnail` finding; in a JPEG Exif block an IFD1
       with strips and no 0x0201 still does.
-- [ ] `strip(multipage, AllPii | All | Everything)` returns bytes: page 2's strips are byte-identical, its
+- [x] `strip(multipage, AllPii | All | Everything)` returns bytes: page 2's strips are byte-identical, its
       IFD1-held Make/DateTime entries (if any) are deleted per policy, and the JPEG-pair thumbnail case still
       removes IFD1 whole.
-- [ ] A tiled IFD1 page strips under the same presets (it was refused before).
-- [ ] An IFD1 with both the JPEG pair and strips is still refused (`ThumbnailNotLocated`).
-- [ ] Idempotence holds: stripping the output again is a no-op.
-- [ ] Every existing SPEC-020 to SPEC-022 test passes; any that asserted the old refusal is changed in this
+- [x] A tiled IFD1 page strips under the same presets (it was refused before).
+- [x] An IFD1 with both the JPEG pair and strips is still refused (`ThumbnailNotLocated`).
+- [x] Idempotence holds: stripping the output again is a no-op.
+- [x] Every existing SPEC-020 to SPEC-022 test passes; any that asserted the old refusal is changed in this
       spec and the change is named in the handoff.
 
 ## Failing Tests

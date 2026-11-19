@@ -131,3 +131,18 @@ Revisit when a real-world file shows personal data in a tag the table lists as i
 ## Amendment (2026-11-09, DEC-012)
 
 Two categories are added: `EmbeddedImage` (Medium) and `OtherSegment` (Medium), both block categories; a `COM` segment is a `FreeText` finding. The table above is otherwise unchanged. See DEC-012.
+
+## Amendment (2026-11-19, SPEC-023)
+
+Four DNG identity tags get categories (they apply in any non-GPS, non-Interop IFD, as 0xC62F does):
+
+| Tag | Name | Category |
+|---|---|---|
+| 0xC614 | UniqueCameraModel | `CameraModel` |
+| 0xC615 | LocalizedCameraModel | `CameraModel` |
+| 0xC68B | OriginalRawFileName | `FreeText` (a name a person chose; not a device serial, so not `DeviceId`) |
+| 0xC634 | DNGPrivateData | `MakerNote` (Adobe MakN, a copy of the MakerNote; removed whole, never edited) |
+
+Residual: `GpsAndDevice` still leaves 0xC634 (as it leaves 0x927C), because `MakerNote` is not in that preset (DEC-009).
+
+The IFD1-with-strips rule is container-aware. In a JPEG's Exif block it is unchanged (an IFD1 with strips and no 0x0201 is a `Thumbnail`). In a bare TIFF an IFD1 is a `Thumbnail` only through its JPEG pair 0x0201/0x0202; an IFD1 with strips or tiles is a page and yields no `Thumbnail` finding. The discriminator is `Origin.block` (`None` for a bare TIFF).

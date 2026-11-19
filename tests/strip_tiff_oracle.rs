@@ -110,3 +110,93 @@ fn the_comparator_goes_red_on_planted_faults() {
     assert!(check(spec, input, input).is_err());
     let _ = StripSpec::none();
 }
+
+const DNG_IDENTITY_NAMES: [&str; 4] = [
+    "UniqueCameraModel",
+    "LocalizedCameraModel",
+    "OriginalRawFileName",
+    "DNGPrivateData",
+];
+
+fn has_any(s: &Section, names: &[&str]) -> bool {
+    s.lines.iter().any(|l| names.contains(&l.tag.as_str()))
+}
+
+/// SPEC-023: ExifTool prints none of the DNG identity tags after `everything`
+/// (the case recorded in the `dng-identity-tags-have-no-category` question).
+fn dng_identity_after_everything(rec: &[Section]) {
+    let input = section(rec, "input");
+    // Red-proof: the input does carry them, so an empty output means something.
+    assert!(has_any(
+        input,
+        &["UniqueCameraModel", "OriginalRawFileName"]
+    ));
+    let out = section(rec, "everything");
+    assert!(!has_any(out, &DNG_IDENTITY_NAMES), "identity tags survive");
+    // Mutated copy: with one planted line the same check goes red.
+    let mut planted = out.clone();
+    planted.lines.push(tiff_records::Line {
+        group: "IFD0".into(),
+        tag: "UniqueCameraModel".into(),
+        value: "x".into(),
+    });
+    assert!(has_any(&planted, &DNG_IDENTITY_NAMES));
+    check(exif_core::StripPolicy::Everything.spec(), out, input).unwrap();
+    assert!(check(exif_core::StripPolicy::Everything.spec(), &planted, input).is_err());
+}
+
+#[test]
+fn exiftool_agrees_on_the_dng_identity_fixture_after_everything() {
+    for be in [false, true] {
+        dng_identity_after_everything(&replay(&tiff_shapes::dng_identity(be)));
+    }
+}
+
+/// SPEC-023: a page IFD1 is kept under `all_pii`: ExifTool still reads the
+/// page's strips and the output differs from the input only by removed tags.
+fn multipage_after_all_pii(rec: &[Section]) {
+    let input = section(rec, "input");
+    let out = section(rec, "all_pii");
+    let spec = exif_core::StripPolicy::AllPii.spec();
+    check(spec, out, input).unwrap();
+    // IFD1 is still a page (strips); Make is gone, the page's Software kept.
+    assert!(out
+        .lines
+        .iter()
+        .any(|l| l.group == "IFD1" && l.tag == "StripOffsets"));
+    assert!(!out.lines.iter().any(|l| l.tag == "Make"));
+    assert!(out
+        .lines
+        .iter()
+        .any(|l| l.group == "IFD1" && l.tag == "Software"));
+    // Red-proof: a lost page strip makes the comparator fail.
+    let mut lost = out.clone();
+    lost.lines
+        .retain(|l| !(l.group == "IFD1" && l.tag == "StripOffsets"));
+    assert!(check(spec, &lost, input).is_err());
+}
+
+#[test]
+fn exiftool_agrees_on_the_multipage_fixture_after_all_pii() {
+    for be in [false, true] {
+        multipage_after_all_pii(&replay(&tiff_shapes::multipage(be)));
+    }
+}
+
+#[test]
+fn live_exiftool_agrees_on_the_spec_023_fixtures() {
+    if !tools::exiftool_available() {
+        if std::env::var(REQUIRE_VAR).as_deref() == Ok("1") {
+            panic!("exiftool is not on PATH and {REQUIRE_VAR}=1 makes that a failure");
+        }
+        println!("SKIP live_exiftool_agrees_on_the_spec_023_fixtures - exiftool not on PATH");
+        return;
+    }
+    let version = tools::exiftool_version().unwrap();
+    let live =
+        |s: &tiff_shapes::Shape| parse_record(&tiff_records::record_text(s, &version).unwrap());
+    for be in [false, true] {
+        dng_identity_after_everything(&live(&tiff_shapes::dng_identity(be)));
+        multipage_after_all_pii(&live(&tiff_shapes::multipage(be)));
+    }
+}

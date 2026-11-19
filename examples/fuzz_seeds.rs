@@ -1541,6 +1541,11 @@ fn rewrite_tiff_seeds() -> Vec<(String, Vec<u8>)> {
         .into_iter()
         .map(|s| (s.name, s.bytes))
         .collect();
+    // SPEC-023: IFD1 with both the JPEG pair and strips (refused), not in all().
+    for be in [false, true] {
+        let s = tiff_shapes::page_and_jpeg(be);
+        inputs.push((s.name, s.bytes));
+    }
     inputs.extend(
         tiff_shapes::hostile()
             .into_iter()

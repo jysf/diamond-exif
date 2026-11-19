@@ -44,6 +44,13 @@ pub const C_COMMENT: &[u8] = b"CANARY-TIFF-USERCOMMENT";
 pub const C_NOTE: &[u8] = b"CANARY-TIFF-MAKERNOTE";
 pub const C_DNG_SERIAL: &[u8] = b"CANARY-DNG-SERIAL";
 pub const C_THUMB: &[u8] = b"CANARY-TIFF-THUMBNAIL";
+pub const C_UCM: &[u8] = b"CANARY-DNG-UNIQUE-CAMERA";
+pub const C_LCM: &[u8] = b"CANARY-DNG-LOCALIZED-CAMERA";
+pub const C_ORF: &[u8] = b"CANARY-DNG-ORIGINAL-RAW-NAME";
+pub const C_DPD: &[u8] = b"CANARY-DNG-PRIVATE-DATA";
+pub const C_SUB_UCM: &[u8] = b"CANARY-SUBIFD-UNIQUE-CAMERA";
+pub const C_SUB_ORF: &[u8] = b"CANARY-SUBIFD-ORIGINAL-RAW-NAME";
+pub const C_SUB_DPD: &[u8] = b"CANARY-SUBIFD-PRIVATE-DATA";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum K {
@@ -460,10 +467,84 @@ pub fn dng(be: bool) -> Shape {
     b.finish(&name("dng", be), false, false)
 }
 
+/// SPEC-023: a DNG-shaped file carrying the four DNG identity tags (0xC614,
+/// 0xC615, 0xC634, 0xC68B) in IFD0 and, three of them, in the raw SubIFD.
+pub fn dng_identity(be: bool) -> Shape {
+    let mut b = B::new(be);
+    let ifd0 = b.ifd(10);
+    let raw = b.ifd(7);
+    b.set_ifd0(ifd0);
+    b.text(ifd0, 0, 0x010F, C_MAKE, Some(Category::CameraModel));
+    b.data_entries(ifd0, 1, 3, (0x0111, 0x0117), &[180], 4);
+    b.short(ifd0, 2, 0x0112, 1);
+    b.long(ifd0, 4, 0x014A, raw as u32);
+    b.entry(ifd0, 5, 0xC612, BYTE, 4, V::Inline(vec![1, 4, 0, 0]));
+    b.text(ifd0, 6, 0xC614, C_UCM, Some(Category::CameraModel));
+    b.text(ifd0, 7, 0xC615, C_LCM, Some(Category::CameraModel));
+    b.blob(ifd0, 8, 0xC634, C_DPD, Category::MakerNote);
+    b.text(ifd0, 9, 0xC68B, C_ORF, Some(Category::FreeText));
+    b.short(raw, 0, 0x0103, 7);
+    b.short(raw, 1, 0x0142, 64);
+    b.short(raw, 2, 0x0143, 64);
+    b.data_entries(raw, 3, 4, (0x0144, 0x0145), &[1500, 1500], 11);
+    b.text(raw, 5, 0xC614, C_SUB_UCM, Some(Category::CameraModel));
+    b.blob(raw, 6, 0xC634, C_SUB_DPD, Category::MakerNote);
+    b.finish(&name("dngidentity", be), false, false)
+}
+
+/// SPEC-023: two pages; IFD1 is a tiled page (tiles, a Software canary).
+pub fn tiled_page(be: bool) -> Shape {
+    let mut b = B::new(be);
+    let p0 = b.ifd(4);
+    let p1 = b.ifd(5);
+    b.set_ifd0(p0);
+    b.next(p0, 4, p1 as u32);
+    b.text(p0, 0, 0x010F, C_MAKE, Some(Category::CameraModel));
+    b.data_entries(p0, 1, 3, (0x0111, 0x0117), &[200], 1);
+    b.short(p0, 2, 0x0112, 1);
+    b.short(p1, 0, 0x0142, 16);
+    b.short(p1, 1, 0x0143, 16);
+    b.data_entries(p1, 2, 3, (0x0144, 0x0145), &[128, 128], 5);
+    b.text(p1, 4, 0x0131, C_SOFTWARE1, Some(Category::Software));
+    b.finish(&name("tiledpage", be), true, false)
+}
+
+/// SPEC-023: IFD1 holds both the JPEG pair and strips. Not a removable
+/// thumbnail, not a page: the writer refuses it under a Thumbnail policy.
+/// Not in `all()`.
+pub fn page_and_jpeg(be: bool) -> Shape {
+    let mut b = B::new(be);
+    let p0 = b.ifd(4);
+    let p1 = b.ifd(6);
+    b.set_ifd0(p0);
+    b.next(p0, 4, p1 as u32);
+    b.text(p0, 0, 0x010F, C_MAKE, Some(Category::CameraModel));
+    b.data_entries(p0, 1, 3, (0x0111, 0x0117), &[200], 1);
+    b.short(p0, 2, 0x0112, 1);
+    let mut jpeg = vec![0xFF, 0xD8];
+    jpeg.extend_from_slice(C_THUMB);
+    jpeg.extend_from_slice(&[0xFF, 0xD9]);
+    let at = b.alloc(K::Thumb, &jpeg);
+    b.short(p1, 0, 0x0103, 6);
+    b.data_entries(p1, 1, 3, (0x0111, 0x0117), &[150], 5);
+    b.short(p1, 2, 0x0112, 1);
+    b.long(p1, 4, 0x0201, at);
+    b.long(p1, 5, 0x0202, jpeg.len() as u32);
+    b.finish(&name("pagejpeg", be), false, true)
+}
+
 pub fn all() -> Vec<Shape> {
     let mut v = Vec::new();
     for be in [false, true] {
-        v.extend([stripped(be), tiled(be), multipage(be), thumb(be), dng(be)]);
+        v.extend([
+            stripped(be),
+            tiled(be),
+            multipage(be),
+            thumb(be),
+            dng(be),
+            dng_identity(be),
+            tiled_page(be),
+        ]);
     }
     v
 }

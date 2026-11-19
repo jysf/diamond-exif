@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-19
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-023
@@ -46,18 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed
+  agent: claude-sonnet-5-5   # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
+  basis: estimate                  # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 230000              # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: null
-  branch: null
+  duration_minutes: 35
+  branch: claude/dec-008-dng-and-pages
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-19
+  notes: "tokens_total is an estimate of context use (no transcript measurement possible from inside); orchestrator should replace with harness subagent_tokens. About 60 tool calls."                       # if unusual; double-quote it — an unquoted " #" starts a YAML comment
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -134,38 +134,37 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `claude/dec-008-dng-and-pages`, committed, not pushed, no PR.
+- **Completed at:** 2026-11-19
+- **All acceptance criteria met?** yes. The existing deletion path refused none of the four DNG tags (IFD0 and SubIFD, both byte orders); no writer special case for DNG.
+
+Changes: `by_id` rows (0xC614/0xC615 CameraModel, 0xC68B FreeText, 0xC634 MakerNote); audit IFD1 strips rule gated on `origin.block.is_some()`; `select` sets `thumbnail` only with an IFD1 `Thumbnail` finding in that block; `verify.rs` `entries` check removes IFD1 only in blocks where the audit has a IFD1 `Thumbnail` finding (needed: the self-check otherwise failed `Entries` on a kept page); fuzz model `fuzz/shared/audit_invariants.rs` updated (four rows, container-aware rule). DEC-008 and DEC-013 amendments, questions already `answered` (notes now name SPEC-023), README bullet cut, `tiff.rs` doc.
+
+Tests: new `src/audit/category.rs` unit test, `tests/audit_model.rs` (page rule, JPEG guard), `tests/strip_tiff.rs` (multipage and tiled page strip, DNG identity, pair+strips still refused), `tests/strip_tiff_oracle.rs` (dng identity after everything, multipage after all_pii, live variant, red-proofs by planted lines). Shown red before the src change: category unit test, `bare_tiff_ifd1_with_strips_is_a_page`, and 5 strip_tiff tests failed; the oracle tests were written with the records and were not run red against old src (the red-proof is planted-line mutation of the comparator, not a reverted by_id).
+- Replaced test: the multi-page refusal assertion in `a_page_ifd1_is_never_removed_and_a_jpeg_thumbnail_is` (strip_tiff.rs) and `expect_refusal` (now always false) in `every_shape_under_every_policy_...`. Also changed: lib test `an_ifd1_with_strips_is_a_thumbnail_in_a_jpeg_and_a_page_in_a_bare_tiff` (renamed), `audit_seeds_are_committed...` and the two `audit-ifd1-strips` plants in `tests/fuzz_layout.rs` (seed bytes untouched: pinned by `budget_oracle`; the plants now use a generated JPEG-wrapped copy).
+- Records: `dngidentity-{le,be}.txt`, `tiledpage-{le,be}.txt` new; `multipage-*.txt` gain `all_pii`, `all`, `everything` sections; the other 10 records byte-identical. Seeds: 4 shapes x 7 heads x 2 plus soi variants added to `fuzz/seeds/rewrite_tiff` (dngidentity, tiledpage, pagejpeg).
+- Gates: `just lint`, `lint-fuzz`, `deny`, `deny-fuzz`, `forbid-unsafe`, `validate`, full `cargo test` all green (lint needs `RUSTUP_TOOLCHAIN=1.90.0`); `just fuzz-smoke rewrite_tiff` 60 s, 537k runs, clean. Not run: `lint-red-proof`, `mutation-oracle` separately (included in cargo test: green).
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** about 230000 (estimate)
+- **Estimated USD:** null
+- **Duration (minutes):** 35
+- **Source of the number:** none available (estimate; replace with harness figure)
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
-- **Deviations from spec:**
-  - [list]
-- **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+- **New decisions emitted:** none (amendments to DEC-008 and DEC-013).
+- **Deviations from spec:** verify.rs change and fuzz model change were not listed in Outputs but required. The toolchain brief's seed counts and the `audit-ifd1-strips` description were not updated.
+- **Follow-up work identified:** none required; `rewrite_tiff` seed counts in docs (toolchain brief) may want a refresh.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — The spec did not mention the self-check (`verify.rs`) or the independent fuzz model, both of which encode the old thumbnail rule.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — The pinned seed hashes in `budget_oracle`, which forbid editing `audit-ifd1-strips`.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Grep for every encoding of the IFD1 strips rule first (`grep 0x0111`), then write tests.
