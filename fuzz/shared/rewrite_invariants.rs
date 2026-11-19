@@ -1136,7 +1136,17 @@ mod rewrite_invariants {
         });
         let mut unlink: Option<usize> = None;
         if spec.contains(Category::Thumbnail) {
-            if let Some(k) = ifd1 {
+            // An IFD1 is a thumbnail only as the audit calls it (SPEC-023):
+            // a 0x0201 pointer, or strips with no 0x0201. An IFD1 holding
+            // neither (a lone 0x0202, say) names no thumbnail, so there is
+            // nothing to remove and nothing to refuse.
+            let is_thumbnail = |k: usize| {
+                ifds[k]
+                    .ents
+                    .iter()
+                    .any(|e| e.tag == 0x0201 || e.tag == 0x0111)
+            };
+            if let Some(k) = ifd1.filter(|&k| is_thumbnail(k)) {
                 thumb.as_ref()?;
                 // The thumbnail is located only when IFD1 names it once: one
                 // 0x0201, one 0x0202, no strip tags.

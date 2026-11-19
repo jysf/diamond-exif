@@ -6470,7 +6470,7 @@ fn a_removal_that_joins_stray_bytes_into_a_marker_is_refused_and_excused_exactly
 /// joined-stray seeds, the nothing-to-edit crash and the 180 seeds of the
 /// round-4 leak inputs (HANDOFF-045) and the 144 seeds of the round-5 ones
 /// (HANDOFF-046).
-const REWRITE_SEEDS: usize = 1037;
+const REWRITE_SEEDS: usize = 1038;
 
 #[test]
 fn seed_count_is_pinned() {
@@ -6492,8 +6492,8 @@ fn seed_count_is_pinned() {
     assert_eq!(want.len(), entry, "every generated entry seed is committed");
     assert_eq!(
         entry,
-        REWRITE_SEEDS - 186,
-        "SPEC-020's 186 plus the entry seeds"
+        REWRITE_SEEDS - 187,
+        "SPEC-020's 186, SPEC-023's one CI crash seed, plus the entry seeds"
     );
 }
 
