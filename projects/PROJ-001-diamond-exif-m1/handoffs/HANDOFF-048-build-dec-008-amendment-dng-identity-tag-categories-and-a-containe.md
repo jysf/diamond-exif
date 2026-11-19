@@ -50,15 +50,15 @@ handback:
   agent: claude-sonnet-5-5   # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: estimate                  # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: 230000              # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: 35
+  basis: agent-result                # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 173750              # REAL combined count — what cost-audit reads
+  estimated_usd: 1.15              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  duration_minutes: 14
   branch: claude/dec-008-dng-and-pages
   pr: null
   completed_at: 2026-11-19
-  notes: "tokens_total is an estimate of context use (no transcript measurement possible from inside); orchestrator should replace with harness subagent_tokens. About 60 tool calls."                       # if unusual; double-quote it — an unquoted " #" starts a YAML comment
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "Orchestrator correction: tokens_total is the harness subagent_tokens (173,750; 42 tool uses; 827,609 ms = 13.8 min) at 6.60 USD/Mtok = 1.15 USD, the same basis as earlier specs. The builder reported an estimate of 230,000 and about 60 tool calls, which is not used."
+  synced_at: 2026-11-19
 ---
 
 # HANDOFF-048: Build SPEC-023 DEC-008 amendment (DNG identity tags, container-aware TIFF page rule)

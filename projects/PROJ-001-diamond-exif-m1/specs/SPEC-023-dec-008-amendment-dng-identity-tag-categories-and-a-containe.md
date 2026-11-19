@@ -68,11 +68,21 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: 600000
-  sessions: []
+  sessions:
+    - cycle: build
+      handoff: HANDOFF-048
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 173750
+      estimated_usd: 1.15
+      duration_minutes: 14
+      recorded_at: 2026-11-19
+      notes: "Orchestrator correction: tokens_total is the harness subagent_tokens (173,750; 42 tool uses; 827,609 ms = 13.8 min) at 6.60 USD/Mtok = 1.15 USD, the same basis as earlier specs. The builder reported an estimate of 230,000 and about 60 tool calls, which is not used."
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 173750
+    estimated_usd: 1.15
+    session_count: 1
 ---
 
 # SPEC-023: DEC-008 amendment: DNG identity tag categories and a container-aware TIFF page rule
