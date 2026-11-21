@@ -32,7 +32,7 @@ value_contribution:
     - "write IFD0, its structural tags, SubIFDs or image data (the placing writer owns those)"
     - "parse, move or rewrite a MakerNote (DEC-013 C; question makernote-internal-offsets)"
     - "add set operations, a strip CLI, or PNG, WebP or HEIC support (M1d and later)"
-    - "publish to crates.io (M1f; question exif-block-crates-io-release)"
+    - "publish to crates.io: an early exif-core pre-release follows this stage as its own release spec (monorail-000/DEC-077 item 2; question exif-block-crates-io-release, answered)"
 
 # Orchestration cost — the spend that has no spec to attach to (roadmap:
 # orchestration + framing cost attribution). Framing a stage, deciding the spec
@@ -68,7 +68,7 @@ Nothing is urgent: the consumer is monorail-000's PROJ-002, which has not starte
 - **STAGE-004 (M1c writer, shipped 2026-11-10)** is strip only: removals and same-length patches, "never grow, never relocate". The block builder is neither, so it is a new stage, not a STAGE-004 follow-up. It reuses STAGE-004's walk, audit categories and self-check pattern.
 - **M1d** (PNG and WebP write and strip, StripPolicy presets, MakerNote rules) is about more containers. The builder adds none. M1d's MakerNote read rules could later make a MakerNote movable (request 2), which would be an amendment to DEC-014, not part of this stage.
 - **M1e** (HEIC read, IPTC and ICC passthrough, C2PA) is unrelated.
-- **M1f** holds the crates.io publish. The consumer needs a release it can pin exactly. STAGE-006 (on its own branch) releases the `exif-audit` binary only and says it does not publish the library. Whether to publish an early pre-release of `exif-core` for this consumer is question `exif-block-crates-io-release`, for jysf.
+- **M1f** holds the full crates.io publish. The consumer needs a release it can pin exactly, so jysf chose an early `exif-core` pre-release once this stage ships and SPEC-025 and SPEC-026 are verified (monorail-000/DEC-077 item 2). It is a release spec after this stage, not part of it. STAGE-006 (on its own branch) releases the `exif-audit` binary only, and its planned tag v0.1.0-alpha.1 must not be claimed twice.
 
 ## Success Criteria
 
@@ -87,9 +87,9 @@ Nothing is urgent: the consumer is monorail-000's PROJ-002, which has not starte
 - Strip-policy presets applied while building (request 3), as the last and separable spec.
 
 ### Explicitly out of scope
-- IFD0 and its tags, SubIFDs, IFD1, image data. See question `exif-block-ifd0-identity-tags`: IFD0's non-structural tags (Make, Model, Artist, Copyright, DateTime, Software, the DNG identity tags) are outside the block as requested, so nobody carries them yet.
+- IFD0 and its tags, SubIFDs, IFD1, image data. IFD0's descriptive tags (Make, Model, Artist, Copyright, DateTime, Software, the DNG identity tags) are passed to irradiance by the consumer as typed fields (irradiance/DEC-071 §3a, monorail-000/DEC-077; question `exif-block-ifd0-identity-tags`, answered).
 - MakerNote relocation; set operations; containers other than TIFF/DNG (and possibly JPEG); BigTIFF.
-- A crates.io release.
+- The crates.io pre-release itself (a release spec after this stage).
 
 ## Spec Backlog
 
@@ -109,7 +109,7 @@ Nothing is urgent: the consumer is monorail-000's PROJ-002, which has not starte
 
 ### Depends on
 - STAGE-001 (the tolerant walk, the entry budget), STAGE-004 and STAGE-005 (the TIFF writer path, the audit categories, the self-check pattern).
-- External: the offset contract is agreed with irradiance/STAGE-017 (DEC-015 accepted 2026-11-21, irradiance/DEC-072). Still open with irradiance and monorail-000: whether a GPS-only block is allowed (irradiance/DEC-072 requires an Exif IFD; DEC-014 item 1). Consumer context: monorail-000/DEC-075 and DEC-076.
+- External: the offset contract is agreed with irradiance/STAGE-017 (DEC-015 accepted 2026-11-21; irradiance/DEC-072, still `proposed` there). A GPS-only block is allowed (monorail-000/DEC-077 item 1; DEC-014 amendment), and irradiance/DEC-072's amendment (jysf/irradiance#291) makes both offsets optional with at least one required. Gate: SPEC-025's design does not start until irradiance confirms the optional Exif offset (irradiance/DEC-072 accepted as amended, or a new DEC). GPS-only blocks are pending until then. If irradiance declines, tell jysf so monorail-000 can pick an empty Exif IFD or dropping the block. Consumer context: monorail-000/DEC-075, DEC-076 and DEC-077.
 
 ### Enables
 - monorail-000's Linear DNG export (its PROJ-002), with irradiance/STAGE-017.

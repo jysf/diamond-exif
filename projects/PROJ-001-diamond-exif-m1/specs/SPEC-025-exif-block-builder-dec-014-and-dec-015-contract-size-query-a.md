@@ -7,7 +7,7 @@ task:
   id: SPEC-025
   type: story                      # epic | story | task | bug | chore
   cycle: frame                     # frame | design | build | verify | ship
-  blocked: false
+  blocked: true                    # design waits on irradiance confirming the optional Exif offset (irradiance/DEC-072, jysf/irradiance#291)
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
@@ -86,7 +86,7 @@ cost:
 
 First spec of STAGE-007 (PROJ-001). The writer can so far only remove bytes in place (DEC-013). This spec adds the first operation that builds IFDs: the relocatable Exif block of DEC-014, with the base-first offset contract of DEC-015. It is the stage's core. SPEC-026 adds ExifTool parity and SPEC-027 adds policy presets on top of it.
 
-Design starts only after DEC-014 and DEC-015 are accepted (DEC-015 needs irradiance/STAGE-017's agreement, question `exif-block-offset-contract-agreement`). Open for design: whether a JPEG Exif blob is accepted as a source as well as a bare TIFF or DNG, the result and error type names, the default budget, and the answer to question `exif-block-byte-order-sensitive-undefined`.
+Design starts only after DEC-014 and DEC-015 are accepted. DEC-015 was accepted on 2026-11-21. Do not start design until irradiance has confirmed the optional Exif offset, by accepting irradiance/DEC-072 as amended in jysf/irradiance#291 or in a new irradiance DEC. Until then GPS-only blocks are pending (monorail-000/DEC-077 follow-up, 2026-11-21). If irradiance declines, tell jysf, so monorail-000 can choose between an empty Exif IFD and dropping the block, and DEC-014 item 1 is amended to match. Open for design: whether a JPEG Exif blob is accepted as a source as well as a bare TIFF or DNG, the result and error type names, the default budget, and the answer to question `exif-block-byte-order-sensitive-undefined`.
 
 Requested by monorail-000 (its `docs/upstream/diamond-exif-requests.md`; consumer decision monorail-000/DEC-075). Cross-repo references are context only and never `depends_on` entries.
 

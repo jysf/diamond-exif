@@ -1334,7 +1334,7 @@ questions:
     raised_at: 2026-11-20
     assigned_to: jysf
     notes: |
-      ANSWERED 2026-11-21: yes. irradiance/DEC-072 (accepted, jysf/irradiance#284) agrees, with the base
+      ANSWERED 2026-11-21: yes. irradiance/DEC-072 (proposed in jysf/irradiance#284, amended in #291) agrees, with the base
       fixed at file offset 8 and little-endian; DEC-015 accepted by jysf. Was:
       DEC-015 is `proposed` until this is answered, and SPEC-025 design waits on it. monorail-000 leans
       the same way (its docs/upstream/diamond-exif-requests.md, request 1). monorail-000/DEC-075 item 5,
@@ -1345,11 +1345,14 @@ questions:
   - id: exif-block-ifd0-identity-tags
     question: "The requested block leaves IFD0 out, so Make, Model, Artist, Copyright, DateTime, Software, CameraSerialNumber and the DNG identity tags (UniqueCameraModel is required in a DNG) are carried by neither the block nor, as specified, irradiance. Who writes them in the export?"
     priority: high
-    status: open
+    status: answered
     raised_by: claude-opus-5-5
     raised_at: 2026-11-20
     assigned_to: jysf
     notes: |
+      ANSWERED 2026-11-21: option (a). The consumer passes IFD0's descriptive tags to irradiance as
+      typed ASCII fields (irradiance/DEC-071 §3a; monorail-000/DEC-076 item 4, DEC-077 items 5 to 7 and
+      10). The block stays Exif, GPS and Interop only (DEC-014 amendment, 2026-11-21). Was:
       For monorail-000 (its requests document and monorail-000/DEC-075 item 5). In a DNG these tags
       are IFD0 entries, not Exif IFD entries, so ExifTool's IFD0 group of the export would differ from
       the source even when the consumer's acceptance check ("same Exif and GPS values") passes. Options:
@@ -1374,11 +1377,17 @@ questions:
   - id: exif-block-crates-io-release
     question: "Should exif-core get an early crates.io pre-release so monorail-000 can pin the Exif block builder exactly, or does the block wait for the M1f publish?"
     priority: medium
-    status: open
+    status: answered
     raised_by: claude-opus-5-5
     raised_at: 2026-11-20
     assigned_to: jysf
     notes: |
+      ANSWERED 2026-11-21 by jysf (monorail-000/DEC-077 item 2): cut an early crates.io pre-release of
+      exif-core once STAGE-007 ships and SPEC-025 and SPEC-026 are verified, without waiting for M1f.
+      It must be a real published version the consumer can pin exactly, not a git dependency. It is its
+      own release spec after STAGE-007 (DEC-006 pre-flight). The version comes from `just next-version`
+      (semver) at that spec: STAGE-006 (unmerged) plans the tag v0.1.0-alpha.1 for the exif-audit
+      binary, so the two releases must not both claim it. Was:
       The consumer needs an exact pin before its PROJ-002 export spec. The design document puts the
       crates.io publish in M1f (after the 24 h fuzz gate). STAGE-006 (on its own branch) releases only
       the exif-audit binary and lists "publish exif-core to crates.io" as out of scope. An early
