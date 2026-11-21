@@ -148,10 +148,13 @@ mod png_metadata_invariants {
                 b"tEXt" | b"zTXt" | b"iTXt" => {
                     let ty = c.ty;
                     let bad = Error::BadTextChunk { at: off };
-                    let Some(k) = name_len(&d[s..e]) else {
+                    // The keyword runs to the first NUL however long; only no NUL
+                    // or an empty keyword leaves nothing to locate.
+                    let Some(k) = find_nul(d, s, e).map(|i| i - s).filter(|&k| k > 0) else {
                         self.record(bad, off);
                         return;
                     };
+                    let mut malformed = k > 79;
                     let kw = (s, s + k);
                     let mut p = s + k + 1;
                     let (compressed, vstart) = match &ty {
@@ -164,11 +167,13 @@ mod png_metadata_invariants {
                             (true, p + 1)
                         }
                         _ => {
-                            if p + 2 > e || d[p] > 1 {
+                            if p + 2 > e {
                                 self.record(bad, off);
                                 return;
                             }
-                            let flag = d[p] == 1;
+                            // Any flag but 0 is compressed; above 1 is malformed.
+                            let flag = d[p] != 0;
+                            malformed |= d[p] > 1;
                             p += 2;
                             let Some(a) = find_nul(d, p, e) else {
                                 self.record(bad, off);
@@ -181,8 +186,11 @@ mod png_metadata_invariants {
                             (flag, b + 1)
                         }
                     };
+                    if malformed {
+                        self.record(bad, off);
+                    }
                     let keyword = &d[kw.0..kw.1];
-                    let region = if keyword == b"XML:com.adobe.xmp" && &ty != b"zTXt" {
+                    let region = if keyword == b"XML:com.adobe.xmp" {
                         (
                             0,
                             off,

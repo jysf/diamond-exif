@@ -171,13 +171,15 @@ fn xmp_routes_for_itxt_and_legacy_text() {
             (false, &b"<c/>"[..])
         ]
     );
-    // zTXt is not an XMP carrier (DEC-018): it is ordinary compressed text.
+    // zTXt is an XMP carrier too, always compressed (DEC-018).
     let d = wrap(&[ztxt(k, &[1, 2])]);
     let m = read(&d).expect("reads");
+    assert!(m.is_clean());
     assert!(matches!(
         m.regions()[0],
-        PngRegion::Text {
+        PngRegion::Xmp {
             compressed: true,
+            data: &[1, 2],
             ..
         }
     ));
@@ -290,15 +292,11 @@ fn ordinary_text_chunks_are_text() {
 
 #[test]
 fn bad_text_chunks_are_issues_without_regions() {
-    let mut kw80 = vec![b'a'; 80];
-    kw80.extend_from_slice(b"\0x");
-    let mut kw79 = vec![b'a'; 79];
-    kw79.extend_from_slice(b"\0x");
+    // Nothing to locate: no NUL, an empty keyword, a truncated header.
     let cases: Vec<(&str, Vec<u8>)> = vec![
         ("no NUL", chunk(b"tEXt", b"Comment")),
         ("empty chunk", chunk(b"tEXt", b"")),
         ("empty keyword", chunk(b"tEXt", b"\0v")),
-        ("80-byte keyword", chunk(b"tEXt", &kw80)),
         ("zTXt no method", chunk(b"zTXt", b"Title\0")),
         ("iTXt no flag", chunk(b"iTXt", b"Title\0")),
         ("iTXt no method", chunk(b"iTXt", b"Title\0\0")),
@@ -307,8 +305,6 @@ fn bad_text_chunks_are_issues_without_regions() {
             "iTXt no translated NUL",
             chunk(b"iTXt", b"Title\0\0\0en\0tr"),
         ),
-        ("iTXt flag 2", chunk(b"iTXt", b"Title\0\x02\0\0\0x")),
-        ("iTXt flag 255", chunk(b"iTXt", b"Title\0\xFF\0\0\0x")),
     ];
     for (name, c) in cases {
         let d = wrap(&[c]);
@@ -321,8 +317,62 @@ fn bad_text_chunks_are_issues_without_regions() {
         );
     }
     // The boundary: a 79-byte keyword is fine.
+    let mut kw79 = vec![b'a'; 79];
+    kw79.extend_from_slice(b"\0x");
     let d = wrap(&[chunk(b"tEXt", &kw79)]);
     assert!(read(&d).expect("reads").is_clean());
+}
+
+#[test]
+fn long_keyword_and_odd_itxt_flag_are_issues_with_regions() {
+    let mut kw80 = vec![b'a'; 80];
+    kw80.extend_from_slice(b"\0x");
+    let mut long_raw = b"Raw profile type ".to_vec();
+    long_raw.extend_from_slice(&[b'p'; 70]);
+    long_raw.extend_from_slice(b"\0hex");
+    let d = wrap(&[chunk(b"tEXt", &kw80)]);
+    assert_eq!(errors(&d), [Error::BadTextChunk { at: FIRST }]);
+    let m = read(&d).expect("reads");
+    assert!(matches!(
+        m.regions()[0],
+        PngRegion::Text { keyword, data: b"x", .. } if keyword == &kw80[..80]
+    ));
+    // A long keyword is routed by the same rules as a short one.
+    let d = wrap(&[chunk(b"tEXt", &long_raw)]);
+    assert_eq!(errors(&d), [Error::BadTextChunk { at: FIRST }]);
+    let m = read(&d).expect("reads");
+    assert!(matches!(
+        m.regions()[0],
+        PngRegion::RawProfile { profile, compressed: false, .. } if profile == [b'p'; 70]
+    ));
+    // An iTXt flag other than 0 is compressed, and is also an issue when
+    // it is not 1.
+    for flag in [2u8, 255] {
+        let d = wrap(&[chunk(
+            b"iTXt",
+            &[&b"XML:com.adobe.xmp\0"[..], &[flag, 0, 0, 0], b"zz"].concat(),
+        )]);
+        assert_eq!(errors(&d), [Error::BadTextChunk { at: FIRST }]);
+        let m = read(&d).expect("reads");
+        assert!(matches!(
+            m.regions()[0],
+            PngRegion::Xmp {
+                compressed: true,
+                data: b"zz",
+                ..
+            }
+        ));
+    }
+    let d = wrap(&[chunk(b"iTXt", b"Title\0\x02\0\0\0x")]);
+    let m = read(&d).expect("reads");
+    assert!(matches!(
+        m.regions()[0],
+        PngRegion::Text {
+            compressed: true,
+            data: b"x",
+            ..
+        }
+    ));
 }
 
 #[test]

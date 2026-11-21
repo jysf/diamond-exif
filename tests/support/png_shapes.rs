@@ -324,7 +324,41 @@ pub fn meta_seeds() -> Vec<(&'static str, Vec<u8>)> {
                 raw_chunk(0x8000_0000, b"IDAT", b"", 0),
             ]),
         ),
+        (
+            "meta-ztxt-xmp",
+            wrap(vec![ztxt(b"XML:com.adobe.xmp", &[0x78, 1, 2])]),
+        ),
+        (
+            "meta-raw-lowercase",
+            wrap(vec![
+                text(b"xml:com.adobe.xmp", b"<x/>"),
+                raw_profile_lowercase(),
+            ]),
+        ),
+        ("meta-long-keyword", wrap(vec![long_raw_profile()])),
+        (
+            "meta-itxt-flag-2",
+            wrap(vec![chunk(b"iTXt", &itxt_xmp_flag_2())]),
+        ),
     ]
+}
+
+/// A `tEXt` chunk whose keyword is `raw profile type exif` in lowercase.
+fn raw_profile_lowercase() -> Vec<u8> {
+    text(b"raw profile type exif", b"hex")
+}
+
+/// A raw-profile `tEXt` chunk whose keyword is 87 bytes long.
+fn long_raw_profile() -> Vec<u8> {
+    raw_profile(&"x".repeat(70), b"hex")
+}
+
+/// An `iTXt` payload for XMP with the compression flag set to 2.
+fn itxt_xmp_flag_2() -> Vec<u8> {
+    let mut d = b"XML:com.adobe.xmp\0".to_vec();
+    d.extend_from_slice(&[2, 0, 0, 0]);
+    d.extend_from_slice(&[0x78, 1, 2]);
+    d
 }
 
 /// The committed `png_chunks` seeds, name and bytes, in a stable order: the

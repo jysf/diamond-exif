@@ -131,11 +131,12 @@ impl<'a> PngExifBlock<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum PngRegion<'a> {
-    /// XMP: an `iTXt` or `tEXt` chunk whose keyword is `XML:com.adobe.xmp`.
+    /// XMP: an `iTXt`, `tEXt` or `zTXt` chunk whose keyword is `XML:com.adobe.xmp`.
     Xmp {
         /// Input offset of the chunk.
         offset: usize,
-        /// The `iTXt` compression flag (`false` for `tEXt`). When true `data`
+        /// The `iTXt` flag is not 0, or the chunk is `zTXt` (`false` for
+        /// `tEXt`). When true `data`
         /// is a zlib stream that is not inflated.
         compressed: bool,
         /// The text field.
@@ -353,6 +354,9 @@ struct TextParts<'a> {
     keyword: &'a [u8],
     compressed: bool,
     value: &'a [u8],
+    /// The chunk is malformed but still locatable (DEC-018): a keyword of 80
+    /// bytes or more, or an `iTXt` flag other than 0 or 1.
+    bad: bool,
 }
 
 /// Position of the NUL that ends a keyword or profile name, which must be 1 to
@@ -363,9 +367,15 @@ fn name_end(data: &[u8]) -> Option<usize> {
     (end > 0).then_some(end)
 }
 
-/// The header of a `tEXt`, `zTXt` or `iTXt` chunk; `None` when malformed.
+/// The header of a `tEXt`, `zTXt` or `iTXt` chunk. `None` when there is nothing
+/// to locate: no NUL, an empty keyword, or a truncated header. A keyword of 80
+/// bytes or more, or an `iTXt` flag above 1, is located with `bad` set.
 fn text_parts(kind: ChunkKind, data: &[u8]) -> Option<TextParts<'_>> {
-    let end = name_end(data)?;
+    let end = data.iter().position(|&b| b == 0)?;
+    if end == 0 {
+        return None;
+    }
+    let mut bad = end > MAX_KEYWORD;
     let keyword = data.get(..end)?;
     let rest = data.get(end.checked_add(1)?..)?;
     match kind {
@@ -373,20 +383,20 @@ fn text_parts(kind: ChunkKind, data: &[u8]) -> Option<TextParts<'_>> {
             keyword,
             compressed: false,
             value: rest,
+            bad,
         }),
         // A method byte follows the keyword; the text is always compressed.
         ChunkKind::Ztxt => Some(TextParts {
             keyword,
             compressed: true,
             value: rest.get(1..)?,
+            bad,
         }),
         ChunkKind::Itxt => {
             let (&flag, rest) = rest.split_first()?;
-            let compressed = match flag {
-                0 => false,
-                1 => true,
-                _ => return None,
-            };
+            // Any flag other than 0 is read as compressed, as ExifTool does.
+            let compressed = flag != 0;
+            bad |= flag > 1;
             let (_method, rest) = rest.split_first()?;
             // Language tag, then translated keyword, each NUL-terminated.
             let lang_end = rest.iter().position(|&b| b == 0)?;
@@ -397,6 +407,7 @@ fn text_parts(kind: ChunkKind, data: &[u8]) -> Option<TextParts<'_>> {
                 keyword,
                 compressed,
                 value,
+                bad,
             })
         }
         _ => None,
@@ -464,12 +475,16 @@ impl<'a> Extract<'a> {
                     keyword,
                     compressed,
                     value,
+                    bad,
                 }) = text_parts(kind, data)
                 else {
                     self.record(Error::BadTextChunk { at: offset }, offset);
                     return;
                 };
-                let region = if keyword == XMP_KEYWORD && kind != ChunkKind::Ztxt {
+                if bad {
+                    self.record(Error::BadTextChunk { at: offset }, offset);
+                }
+                let region = if keyword == XMP_KEYWORD {
                     PngRegion::Xmp {
                         offset,
                         compressed,
