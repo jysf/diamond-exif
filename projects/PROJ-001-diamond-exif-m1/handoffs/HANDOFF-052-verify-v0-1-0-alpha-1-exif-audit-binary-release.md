@@ -50,14 +50,14 @@ handback:
   agent: claude-opus-5-5           # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: punch-list              # verify handoffs: approved | punch-list | rejected
-  basis: transcript                # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: 1578357            # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: 20
+  basis: agent-result                # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 136801              # REAL combined count — what cost-audit reads
+  estimated_usd: 0.90              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  duration_minutes: 5
   branch: claude/alpha-release-exif-audit
   pr: null
   completed_at: 2026-11-20         # YYYY-MM-DD
-  notes: "Round 2, PUNCH LIST (1 High, 0 Medium, 4 Low). tokens_total is a transcript floor that includes cache reads (1,448,438 of it); without cache reads it is 175,919. It covers the verifier and its fetch subagent, which the harness reported at 39,291 subagent_tokens. No USD rate for claude-opus-5-5 in docs/cost-tracking.md."
+  notes: "Round 2, PUNCH LIST (1 High, 4 Low): the annotated-tag check rejects every real annotated tag (actions/checkout@v4 overwrites it). Orchestrator correction: tokens_total is the harness subagent_tokens (136,801; 27 tool uses; 286,999 ms = 4.8 min) at 6.60 USD/Mtok = 0.90 USD. The verifier also used a fetch subagent it reported at 39,291 subagent_tokens, not added here (unclear whether the harness figure already includes it). The verifier self-reported 1,578,357 (transcript, cache reads included), not used."
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 

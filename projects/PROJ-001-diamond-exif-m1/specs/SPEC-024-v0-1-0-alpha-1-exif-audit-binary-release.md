@@ -70,10 +70,20 @@ cost:
       duration_minutes: 7
       recorded_at: 2026-11-20
       notes: "Round 1, PUNCH LIST (no High, 2 Medium, 8 Low). Orchestrator correction: tokens_total is the harness subagent_tokens (133,171; 29 tool uses; 392,796 ms = 6.5 min) at 6.60 USD/Mtok = 0.88 USD. The verifier self-reported 1,982,859 (transcript, cache reads included), not used."
+    - cycle: verify
+      handoff: HANDOFF-052
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 136801
+      estimated_usd: 0.90
+      duration_minutes: 5
+      recorded_at: 2026-11-20
+      notes: "Round 2, PUNCH LIST (1 High, 4 Low): the annotated-tag check rejects every real annotated tag (actions/checkout@v4 overwrites it). Harness subagent_tokens (136,801; 27 tool uses; 4.8 min) at 6.60 USD/Mtok = 0.90 USD. The verifier's own fetch subagent (39,291) is not added: unclear whether the harness figure includes it. The verifier self-reported 1,578,357 (cache reads included), not used."
   totals:
-    tokens_total: 414944
-    estimated_usd: 2.74
-    session_count: 2
+    tokens_total: 551745
+    estimated_usd: 3.64
+    session_count: 3
 ---
 
 # SPEC-024: v0.1.0-alpha.1 exif-audit binary release
