@@ -68,11 +68,21 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: null
-  sessions: []
+  sessions:
+    - cycle: build
+      handoff: HANDOFF-054
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 254968
+      estimated_usd: 1.68
+      duration_minutes: 13
+      recorded_at: 2026-11-21
+      notes: "No token counter is available inside this subagent run, so tokens_total is null rather than invented; the orchestrator replaces it with the harness subagent_tokens figure. About 60 tool calls."
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 254968
+    estimated_usd: 1.68
+    session_count: 1
 ---
 
 # SPEC-028: PNG chunk walker: signature, chunk lengths, CRC as an issue, ordering, caps, `png_chunks` fuzz target (DEC for the PNG walk, modelled on DEC-006)

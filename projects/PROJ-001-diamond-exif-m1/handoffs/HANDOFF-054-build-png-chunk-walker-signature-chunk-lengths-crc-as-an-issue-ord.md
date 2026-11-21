@@ -57,7 +57,7 @@ handback:
   pr: null
   completed_at: 2026-11-21
   notes: "No token counter is available inside this subagent run, so tokens_total is null rather than invented; the orchestrator replaces it with the harness subagent_tokens figure. About 60 tool calls."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-21
 ---
 
 # HANDOFF-054: Build SPEC-028 PNG chunk walker (DEC-017) with the png_chunks fuzz target
