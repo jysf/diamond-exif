@@ -4,7 +4,10 @@
 //! regions ([`jpeg`]), and builds a read-only privacy audit over both
 //! ([`audit`]: container sniff, inventory, PII findings), and strips JPEG
 //! segment by segment ([`write`]: `strip` and `sanitize`, fail closed). PNG is
-//! walked chunk by chunk ([`png`], DEC-017); its metadata is not read yet.
+//! walked chunk by chunk ([`png`], DEC-017) and its metadata is located by
+//! [`png::read`]: Exif from `eXIf` through the TIFF engine, and borrowed,
+//! never-decoded XMP, ICC, raw-profile and text regions (DEC-018). The audit
+//! does not read PNG yet.
 
 #![forbid(unsafe_code)]
 #![deny(

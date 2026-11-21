@@ -279,6 +279,36 @@ pub enum Error {
         /// The chunk-count limit that was reached.
         limit: usize,
     },
+
+    /// An Exif payload that starts with the `Exif\0\0` header a JPEG APP1
+    /// carries, which a PNG `eXIf` chunk must not have (DEC-018). The header is
+    /// skipped and the rest is read.
+    ImproperExifHeader {
+        /// Input offset of the chunk's length field.
+        at: usize,
+    },
+
+    /// A `tEXt`, `zTXt` or `iTXt` chunk whose keyword or header is malformed:
+    /// no NUL within the first 80 bytes, an empty keyword, a truncated header,
+    /// or an `iTXt` compression flag other than 0 or 1. No region is located.
+    BadTextChunk {
+        /// Input offset of the chunk's length field.
+        at: usize,
+    },
+
+    /// An `iCCP` chunk with an empty or unterminated profile name, or no
+    /// compression-method byte. No region is located.
+    BadIccpChunk {
+        /// Input offset of the chunk's length field.
+        at: usize,
+    },
+
+    /// More than [`crate::png::MAX_PNG_REGIONS`] metadata regions were located;
+    /// extraction stopped there.
+    TooManyRegions {
+        /// The region-count limit that was reached.
+        limit: usize,
+    },
 }
 
 impl fmt::Display for Error {
@@ -433,6 +463,27 @@ impl fmt::Display for Error {
             Error::MissingIend => write!(f, "no IEND chunk found"),
             Error::TooManyChunks { limit } => {
                 write!(f, "PNG walk reached the limit of {limit} chunks")
+            }
+            Error::ImproperExifHeader { at } => {
+                write!(
+                    f,
+                    "Exif chunk at offset {at} starts with an Exif header it should not have"
+                )
+            }
+            Error::BadTextChunk { at } => {
+                write!(
+                    f,
+                    "text chunk at offset {at} has a malformed keyword or header"
+                )
+            }
+            Error::BadIccpChunk { at } => {
+                write!(
+                    f,
+                    "iCCP chunk at offset {at} has a malformed profile name or header"
+                )
+            }
+            Error::TooManyRegions { limit } => {
+                write!(f, "more than {limit} metadata regions were located")
             }
         }
     }

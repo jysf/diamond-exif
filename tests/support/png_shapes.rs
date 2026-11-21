@@ -111,8 +111,231 @@ pub fn bad_crc_texts(n: usize) -> Vec<u8> {
     v
 }
 
-/// The committed `png_chunks` seeds, name and bytes, in a stable order.
+// ── SPEC-029 builders (DEC-018). Compressed bodies may be any bytes: the
+// library never inflates, so the builders never compress.
+
+/// An `eXIf` chunk with the given payload.
+pub fn exif_chunk(payload: &[u8]) -> Vec<u8> {
+    chunk(b"eXIf", payload)
+}
+
+/// A TIFF payload (big-endian) with one IFD0 entry: Make (0x010F), ASCII,
+/// count 4, inline `abc\0`.
+pub fn exif_with_make() -> Vec<u8> {
+    let mut d = b"MM\x00\x2A\x00\x00\x00\x08".to_vec();
+    d.extend_from_slice(&[0, 1, 0x01, 0x0F, 0, 2, 0, 0, 0, 4]);
+    d.extend_from_slice(b"abc\0");
+    d.extend_from_slice(&[0, 0, 0, 0]);
+    d
+}
+
+/// A `tEXt` chunk: keyword, NUL, value.
+pub fn text(keyword: &[u8], value: &[u8]) -> Vec<u8> {
+    let mut d = keyword.to_vec();
+    d.push(0);
+    d.extend_from_slice(value);
+    chunk(b"tEXt", &d)
+}
+
+/// A `zTXt` chunk: keyword, NUL, method 0, then `body` (not inflated).
+pub fn ztxt(keyword: &[u8], body: &[u8]) -> Vec<u8> {
+    let mut d = keyword.to_vec();
+    d.extend_from_slice(&[0, 0]);
+    d.extend_from_slice(body);
+    chunk(b"zTXt", &d)
+}
+
+/// An `iTXt` chunk: keyword, NUL, flag, method 0, language, NUL, translated
+/// keyword, NUL, then `text`.
+pub fn itxt(keyword: &[u8], flag: u8, lang: &[u8], translated: &[u8], text: &[u8]) -> Vec<u8> {
+    let mut d = keyword.to_vec();
+    d.extend_from_slice(&[0, flag, 0]);
+    d.extend_from_slice(lang);
+    d.push(0);
+    d.extend_from_slice(translated);
+    d.push(0);
+    d.extend_from_slice(text);
+    chunk(b"iTXt", &d)
+}
+
+/// An `iCCP` chunk: name, NUL, method, then `body` (not inflated).
+pub fn iccp(name: &[u8], method: u8, body: &[u8]) -> Vec<u8> {
+    let mut d = name.to_vec();
+    d.extend_from_slice(&[0, method]);
+    d.extend_from_slice(body);
+    chunk(b"iCCP", &d)
+}
+
+/// An ImageMagick-style raw-profile `tEXt` chunk (the text is not hex-decoded).
+pub fn raw_profile(name: &str, body: &[u8]) -> Vec<u8> {
+    let mut k = b"Raw profile type ".to_vec();
+    k.extend_from_slice(name.as_bytes());
+    text(&k, body)
+}
+
+/// The committed `meta-` seeds of `png_chunks` (SPEC-029).
+pub fn meta_seeds() -> Vec<(&'static str, Vec<u8>)> {
+    let ex = exif_payload();
+    let mut prefixed = b"Exif\0\0".to_vec();
+    prefixed.extend_from_slice(&ex);
+    let mut kw80 = vec![b'a'; 80];
+    kw80.extend_from_slice(b"\0x");
+    let mut itxt_bad_flag = b"Title\0".to_vec();
+    itxt_bad_flag.extend_from_slice(&[2, 0, 0, 0, b'x']);
+    let wrap = |parts: Vec<Vec<u8>>| {
+        let mut all = vec![ihdr()];
+        all.extend(parts);
+        all.push(idat());
+        all.push(iend());
+        png(&all)
+    };
+    vec![
+        ("meta-exif-before-idat", wrap(vec![exif_chunk(&ex)])),
+        (
+            "meta-exif-with-make",
+            wrap(vec![exif_chunk(&exif_with_make())]),
+        ),
+        ("meta-exif-prefix", wrap(vec![exif_chunk(&prefixed)])),
+        ("meta-exif-empty", wrap(vec![exif_chunk(&[])])),
+        ("meta-exif-garbage", wrap(vec![exif_chunk(b"not a tiff")])),
+        (
+            "meta-exif-two",
+            wrap(vec![exif_chunk(&ex), exif_chunk(&exif_with_make())]),
+        ),
+        (
+            "meta-exif-after-iend",
+            png(&[ihdr(), idat(), iend(), exif_chunk(&ex)]),
+        ),
+        (
+            "meta-xmp-itxt",
+            wrap(vec![itxt(b"XML:com.adobe.xmp", 0, b"", b"", b"<x/>")]),
+        ),
+        (
+            "meta-xmp-itxt-compressed",
+            wrap(vec![itxt(
+                b"XML:com.adobe.xmp",
+                1,
+                b"en",
+                b"t",
+                &[0x78, 1, 2],
+            )]),
+        ),
+        (
+            "meta-xmp-text",
+            wrap(vec![text(b"XML:com.adobe.xmp", b"<x/>")]),
+        ),
+        (
+            "meta-xmp-wrong-keyword",
+            wrap(vec![text(b"Comment", b"<x/>")]),
+        ),
+        (
+            "meta-xmp-keyword-case",
+            wrap(vec![text(b"xml:com.adobe.xmp", b"<x/>")]),
+        ),
+        (
+            "meta-raw-exif-text",
+            wrap(vec![raw_profile("exif", b"\n45786966\n")]),
+        ),
+        (
+            "meta-raw-xmp-ztxt",
+            wrap(vec![ztxt(b"Raw profile type xmp", &[0x78, 1, 2, 3])]),
+        ),
+        (
+            "meta-raw-unknown-itxt",
+            wrap(vec![itxt(b"Raw profile type foo", 1, b"", b"", &[9, 9])]),
+        ),
+        (
+            "meta-text-plain",
+            wrap(vec![
+                text(b"Author", b"someone"),
+                ztxt(b"Title", &[0x78, 1]),
+            ]),
+        ),
+        (
+            "meta-itxt-lang",
+            wrap(vec![itxt(b"Title", 0, b"fr", b"Titre", b"bonjour")]),
+        ),
+        ("meta-text-no-nul", wrap(vec![chunk(b"tEXt", b"Comment")])),
+        (
+            "meta-text-empty-keyword",
+            wrap(vec![chunk(b"tEXt", b"\0value")]),
+        ),
+        ("meta-text-keyword-80", wrap(vec![chunk(b"tEXt", &kw80)])),
+        (
+            "meta-itxt-bad-flag",
+            wrap(vec![chunk(b"iTXt", &itxt_bad_flag)]),
+        ),
+        (
+            "meta-itxt-truncated",
+            wrap(vec![chunk(b"iTXt", b"Title\0\0\0en")]),
+        ),
+        (
+            "meta-ztxt-no-method",
+            wrap(vec![chunk(b"zTXt", b"Title\0")]),
+        ),
+        ("meta-iccp", wrap(vec![iccp(b"sRGB", 0, &[0x78, 1, 2])])),
+        (
+            "meta-iccp-empty-name",
+            wrap(vec![chunk(b"iCCP", b"\0\0abc")]),
+        ),
+        ("meta-iccp-no-method", wrap(vec![chunk(b"iCCP", b"sRGB\0")])),
+        (
+            "meta-trailer-chunks",
+            png(&[
+                ihdr(),
+                idat(),
+                iend(),
+                text(b"Comment", b"late"),
+                itxt(b"XML:com.adobe.xmp", 0, b"", b"", b"<y/>"),
+                iccp(b"p", 0, &[1]),
+                exif_chunk(&ex),
+            ]),
+        ),
+        (
+            "meta-trailer-garbage",
+            png(&[ihdr(), idat(), iend(), vec![0xFF; 40]]),
+        ),
+        (
+            "meta-trailer-truncated",
+            png(&[
+                ihdr(),
+                idat(),
+                iend(),
+                text(b"Comment", b"ok"),
+                raw_chunk(100, b"tEXt", b"Comment\0cut", 0),
+            ]),
+        ),
+        (
+            "meta-after-idat",
+            png(&[
+                ihdr(),
+                idat(),
+                text(b"Comment", b"mid"),
+                exif_chunk(&ex),
+                iend(),
+            ]),
+        ),
+        (
+            "meta-halted-after-text",
+            png(&[
+                ihdr(),
+                text(b"Comment", b"kept"),
+                chunk(b"tEXt", b"bad"),
+                raw_chunk(0x8000_0000, b"IDAT", b"", 0),
+            ]),
+        ),
+    ]
+}
+
+/// The committed `png_chunks` seeds, name and bytes, in a stable order: the
+/// walker seeds (SPEC-028), then the `meta-` seeds (SPEC-029).
 pub fn seeds() -> Vec<(&'static str, Vec<u8>)> {
+    let mut all = walk_seeds();
+    all.extend(meta_seeds());
+    all
+}
+
+fn walk_seeds() -> Vec<(&'static str, Vec<u8>)> {
     let text = chunk(b"tEXt", b"Comment\0hello");
     let mut ihdr_short = ihdr_data();
     ihdr_short.pop();

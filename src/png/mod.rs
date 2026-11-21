@@ -7,8 +7,9 @@
 //! an `Err` (DEC-017); everything else is an issue and the walk continues
 //! wherever it safely can.
 //!
-//! Nothing here reads chunk contents or inflates anything: chunks are
-//! identified by their type bytes only (contents are SPEC-029).
+//! Nothing in the walk reads chunk contents or inflates anything: chunks are
+//! identified by their type bytes only. Contents are located by [`read`]
+//! (SPEC-029, DEC-018).
 //!
 //! Provenance (DEC-003, class 1): net-new code written from the PNG
 //! Specification (W3C, Third Edition: file signature, chunk layout, CRC).
@@ -23,10 +24,15 @@
 
 mod crc;
 mod issue;
+mod metadata;
 
 use core::ops::Range;
 
 pub use issue::PngIssue;
+pub use metadata::{
+    read, AnyPngIssue, PngExifBlock, PngMetadata, PngRegion, MAX_PNG_EXIF_BLOCKS, MAX_PNG_REGIONS,
+    MAX_PNG_TRAILER_CHUNKS,
+};
 
 use crate::error::Error;
 
@@ -75,7 +81,7 @@ pub enum ChunkKind {
     Other,
 }
 
-fn kind_of(ty: [u8; 4]) -> ChunkKind {
+pub(crate) fn kind_of(ty: [u8; 4]) -> ChunkKind {
     match &ty {
         b"IHDR" => ChunkKind::Ihdr,
         b"PLTE" => ChunkKind::Plte,
@@ -156,6 +162,7 @@ pub struct Png<'a> {
     issues: Vec<PngIssue>,
     iend_offset: Option<usize>,
     trailer: &'a [u8],
+    halted: bool,
 }
 
 /// The walk's mutable state. Every issue goes through [`Walk::record`], so no
@@ -176,6 +183,74 @@ fn be_u32(data: &[u8], at: usize) -> Option<u32> {
     let end = at.checked_add(4)?;
     let b: [u8; 4] = data.get(at..end)?.try_into().ok()?;
     Some(u32::from_be_bytes(b))
+}
+
+/// One chunk framed out of the input: length, type, data and stored CRC.
+pub(crate) struct FramedChunk<'a> {
+    pub(crate) ty: [u8; 4],
+    pub(crate) length: u32,
+    pub(crate) payload: &'a [u8],
+    pub(crate) stored: u32,
+    /// Input offset just past the chunk's CRC.
+    pub(crate) end: usize,
+}
+
+/// What framing at one offset found.
+pub(crate) enum Frame<'a> {
+    Chunk(FramedChunk<'a>),
+    /// Fewer than [`FRAME`] bytes remain.
+    Short,
+    /// The declared length is above [`MAX_CHUNK_LEN`].
+    BadLength(u32),
+    /// The declared length runs past the input; `total` is the whole chunk.
+    PastEnd {
+        total: usize,
+    },
+}
+
+/// Frame the chunk that starts at input offset `p` (SPEC-029: the one framing
+/// rule, shared by the walk and the trailer scan). Nothing is checked beyond
+/// the length: not the CRC and not the type.
+pub(crate) fn frame(data: &[u8], p: usize) -> Frame<'_> {
+    let remaining = data.len().saturating_sub(p);
+    if remaining < FRAME {
+        return Frame::Short;
+    }
+    let (Some(length), Some(ty_start)) = (be_u32(data, p), p.checked_add(4)) else {
+        return Frame::Short;
+    };
+    let Some(ty) = data
+        .get(ty_start..)
+        .and_then(|r| r.get(..4))
+        .and_then(|b| <[u8; 4]>::try_from(b).ok())
+    else {
+        return Frame::Short;
+    };
+    if length > MAX_CHUNK_LEN {
+        return Frame::BadLength(length);
+    }
+    // `length` fits in 31 bits, so the conversion only fails on a 16-bit
+    // target; treat that as running past the input.
+    let data_len = usize::try_from(length).unwrap_or(usize::MAX);
+    let total = data_len.saturating_add(FRAME);
+    if total > remaining {
+        return Frame::PastEnd { total };
+    }
+    // `total <= remaining`, so none of these can overflow.
+    let data_start = ty_start.saturating_add(4);
+    let data_end = data_start.saturating_add(data_len);
+    let end = data_end.saturating_add(4);
+    let (Some(payload), Some(stored)) = (data.get(data_start..data_end), be_u32(data, data_end))
+    else {
+        return Frame::Short;
+    };
+    Frame::Chunk(FramedChunk {
+        ty,
+        length,
+        payload,
+        stored,
+        end,
+    })
 }
 
 impl<'a> Walk<'a> {
@@ -212,44 +287,28 @@ impl<'a> Walk<'a> {
         let mut p: usize = SIGNATURE.len();
         let mut seen_idat = false;
         while p < len && !self.halted {
-            let remaining = len.saturating_sub(p);
-            if remaining < FRAME {
-                self.halt(Error::Truncated { at: p, len: FRAME }, p);
-                return;
-            }
-            let (Some(length), Some(ty_start)) = (be_u32(self.data, p), p.checked_add(4)) else {
-                return;
+            let framed = match frame(self.data, p) {
+                Frame::Chunk(framed) => framed,
+                Frame::Short => {
+                    self.halt(Error::Truncated { at: p, len: FRAME }, p);
+                    return;
+                }
+                Frame::BadLength(length) => {
+                    self.halt(Error::BadChunkLength { length }, p);
+                    return;
+                }
+                Frame::PastEnd { total } => {
+                    self.halt(Error::Truncated { at: p, len: total }, p);
+                    return;
+                }
             };
-            let Some(ty) = self
-                .data
-                .get(ty_start..)
-                .and_then(|r| r.get(..4))
-                .and_then(|b| <[u8; 4]>::try_from(b).ok())
-            else {
-                return;
-            };
-            if length > MAX_CHUNK_LEN {
-                self.halt(Error::BadChunkLength { length }, p);
-                return;
-            }
-            // `length` fits in 31 bits, so the conversion only fails on a
-            // 16-bit target; treat that as running past the input.
-            let data_len = usize::try_from(length).unwrap_or(usize::MAX);
-            let total = data_len.saturating_add(FRAME);
-            if total > remaining {
-                self.halt(Error::Truncated { at: p, len: total }, p);
-                return;
-            }
-            // `total <= remaining`, so none of these can overflow.
-            let data_start = ty_start.saturating_add(4);
-            let data_end = data_start.saturating_add(data_len);
-            let chunk_end = data_end.saturating_add(4);
-            let (Some(payload), Some(stored)) = (
-                self.data.get(data_start..data_end),
-                be_u32(self.data, data_end),
-            ) else {
-                return;
-            };
+            let FramedChunk {
+                ty,
+                length,
+                payload,
+                stored,
+                end: chunk_end,
+            } = framed;
             if self.chunks.len() >= MAX_PNG_CHUNKS {
                 self.halt(
                     Error::TooManyChunks {
@@ -343,6 +402,7 @@ impl<'a> Png<'a> {
             issues: walk.issues,
             iend_offset: walk.iend,
             trailer,
+            halted: walk.halted,
         })
     }
 
@@ -368,6 +428,11 @@ impl<'a> Png<'a> {
     /// Whether the walk found no issue.
     pub fn is_clean(&self) -> bool {
         self.issues.is_empty()
+    }
+
+    /// Whether the walk was halted (by a framing error or a cap).
+    pub(crate) fn halted(&self) -> bool {
+        self.halted
     }
 
     /// Offset of the `IEND` chunk, if the walk reached one.

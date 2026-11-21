@@ -105,17 +105,17 @@ Add `png::read`: Exif from `eXIf` handed to the tolerant TIFF engine, and borrow
 
 ## Acceptance Criteria
 
-- [ ] **Container independence:** each Exif block's container is `Ok` iff the bare `Container::parse` of its `tiff()` is, with identical IFD structure; a fatal error equals the bare error. `tiff_at()` plus an IFD offset indexes the same byte in the input.
-- [ ] `eXIf` rules (DEC-018): `Exif\0\0` prefix accepted with one `ImproperExifHeader`; empty and non-TIFF payloads leave the block `Err` with no panic; the first block is primary; a second is `ExtraExif` and still parsed; at most 16 parsed, the 17th costs only the issue.
-- [ ] Text routing: `iTXt` and `tEXt` `XML:com.adobe.xmp` give `Xmp` (compressed flag from the iTXt flag, `false` for tEXt); the same text under keyword `Comment` is `Text`; `Raw profile type exif` and `... xmp` in `tEXt`, `zTXt` and `iTXt` give `RawProfile` with the profile name and the right `compressed`; ordinary `tEXt`, `zTXt`, `iTXt` give `Text`. Keyword matching is case-sensitive.
-- [ ] `BadTextChunk`: no NUL in the first 80 bytes, empty keyword, keyword over 79 bytes, truncated `iTXt` header, `iTXt` flag other than 0 or 1; each yields the issue and no region.
-- [ ] `iCCP`: name, method and data located (`Icc`); empty name, no NUL, or a missing method byte is `BadIccpChunk`.
-- [ ] Nothing is inflated or hex-decoded; every region's `data()` is a subslice of the input (pointer-range test), and `Xmp`/`Text`/`RawProfile` data starts exactly after the chunk's header fields.
-- [ ] Positions: `after_idat` is true exactly for metadata chunks after the first `IDAT`; chunks after `IEND` are found through the trailer scan with `after_iend` true; a trailer that is not chunks yields nothing and no issue; the trailer scan stops at the first chunk that does not fit and never examines more than `MAX_PNG_TRAILER_CHUNKS`.
-- [ ] Bounds: more than `MAX_PNG_REGIONS` located chunks end with exactly one `TooManyRegions`; walker halts (DEC-017) suppress nothing that was already found and add no extraction issue after the halt.
-- [ ] `is_clean()` iff no PNG-layer issue and every block `Ok` and clean; `issues()` count equals PNG issues plus each block's TIFF issues.
-- [ ] Panic-free on every prefix and single-byte flip of each metadata seed; the committed `meta-` seeds (at least 20, named in the test) parse; pre-existing seeds byte-identical; the shared model passes under `cargo test` on stable and in `png_chunks` on nightly; CI smoke still 60 s.
-- [ ] `just lint`, `just test`, `just lint-fuzz`, `just validate`, `just forbid-unsafe`, `just cost-audit`, `just fuzz-smoke png_chunks` green; no `#[allow]`; no unsafe.
+- [x] **Container independence:** each Exif block's container is `Ok` iff the bare `Container::parse` of its `tiff()` is, with identical IFD structure; a fatal error equals the bare error. `tiff_at()` plus an IFD offset indexes the same byte in the input.
+- [x] `eXIf` rules (DEC-018): `Exif\0\0` prefix accepted with one `ImproperExifHeader`; empty and non-TIFF payloads leave the block `Err` with no panic; the first block is primary; a second is `ExtraExif` and still parsed; at most 16 parsed, the 17th costs only the issue.
+- [x] Text routing: `iTXt` and `tEXt` `XML:com.adobe.xmp` give `Xmp` (compressed flag from the iTXt flag, `false` for tEXt); the same text under keyword `Comment` is `Text`; `Raw profile type exif` and `... xmp` in `tEXt`, `zTXt` and `iTXt` give `RawProfile` with the profile name and the right `compressed`; ordinary `tEXt`, `zTXt`, `iTXt` give `Text`. Keyword matching is case-sensitive.
+- [x] `BadTextChunk`: no NUL in the first 80 bytes, empty keyword, keyword over 79 bytes, truncated `iTXt` header, `iTXt` flag other than 0 or 1; each yields the issue and no region.
+- [x] `iCCP`: name, method and data located (`Icc`); empty name, no NUL, or a missing method byte is `BadIccpChunk`.
+- [x] Nothing is inflated or hex-decoded; every region's `data()` is a subslice of the input (pointer-range test), and `Xmp`/`Text`/`RawProfile` data starts exactly after the chunk's header fields.
+- [x] Positions: `after_idat` is true exactly for metadata chunks after the first `IDAT`; chunks after `IEND` are found through the trailer scan with `after_iend` true; a trailer that is not chunks yields nothing and no issue; the trailer scan stops at the first chunk that does not fit and never examines more than `MAX_PNG_TRAILER_CHUNKS`.
+- [x] Bounds: more than `MAX_PNG_REGIONS` located chunks end with exactly one `TooManyRegions`; walker halts (DEC-017) suppress nothing that was already found and add no extraction issue after the halt.
+- [x] `is_clean()` iff no PNG-layer issue and every block `Ok` and clean; `issues()` count equals PNG issues plus each block's TIFF issues.
+- [x] Panic-free on every prefix and single-byte flip of each metadata seed; the committed `meta-` seeds (at least 20, named in the test) parse; pre-existing seeds byte-identical; the shared model passes under `cargo test` on stable and in `png_chunks` on nightly; CI smoke still 60 s.
+- [x] `just lint`, `just test`, `just lint-fuzz`, `just validate`, `just forbid-unsafe`, `just cost-audit`, `just fuzz-smoke png_chunks` green; no `#[allow]`; no unsafe.
 
 ## Failing Tests
 

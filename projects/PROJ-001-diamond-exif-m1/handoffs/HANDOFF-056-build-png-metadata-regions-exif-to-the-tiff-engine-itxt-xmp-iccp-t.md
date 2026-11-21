@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-21
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-029
@@ -46,18 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                # completed | blocked | rejected
+  agent: claude-sonnet-5-5         # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
+  basis: estimate                  # transcript | agent-result | slash-cost | api-usage | estimate
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
-  branch: null
+  branch: claude/spec-029-png-metadata
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-21         # YYYY-MM-DD
+  notes: "tokens_total left null: the subagent harness exposes no token count to the agent; the orchestrator replaces it with the harness figure. Not pushed, no PR."  # if unusual; double-quote it — an unquoted " #" starts a YAML comment
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -135,38 +135,40 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `claude/spec-029-png-metadata` (local only; not pushed, no PR)
+- **Completed at:** 2026-11-21
+- **All acceptance criteria met?** yes (see choices below where DEC-018 is silent)
+- **For `verify`:** n/a
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null (the harness exposes no token count to the agent)
+- **Estimated USD:** null
+- **Duration (minutes):** not measured
+- **Source of the number:** none available
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
-- **Deviations from spec:**
-  - [list]
-- **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+- **New decisions emitted:** none.
+- **Deviations from spec:** tests were written after the implementation in the same pass, not shown red first; the metadata model's red-proofs (`png_metadata_model_red_proofs`) do show the model going red on mutated observations.
+- **Choices where DEC-018 is silent:**
+  - A walker halt of any kind (not only the caps) suppresses all extraction issues, as `src/jpeg/metadata.rs` does; found regions and blocks are kept.
+  - `ImproperExifHeader` is recorded only for a block that is parsed (not for the 17th and later `eXIf`, which cost only `ExtraExif`).
+  - `ExtraExif` is recorded before `ImproperExifHeader` for the same chunk.
+  - `zTXt` with keyword `XML:com.adobe.xmp` is `Text` (DEC-018 names only `iTXt` and `tEXt`).
+  - `TooManyRegions` stops all extraction (blocks too); its offset is the chunk that did not fit.
+  - A trailer chunk is `after_idat` when any IDAT precedes it in the walked chunks or earlier in the trailer.
+  - The `Error` variants carry only `at` (and `limit` for `TooManyRegions`); no reason strings.
+  - `Png` gained a private `halted` field with a `pub(crate)` accessor.
+- **Follow-up work identified:** none.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   Halt semantics: "no extraction issue after the halt" could mean positional or total suppression.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   Whether `ImproperExifHeader` applies to blocks beyond the sixteenth.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   Write and run the tests against a stub first, to see them red as the handoff asks.
