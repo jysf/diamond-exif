@@ -15,13 +15,15 @@
 task:
   id: SPEC-024
   type: release                    # epic | story | task | bug | chore | release
-  cycle: verify  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: high                   # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
-  complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
+  complexity_actual: L          # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
+  verify_verdict: approved
+  verify_rounds: [punch-list, punch-list, approved]
 
 project:
   id: PROJ-001
@@ -84,6 +86,7 @@ cost:
     tokens_total: 721152
     estimated_usd: 4.76
     session_count: 3
+shipped_at: 2026-11-21
 ---
 
 # SPEC-024: v0.1.0-alpha.1 exif-audit binary release
@@ -144,19 +147,19 @@ The repository is **public**, so the release is public. That makes the cut an ou
 
 Timing: `[now]` verified in Phase 1 with evidence; `[cut]` can only be verified after the tag.
 
-- [ ] **1. Version / tag integrity & build provenance** `[now]` for the build, `[cut]` for the tag. The version in `Cargo.toml`, `exif-audit --version` and the archive names all agree; `--version` of a CI-built binary shows the short SHA of the release commit; exactly one tag `v0.1.0-alpha.1` points at the release commit and it is an annotated tag.
+- [x] **1. Version / tag integrity & build provenance** `[now]` for the build, `[cut]` for the tag. The version in `Cargo.toml`, `exif-audit --version` and the archive names all agree; `--version` of a CI-built binary shows the short SHA of the release commit; exactly one tag `v0.1.0-alpha.1` points at the release commit and it is an annotated tag. **Evidence (2026-11-21):** `git ls-remote --tags` shows annotated tag `v0.1.0-alpha.1` (object 925f164) dereferencing to `15d9d8c`, the merge commit; the published macOS arm64 binary prints `exif-audit 0.1.0-alpha.1 (15d9d8c)`; `Cargo.toml`, the tag and the archive names all say `0.1.0-alpha.1`.
       - Evidence: `git tag --points-at HEAD`; `./exif-audit --version` from the dry-run artifact; `test` in `tests/release_layout.rs` that the three agree.
-- [ ] **2. Artifact trust on a clean host** `[cut]`. A browser-downloaded macOS binary is quarantined (unsigned); document the `xattr -d com.apple.quarantine` step and confirm that a `curl` or `gh release download` copy runs without a prompt. Linux: runs on a clean container with no toolchain (`docker run --rm -v ... debian:stable-slim` or the equivalent).
-- [ ] **3. Distribution-channel trust** `[cut]`. The only channel is the GitHub release. A stranger can `gh release download` or `curl -L` the asset and verify it with `shasum -a 256 -c SHA256SUMS`; the README commands are copy-pasted and work.
+- [ ] **2. Artifact trust on a clean host** `[cut]`. A browser-downloaded macOS binary is quarantined (unsigned); document the `xattr -d com.apple.quarantine` step and confirm that a `curl` or `gh release download` copy runs without a prompt. Linux: runs on a clean container with no toolchain (`docker run --rm -v ... debian:stable-slim` or the equivalent). **Partly verified (2026-11-21), left unticked:** the curl-downloaded macOS arm64 binary carries no `com.apple.quarantine` attribute (only `com.apple.provenance`) and ran without a prompt. NOT verified: a browser download and the Gatekeeper prompt it triggers (the README documents `xattr -d com.apple.quarantine`); a Linux run on a clean container or host; the Intel binary on a real Intel Mac (it ran under Rosetta on the runner).
+- [x] **3. Distribution-channel trust** `[cut]`. The only channel is the GitHub release. A stranger can `gh release download` or `curl -L` the asset and verify it with `shasum -a 256 -c SHA256SUMS`; the README commands are copy-pasted and work. **Evidence (2026-11-21):** a stranger path on macOS: `curl -sSfL` of `SHA256SUMS` and the arm64 archive from the release URL, `grep aarch64 SHA256SUMS | shasum -a 256 -c -` printed OK, unpacked and ran. Not exercised: `gh release download`, Linux `sha256sum`.
 - [ ] **4. Data isolation** `N/A`: the tool reads only the paths named and holds no production data (DEC-011); stated, not tested.
-- [ ] **5. Runtime smoke on a clean host** `[now]` on the dry-run artifacts (the workflow runs the smoke steps on the freshly built archive, unpacked into an empty directory) and `[cut]` on the published asset: `--version`, a JSON report over the two committed full-house fixtures exits 1 with `files: 2`, `--fail-on none` exits 0, a missing path exits 3, a bad flag exits 2 (the four checks of the existing CI job). Run the downloaded macOS arm64 artifact on this Mac, outside the repo directory.
-- [ ] **6. Rollback / uninstall** `[cut]`. `gh release delete v0.1.0-alpha.1 --cleanup-tag --yes` removes the release and the tag; nothing else was published (no crates.io, no tap), so rollback is complete. Honest verification: (1) the dispatch dry run exercises everything except `gh release create`; (2) the delete syntax and the create flags (`--verify-tag`, `--prerelease`, `--notes-file`, `--title`) were checked against the installed `gh`; (3) the real delete is run only if the real cut turns out bad; (4) optionally, rehearse the whole path in a private scratch fork. A throw-away tag cannot work: the `check` job rejects any tag that is not `v` plus the `Cargo.toml` version, so `publish` would never run.
+- [x] **5. Runtime smoke on a clean host** `[now]` on the dry-run artifacts (the workflow runs the smoke steps on the freshly built archive, unpacked into an empty directory) and `[cut]` on the published asset: `--version`, a JSON report over the two committed full-house fixtures exits 1 with `files: 2`, `--fail-on none` exits 0, a missing path exits 3, a bad flag exits 2 (the four checks of the existing CI job). Run the downloaded macOS arm64 artifact on this Mac, outside the repo directory. **Evidence (2026-11-21):** dry run 44874743696 and the real run 44875252231: all three legs passed the five smoke checks on the unpacked archive (Intel under Rosetta on the runner); the published arm64 binary run on this Mac outside the repo: JSON run exit 1 with 2 files, bad flag exit 2.
+- [x] **6. Rollback / uninstall** `[cut]`. `gh release delete v0.1.0-alpha.1 --cleanup-tag --yes` removes the release and the tag; nothing else was published (no crates.io, no tap), so rollback is complete. Honest verification: (1) the dispatch dry run exercises everything except `gh release create`; (2) the delete syntax and the create flags (`--verify-tag`, `--prerelease`, `--notes-file`, `--title`) were checked against the installed `gh`; (3) the real delete is run only if the real cut turns out bad; (4) optionally, rehearse the whole path in a private scratch fork. A throw-away tag cannot work: the `check` job rejects any tag that is not `v` plus the `Cargo.toml` version, so `publish` would never run. **Evidence (2026-11-21):** documented and syntax-checked, deliberately not exercised (the release is good); `gh release delete v0.1.0-alpha.1 --cleanup-tag --yes` remains the rollback.
 
 ## Acceptance Criteria
 
 - [x] `Cargo.toml` version is `0.1.0-alpha.1`, `publish = false`, `Cargo.lock` agrees; `exif-audit --version` prints `exif-audit 0.1.0-alpha.1`, and `exif-audit 0.1.0-alpha.1 (<ref>)` when built with `EXIF_AUDIT_BUILD_REF=<ref>`; existing CLI tests pass unchanged.
 - [x] `release.yml` triggers only on `push: tags: ['v*']` and `workflow_dispatch`; workflow-level permissions are read-only; only the publish job has `contents: write`; it uses no action other than `actions/checkout@v4`, `dtolnay/rust-toolchain` (third-party, already in CI), `actions/upload-artifact@v4` and `actions/download-artifact@v4`; the build uses `--locked`; a dry run never creates a release.
-- [ ] (not verified in build: needs the orchestrator dry run) The dry run on the branch produces three archives and `SHA256SUMS`; each archive unpacks to `exif-audit`, both licences and the README; `shasum -a 256 -c` passes; the smoke checks pass on each target; the macOS arm64 binary runs on this Mac.
+- [x] The dry run produces three archives and `SHA256SUMS`; each archive unpacks to `exif-audit`, both licences and the README; `shasum -a 256 -c` passes; the smoke checks pass on each target; the macOS arm64 binary runs on this Mac. (Run 44874743696 from `main`, after the merge: GitHub only dispatches workflows present on the default branch. The real run 44875252231 repeated it.)
 - [x] A tag whose version does not equal `Cargo.toml`'s fails the workflow before any build.
 - [x] `README.md` has an Install section (download, checksum, quarantine note, first run) and says the CLI never writes files and that the library is not published; `CHANGELOG.md` has the `[0.1.0-alpha.1]` section; DEC-016 exists; DEC-011 is amended.
 - [x] All existing gates stay green (`just lint`, `test`, `deny`, `forbid-unsafe`, `validate`, `cost-audit`) and the CI `exif-audit-release` job is unchanged and green.
@@ -187,7 +190,7 @@ Publishing `exif-core`; code signing, notarization, attestations; Homebrew or an
 
 ## Cut Record
 
-*Filled after Phase 2 by whoever runs the cut.* Not yet cut.
+*Filled after Phase 2 by whoever runs the cut.* **Cut 2026-11-21, on the maintainer's explicit go-ahead in chat:** annotated tag `v0.1.0-alpha.1` on `15d9d8c` pushed; run 44875252231 (check, three builds with smoke, checksums, release) succeeded; the public pre-release https://github.com/jysf/diamond-exif/releases/tag/v0.1.0-alpha.1 has three archives and `SHA256SUMS`; a curl download passes `shasum -c` and `exif-audit --version` prints `exif-audit 0.1.0-alpha.1 (15d9d8c)`. The tag-only steps (tag type via the GitHub API, on-`main`, `gh release create`) worked on their first real run. User outcome: before, `exif-audit` needed a Rust toolchain and a clone; now anyone can download a checksummed binary for Linux x86_64, macOS Apple silicon or Intel and run it on a folder of JPEG, TIFF or DNG files.
 
 ---
 
@@ -196,20 +199,19 @@ Publishing `exif-core`; code signing, notarization, attestations; Homebrew or an
 *Appended during **ship**. Four questions, short answers.*
 
 1. **What would I do differently next release?**
-   — <answer>
+   — Put the CI and release-mechanics research into the design: the High that verify round 2 found (the annotated-tag check I asked for in round 1 fails on every real annotated tag because `actions/checkout@v4` overwrites it) and the fact that a workflow cannot be dispatched before it is on the default branch were both knowable at design. And write the pre-flight so it does not promise what the workflow forbids (the throw-away rollback tag).
 
 2. **Does any template, constraint, or decision need updating?** (e.g. a new
    pre-flight category to add to this template)
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`. See `docs/signals.md`.>
+   — DEC-016 (first binary release) and the DEC-011 `--version` amendment were added. Process: the release-spec pre-flight template should say that a workflow can only be dispatched once it is on the default branch, so "dry run before merge" is not available; and each resume of a builder re-reads its history, so a short follow-up still costs 150k+ tokens. I numbered the decision DEC-014 and another session took DEC-014 and DEC-015 in parallel; it was renumbered DEC-016 at merge: reserve decision numbers when framing.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — Yes, small: a GitHub tag ruleset for `v*` (a repository setting for the maintainer), and a Linux clean-host run plus a real-Intel check of the published binaries. Later: signing and notarization, attestations, a Homebrew tap, Windows, Linux arm64, and the library publish (remove `publish = false`) as its own release spec.
 
 4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
    the defect-escape distribution is greppable across specs:
    `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
    `none` (clean first try).
-   — <one word>
+   — verify (round 2: the annotated-tag check, a High). It would have failed the first real cut, fail-closed, before anything was published.
    *(A release-phase `escaped` defect means a pre-flight category above was
    missing or skipped — grow the checklist.)*
