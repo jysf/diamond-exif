@@ -1,6 +1,6 @@
 ---
 insight:
-  id: DEC-014
+  id: DEC-016
   type: decision
   confidence: 0.75
   audience:
@@ -34,7 +34,7 @@ tags:
   - supply-chain
 ---
 
-# DEC-014: First binary release: SemVer pre-release tags, GitHub-only distribution, a locked and least-privilege workflow
+# DEC-016: First binary release: SemVer pre-release tags, GitHub-only distribution, a locked and least-privilege workflow
 
 ## Decision
 

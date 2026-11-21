@@ -1,4 +1,4 @@
-//! Static checks on the first binary release (SPEC-024, DEC-014). std only: the
+//! Static checks on the first binary release (SPEC-024, DEC-016). std only: the
 //! workflow YAML is read as text, like `tests/fuzz_layout.rs` reads repo files.
 //! The checks are functions over the file text so the red-proofs at the bottom can
 //! mutate a copy and require the matching check to fail (constraint
@@ -13,7 +13,7 @@ const TARGETS: [&str; 3] = [
     "aarch64-apple-darwin",
     "x86_64-apple-darwin",
 ];
-/// The only actions the release workflow may use (DEC-014 decision 3).
+/// The only actions the release workflow may use (DEC-016 decision 3).
 const ALLOWED_ACTIONS: [&str; 4] = [
     "actions/checkout@v4",
     "dtolnay/rust-toolchain@stable",
@@ -468,10 +468,10 @@ fn the_three_release_targets_are_the_designed_three() {
     for t in TARGETS {
         assert!(wf.contains(t), "release.yml does not build {t}");
     }
-    assert!(!wf.contains("windows"), "Windows is out of scope (DEC-014)");
+    assert!(!wf.contains("windows"), "Windows is out of scope (DEC-016)");
     assert!(
         !wf.contains("aarch64-unknown-linux"),
-        "Linux arm64 is out of scope (DEC-014)"
+        "Linux arm64 is out of scope (DEC-016)"
     );
 }
 

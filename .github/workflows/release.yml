@@ -1,4 +1,4 @@
-# First binary release of exif-audit (SPEC-024, DEC-014).
+# First binary release of exif-audit (SPEC-024, DEC-016).
 #
 # Two ways in, both deliberate:
 #   * push of a tag `v*`   -> check, build three targets, write SHA256SUMS and
@@ -75,7 +75,7 @@ jobs:
           esac
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
       # A tag push must be an annotated tag on a commit that is on main. (A GitHub
-      # tag ruleset restricting who may create `v*` tags is also recommended, DEC-014;
+      # tag ruleset restricting who may create `v*` tags is also recommended, DEC-016;
       # that is a repository setting, not something this file can enforce.)
       # The annotated-tag test asks the GitHub API, not the checked-out ref:
       # actions/checkout@v4 (issue #290) replaces an annotated tag with a

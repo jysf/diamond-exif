@@ -8,7 +8,7 @@ rust-version = "1.90"
 license = "MIT OR Apache-2.0"
 description = "Panic-free, pure-Rust, zero-copy EXIF/XMP/IPTC/ICC metadata reader, writer and stripper (pre-release)."
 repository = "https://github.com/jysf/diamond-exif"
-# The library is deliberately not on crates.io yet (DEC-014): the writer API is
+# The library is deliberately not on crates.io yet (DEC-016): the writer API is
 # new and a publish cannot be undone. This makes an accidental `cargo publish`
 # fail. Removing it is a separate release spec, not a side effect of any other.
 publish = false

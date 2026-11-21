@@ -101,7 +101,7 @@ The repository is **public**, so the release is public. That makes the cut an ou
 - **Delivery shapes:** **binary** only (GitHub release assets). Library, package-manager channel, service: not in this release.
 - **Targets (3):** `x86_64-unknown-linux-musl` (static, runs on any Linux), `aarch64-apple-darwin`, `x86_64-apple-darwin`. Windows is out: the binary has `#[cfg(unix)]` code paths (FIFO and device refusal in `src/bin/exif-audit/read.rs`) and has never been built or tested there. Linux arm64 is out for now (needs a cross-linker or an arm runner; no demand yet).
 
-## Decisions made here (the design; DEC-014 records them)
+## Decisions made here (the design; DEC-016 records them)
 
 1. **SemVer pre-release tags** `v0.MINOR.PATCH-alpha.N`. `0.1.0-alpha.1` signals "unstable, the CLI contract (DEC-011) is intended but not frozen".
 2. **`publish = false` in `Cargo.toml` for now**, so an accidental `cargo publish` fails. Removing it is a deliberate, separate act (a later release spec: the library publish).
@@ -120,7 +120,7 @@ The repository is **public**, so the release is public. That makes the cut an ou
 
 ## Outputs
 
-- **New:** `.github/workflows/release.yml`; `decisions/DEC-014-first-binary-release-versioning-and-distribution.md` (decisions 1 to 6, 8, 9 above); `tests/release_layout.rs` (static checks, see Failing Tests).
+- **New:** `.github/workflows/release.yml`; `decisions/DEC-016-first-binary-release-versioning-and-distribution.md` (decisions 1 to 6, 8, 9 above); `tests/release_layout.rs` (static checks, see Failing Tests).
 - **Modified:** `Cargo.toml` (`version`, `publish = false`), `Cargo.lock`, `src/bin/exif-audit/main.rs` (`version_line`), `decisions/DEC-011` (amendment: the `--version` line), `README.md` (an "Install" section: download, verify, unquarantine, run; the line that the CLI never writes files), `CHANGELOG.md` (`## [0.1.0-alpha.1] - <date>` with a concise summary; `[Unreleased]` left empty), the stage file, the project brief, and a `## Release Notes` filled in this spec.
 - **Not created in the build phase:** any tag, any GitHub release, any crates.io action.
 
@@ -158,7 +158,7 @@ Timing: `[now]` verified in Phase 1 with evidence; `[cut]` can only be verified 
 - [x] `release.yml` triggers only on `push: tags: ['v*']` and `workflow_dispatch`; workflow-level permissions are read-only; only the publish job has `contents: write`; it uses no action other than `actions/checkout@v4`, `dtolnay/rust-toolchain` (third-party, already in CI), `actions/upload-artifact@v4` and `actions/download-artifact@v4`; the build uses `--locked`; a dry run never creates a release.
 - [ ] (not verified in build: needs the orchestrator dry run) The dry run on the branch produces three archives and `SHA256SUMS`; each archive unpacks to `exif-audit`, both licences and the README; `shasum -a 256 -c` passes; the smoke checks pass on each target; the macOS arm64 binary runs on this Mac.
 - [x] A tag whose version does not equal `Cargo.toml`'s fails the workflow before any build.
-- [x] `README.md` has an Install section (download, checksum, quarantine note, first run) and says the CLI never writes files and that the library is not published; `CHANGELOG.md` has the `[0.1.0-alpha.1]` section; DEC-014 exists; DEC-011 is amended.
+- [x] `README.md` has an Install section (download, checksum, quarantine note, first run) and says the CLI never writes files and that the library is not published; `CHANGELOG.md` has the `[0.1.0-alpha.1]` section; DEC-016 exists; DEC-011 is amended.
 - [x] All existing gates stay green (`just lint`, `test`, `deny`, `forbid-unsafe`, `validate`, `cost-audit`) and the CI `exif-audit-release` job is unchanged and green.
 
 ## Failing Tests
