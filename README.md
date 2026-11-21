@@ -24,7 +24,7 @@ See `CLAUDE.md` and `AGENTS.md`. First decision: DEC-001 (tolerant-walk policy).
 
 ## Install
 
-`exif-audit` is a single binary with no runtime dependencies. Download the archive for your platform from the [Releases page](https://github.com/jysf/diamond-exif/releases) (version `0.1.0-alpha.1`; Linux x86_64 (static musl), macOS Apple silicon (`aarch64-apple-darwin`) and macOS Intel (`x86_64-apple-darwin`)). It is an alpha: the CLI contract (DEC-011) is intended but not frozen.
+`exif-audit` is a single binary with no runtime dependencies. Once a release has been published, download the archive for your platform from the [Releases page](https://github.com/jysf/diamond-exif/releases) (version `0.1.0-alpha.1`; Linux x86_64 (static musl), macOS Apple silicon (`aarch64-apple-darwin`) and macOS Intel (`x86_64-apple-darwin`)). It is an alpha: the CLI contract (DEC-011) is intended but not frozen.
 
 ```bash
 # Pick your target: x86_64-unknown-linux-musl, aarch64-apple-darwin or x86_64-apple-darwin

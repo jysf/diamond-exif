@@ -184,3 +184,13 @@ The workflow on a runner (only parsed with PyYAML and checked by the static test
 - **L8:** `cargo_problems(toml, lock)` is the Cargo check and its red-proof mutates the version, the lock and `publish`.
 - Not verifiable offline: the workflow on a runner (YAML parsed with PyYAML only), the fetch-depth/annotated-tag behaviour of `actions/checkout@v4`, musl and Intel builds, Rosetta, `gh release create`.
 - Tool calls used in this follow-up: about 14.
+
+### Follow-up 2 (verify round 2: 1 High, 4 Low, all addressed)
+
+- **H1:** the annotated-tag check in `check` now reads the tag type from the GitHub API (`gh api repos/${GH_REPO}/git/ref/tags/${TAG} --jq .object.type` must print `tag`), with GH_TOKEN, GH_REPO and TAG passed through `env:` only; the job stays `contents: read`. The `merge-base --is-ancestor` half and `fetch-depth: 0` are kept. DEC-014 records why (checkout@v4 issue #290 overwrites annotated tags). Layout needles updated; `git cat-file` in `check` is now rejected; red-proofs for a plain cat-file check and for removing the API check.
+- **L1:** only one `gh release` (the guarded create) is allowed; `gh api`/GH_TOKEN in `publish` only inside the create step; `check` may have exactly one `gh api` and one GH_TOKEN; build has none.
+- **L2:** write-grant scan strips quotes and trailing `# comments` (red-proofs `packages: 'write'`, `id-token: write # oidc`).
+- **L3:** `continue-on-error` anywhere and any job-level `if:` are rejected (red-proofs).
+- **L4:** README Install now starts "Once a release has been published, download ...".
+- Not verifiable offline: the API call itself on a runner (the real tag push is the only trigger), everything on the earlier list.
+- Tool calls in this follow-up: about 8.

@@ -190,7 +190,10 @@ fn workflow_problems(raw: &str) -> Vec<String> {
     for (id, block) in &all_jobs {
         let grants: Vec<String> = block
             .lines()
-            .map(|l| l.trim().to_string())
+            .map(|l| {
+                let no_comment = l.split(" #").next().unwrap_or("");
+                no_comment.replace(['\'', '"'], "").trim().to_string()
+            })
             .filter(|l| l.ends_with(": write") || l.contains("write-all"))
             .collect();
         if id == "publish" {
@@ -298,7 +301,10 @@ fn workflow_problems(raw: &str) -> Vec<String> {
         }
         for needle in [
             "fetch-depth: 0",
-            "git cat-file -t \"refs/tags/${GITHUB_REF_NAME}\"",
+            "gh api \"repos/${GH_REPO}/git/ref/tags/${TAG}\" --jq .object.type",
+            "GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
+            "GH_REPO: ${{ github.repository }}",
+            "TAG: ${{ github.ref_name }}",
             "is not annotated",
             "git merge-base --is-ancestor \"${GITHUB_SHA}\" origin/main",
             "not an ancestor of origin/main",
@@ -307,9 +313,16 @@ fn workflow_problems(raw: &str) -> Vec<String> {
                 p.push(format!("`check` lacks `{needle}`"));
             }
         }
+        // The checkout rewrites annotated tags (checkout#290): never trust the local ref.
+        if c.contains("cat-file") {
+            p.push("`check` uses git cat-file on the checked-out tag (checkout@v4 overwrites annotated tags); use the API".into());
+        }
+        if c.matches("gh api").count() != 1 {
+            p.push("`check` must contain exactly one `gh api` (the tag-type read)".into());
+        }
         let ok = steps(c).iter().any(|st| {
             st.contains("merge-base --is-ancestor")
-                && st.contains("cat-file -t")
+                && st.contains("gh api")
                 && st
                     .lines()
                     .map(str::trim)
@@ -322,6 +335,46 @@ fn workflow_problems(raw: &str) -> Vec<String> {
                 "the annotated-and-on-main step must be guarded by exactly the push `if:`".into(),
             );
         }
+    }
+    // gh and its token: only the guarded create step in publish, plus the one API read
+    // in check. No other `gh` subcommand, no GH_TOKEN elsewhere.
+    if text.matches("gh release").count() != 1 || text.matches("gh release create").count() != 1 {
+        p.push("the only `gh release` allowed is the single `gh release create`".into());
+    }
+    for (id, block) in &all_jobs {
+        match id.as_str() {
+            "publish" => {
+                for st in steps(block) {
+                    let is_create = st.contains("gh release create");
+                    if !is_create && (st.contains("gh api") || st.contains("GH_TOKEN")) {
+                        p.push(
+                            "`publish` uses `gh api` or GH_TOKEN outside the guarded create step"
+                                .into(),
+                        );
+                    }
+                }
+            }
+            "check" => {
+                if block.matches("GH_TOKEN").count() != 1 {
+                    p.push("`check` must use GH_TOKEN exactly once (the tag-type read)".into());
+                }
+            }
+            _ => {
+                if block.contains("gh api")
+                    || block.contains("GH_TOKEN")
+                    || block.contains("gh release")
+                {
+                    p.push(format!("job `{id}` uses gh or GH_TOKEN"));
+                }
+            }
+        }
+        // Steps keep their own `if:`; a job-level `if:` could skip a gate.
+        if block.lines().any(|l| l.starts_with("    if:")) {
+            p.push(format!("job `{id}` has a job-level `if:`"));
+        }
+    }
+    if text.contains("continue-on-error") {
+        p.push("`continue-on-error` is not allowed anywhere".into());
     }
     // No checkout may keep the token in .git/config.
     for (id, block) in &all_jobs {
@@ -634,4 +687,72 @@ fn red_proof_tag_must_be_annotated_and_on_main() {
     assert!(p.iter().any(|m| m.contains("is-ancestor")), "{p:?}");
     let p = mutated("is not annotated", "is fine");
     assert!(p.iter().any(|m| m.contains("is not annotated")), "{p:?}");
+}
+
+#[test]
+fn red_proof_plain_cat_file_tag_check_is_rejected() {
+    let p = mutated(
+        "kind=$(gh api \"repos/${GH_REPO}/git/ref/tags/${TAG}\" --jq .object.type)",
+        "kind=$(git cat-file -t \"refs/tags/${GITHUB_REF_NAME}\")",
+    );
+    assert!(
+        p.iter()
+            .any(|m| m.contains("cat-file") || m.contains("gh api")),
+        "{p:?}"
+    );
+}
+
+#[test]
+fn red_proof_removing_the_api_tag_check_is_rejected() {
+    let p = mutated(
+        "kind=$(gh api \"repos/${GH_REPO}/git/ref/tags/${TAG}\" --jq .object.type)",
+        "kind=tag",
+    );
+    assert!(
+        p.iter()
+            .any(|m| m.contains("`gh api`") || m.contains("gh api")),
+        "{p:?}"
+    );
+}
+
+#[test]
+fn red_proof_quoted_or_commented_write_grants_are_rejected() {
+    let p = mutated(
+        "      contents: write",
+        "      contents: write\n      packages: 'write'",
+    );
+    assert!(
+        p.iter().any(|m| m.contains("`publish` write grants")),
+        "{p:?}"
+    );
+    let p = mutated(
+        "      contents: write",
+        "      contents: write\n      id-token: write # oidc",
+    );
+    assert!(
+        p.iter().any(|m| m.contains("`publish` write grants")),
+        "{p:?}"
+    );
+}
+
+#[test]
+fn red_proof_gh_use_outside_the_guarded_step_is_rejected() {
+    let p = mutated("      - name: write and verify SHA256SUMS\n", "      - name: x\n        run: gh release list\n      - name: write and verify SHA256SUMS\n");
+    assert!(p.iter().any(|m| m.contains("gh release")), "{p:?}");
+    let p = mutated("      - name: write and verify SHA256SUMS\n", "      - name: x\n        env:\n          GH_TOKEN: t\n        run: gh api user\n      - name: write and verify SHA256SUMS\n");
+    assert!(p.iter().any(|m| m.contains("outside the guarded")), "{p:?}");
+}
+
+#[test]
+fn red_proof_continue_on_error_and_job_level_if_are_rejected() {
+    let p = mutated(
+        "    timeout-minutes: 30\n",
+        "    timeout-minutes: 30\n    continue-on-error: true\n",
+    );
+    assert!(p.iter().any(|m| m.contains("continue-on-error")), "{p:?}");
+    let p = mutated(
+        "    needs: check\n    runs-on: ${{ matrix.os }}",
+        "    needs: check\n    if: always()\n    runs-on: ${{ matrix.os }}",
+    );
+    assert!(p.iter().any(|m| m.contains("job-level")), "{p:?}");
 }
