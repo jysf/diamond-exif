@@ -41,7 +41,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Outcome::Version => {
-            let text = format!("exif-audit {}\n", env!("CARGO_PKG_VERSION"));
+            let text = format!("{}\n", version_line(option_env!("EXIF_AUDIT_BUILD_REF")));
             let _ = write_stdout(text.as_bytes());
             ExitCode::SUCCESS
         }
@@ -55,6 +55,32 @@ fn main() -> ExitCode {
             ExitCode::from(exit::USAGE)
         }
         Outcome::Run(opts) => ExitCode::from(run(&opts)),
+    }
+}
+
+/// Longest build ref `--version` will print.
+const MAX_BUILD_REF_LEN: usize = 64;
+
+/// A build ref is printed only if it is non-empty, at most 64 characters and
+/// made of ASCII alphanumerics, '.', '-' and '_': it must never break the
+/// one-line contract or smuggle control characters into a terminal.
+fn build_ref_is_clean(r: &str) -> bool {
+    !r.is_empty()
+        && r.len() <= MAX_BUILD_REF_LEN
+        && r.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
+}
+
+/// The `--version` line (DEC-011): `exif-audit <crate version>`, plus ` (<ref>)`
+/// when a clean build ref was injected at compile time (the release workflow sets
+/// `EXIF_AUDIT_BUILD_REF` to the short commit SHA). An empty or unclean ref counts
+/// as none.
+fn version_line(build_ref: Option<&str>) -> String {
+    match build_ref {
+        Some(r) if build_ref_is_clean(r) => {
+            format!("exif-audit {} ({r})", env!("CARGO_PKG_VERSION"))
+        }
+        _ => format!("exif-audit {}", env!("CARGO_PKG_VERSION")),
     }
 }
 
@@ -99,4 +125,50 @@ fn write_stdout(bytes: &[u8]) -> std::io::Result<()> {
     let mut out = std::io::stdout().lock();
     out.write_all(bytes)?;
     out.flush()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::version_line;
+
+    #[test]
+    fn version_line_without_a_ref_is_the_crate_version() {
+        assert_eq!(
+            version_line(None),
+            format!("exif-audit {}", env!("CARGO_PKG_VERSION"))
+        );
+    }
+
+    #[test]
+    fn version_line_with_a_ref_appends_it_in_parentheses() {
+        assert_eq!(
+            version_line(Some("abc1234")),
+            format!("exif-audit {} (abc1234)", env!("CARGO_PKG_VERSION"))
+        );
+    }
+
+    #[test]
+    fn version_line_treats_an_empty_ref_as_none() {
+        assert_eq!(version_line(Some("")), version_line(None));
+    }
+
+    #[test]
+    fn version_line_ignores_unclean_refs() {
+        for bad in [
+            "a b",
+            "abc\ndef",
+            "abc\u{1b}[31m",
+            "x\ty",
+            "é",
+            "a/b",
+            "(x)",
+        ] {
+            assert_eq!(version_line(Some(bad)), version_line(None), "{bad:?}");
+        }
+        let long = "a".repeat(65);
+        assert_eq!(version_line(Some(&long)), version_line(None));
+        let max = "a".repeat(64);
+        assert!(version_line(Some(&max)).ends_with(&format!("({max})")));
+        assert!(version_line(Some("v1.2-rc_3")).ends_with("(v1.2-rc_3)"));
+    }
 }

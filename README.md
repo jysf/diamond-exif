@@ -5,7 +5,7 @@ Panic-free, pure-Rust, zero-copy EXIF/XMP/IPTC/ICC metadata reader, writer and s
 | Piece | Status | License |
 |---|---|---|
 | `exif-core` | reader, read-only audit model and a strip writer for JPEG, TIFF and DNG (M1a to M1c); PNG, WebP and `set` operations not yet | MIT/Apache-2.0 |
-| `exif-audit` CLI (read-only scanner) | built (SPEC-016): `cargo build --release --bin exif-audit` | free |
+| `exif-audit` CLI (read-only scanner) | released as a pre-release binary (`v0.1.0-alpha.1`, see Install); or `cargo build --release --bin exif-audit` | free |
 | `exif-pro` (compliance tier) | scaffold only | paid |
 
 What works today:
@@ -21,6 +21,38 @@ What works today:
 - **CLI:** `exif-audit`, a read-only privacy scan with exit codes a CI job can act on (below).
 
 See `CLAUDE.md` and `AGENTS.md`. First decision: DEC-001 (tolerant-walk policy).
+
+## Install
+
+`exif-audit` is a single binary with no runtime dependencies. Once a release has been published, download the archive for your platform from the [Releases page](https://github.com/jysf/diamond-exif/releases) (version `0.1.0-alpha.1`; Linux x86_64 (static musl), macOS Apple silicon (`aarch64-apple-darwin`) and macOS Intel (`x86_64-apple-darwin`)). It is an alpha: the CLI contract (DEC-011) is intended but not frozen.
+
+```bash
+# Pick your target: x86_64-unknown-linux-musl, aarch64-apple-darwin or x86_64-apple-darwin
+TARGET=aarch64-apple-darwin
+VERSION=0.1.0-alpha.1
+gh release download "v${VERSION}" --repo jysf/diamond-exif --pattern "exif-audit-${VERSION}-${TARGET}.tar.gz" --pattern SHA256SUMS
+# or: curl -LO https://github.com/jysf/diamond-exif/releases/download/v${VERSION}/exif-audit-${VERSION}-${TARGET}.tar.gz  (and the same URL ending in SHA256SUMS)
+
+# Verify. SHA256SUMS lists all three archives, so check only the line for the one you downloaded
+# (if you downloaded all three, plain `shasum -a 256 -c SHA256SUMS` checks them together):
+grep "${TARGET}" SHA256SUMS | shasum -a 256 -c -
+# where `shasum` is missing (minimal Linux images): grep "${TARGET}" SHA256SUMS | sha256sum -c -
+
+mkdir exif-audit-bin && tar -xzf "exif-audit-${VERSION}-${TARGET}.tar.gz" -C exif-audit-bin
+./exif-audit-bin/exif-audit --version
+```
+
+**macOS and the quarantine flag.** The binary is not signed or notarized. A file downloaded with `gh` or `curl` runs without a prompt; one downloaded in a browser is quarantined by Gatekeeper and refused. Clear it once with:
+
+```bash
+xattr -d com.apple.quarantine ./exif-audit-bin/exif-audit
+```
+
+(`xattr` reports an error if the attribute is absent; that is harmless.)
+
+**First run.** `./exif-audit-bin/exif-audit --help`, then for example `./exif-audit-bin/exif-audit path/to/photos/` (exit 1 means findings, 3 means some input could not be read; see the next section).
+
+What to expect, plainly: the CLI never writes or modifies a file. The strip writer is library-only and is not part of this release. The library (`exif-core`) is not published to crates.io (`publish = false`). The binary is unsigned and there is no Windows or Linux arm64 build yet. To uninstall, delete the folder; nothing else is installed.
 
 ## Using exif-audit
 

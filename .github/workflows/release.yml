@@ -1,0 +1,248 @@
+# First binary release of exif-audit (SPEC-024, DEC-016).
+#
+# Two ways in, both deliberate:
+#   * push of a tag `v*`   -> check, build three targets, write SHA256SUMS and
+#                             create a GitHub PRE-release with the assets.
+#   * workflow_dispatch    -> a dry run (input `dry_run`, default true): the same
+#                             check, build, smoke and checksum steps, uploaded as
+#                             workflow artifacts, and NO release is ever created.
+# Never any other trigger: this workflow can write a release, so no code from a
+# fork may reach it.
+#
+# Least privilege: read-only by default; only `publish` may write contents.
+# Only actions: checkout, dtolnay/rust-toolchain (both already used in ci.yml)
+# and GitHub's own upload/download-artifact. The release itself is created with
+# the `gh` CLI that is preinstalled on the runners, using GITHUB_TOKEN.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run: build, smoke and checksum only; never create a release'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Fails fast, before any build, when the tag or the dispatch is not releasable.
+  check:
+    name: check the tag against Cargo.toml
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history and tags: the tag-on-main check below needs origin/main.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: tag must equal the Cargo.toml version
+        id: version
+        env:
+          EVENT: ${{ github.event_name }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -eu
+          # The first `version =` line of Cargo.toml is the package version.
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          test -n "${version}" || { echo "::error::no version found in Cargo.toml"; exit 1; }
+          echo "Cargo.toml version: ${version}"
+          if [ "${EVENT}" = "workflow_dispatch" ] && [ "${DRY_RUN}" != "true" ]; then
+            case "${GITHUB_REF}" in
+              refs/tags/*) ;;
+              *)
+                echo "::error::dry_run=false is only allowed on a tag ref; got ${GITHUB_REF}. Run it with dry_run=true, or push the tag."
+                exit 1
+                ;;
+            esac
+          fi
+          case "${GITHUB_REF}" in
+            refs/tags/*)
+              if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+                echo "::error::tag ${GITHUB_REF_NAME} does not match Cargo.toml version v${version}"
+                exit 1
+              fi
+              ;;
+            *)
+              echo "not a tag ref (${GITHUB_REF}): dry run only, no tag to compare"
+              ;;
+          esac
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+      # A tag push must be an annotated tag on a commit that is on main. (A GitHub
+      # tag ruleset restricting who may create `v*` tags is also recommended, DEC-016;
+      # that is a repository setting, not something this file can enforce.)
+      # The annotated-tag test asks the GitHub API, not the checked-out ref:
+      # actions/checkout@v4 (issue #290) replaces an annotated tag with a
+      # lightweight one when it refetches, so `git cat-file` would always say
+      # `commit`. contents: read is enough for this read.
+      - name: tag must be annotated and on main
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          kind=$(gh api "repos/${GH_REPO}/git/ref/tags/${TAG}" --jq .object.type)
+          if [ "${kind}" != "tag" ]; then
+            echo "::error::tag ${TAG} is not annotated (API object type: ${kind}); create it with git tag -a"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "::error::tagged commit ${GITHUB_SHA} is not an ancestor of origin/main; tag a commit that is on main"
+            exit 1
+          fi
+
+  build:
+    name: build and smoke (${{ matrix.target }})
+    needs: check
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          # Cross-built on the arm64 macOS runner; smoke-run under Rosetta.
+          - target: x86_64-apple-darwin
+            os: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: build
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -eu
+          # The short SHA becomes the `(<ref>)` part of `exif-audit --version`.
+          export EXIF_AUDIT_BUILD_REF="$(printf %s "${GITHUB_SHA}" | cut -c1-7)"
+          echo "build ref: ${EXIF_AUDIT_BUILD_REF}"
+          cargo build --release --locked --bin exif-audit --target "${TARGET}"
+      - name: pack the archive
+        env:
+          TARGET: ${{ matrix.target }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          set -eu
+          stage="${RUNNER_TEMP}/stage"
+          rm -rf "${stage}"; mkdir -p "${stage}" dist
+          cp "target/${TARGET}/release/exif-audit" LICENSE-MIT LICENSE-APACHE README.md "${stage}/"
+          tar -czf "dist/exif-audit-${VERSION}-${TARGET}.tar.gz" -C "${stage}" exif-audit LICENSE-MIT LICENSE-APACHE README.md
+          ls -l dist
+      # Smoke the archive as a user gets it: unpacked into an empty directory.
+      # The fixtures are committed in the checkout; nothing else is shared.
+      - name: smoke checks on the unpacked archive
+        env:
+          TARGET: ${{ matrix.target }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          set -u
+          smoke="${RUNNER_TEMP}/smoke"
+          rm -rf "${smoke}"; mkdir -p "${smoke}"
+          tar -xzf "dist/exif-audit-${VERSION}-${TARGET}.tar.gz" -C "${smoke}"
+          for f in exif-audit LICENSE-MIT LICENSE-APACHE README.md; do
+            test -f "${smoke}/${f}" || { echo "::error::archive lacks ${f}"; exit 1; }
+          done
+          fix="${GITHUB_WORKSPACE}/fuzz/seeds/audit"
+          report="${RUNNER_TEMP}/report.json"
+          run=""
+          if [ "${TARGET}" = "x86_64-apple-darwin" ]; then
+            # Always assert the architecture of the Intel binary.
+            file "${smoke}/exif-audit" | tee "${RUNNER_TEMP}/file.txt"
+            grep -q 'x86_64' "${RUNNER_TEMP}/file.txt" || { echo "::error::the Intel binary is not x86_64"; exit 1; }
+            # The runner is arm64; running the Intel binary needs Rosetta.
+            if arch -x86_64 /usr/bin/true 2>/dev/null; then
+              run="arch -x86_64"
+            elif [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+              echo "::error::Rosetta is not available: refusing to release an x86_64-apple-darwin binary that was never run"
+              exit 1
+            else
+              echo "::warning::Rosetta is not available on this runner: the x86_64-apple-darwin binary was built and packed but NOT run (dry run, so not fatal)"
+              exit 0
+            fi
+          fi
+          cd "${smoke}"
+          ${run} ./exif-audit --version
+          short="$(printf %s "${GITHUB_SHA}" | cut -c1-7)"
+          want="exif-audit ${VERSION} (${short})"
+          test "$(${run} ./exif-audit --version)" = "${want}" || { echo "::error::--version is not '${want}'"; exit 1; }
+          ${run} ./exif-audit --json "${fix}/audit-full-house-jpeg" "${fix}/audit-full-house-tiff" > "${report}" && code=0 || code=$?
+          echo "findings run exit code: ${code}"
+          test "${code}" = "1" || { echo "::error::findings run: want exit 1, got ${code}"; exit 1; }
+          python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["summary"]["files"] == 2, d["summary"]; print("files:", d["summary"]["files"])' "${report}"
+          ${run} ./exif-audit --json --fail-on none "${fix}/audit-full-house-jpeg" "${fix}/audit-full-house-tiff" > "${report}" && code=0 || code=$?
+          test "${code}" = "0" || { echo "::error::--fail-on none: want exit 0, got ${code}"; exit 1; }
+          ${run} ./exif-audit --json --fail-on none "${fix}/audit-full-house-jpeg" does-not-exist > "${report}" && code=0 || code=$?
+          test "${code}" = "3" || { echo "::error::missing path: want exit 3, got ${code}"; exit 1; }
+          ${run} ./exif-audit --nope > /dev/null 2>&1 && code=0 || code=$?
+          test "${code}" = "2" || { echo "::error::bad flag: want exit 2, got ${code}"; exit 1; }
+          echo "smoke checks passed for ${TARGET}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exif-audit-${{ matrix.target }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    name: checksums and release
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The only job allowed to write; the release step below is still skipped
+    # unless the trigger is a tag push.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: exif-audit-*
+          merge-multiple: true
+          path: dist
+      - name: write and verify SHA256SUMS
+        run: |
+          set -eu
+          cd dist
+          n=$(ls exif-audit-*.tar.gz | wc -l | tr -d ' ')
+          test "${n}" = "3" || { echo "::error::expected 3 archives, found ${n}"; exit 1; }
+          shasum -a 256 exif-audit-*.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+          shasum -a 256 -c SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SHA256SUMS
+          path: dist/SHA256SUMS
+          if-no-files-found: error
+      - name: release notes from the CHANGELOG section
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          set -eu
+          awk -v h="## [${VERSION}]" 'index($0, h) == 1 { f = 1; next } /^## / { f = 0 } f' CHANGELOG.md > notes.md
+          grep -q '[^[:space:]]' notes.md || { echo "::error::CHANGELOG.md has no non-empty '## [${VERSION}]' section"; exit 1; }
+          cat notes.md
+      # Never on a dry run: only a tag push creates the (pre-)release.
+      - name: create the pre-release
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          gh release create "${TAG}" --prerelease --verify-tag --title "exif-audit ${TAG}" --notes-file notes.md dist/exif-audit-*.tar.gz dist/SHA256SUMS
