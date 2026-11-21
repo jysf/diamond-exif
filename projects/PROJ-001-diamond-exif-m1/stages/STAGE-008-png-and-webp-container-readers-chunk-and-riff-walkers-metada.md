@@ -89,7 +89,8 @@ STAGE-002 set the container pattern and STAGE-003 to STAGE-006 built the audit C
 - [x] SPEC-028 (shipped on 2026-11-21) — [M] PNG chunk walker: signature, chunk lengths, CRC as an issue, ordering, caps, `png_chunks` fuzz target (DEC for the PNG walk, modelled on DEC-006)
 - [x] SPEC-029 (shipped on 2026-11-21) — [M] PNG metadata regions: `eXIf` to the TIFF engine, `iTXt` XMP, `iCCP`, text-chunk Exif located; container independence
 - [x] SPEC-030 (shipped on 2026-11-21) — [M] WebP RIFF walker and metadata regions: RIFF size rules, `VP8X` flags, EXIF, XMP, ICCP, pad bytes, animation chunks passed over, `webp_riff` fuzz target (DEC for the RIFF walk)
-- [ ] SPEC-031 (frame) — [L] PNG and WebP read parity against ExifTool, comparator red-proofs and mutated-copy red-proofs
+- [ ] SPEC-031 (design) — [L] PNG read parity against ExifTool: fixtures and records, comparator, warning table, replay-and-perturb and mutated-copy red-proofs
+- [ ] SPEC-034 (frame) — [L] WebP read parity against ExifTool (applies the SPEC-031 apparatus) and the SPEC-030 carried test and seed gaps
 - [ ] SPEC-032 (frame) — [M] Audit wiring: sniff to audit for both formats, category rows, preview and fail-closed refusal in the writer, renderers, README, CHANGELOG
 
 **Count:** 3 shipped / 2 active / 0 pending

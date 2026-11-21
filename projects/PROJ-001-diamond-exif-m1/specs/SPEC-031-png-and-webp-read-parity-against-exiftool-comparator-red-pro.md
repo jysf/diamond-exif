@@ -6,7 +6,7 @@
 task:
   id: SPEC-031
   type: story                      # epic | story | task | bug | chore
-  cycle: frame                     # frame | design | build | verify | ship
+  cycle: design  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -36,8 +36,8 @@ handoff:
   created_at: null
 
 references:
-  decisions: []                    # [DEC-NNN, DEC-MMM]
-  constraints: []                  # [constraint-id-1, constraint-id-2]
+  decisions: [DEC-017, DEC-018, DEC-006]
+  constraints: [oracle-must-be-shown-red]
   related_specs: []                # [SPEC-NNN]
 
 # Blocking dependencies: specs that must SHIP before this one can start.
@@ -75,68 +75,65 @@ cost:
     session_count: 0
 ---
 
-# SPEC-031: PNG and WebP read parity against ExifTool, comparator red-proofs and mutated-copy red-proofs
-
-> **OUTLINE — `cycle: frame`.** This spec exists so its ID is stable and
-> siblings can declare `depends_on: [SPEC-031]`. Capture **scope** (Context /
-> Goal / Non-Goals) and **dependencies** only — the *approach* is designed
-> just-in-time when this moves to `design`. Do not pre-design it here.
+# SPEC-031: PNG read parity against ExifTool: comparator, records, red-proofs
 
 ## Context
 
-Fourth spec of STAGE-008. STAGE-001 and STAGE-002 established ExifTool as the oracle with replay records and red-proofs; both new readers need the same evidence before the audit relies on them.
+Fourth spec of STAGE-008 (split at design: WebP parity is SPEC-034, which reuses this apparatus). SPEC-028 to SPEC-030 built the PNG and WebP readers, with ExifTool probes made at design. This spec turns the PNG half of that evidence into committed, replayable, red-proofed tests, exactly as SPEC-011 did for JPEG (`tests/jpeg_oracle.rs`, `tests/support/oracle_jpeg.rs`, `tests/oracle-fixtures/exiftool/jpeg-*.txt`, the `tests/mutation_oracle.rs` mutants). The JPEG apparatus is about 3,000 lines: mirror its shape, do not reinvent it, and do not refactor it beyond what the PNG half needs.
 
 ## Goal
 
-Show ExifTool agreement on PNG and WebP fixtures (`-T -n -s3`, never linked), including hostile shapes probed under the time limit first, with the comparator red-proofed by replay-and-perturb and format-shaped mutated-copy red-proofs (control first); report every divergence, silence none.
+Show ExifTool 13.55 agrees with `png::read` on PNG fixtures and on the committed `png_chunks` seeds: the same 20 Exif value selectors, plus region presence (XMP, ICC), with every measured difference a pinned `KNOWN_DIVERGENCES` entry; the comparator is red-proofed (replay-and-perturb) and the PNG layer has mutated-copy red-proofs (control first); every divergence is reported and tracked in `guidance/questions.yaml`, never silenced.
 
 ## Inputs
 
-What the implementer will read or consume.
-
-- **Files to read:** `path/to/file.ext` — why
-- **External APIs:** <name, docs link, auth requirements>
-- **Related code paths:** `src/some/module/`
+- **Pattern to mirror (read first):** `tests/jpeg_oracle.rs` (live tests, replay tests, `KNOWN_DIVERGENCES` handling, warning-table pins, perturb red-proof, skip-is-loud test), `tests/support/oracle_jpeg.rs` (independent fixture builders: no code shared with `src/`, `examples/fuzz_seeds.rs` or the fuzz models), `tests/support/oracle.rs` (selectors, `Divergence`, `read_ours_jpeg`, `diff`, `compare_jpeg`, `REGION_SELECTORS`), `tests/support/tools.rs` (`run_tool_with_limit`, record format), `examples/oracle_record.rs` (the recorder), `tests/mutation_oracle.rs` plus `tests/support/probe.rs` and `mutate.rs` (library-fault apparatus), `guidance/questions.yaml` (divergence entries).
+- **The readers under test:** `src/png/` (DEC-017, DEC-018). **The evidence already gathered at design** is in DEC-017 and DEC-018 Context and their clarifications (ExifTool behaviour on about 30 PNG shapes); re-measure, never trust it: a record is the evidence, not the DEC.
+- **Oracle safety:** ExifTool runs only through `run_tool_with_limit`; every new hostile shape is first probed under the time limit, and a shape on which ExifTool does not terminate is recorded as a divergence (as `two-hop-cycle` was).
 
 ## Outputs
 
-What the implementer will produce.
-
-- **Files created:** `path/to/new.ext` — purpose
-- **Files modified:** `path/to/existing.ext` — what changes
-- **New endpoints / functions / components:** <names and signatures>
-- **New flags / options:** each flag's accepted values **and its default** — an
-  unstated default makes the implementer guess.
-- **Database changes:** <migrations, if any>
+- **Created:** `tests/support/oracle_png.rs` (independent fixture builders and the named fixture list), `tests/png_oracle.rs` (live, replay, red-proof tests), `tests/oracle-fixtures/exiftool/png-<name>.txt` records (one per fixture, `png-seed-<seed>.txt` per committed `png_chunks` seed), `tests/png_mutation_oracle.rs` (or a clearly separated section of `tests/mutation_oracle.rs`, builder's choice, documented).
+- **Modified:** `tests/support/oracle.rs` (`read_ours_png`, PNG region selectors, `compare_png`), `examples/oracle_record.rs` (PNG records; `just oracle-record` keeps its name), `tests/support/probe.rs` (a probe binary that reads a PNG through `png::read`), `guidance/questions.yaml` (one entry per divergence), README or docs only if a count changes.
+- **Fixtures (all named `png-...`, independent builders):** (a) every TIFF fixture that the JPEG oracle wraps (`jpeg-<tiff name>`), wrapped in an `eXIf` chunk of a minimal valid PNG; (b) shapes, at least: `eXIf` after IDAT, after IEND; `Exif\0\0` prefix; empty and non-TIFF `eXIf`; two `eXIf` with different IFD0 contents; bad CRC on the `eXIf` chunk; no IHDR; no IEND; length past EOF; length 0x80000000; `iTXt` XMP uncompressed, compressed (a zlib stream built with stored deflate blocks, no dependency), legacy `tEXt` XMP, `zTXt` XMP, XMP under another keyword, lowercase keyword; `iCCP` valid and with a bad header; `Raw profile type exif` and `xmp` in `tEXt`, `zTXt`, `iTXt` (the hex body built by the harness); a 80-byte keyword; `iTXt` flag 2; `eXIf` plus raw-profile Exif together; a trailer of arbitrary bytes; `eXIf` before IHDR. Add any shape the measurements suggest.
+- **No new dependency, no change to `src/`** unless parity exposes a reader bug: then fix it in this spec with a regression test and say so in the handback.
 
 ## Acceptance Criteria
 
-Testable outcomes. Each must map to at least one test. Cover happy
-path, error cases, edge cases.
-
-- [ ] Criterion 1 (testable)
-- [ ] Criterion 2 (testable)
-- [ ] Criterion 3 (testable)
+- [ ] **Replay (no ExifTool installed):** for every committed `png-*.txt` record the comparator reports zero mismatches on an unmodified reading, except entries pinned in `KNOWN_DIVERGENCES`; the record headers carry the exact command, the ExifTool version and the stderr warnings.
+- [ ] **Live (ExifTool installed):** the same comparison over freshly run ExifTool on the fixtures and the `png_chunks` seeds; a missing ExifTool prints a loud `SKIP` and passes unless `DIAMOND_EXIF_REQUIRE_ORACLE=1`, which then fails (test for both).
+- [ ] **What is compared:** the 20 Exif selectors through `read_ours_png`, whose treatment of several Exif blocks is a MEASURED model of ExifTool's behaviour (two `eXIf`, `eXIf` plus raw-profile Exif), documented in the file and pinned by a test; plus region presence: XMP present, ICC present.
+- [ ] **Known limits are pinned divergences, not silent:** raw-profile Exif values and compressed XMP content are read by ExifTool and only located by us (DEC-018): each is a `KNOWN_DIVERGENCES` entry with command, version, measured stdout, which side is right and a `questions.yaml` id; a test requires every entry to be PRESENT (a divergence that stops existing fails the build) and every entry to have its question.
+- [ ] **Warning table:** a test pins our `PngIssue` kinds beside ExifTool's warnings for the shapes that produce both (prefix header, truncated, missing IHDR, trailer data, chunks after IDAT) and states where ExifTool is silent (bad CRC) or louder.
+- [ ] **Container independence:** the bare TIFF read equals the `eXIf`-wrapped read for every wrapped fixture, live and by record.
+- [ ] **Replay-and-perturb red-proof:** changing one field of one committed record turns the comparison red naming exactly that selector; control first (unperturbed is green).
+- [ ] **Mutated-copy red-proofs** (apparatus of `tests/mutation_oracle.rs`, control first, mutation marked `RED-PROOF INJECTION`, located by a needle that must occur exactly once): at least six library faults in `src/png/` each turn the comparison red naming the expected selectors, for example: the `eXIf` TIFF offset is wrong by one; the first block is not primary; the `Exif\0\0` prefix is not skipped; the trailer scan is disabled (`eXIf` after IEND lost); `XML:com.adobe.xmp` routing broken (XMP presence lost); `iCCP` not located; plus two byte mutations of a fixture (a corrupted offset inside the `eXIf` payload; truncation between IHDR and IDAT). The injection marker must not leak into `src/` or `tests/support/` (reuse the leak test).
+- [ ] **Hostile shapes** are probed under the time limit before being recorded; any non-terminating shape is a recorded divergence.
+- [ ] Every divergence found is in `guidance/questions.yaml`; if parity exposes a reader bug it is fixed here with a regression test.
+- [ ] `just lint`, `just test`, `just mutation-oracle`, `just validate`, `just cost-audit`, `just forbid-unsafe` green; `just oracle-record` is idempotent (run twice, no diff); no `#[allow]` in `src/`.
 
 ## Failing Tests
 
-Written during the **design** cycle, BEFORE handoff. The implementer's
-job in **build** is to make these pass.
+Written first. The build is mostly tests, so "failing first" means the comparator tests exist with the fixture list before the records are generated, and are seen red for the right reason (missing records) before `just oracle-record` produces them.
 
-- **`path/to/test.file`**
-  - `"test description 1"` — asserts: ...
-  - `"test description 2"` — asserts: ...
+- **`tests/png_oracle.rs`:** `png_fixtures_are_deterministic_and_uniquely_named`; `every_wrapped_tiff_fixture_is_present_and_matches_its_tiff_bytes`; `replay_png_records_are_clean_on_an_unmodified_reading`; `replay_png_headers_record_command_version_and_stderr`; `oracle_names_the_one_field_perturbed_in_a_png_record`; `container_independence_every_wrapped_fixture_reads_the_same_bare_and_in_png`; `several_eXIf_model_is_measured_and_pinned`; `region_presence_xmp_and_icc_agree_with_exiftool`; `xmp_keyword_rules_agree` (itxt, text, ztxt, other keyword, lowercase); `raw_profile_and_compressed_xmp_are_recorded_divergences_and_still_present`; `exif_after_idat_and_after_iend_agree`; `warning_table_pins_our_issue_kinds_beside_exiftools_warnings`; `every_known_divergence_has_a_question_entry`; `a_divergence_that_stops_being_one_fails`; `live_png_parity_on_fixtures`; `live_png_parity_on_the_png_seeds`; `live_png_skip_is_loud_and_required_mode_fails`.
+- **`tests/png_mutation_oracle.rs`:** `controls_are_green`, one `mutant_...` test per fault above, `byte_mutation_...` for the two corruptions, `injection_marker_does_not_leak`.
 
 ## Non-Goals
 
-- New reader behaviour unless parity exposes a bug, which is then fixed in this spec with a regression test
-- Audit inventory parity: SPEC-032
-- Fuzz targets (already shipped with the walkers)
+- WebP parity (SPEC-034); audit inventory parity (SPEC-032)
+- Decoding or inflating anything in the library (DEC-018): divergences for raw profiles and compressed XMP are the expected outcome, not a defect to fix here
+- Changing the JPEG or TIFF oracle behaviour; refactoring the shared apparatus beyond adding PNG entries
 
 ## Notes for the Implementer
 
-Gotchas, style preferences, reuse opportunities. Keep short — the full
-context graph lives in the handoff file.
+- **Two checkpoints.** (1) fixtures, `oracle_png.rs`, `read_ours_png`, recorder, records, replay and live tests, divergences and questions, warning table: gates, COMMIT. (2) the mutation oracle and red-proofs: gates, COMMIT. If past about 60 percent of budget at checkpoint 1, hand back after it.
+- Measure before modelling: the several-Exif rule and the ICC and XMP selectors must come from records, not from DEC text; write the model last, from the records.
+- The fixture builders must not share encoding code with `src/`, `examples/fuzz_seeds.rs` or `tests/support/png_shapes.rs` (the oracle must not share a bug with the thing it checks): write them from the PNG specification again. A stored-deflate zlib stream needs only an Adler-32 and a CRC-32 written in the file.
+- Names are normative: `png-<tiff name>` for wrapped TIFFs, `png-<shape>` for shapes, `png-seed-<seed>` for seeds.
+- The shared oracle files are large: add, do not rewrite; keep the diff to `oracle.rs` and `oracle_record.rs` small and additive.
+- Probe each new hostile shape under `run_tool_with_limit` before recording it.
+- Budget: about 100 tool calls or 250k context.
 
 ---
 
@@ -173,8 +170,3 @@ context graph lives in the handoff file.
    (## Context is the before, ## Goal is the after): confirm the prediction,
    don't reconstruct it from memory.
    — <answer | none>
-
-## Carried from SPEC-030 verify (2026-11-21)
-
-- Add a unit test and a seed for the first-`VP8X` rule: `RIFF` + `VP8X`(0x00) + `VP8X`(0x08) + `VP8L` + `EXIF` must give `vp8x().flags() == 0` and one `ChunkFlagMismatch{EXIF, false}` (a mutant making the last `VP8X` win survives every current test). Add a `vp8x-nine-bytes` seed (a `BadVp8x` threshold of 9 is otherwise killed only by unit tests). Pin `MAX_WEBP_CHUNKS`, `MAX_WEBP_ISSUES` as literals. Run the model on all 35 walk seeds, not only the 16 `meta-` seeds.
-- Parity shapes to add: zero-length `XMP `, zero-length `XMP\0`, two `VP8X`, a short `VP8X` followed by a full one.
