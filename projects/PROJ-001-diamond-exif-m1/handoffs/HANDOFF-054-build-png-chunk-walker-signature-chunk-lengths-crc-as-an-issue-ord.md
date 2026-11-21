@@ -49,10 +49,10 @@ handback:
   status: completed                # completed | blocked | rejected
   agent: claude-sonnet-5-5         # the model that ACTUALLY ran (per the system prompt)
   verdict: null                    # verify handoffs only
-  basis: estimate                  # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # not exposed to this subagent; the orchestrator fills the harness subagent_tokens figure
-  estimated_usd: null
-  duration_minutes: null
+  basis: agent-result                # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 254968              # harness subagent_tokens: 186,546 (build) + 68,422 (first attempt, stopped on a wrong worktree base)
+  estimated_usd: 1.68
+  duration_minutes: 13
   branch: claude/spec-028-png-walker
   pr: null
   completed_at: 2026-11-21
