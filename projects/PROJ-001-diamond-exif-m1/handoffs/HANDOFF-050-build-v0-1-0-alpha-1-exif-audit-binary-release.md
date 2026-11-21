@@ -51,13 +51,13 @@ handback:
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
   basis: agent-result                # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: 281773              # REAL combined count — what cost-audit reads
-  estimated_usd: 1.86              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: 11
+  tokens_total: 451180              # REAL combined count — what cost-audit reads
+  estimated_usd: 2.98              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  duration_minutes: 13
   branch: claude/alpha-release-exif-audit
   pr: null
   completed_at: 2026-11-20               # YYYY-MM-DD
-  notes: "Cumulative: build 124,602 + verify-round-1 follow-up 157,171 = 281,773 tokens at 6.60 USD/Mtok = 1.86 USD; 387,304 ms + 244,061 ms = 10.5 min; 18 + 13 tool uses. Both figures are the harness subagent_tokens. The builder reported estimates (about 130,000 and none for the follow-up), not used."
+  notes: "Cumulative: build 124,602 + verify-round-1 follow-up 157,171 + verify-round-2 follow-up 169,407 = 451,180 tokens at 6.60 USD/Mtok = 2.98 USD; 387,304 + 244,061 + 145,230 ms = 13.2 min; 18 + 13 + 5 tool uses. All harness subagent_tokens, the same basis as earlier specs; each resume re-reads the builder history, which is why a short follow-up still costs 150k+. The builder reported estimates, not used."
   synced_at: 2026-11-20
 ---
 

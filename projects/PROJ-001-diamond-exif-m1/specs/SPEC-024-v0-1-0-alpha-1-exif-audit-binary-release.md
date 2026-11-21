@@ -55,11 +55,11 @@ cost:
       agent: claude-sonnet-5-5
       interface: other
       basis: agent-result
-      tokens_total: 281773
-      estimated_usd: 1.86
-      duration_minutes: 11
+      tokens_total: 451180
+      estimated_usd: 2.98
+      duration_minutes: 13
       recorded_at: 2026-11-20
-      notes: "Cumulative: build 124,602 + verify-round-1 follow-up 157,171 = 281,773 tokens at 6.60 USD/Mtok = 1.86 USD; 387,304 ms + 244,061 ms = 10.5 min; 18 + 13 tool uses. Harness subagent_tokens, the same basis as earlier specs. The builder reported estimates, not used."
+      notes: "Cumulative: build 124,602 + verify-round-1 follow-up 157,171 + verify-round-2 follow-up 169,407 = 451,180 tokens at 6.60 USD/Mtok = 2.98 USD; 387,304 + 244,061 + 145,230 ms = 13.2 min; 18 + 13 + 5 tool uses. All harness subagent_tokens, the same basis as earlier specs; each resume re-reads the builder history, which is why a short follow-up still costs 150k+. The builder reported estimates, not used."
     - cycle: verify
       handoff: HANDOFF-051
       agent: claude-opus-5-5
@@ -81,8 +81,8 @@ cost:
       recorded_at: 2026-11-20
       notes: "Round 2, PUNCH LIST (1 High, 4 Low): the annotated-tag check rejects every real annotated tag (actions/checkout@v4 overwrites it). Harness subagent_tokens (136,801; 27 tool uses; 4.8 min) at 6.60 USD/Mtok = 0.90 USD. The verifier's own fetch subagent (39,291) is not added: unclear whether the harness figure includes it. The verifier self-reported 1,578,357 (cache reads included), not used."
   totals:
-    tokens_total: 551745
-    estimated_usd: 3.64
+    tokens_total: 721152
+    estimated_usd: 4.76
     session_count: 3
 ---
 

@@ -58,7 +58,7 @@ handback:
   pr: null
   completed_at: 2026-11-20         # YYYY-MM-DD
   notes: "Round 2, PUNCH LIST (1 High, 4 Low): the annotated-tag check rejects every real annotated tag (actions/checkout@v4 overwrites it). Orchestrator correction: tokens_total is the harness subagent_tokens (136,801; 27 tool uses; 286,999 ms = 4.8 min) at 6.60 USD/Mtok = 0.90 USD. The verifier also used a fetch subagent it reported at 39,291 subagent_tokens, not added here (unclear whether the harness figure already includes it). The verifier self-reported 1,578,357 (transcript, cache reads included), not used."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-20
 ---
 
 # HANDOFF-052: Verify SPEC-024, round 2 (narrow: the round-1 punch list)
