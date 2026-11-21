@@ -6,19 +6,19 @@
 task:
   id: SPEC-028
   type: story                      # epic | story | task | bug | chore
-  cycle: verify  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
   complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: approved  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
                                    #   rejects anything" stops being a hunch and becomes a number.
-  verify_rounds: []                # every verify outcome, oldest first, appended by
+  verify_rounds: [approved]  # every verify outcome, oldest first, appended by
                                    #   `just advance-cycle` each time the spec leaves verify.
                                    #   verify_verdict keeps only the LAST one, so a spec sent
                                    #   back and then approved read as "approved": irradiance's
@@ -79,10 +79,21 @@ cost:
       duration_minutes: 13
       recorded_at: 2026-11-21
       notes: "No token counter is available inside this subagent run, so tokens_total is null rather than invented; the orchestrator replaces it with the harness subagent_tokens figure. About 60 tool calls."
+    - cycle: verify
+      handoff: HANDOFF-055
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 139694
+      estimated_usd: 0.92
+      duration_minutes: 25
+      recorded_at: 2026-11-21
+      notes: "Verifier could not read its own transcript usage; tokens_total is an estimate of context consumed, to be replaced by the harness figure. Approved at ff9f37b (build 0989051) with four Low notes, none blocking."
   totals:
-    tokens_total: 254968
-    estimated_usd: 1.68
-    session_count: 1
+    tokens_total: 394662
+    estimated_usd: 2.60
+    session_count: 2
+shipped_at: 2026-11-21
 ---
 
 # SPEC-028: PNG chunk walker: signature, chunk lengths, CRC as an issue, ordering, caps, `png_chunks` fuzz target (DEC for the PNG walk, modelled on DEC-006)
@@ -172,22 +183,19 @@ Written first by the implementer from these descriptions (design supplies the ca
 *Appended during **ship**. Three questions, short answers.*
 
 1. **What would I do differently next time?**
-   — <answer>
+   — Tell every agent in the first line to create its branch from the named design branch: the harness cut the worktree from main, the first builder stopped with nothing built, and 68,422 tokens were lost. The design itself held: no verify finding above Low.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — DEC-017 gained a clarifications section (six builder choices, the issue-cap rule); the shared `TooManyIssues` message is now walk-neutral. `tests/release_layout.rs` pins `[Unreleased]` empty, which blocks CHANGELOG entries between releases; the release lane should relax it (not done here).
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — No new spec; the CHANGELOG pin is a release-lane chore.
 
 4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
    the defect-escape distribution is greppable across specs:
    `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
    `none` (clean first try).
-   — <one word>
+   — verify
    *(Runtime/operational defects — the escape-prone class — only exist once the
    artifact meets its real host. `escaped` here is a signal to strengthen the
    §12 behavioral pre-flight for that surface.)*

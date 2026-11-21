@@ -358,7 +358,7 @@ impl fmt::Display for Error {
                 write!(f, "JPEG walk reached the limit of {limit} segments")
             }
             Error::TooManyIssues { limit } => {
-                write!(f, "JPEG walk reached the limit of {limit} issues")
+                write!(f, "walk reached the limit of {limit} issues")
             }
             Error::ExtraExif { at } => {
                 write!(

@@ -67,6 +67,15 @@ A PNG is an eight-byte signature followed by chunks: a 4-byte big-endian length,
 - **Negative:** callers consult another issue list; CRC computation adds a pass over the data.
 - **Neutral:** `Error` gains variants (additive on a `#[non_exhaustive]` enum): `NotPng`, `BadChunkCrc`, `BadChunkType`, `BadChunkLength`, `MissingIhdr`, `BadIhdr`, `MissingIend`, `TooManyChunks`.
 
+## Clarifications from the SPEC-028 build and verify (2026-11-21)
+
+- **Issue order within one chunk:** bad type, then `MissingIhdr`, then `BadIhdr`, then CRC.
+- **Issue cap:** the chunk whose own issue would exceed `MAX_PNG_ISSUES` is not recorded, so an issue offset can point at a chunk absent from `chunks()`; once the cap is full a halting issue is replaced by `TooManyIssues`, as in the JPEG walker. The shared `TooManyIssues` message is walk-neutral.
+- **Chunk cap:** `TooManyChunks` fires on a further whole, well-formed chunk, so exactly 65,536 chunks is clean; a bad tail after 65,536 chunks gives `Truncated` or `BadChunkLength` instead.
+- **`Truncated` length:** 12 when fewer than 12 bytes remain, otherwise the chunk's full size (12 + length).
+- **Signature only:** `MissingIhdr` then `MissingIend`, both at offset 8.
+- **`BadIhdr`** applies to any `IHDR` chunk; a second well-formed `IHDR` is clean.
+
 ## Validation
 
 Revisit if ExifTool reads a class of real files past a point where the walk halts, if the 65,536 cap truncates real files in practice, or if the writer needs per-chunk provenance on issues.

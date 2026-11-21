@@ -50,15 +50,15 @@ handback:
   agent: claude-opus-5-5           # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: approved                # verify handoffs: approved | punch-list | rejected
-  basis: estimate                  # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: 110000             # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  basis: agent-result                # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 139694             # REAL combined count — what cost-audit reads
+  estimated_usd: 0.92              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: 25
   branch: claude/spec-028-verify
   pr: null
   completed_at: 2026-11-21         # YYYY-MM-DD
   notes: "Verifier could not read its own transcript usage; tokens_total is an estimate of context consumed, to be replaced by the harness figure. Approved at ff9f37b (build 0989051) with four Low notes, none blocking."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-21
 ---
 
 # HANDOFF-055: Verify SPEC-028 PNG chunk walker (DEC-017)
