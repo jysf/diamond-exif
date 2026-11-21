@@ -568,7 +568,7 @@ impl fmt::Display for Error {
                 if *declared {
                     write!(f, "VP8X sets the {flag} flag but no such chunk exists")
                 } else {
-                    write!(f, "a {flag} chunk exists but the VP8X flag is clear")
+                    write!(f, "an {flag} chunk exists but the VP8X flag is clear")
                 }
             }
             Error::MetadataWithoutVp8x => {

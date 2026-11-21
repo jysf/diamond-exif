@@ -51,14 +51,14 @@ handback:
                                    #   to_agent above is a prediction from tier_map
   verdict: approved                # verify handoffs: approved | punch-list | rejected
   basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  tokens_total: 165255              # harness subagent_tokens
+  estimated_usd: 1.09              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: 40
   branch: claude/spec-030-verify
   pr: null
   completed_at: 2026-11-21         # YYYY-MM-DD
   notes: "No token count is exposed to the subagent; the orchestrator replaces null with the harness figure. About 35 tool calls."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-21
 ---
 
 # HANDOFF-059: Verify SPEC-030 WebP RIFF walker and metadata regions (DEC-019)

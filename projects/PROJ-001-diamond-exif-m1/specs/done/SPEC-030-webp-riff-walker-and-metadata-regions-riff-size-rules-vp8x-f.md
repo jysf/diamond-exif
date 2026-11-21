@@ -6,19 +6,19 @@
 task:
   id: SPEC-030
   type: story                      # epic | story | task | bug | chore
-  cycle: verify  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
   complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: approved  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
                                    #   rejects anything" stops being a hunch and becomes a number.
-  verify_rounds: []                # every verify outcome, oldest first, appended by
+  verify_rounds: [approved]  # every verify outcome, oldest first, appended by
                                    #   `just advance-cycle` each time the spec leaves verify.
                                    #   verify_verdict keeps only the LAST one, so a spec sent
                                    #   back and then approved read as "approved": irradiance's
@@ -79,10 +79,21 @@ cost:
       duration_minutes: null
       recorded_at: 2026-11-21
       notes: "No token count is exposed to the subagent; the orchestrator replaces null with the harness figure. About 85 tool calls."
+    - cycle: verify
+      handoff: HANDOFF-059
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 165255
+      estimated_usd: 1.09
+      duration_minutes: 40
+      recorded_at: 2026-11-21
+      notes: "No token count is exposed to the subagent; the orchestrator replaces null with the harness figure. About 35 tool calls."
   totals:
-    tokens_total: 263463
-    estimated_usd: 1.74
-    session_count: 1
+    tokens_total: 428718
+    estimated_usd: 2.83
+    session_count: 2
+shipped_at: 2026-11-21
 ---
 
 # SPEC-030: WebP RIFF walker and metadata regions: RIFF size rules, `VP8X` flags, EXIF, XMP, ICCP, pad bytes, animation chunks passed over, `webp_riff` fuzz target (DEC for the RIFF walk)
@@ -166,22 +177,19 @@ Written first from these descriptions; fixtures come from `tests/support/webp_sh
 *Appended during **ship**. Three questions, short answers.*
 
 1. **What would I do differently next time?**
-   — <answer>
+   — The wider oracle probe at design paid off: 44 shapes up front and 14 more at verify found no Medium, against two Mediums for PNG. Next time also require, in the build handoff, one seed per mutation-distinguishing shape (two VP8X, a 9-byte VP8X) so the model alone kills them; the verifier found one survivor and a seed gap that unit tests masked.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — DEC-019 gained clarifications (halt rule, first-VP8X rule, issue offsets, empty regions). The checklist 'probe each chunk type in every malformation variant before writing the DEC' worked and should stay a design habit for container DECs (HEIC next).
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — No new spec: the test and seed gaps (L1, L2, vp8x-nine-bytes), the extra parity shapes and the empty-region rule are carried as notes into SPEC-031 and SPEC-032.
 
 4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
    the defect-escape distribution is greppable across specs:
    `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
    `none` (clean first try).
-   — <one word>
+   — verify
    *(Runtime/operational defects — the escape-prone class — only exist once the
    artifact meets its real host. `escaped` here is a signal to strengthen the
    §12 behavioral pre-flight for that surface.)*

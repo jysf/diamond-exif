@@ -73,6 +73,18 @@ A WebP parse is fatal (`Err`) only when the input is not a WebP: fewer than 12 b
 - **Negative:** a fourth issue channel; a file whose declared size is smaller than its content is walked past that size, which a strict RIFF reader would not.
 - **Neutral:** `Error` gains `NotWebp`, `RiffSizeMismatch`, `MissingPad`, `BadVp8x`, `MisplacedVp8x`, `ChunkFlagMismatch`, `MetadataWithoutVp8x`, `NonCanonicalChunkId` (additive); `TooManyChunks` and `TooManyIssues` are reused with walk-neutral wording.
 
+## Clarifications from the SPEC-030 build and verify (2026-11-21)
+
+- **Halt rule:** a walk halt (`Truncated`, `TooManyChunks`, `TooManyIssues`) suppresses the end-of-walk `ChunkFlagMismatch` and `MetadataWithoutVp8x` issues, since a truncated walk cannot know which chunks followed the damage; the halting issue is always last. Regions and blocks already found are kept; extraction issues are suppressed (DEC-018 rule).
+- **`vp8x()`** is the first `VP8X` chunk only: `None` when it is shorter than 10 bytes even if a later one is longer (ExifTool decodes a later one; the metadata it locates is the same). A `VP8X` of any length counts as present for `MetadataWithoutVp8x`; a short one gets no flag comparison. A `VP8X` after the first is `MisplacedVp8x` and never replaces it.
+- **Issue offsets:** `RiffSizeMismatch` at 4 and always first; a `ChunkFlagMismatch` at the first `VP8X`; `MetadataWithoutVp8x` at the first metadata chunk.
+- **Issues per chunk:** "at most two" applies to extraction issues (`ExtraExif`, `ImproperExifHeader`); the walk can add up to three on one chunk (`NonCanonicalChunkId`, `BadVp8x`, `MisplacedVp8x`, `MissingPad` in that order). All totals are bounded by the constants.
+- **Empty regions:** a zero-length `XMP ` or `ICCP` chunk is reported as an empty region (ExifTool shows nothing for an empty `XMP `); consumers must not count an empty region as present metadata.
+- **`NonCanonicalChunkId`** is raised for `XMP\0` even at zero length (ExifTool warns only when it reads content); a warning-level difference.
+- **`Chunk::range()`** includes the pad byte only when the pad is in the input.
+- **`RiffSizeMismatch.actual`** is `input length - 8` as a `usize`.
+- **Verified against ExifTool** (14 further shapes): `ICCP` with the flag unset or no `VP8X`, `ALPH` before `VP8 `, a simple `VP8 ` file with `EXIF` appended, `EXIF` right after the header, declared size 2, odd last `EXIF` or `XMP ` without pad (ExifTool warns "No padding"), two `VP8X`, an `ANMF` holding an `EXIF` followed by a top-level `EXIF` (only the top-level one is read): the located metadata matches in every case.
+
 ## Validation
 
 Revisit if SPEC-031 shows a class of file where ExifTool stops at the declared size, if real files make `ChunkFlagMismatch` so common it is noise, or if the writer needs the declared end as a first-class value.
