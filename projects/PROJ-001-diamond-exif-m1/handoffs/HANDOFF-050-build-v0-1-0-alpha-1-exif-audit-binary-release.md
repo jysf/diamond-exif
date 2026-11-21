@@ -50,15 +50,15 @@ handback:
   agent: claude-sonnet-5-5                      # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: estimate                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: 130000               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: 20
+  basis: agent-result                # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 124602              # REAL combined count — what cost-audit reads
+  estimated_usd: 0.82              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  duration_minutes: 6
   branch: claude/alpha-release-exif-audit
   pr: null
   completed_at: 2026-11-20               # YYYY-MM-DD
-  notes: "tokens_total is an estimate (no transcript access in the subagent); the orchestrator replaces it with the harness subagent_tokens figure"                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "Orchestrator correction: tokens_total is the harness subagent_tokens (124,602; 18 tool uses; 387,304 ms = 6.5 min) at 6.60 USD/Mtok = 0.82 USD, the same basis as earlier specs. The builder reported an estimate of about 130,000 and about 24 tool calls, which is not used."
+  synced_at: 2026-11-20
 ---
 
 # HANDOFF-050: Build SPEC-024 v0.1.0-alpha.1 exif-audit binary release (Phase 1: reversible prep)

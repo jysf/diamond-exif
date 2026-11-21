@@ -49,11 +49,21 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: 450000
-  sessions: []
+  sessions:
+    - cycle: build
+      handoff: HANDOFF-050
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 124602
+      estimated_usd: 0.82
+      duration_minutes: 6
+      recorded_at: 2026-11-20
+      notes: "Orchestrator correction: tokens_total is the harness subagent_tokens (124,602; 18 tool uses; 387,304 ms = 6.5 min) at 6.60 USD/Mtok = 0.82 USD, the same basis as earlier specs. The builder reported an estimate of about 130,000 and about 24 tool calls, which is not used."
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 124602
+    estimated_usd: 0.82
+    session_count: 1
 ---
 
 # SPEC-024: v0.1.0-alpha.1 exif-audit binary release
