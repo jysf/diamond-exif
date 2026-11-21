@@ -6,7 +6,7 @@
 task:
   id: SPEC-029
   type: story                      # epic | story | task | bug | chore
-  cycle: frame                     # frame | design | build | verify | ship
+  cycle: design  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -36,8 +36,8 @@ handoff:
   created_at: null
 
 references:
-  decisions: []                    # [DEC-NNN, DEC-MMM]
-  constraints: []                  # [constraint-id-1, constraint-id-2]
+  decisions: [DEC-018, DEC-017, DEC-006, DEC-002]
+  constraints: [panic-free-library, fuzz-target-per-surface]
   related_specs: []                # [SPEC-NNN]
 
 # Blocking dependencies: specs that must SHIP before this one can start.
@@ -77,66 +77,80 @@ cost:
 
 # SPEC-029: PNG metadata regions: `eXIf` to the TIFF engine, `iTXt` XMP, `iCCP`, text-chunk Exif located; container independence
 
-> **OUTLINE — `cycle: frame`.** This spec exists so its ID is stable and
-> siblings can declare `depends_on: [SPEC-029]`. Capture **scope** (Context /
-> Goal / Non-Goals) and **dependencies** only — the *approach* is designed
-> just-in-time when this moves to `design`. Do not pre-design it here.
-
 ## Context
 
 Second spec of STAGE-008. With the PNG chunk walk in place (SPEC-028), the metadata chunks can be located, mirroring SPEC-010 for JPEG.
 
 ## Goal
 
-Locate PNG metadata as borrowed regions: `eXIf` handed to the tolerant TIFF engine (same IFDs as the bare blob), `iTXt` XMP with keyword `XML:com.adobe.xmp` (compression flag reported, not inflated), `iCCP` with its profile name, and text-chunk Exif variants located and flagged. Decide at design how `eXIf` after IDAT and several `eXIf` chunks are treated, measured against ExifTool.
+Add `png::read`: Exif from `eXIf` handed to the tolerant TIFF engine, and borrowed, never-decoded regions for XMP, ICC, raw-profile text and other text chunks, including metadata chunks after `IDAT` and after `IEND`, exactly as `decisions/DEC-018-png-metadata-regions-exif-hand-off-and-text-routing.md` specifies; extend the `png_chunks` fuzz target with an independent model of the extraction.
 
 ## Inputs
 
-What the implementer will read or consume.
-
-- **Files to read:** `path/to/file.ext` — why
-- **External APIs:** <name, docs link, auth requirements>
-- **Related code paths:** `src/some/module/`
+- **Decisions:** DEC-018 (the contract; measured against ExifTool in the design) and DEC-017 (the walk it builds on). Follow both exactly; raise any disagreement in the handback.
+- **Files to read:** `src/jpeg/metadata.rs` (the pattern: `read`, `ExifBlock`, `Region`, `AnyIssue`, caps, halt handling), `src/png/mod.rs` and `src/png/issue.rs` (SPEC-028), `src/error.rs`, `fuzz/fuzz_targets/png_chunks.rs`, `fuzz/shared/png_chunk_invariants.rs`, `fuzz/shared/jpeg_metadata_invariants.rs` (shared-model pattern), `tests/fuzz_layout.rs`, `tests/support/png_shapes.rs`, `examples/fuzz_seeds.rs`.
+- **Evidence:** the ExifTool probe table is in DEC-018 Context; the 17 probe shapes are described there, build equivalents with `tests/support/png_shapes.rs` (the generator is not committed).
 
 ## Outputs
 
-What the implementer will produce.
-
-- **Files created:** `path/to/new.ext` — purpose
-- **Files modified:** `path/to/existing.ext` — what changes
-- **New endpoints / functions / components:** <names and signatures>
-- **New flags / options:** each flag's accepted values **and its default** — an
-  unstated default makes the implementer guess.
-- **Database changes:** <migrations, if any>
+- **Created:** `src/png/metadata.rs` (`PngMetadata`, `PngExifBlock`, `PngRegion`, `AnyPngIssue`, `read`, constants), `fuzz/shared/png_metadata_invariants.rs` (independent model), `tests/png_metadata.rs`; extra seeds under `fuzz/seeds/png_chunks/` (names prefixed `meta-`).
+- **Modified:** `src/png/mod.rs` (re-exports; a crate-internal way to frame chunks over the trailer without duplicating the walk logic), `src/error.rs` (`ImproperExifHeader`, `BadTextChunk`, `BadIccpChunk`, `TooManyRegions`, with Display), `src/lib.rs` docs, `fuzz/fuzz_targets/png_chunks.rs` (also calls `read` and asserts the shared model), `tests/support/png_shapes.rs`, `examples/fuzz_seeds.rs`, `tests/fuzz_layout.rs` (png seed count, names, model included), README (PNG metadata located; still not in `exif-audit`), the stage file (one line).
+- **API (all `pub`, documented, panic-free):**
+  - `png::read(&'a [u8]) -> Result<PngMetadata<'a>, Error>` (fatal exactly when `Png::parse` is)
+  - `PngMetadata`: `png() -> &Png`, `exif_blocks() -> &[PngExifBlock]`, `exif() -> Option<&Container>` (first `Ok`), `regions() -> &[PngRegion]`, `png_issues() -> &[PngIssue]`, `issues() -> impl Iterator<Item = AnyPngIssue>`, `is_clean()`
+  - `PngExifBlock`: `offset()` (chunk), `tiff_at()`, `tiff()`, `container() -> Result<&Container, &Error>`, `after_idat()`, `after_iend()`
+  - `PngRegion` (`#[non_exhaustive]` enum): `Xmp { offset, compressed, data, after_idat, after_iend }`, `Icc { offset, name, method, data, .. }`, `RawProfile { offset, profile, compressed, data, .. }`, `Text { offset, keyword, compressed, data, .. }`, with `offset()`, `data()`, `after_idat()`, `after_iend()`
+  - constants `MAX_PNG_EXIF_BLOCKS = 16`, `MAX_PNG_TRAILER_CHUNKS = 4096`, `MAX_PNG_REGIONS = 65_536`
+- **No new dependency.**
 
 ## Acceptance Criteria
 
-Testable outcomes. Each must map to at least one test. Cover happy
-path, error cases, edge cases.
-
-- [ ] Criterion 1 (testable)
-- [ ] Criterion 2 (testable)
-- [ ] Criterion 3 (testable)
+- [ ] **Container independence:** each Exif block's container is `Ok` iff the bare `Container::parse` of its `tiff()` is, with identical IFD structure; a fatal error equals the bare error. `tiff_at()` plus an IFD offset indexes the same byte in the input.
+- [ ] `eXIf` rules (DEC-018): `Exif\0\0` prefix accepted with one `ImproperExifHeader`; empty and non-TIFF payloads leave the block `Err` with no panic; the first block is primary; a second is `ExtraExif` and still parsed; at most 16 parsed, the 17th costs only the issue.
+- [ ] Text routing: `iTXt` and `tEXt` `XML:com.adobe.xmp` give `Xmp` (compressed flag from the iTXt flag, `false` for tEXt); the same text under keyword `Comment` is `Text`; `Raw profile type exif` and `... xmp` in `tEXt`, `zTXt` and `iTXt` give `RawProfile` with the profile name and the right `compressed`; ordinary `tEXt`, `zTXt`, `iTXt` give `Text`. Keyword matching is case-sensitive.
+- [ ] `BadTextChunk`: no NUL in the first 80 bytes, empty keyword, keyword over 79 bytes, truncated `iTXt` header, `iTXt` flag other than 0 or 1; each yields the issue and no region.
+- [ ] `iCCP`: name, method and data located (`Icc`); empty name, no NUL, or a missing method byte is `BadIccpChunk`.
+- [ ] Nothing is inflated or hex-decoded; every region's `data()` is a subslice of the input (pointer-range test), and `Xmp`/`Text`/`RawProfile` data starts exactly after the chunk's header fields.
+- [ ] Positions: `after_idat` is true exactly for metadata chunks after the first `IDAT`; chunks after `IEND` are found through the trailer scan with `after_iend` true; a trailer that is not chunks yields nothing and no issue; the trailer scan stops at the first chunk that does not fit and never examines more than `MAX_PNG_TRAILER_CHUNKS`.
+- [ ] Bounds: more than `MAX_PNG_REGIONS` located chunks end with exactly one `TooManyRegions`; walker halts (DEC-017) suppress nothing that was already found and add no extraction issue after the halt.
+- [ ] `is_clean()` iff no PNG-layer issue and every block `Ok` and clean; `issues()` count equals PNG issues plus each block's TIFF issues.
+- [ ] Panic-free on every prefix and single-byte flip of each metadata seed; the committed `meta-` seeds (at least 20, named in the test) parse; pre-existing seeds byte-identical; the shared model passes under `cargo test` on stable and in `png_chunks` on nightly; CI smoke still 60 s.
+- [ ] `just lint`, `just test`, `just lint-fuzz`, `just validate`, `just forbid-unsafe`, `just cost-audit`, `just fuzz-smoke png_chunks` green; no `#[allow]`; no unsafe.
 
 ## Failing Tests
 
-Written during the **design** cycle, BEFORE handoff. The implementer's
-job in **build** is to make these pass.
+Written first from these descriptions; fixtures come from new builders in `tests/support/png_shapes.rs` (`exif_chunk`, `itxt`, `text`, `ztxt`, `iccp`, `raw_profile`; compressed bodies may be any bytes since nothing is inflated).
 
-- **`path/to/test.file`**
-  - `"test description 1"` — asserts: ...
-  - `"test description 2"` — asserts: ...
+- **`tests/png_metadata.rs`**
+  - `exif_block_equals_bare_tiff` / `exif_prefix_is_accepted_with_an_issue` / `exif_empty_and_garbage_keep_the_block_err` / `second_exif_is_extra_but_parsed` / `exif_blocks_are_capped_at_sixteen`.
+  - `xmp_routes_for_itxt_and_legacy_text` / `same_text_under_another_keyword_is_text` / `keyword_matching_is_case_sensitive`.
+  - `raw_profile_types_in_all_three_text_chunks` (exif, xmp, and an unknown name).
+  - `bad_text_chunks_are_issues_without_regions` (table: each case from the acceptance list).
+  - `iccp_located_and_bad_headers_are_issues`.
+  - `regions_borrow_the_input_and_start_after_the_header`.
+  - `after_idat_and_after_iend_flags`; `trailer_that_is_not_chunks_is_silent`; `trailer_scan_is_bounded`.
+  - `region_cap_halts_once`; `walker_halt_suppresses_extraction_issues_but_keeps_found_regions`.
+  - `is_clean_and_issue_counts`.
+  - `every_prefix_and_byte_flip_of_each_metadata_shape_is_panic_free`.
+- **`tests/fuzz_layout.rs`** (extend): `meta-` seed names pinned and equal to the builders byte for byte; pre-existing seeds unchanged; the metadata model (`include!`) passes on every png seed.
+- **Red-proofs (in-file, control first):** the model must go red on mutated copies of its input: a flipped `compressed`, a region offset shifted by one, a missed trailer chunk; the control case passes first.
 
 ## Non-Goals
 
-- Parsing XMP or ICC contents
-- Decoding `Raw profile type exif` text chunks unless the design measures that ExifTool reads them and the cost is small; otherwise a follow-up
-- Audit categories and rendering: SPEC-032
+- Inflating zlib or decoding hex raw profiles (DEC-018: located only)
+- Parsing XMP or ICC contents, or reading text chunk values as strings
+- Audit categories, rendering and the "could not read" findings: SPEC-032
+- ExifTool parity tests: SPEC-031
+- Any change to the DEC-017 walk's behaviour on the recorded chunks
 
 ## Notes for the Implementer
 
-Gotchas, style preferences, reuse opportunities. Keep short — the full
-context graph lives in the handoff file.
+- Mirror `src/jpeg/metadata.rs`: module docs with provenance (DEC-003 class 1, net-new from the PNG specification), the halt rule, bounds by construction.
+- The trailer scan must reuse the chunk-framing logic of the walker (refactor to a crate-internal function taking a start offset); do not copy-paste it, and do not change what the walker records or reports (all SPEC-028 tests and the png fuzz model must pass unchanged).
+- Offsets and lengths are attacker-controlled: checked arithmetic, `get` for every slice, iterative loops only.
+- The model in `fuzz/shared/png_metadata_invariants.rs` must derive regions, blocks and issues independently from raw bytes (its own keyword and header parsing), not from the library, and compare in both directions.
+- Seed work: add `meta-` seeds through the existing generator; update every pin; grep for the last-added seed name before and after.
+- Budget: about 100 tool calls or 250k context; if over half way with the extraction unfinished, hand back with what is done.
 
 ---
 

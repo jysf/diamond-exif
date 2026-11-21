@@ -81,7 +81,7 @@ STAGE-002 set the container pattern and STAGE-003 to STAGE-006 built the audit C
 - PNG and WebP writers and strip (M1d); `rewrite_png` fuzz target
 - APNG frame handling, animated WebP frame parsing (ANIM and ANMF chunks are located and passed over, not decoded)
 - Pixel decoding, zlib inflation of image data, XMP or ICC content parsing (open question `xmp-scanner-vs-roxmltree` stays open)
-- Text-chunk Exif encodings other than `eXIf` (`Raw profile type exif` in `tEXt` and `zTXt`) are located and counted as an audit finding if ExifTool reads them; decoding them is a follow-up decided in SPEC-028 design
+- Text-chunk Exif encodings other than `eXIf` (`Raw profile type exif` in `tEXt` and `zTXt`) are located and counted as an audit finding if ExifTool reads them; they are located and flagged, never decoded (DEC-018); decoding is a later decision
 - A new release; the next binary release is its own spec after this stage
 
 ## Spec Backlog
