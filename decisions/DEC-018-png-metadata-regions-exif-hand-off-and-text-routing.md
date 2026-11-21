@@ -53,8 +53,8 @@ tags:
 
 ## Policy detail
 
-- **Keyword rule (tEXt, zTXt, iTXt):** the keyword is the bytes up to the first NUL, 1 to 79 bytes; otherwise the chunk is `BadTextChunk` (issue; no region). `iTXt` then has a compression flag (0 or 1), a method byte, a language tag and a translated keyword (each NUL-terminated); a truncated or invalid header is `BadTextChunk`. `zTXt` is always compressed (method byte after the keyword). Keyword comparison is byte-exact and case-sensitive (the PNG specification's rule).
-- **Routing:** keyword `XML:com.adobe.xmp` in `iTXt` or `tEXt` gives `Xmp`. A keyword starting `Raw profile type ` gives `RawProfile` carrying the profile name that follows it (for example `exif`, `xmp`, `icc`, `iptc`, `APP1`). Every other keyword gives `Text`. `iCCP` gives `Icc`: name (1 to 79 bytes), method byte, then the compressed data; a bad header is `BadIccpChunk`.
+- **Keyword rule (tEXt, zTXt, iTXt):** the keyword is the bytes up to the first NUL, 1 to 79 bytes. No NUL in the chunk, an empty keyword, or a truncated `iTXt` header is `BadTextChunk` with no region (nothing to locate). A keyword of 80 bytes or more, or an `iTXt` compression flag other than 0 or 1, is `BadTextChunk` **and the region is still located** (ExifTool reads both: a long keyword as a tag named by it, a flag of 2 as a compressed value): a long keyword is routed by the same rules as a short one, a flag other than 0 is treated as compressed. `iTXt` has a compression flag, a method byte, a language tag and a translated keyword (each NUL-terminated). `zTXt` is always compressed (method byte after the keyword). Keyword comparison is byte-exact and case-sensitive (the PNG specification's rule).
+- **Routing:** keyword `XML:com.adobe.xmp` in `iTXt`, `tEXt` or `zTXt` gives `Xmp` (`compressed` is true for `zTXt`; ExifTool inflates it and parses XMP, verified in the SPEC-029 verify). A keyword starting `Raw profile type ` gives `RawProfile` carrying the profile name that follows it (for example `exif`, `xmp`, `icc`, `iptc`, `APP1`). Every other keyword gives `Text`. `iCCP` gives `Icc`: name (1 to 79 bytes), method byte, then the compressed data; a bad header is `BadIccpChunk`.
 - **Located, not decoded.** Regions carry `compressed: bool` where the format can be compressed. Nothing is inflated and no hex is decoded: decoding a raw profile needs an owned buffer (DEC-002 keeps the core zero-copy) and inflation needs a zlib implementation (the crate has no dependency). Both are recorded as audit limitations, not hidden: SPEC-032 reports a compressed or raw-profile region as metadata the audit could not read. Decoding is a decision for a later stage.
 - **Trailer chunks.** After the walk, the trailer is scanned with the same chunk framing (length, type, data, CRC not required), bounded by `MAX_PNG_TRAILER_CHUNKS = 4096`, stopping silently at the first chunk that does not fit. Only metadata chunks yield regions or blocks, flagged `after_iend`. Trailer framing problems are **not** issues (a trailer is often arbitrary bytes). Every region and block also knows `after_idat`.
 - **Offsets.** Every region and block reports the input offset of its chunk, never an index (trailer chunks are not in `Png::chunks()`); an Exif block's `tiff_at` is the input offset of the first TIFF byte.
@@ -73,6 +73,16 @@ tags:
 - **Positive:** same shape as JPEG's `read`; every metadata container the audit must report is located with an offset; limits are explicit.
 - **Negative:** compressed XMP and raw-profile Exif are visible but not readable until a later decision; the second scan over the trailer is extra code.
 - **Neutral:** `Error` gains `ImproperExifHeader`, `BadTextChunk`, `BadIccpChunk`, `TooManyRegions` (additive).
+
+## Clarifications from the SPEC-029 build and verify (2026-11-21)
+
+- **Halt rule:** any walker halt (not only a cap) suppresses all extraction issues, as the last issue is always the halting one; regions and blocks already found are kept.
+- **Issues per chunk:** at most two (a further `eXIf` that also starts `Exif\0\0` gives `ExtraExif` then `ImproperExifHeader`); `ImproperExifHeader` is recorded only for a parsed block, so the 17th and later `eXIf` cost only `ExtraExif`.
+- **`TooManyRegions`** stops all extraction, Exif blocks included, at the chunk that did not fit.
+- **`after_idat`** is true for a trailer chunk when any `IDAT` precedes it, walked or in the trailer.
+- **Names and keywords** are `&[u8]` (Latin-1 by the PNG specification), borrowed.
+- **Case:** keyword matching is case-sensitive; ExifTool treats `xml:com.adobe.xmp` as plain text and decodes `iTXt` raw profiles (measured).
+- **Issue count:** there is no public constant bounding `png_issues()` beyond the sum of the walker's and the extraction's own bounds (at most two per chunk over at most `MAX_PNG_CHUNKS` plus `MAX_PNG_TRAILER_CHUNKS` chunks).
 
 ## Validation
 
