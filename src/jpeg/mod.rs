@@ -1365,6 +1365,10 @@ mod tests {
                 Error::BadIhdr { .. } => 32,
                 Error::MissingIend => 33,
                 Error::TooManyChunks { .. } => 34,
+                Error::ImproperExifHeader { .. } => 35,
+                Error::BadTextChunk { .. } => 36,
+                Error::BadIccpChunk { .. } => 37,
+                Error::TooManyRegions { .. } => 38,
             }
         }
         let indices: Vec<usize> = errors.iter().map(index).collect();

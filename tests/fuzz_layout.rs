@@ -6621,9 +6621,11 @@ fn ci_fuzz_smoke_list_includes_rewrite_tiff() {
 mod png_shapes;
 
 include!("../fuzz/shared/png_chunk_invariants.rs");
+// SPEC-029: the independent model of the metadata extraction (DEC-018).
+include!("../fuzz/shared/png_metadata_invariants.rs");
 
 /// The committed `png_chunks` seed names, pinned.
-const PNG_SEEDS: [&str; 33] = [
+const PNG_SEEDS: [&str; 68] = [
     "bad-chunk-type",
     "bad-crc-idat",
     "bad-crc-ihdr",
@@ -6636,19 +6638,54 @@ const PNG_SEEDS: [&str; 33] = [
     "exif-after-idat",
     "exif-chunk",
     "iccp-and-plte",
+    "iend-only",
+    "iend-with-data",
     "ihdr-len-12",
     "ihdr-len-14",
     "ihdr-only",
-    "iend-only",
-    "iend-with-data",
     "length-7fffffff-past-eof",
     "length-80000000",
-    "length-past-eof",
     "length-ffffffff",
+    "length-past-eof",
     "many-idat",
+    "meta-after-idat",
+    "meta-exif-after-iend",
+    "meta-exif-before-idat",
+    "meta-exif-empty",
+    "meta-exif-garbage",
+    "meta-exif-prefix",
+    "meta-exif-two",
+    "meta-exif-with-make",
+    "meta-halted-after-text",
+    "meta-iccp",
+    "meta-iccp-empty-name",
+    "meta-iccp-no-method",
+    "meta-itxt-bad-flag",
+    "meta-itxt-flag-2",
+    "meta-itxt-lang",
+    "meta-itxt-truncated",
+    "meta-long-keyword",
+    "meta-raw-exif-text",
+    "meta-raw-lowercase",
+    "meta-raw-unknown-itxt",
+    "meta-raw-xmp-ztxt",
+    "meta-text-empty-keyword",
+    "meta-text-keyword-80",
+    "meta-text-no-nul",
+    "meta-text-plain",
+    "meta-trailer-chunks",
+    "meta-trailer-garbage",
+    "meta-trailer-truncated",
+    "meta-xmp-itxt",
+    "meta-xmp-itxt-compressed",
+    "meta-xmp-keyword-case",
+    "meta-xmp-text",
+    "meta-xmp-wrong-keyword",
+    "meta-ztxt-no-method",
+    "meta-ztxt-xmp",
     "minimal",
-    "no-ihdr",
     "no-iend",
+    "no-ihdr",
     "private-chunk-type",
     "signature-only",
     "tail-1-byte",
@@ -6670,6 +6707,10 @@ fn png_chunks_target_is_declared_and_runs_in_ci() {
     assert!(root().join("fuzz/shared/png_chunk_invariants.rs").is_file());
     let target = read("fuzz/fuzz_targets/png_chunks.rs");
     assert!(target.contains("png_chunk_invariants::check"));
+    assert!(target.contains("png_metadata_invariants::check"));
+    assert!(root()
+        .join("fuzz/shared/png_metadata_invariants.rs")
+        .is_file());
     assert!(read(".github/workflows/ci.yml").contains("cli_args, png_chunks]"));
     assert!(read("app.just").contains("cli_args png_chunks\""));
 }
@@ -6686,6 +6727,8 @@ fn png_chunks_seeds_are_the_builders_byte_for_byte() {
     want.sort();
     assert_eq!(names, want, "the png_chunks seed set");
     assert!(names.len() >= 24);
+    // SPEC-029: at least 20 `meta-` seeds, all in the pinned set above.
+    assert!(names.iter().filter(|n| n.starts_with("meta-")).count() >= 20);
     let built = png_shapes::seeds();
     assert_eq!(built.len(), PNG_SEEDS.len());
     for (name, bytes) in built {
@@ -6700,19 +6743,23 @@ fn png_harness_holds_on_every_seed_prefix_and_flip() {
     for name in PNG_SEEDS {
         let d = fs::read(dir.join(name)).expect("seed");
         png_chunk_invariants::check(&d);
+        png_metadata_invariants::check(&d);
         let step = (d.len() / 120).max(1);
         let mut i = 0;
         while i <= d.len() {
             png_chunk_invariants::check(&d[..i]);
+            png_metadata_invariants::check(&d[..i]);
             if i < d.len() {
                 let mut m = d.clone();
                 m[i] ^= 0xFF;
                 png_chunk_invariants::check(&m);
+                png_metadata_invariants::check(&m);
             }
             i += step;
         }
     }
     png_chunk_invariants::check(&[]);
+    png_metadata_invariants::check(&[]);
 }
 
 #[test]
@@ -6739,4 +6786,63 @@ fn png_harness_model_is_independent_and_red_proofs_hold() {
     assert!(!b.chunks()[0].crc_ok());
     png_chunk_invariants::check(&good);
     png_chunk_invariants::check(&bad);
+}
+
+#[test]
+fn png_metadata_seeds_are_pinned_and_older_seeds_unchanged() {
+    // The pre-SPEC-029 seeds come first in the builder and are the same bytes
+    // as on disk; the `meta-` seeds are the builder's `meta_seeds()`.
+    let dir = root().join("fuzz/seeds/png_chunks");
+    let meta = png_shapes::meta_seeds();
+    assert!(meta.len() >= 20);
+    for (name, bytes) in &meta {
+        assert!(name.starts_with("meta-"), "{name}");
+        assert!(PNG_SEEDS.contains(name), "{name} is not pinned");
+        assert_eq!(&fs::read(dir.join(name)).expect("seed"), bytes, "{name}");
+        // Every metadata seed parses and the model accepts it.
+        exif_core::png::read(bytes).expect("meta seed reads");
+        png_metadata_invariants::check(bytes);
+    }
+    let all = png_shapes::seeds();
+    assert_eq!(all.len(), PNG_SEEDS.len());
+    assert_eq!(all.len() - meta.len(), 33, "the SPEC-028 seed count");
+}
+
+/// The metadata model must go red when the observed answer is wrong: a control
+/// first (the untouched answer passes), then three corruptions.
+#[test]
+fn png_metadata_model_red_proofs() {
+    use std::panic::catch_unwind;
+
+    let dir = root().join("fuzz/seeds/png_chunks");
+    let rich = fs::read(dir.join("meta-trailer-chunks")).expect("seed");
+    let red = |data: &[u8], tamper: fn(&mut png_metadata_invariants::Observed)| {
+        let data = data.to_vec();
+        catch_unwind(move || png_metadata_invariants::compare(&data, tamper)).is_err()
+    };
+
+    // Control: the untouched answer is accepted.
+    assert!(!red(&rich, |_| {}));
+
+    // A flipped `compressed` flag.
+    assert!(red(&rich, |o| {
+        o.regions[0].2 = !o.regions[0].2;
+    }));
+    // A region offset shifted by one.
+    assert!(red(&rich, |o| {
+        o.regions[0].1 += 1;
+    }));
+    // A missed trailer chunk: the last region is dropped.
+    assert!(red(&rich, |o| {
+        o.regions.pop();
+    }));
+    // A missed Exif block, and a missed issue, on shapes that have them.
+    let two = fs::read(dir.join("meta-exif-two")).expect("seed");
+    assert!(!red(&two, |_| {}));
+    assert!(red(&two, |o| {
+        o.blocks.pop();
+    }));
+    assert!(red(&two, |o| {
+        o.issues.pop();
+    }));
 }

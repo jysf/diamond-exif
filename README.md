@@ -16,8 +16,8 @@ What works today:
 - **Strip writer:** `exif_core::strip` (and `sanitize`, which returns only the bytes) takes input bytes and a `StripPolicy` (`Gps`, `GpsAndDevice`, `AllPii`, `All`, `Everything`, or any set of categories) and returns new bytes or a typed refusal. It fails closed: the output is audited again and compared with the input's audit before it is returned, and it is never longer than the input.
   - **JPEG:** whole segments are removed; inside an Exif segment, matching IFD entries are deleted in place. Nothing grows or moves, and a Multi-Picture index stays consistent.
   - **TIFF and DNG:** the same in-place deletion, with scrubbed values zeroed. Strip and tile offsets, strip and tile data, SubIFDs and JPEG data stay byte-identical. When that cannot be guaranteed the writer refuses with a reason (a hidden pointer, shared bytes, or a thumbnail it cannot locate).
-  - **PNG:** the library walks a PNG chunk by chunk (`exif_core::png`, tolerant: a bad CRC or a missing `IEND` is an issue, not a failure), but reads no metadata from it yet and `exif-audit` still reports PNG as unsupported.
-  - **Known limits:** PNG metadata and WebP are not handled.
+  - **PNG:** the library walks a PNG chunk by chunk (`exif_core::png`, tolerant: a bad CRC or a missing `IEND` is an issue, not a failure), and `exif_core::png::read` locates its metadata (`eXIf` Exif handed to the TIFF engine, XMP, ICC, raw-profile and text chunks, including chunks after `IEND`) without inflating or decoding anything; `exif-audit` still reports PNG as unsupported until it is wired in.
+  - **Known limits:** compressed and raw-profile PNG metadata is located but not read, and WebP is not handled.
 - **Verification:** eight fuzz targets (`tiff_ifd`, `jpeg_segments`, `audit`, `audit_render`, `cli_args`, `rewrite_jpeg`, `rewrite_tiff`, `png_chunks`) and an ExifTool oracle for reads, inventory and strip output (live and replayed), shown able to fail by mutated-copy red-proofs. Inventory parity against ExifTool covers 183 distinct inputs.
 - **CLI:** `exif-audit`, a read-only privacy scan with exit codes a CI job can act on (below).
 
