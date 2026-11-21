@@ -16,18 +16,29 @@
 // implementation fails.
 
 mod webp_riff_invariants {
-    use exif_core::webp::{ChunkKind, Webp, MAX_WEBP_CHUNKS, MAX_WEBP_ISSUES};
+    use exif_core::tiff::Container;
+    use exif_core::webp::{
+        read, AnyWebpIssue, ChunkKind, Webp, WebpMetadata, WebpRegion, MAX_WEBP_CHUNKS,
+        MAX_WEBP_EXIF_BLOCKS, MAX_WEBP_ISSUES,
+    };
     use exif_core::Error;
 
     /// One chunk, as plain data: (offset, four-character code, kind, data
     /// range, end of the chunk including its pad byte).
     pub(super) type ChunkT = (usize, [u8; 4], ChunkKind, (usize, usize), usize);
+    /// One Exif block: (chunk offset, tiff_at, tiff range).
+    pub(super) type BlockT = (usize, usize, (usize, usize));
+    /// One region: (is ICC, chunk offset, data range).
+    pub(super) type RegionT = (bool, usize, (usize, usize));
 
     /// What an implementation reports, as comparable data.
     #[derive(Clone, Debug, PartialEq)]
     pub(super) struct Observed {
         pub(super) chunks: Vec<ChunkT>,
+        /// The WebP layer's issues: the walk's, then the extraction's.
         pub(super) issues: Vec<(Error, usize)>,
+        pub(super) blocks: Vec<BlockT>,
+        pub(super) regions: Vec<RegionT>,
         /// (flags, canvas width, canvas height) of the first `VP8X`, when it
         /// has 10 bytes.
         pub(super) vp8x: Option<(u8, u32, u32)>,
@@ -227,13 +238,59 @@ mod webp_riff_invariants {
         }
     }
 
+    /// The model's extraction: Exif blocks, regions and the extraction's own
+    /// issues, from the model's walk and the raw bytes. A halted walk gets no
+    /// extraction issue (its blocks and regions are still reported).
+    fn extract(d: &[u8], w: &Walked) -> (Vec<BlockT>, Vec<RegionT>, Vec<(Error, usize)>) {
+        let (mut blocks, mut regions, mut issues) = (Vec::new(), Vec::new(), Vec::new());
+        let mut exif_seen = 0usize;
+        for &(off, _code, kind, (s, e), _end) in &w.chunks {
+            match kind {
+                ChunkKind::Exif => {
+                    if exif_seen >= 1 && !w.halted {
+                        issues.push((Error::ExtraExif { at: off }, off));
+                    }
+                    if exif_seen < MAX_WEBP_EXIF_BLOCKS {
+                        let improper = e - s >= 6 && &d[s..s + 6] == b"Exif\0\0";
+                        let start = if improper { s + 6 } else { s };
+                        if improper && !w.halted {
+                            issues.push((Error::ImproperExifHeader { at: off }, off));
+                        }
+                        blocks.push((off, start, (start, e)));
+                    }
+                    exif_seen += 1;
+                }
+                ChunkKind::Xmp => regions.push((false, off, (s, e))),
+                ChunkKind::Iccp => regions.push((true, off, (s, e))),
+                _ => {}
+            }
+        }
+        (blocks, regions, issues)
+    }
+
     fn range_of(base: &[u8], part: &[u8]) -> (usize, usize) {
         let start = part.as_ptr() as usize - base.as_ptr() as usize;
         (start, start + part.len())
     }
 
-    /// The library's walk as plain data.
-    fn observe(d: &[u8], w: &Webp<'_>) -> Observed {
+    /// The library's answer as plain data.
+    fn observe(d: &[u8], m: &WebpMetadata<'_>) -> Observed {
+        let w = m.webp();
+        let blocks = m
+            .exif_blocks()
+            .iter()
+            .map(|b| (b.offset(), b.tiff_at(), range_of(d, b.tiff())))
+            .collect();
+        let regions = m
+            .regions()
+            .iter()
+            .map(|r| match *r {
+                WebpRegion::Xmp { offset, data } => (false, offset, range_of(d, data)),
+                WebpRegion::Icc { offset, data } => (true, offset, range_of(d, data)),
+                // `WebpRegion` is non-exhaustive: a new variant must be modelled.
+                _ => panic!("a WebpRegion variant the model does not know"),
+            })
+            .collect();
         let chunks = w
             .chunks()
             .iter()
@@ -247,8 +304,8 @@ mod webp_riff_invariants {
                 )
             })
             .collect();
-        let issues = w
-            .issues()
+        let issues = m
+            .webp_issues()
             .iter()
             .map(|i| (i.error().clone(), i.offset()))
             .collect();
@@ -258,6 +315,8 @@ mod webp_riff_invariants {
         Observed {
             chunks,
             issues,
+            blocks,
+            regions,
             vp8x,
         }
     }
@@ -279,6 +338,7 @@ mod webp_riff_invariants {
                     mark.copy_from_slice(&data[..12]);
                     assert_eq!(e, Error::NotWebp { mark });
                 }
+                assert_eq!(read(data).err(), Some(e.clone()), "read disagrees");
                 assert_eq!(strict.err(), Some(e), "strict disagrees on a fatal input");
                 return;
             }
@@ -296,14 +356,75 @@ mod webp_riff_invariants {
         }
         assert_eq!(webp.declared_size(), le32(data, 4));
 
+        // `read` is the walk plus the extraction: same walk, same fatal cases.
+        let md = read(data).expect("read must not be fatal when the walk is not");
+        assert_eq!(md.webp().chunks().len(), webp.chunks().len());
+        assert_eq!(md.webp().issues(), webp.issues());
+
         let want = walk(data);
-        let mut got = observe(data, &webp);
+        let (want_blocks, want_regions, ext_issues) = extract(data, &want);
+        let mut want_issues = want.issues.clone();
+        want_issues.extend(ext_issues);
+        let mut got = observe(data, &md);
         tamper(&mut got);
-        assert_eq!(got.issues, want.issues, "issue list differs from the model");
+        assert_eq!(got.issues, want_issues, "issue list differs from the model");
         assert_eq!(got.chunks, want.chunks, "chunks differ from the model");
         assert_eq!(got.vp8x, want.vp8x, "VP8X differs from the model");
-        assert!(got.issues.len() <= MAX_WEBP_ISSUES + 1);
+        assert_eq!(got.blocks, want_blocks, "Exif blocks differ from the model");
+        assert_eq!(got.regions, want_regions, "regions differ from the model");
+        assert!(got.issues.len() <= MAX_WEBP_ISSUES + 1 + 2 * MAX_WEBP_CHUNKS);
         assert!(got.chunks.len() <= MAX_WEBP_CHUNKS);
+        assert!(got.blocks.len() <= MAX_WEBP_EXIF_BLOCKS);
+        // The walker's issues lead and are unchanged.
+        assert_eq!(&want_issues[..want.issues.len()], &want.issues[..]);
+
+        // Container independence: a block's container is the bare parse of its
+        // tiff slice, and `tiff_at` indexes the input.
+        let mut first_ok: Option<*const Container<'_>> = None;
+        let mut tiff_issues = 0usize;
+        let mut all_ok_clean = true;
+        for (b, &(_, tiff_at, (ts, te))) in md.exif_blocks().iter().zip(&want_blocks) {
+            assert_eq!(b.tiff(), &data[ts..te]);
+            assert_eq!(tiff_at, ts);
+            match (b.container(), Container::parse(&data[ts..te])) {
+                (Ok(c), Ok(bare)) => {
+                    assert_eq!(c.ifds().len(), bare.ifds().len());
+                    assert_eq!(c.entry_count(), bare.entry_count());
+                    assert_eq!(c.issues(), bare.issues());
+                    tiff_issues += c.issues().len();
+                    all_ok_clean &= c.is_clean();
+                    if first_ok.is_none() {
+                        first_ok = Some(c as *const _);
+                    }
+                }
+                (Err(e), Err(bare)) => {
+                    assert_eq!(e, &bare);
+                    all_ok_clean = false;
+                }
+                _ => panic!("block and bare TIFF parse disagree on Ok-ness"),
+            }
+        }
+        assert_eq!(
+            md.exif().map(|c| c as *const _),
+            first_ok,
+            "exif() is the first Ok block"
+        );
+        // Cleanliness and the layered issue view, both directions.
+        assert_eq!(
+            md.is_clean(),
+            want_issues.is_empty() && all_ok_clean,
+            "is_clean iff no WebP issue and every block Ok and clean"
+        );
+        assert_eq!(md.issues().count(), want_issues.len() + tiff_issues);
+        let webp_layer = md
+            .issues()
+            .filter(|i| matches!(i, AnyWebpIssue::Webp(_)))
+            .count();
+        assert_eq!(webp_layer, want_issues.len());
+        for r in md.regions() {
+            let (s, e) = range_of(data, r.data());
+            assert!(s <= e && e <= data.len());
+        }
 
         // The halting issue, when there is one, is the last, and a halt
         // leaves no end-of-walk issue behind it.

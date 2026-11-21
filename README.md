@@ -4,7 +4,7 @@ Panic-free, pure-Rust, zero-copy EXIF/XMP/IPTC/ICC metadata reader, writer and s
 
 | Piece | Status | License |
 |---|---|---|
-| `exif-core` | reader, read-only audit model and a strip writer for JPEG, TIFF and DNG (M1a to M1c); PNG, WebP and `set` operations not yet | MIT/Apache-2.0 |
+| `exif-core` | reader, read-only audit model and a strip writer for JPEG, TIFF and DNG (M1a to M1c); PNG and WebP are read by the library only; `set` operations not yet | MIT/Apache-2.0 |
 | `exif-audit` CLI (read-only scanner) | released as a pre-release binary (`v0.1.0-alpha.1`, see Install); or `cargo build --release --bin exif-audit` | free |
 | `exif-pro` (compliance tier) | scaffold only | paid |
 
@@ -17,7 +17,8 @@ What works today:
   - **JPEG:** whole segments are removed; inside an Exif segment, matching IFD entries are deleted in place. Nothing grows or moves, and a Multi-Picture index stays consistent.
   - **TIFF and DNG:** the same in-place deletion, with scrubbed values zeroed. Strip and tile offsets, strip and tile data, SubIFDs and JPEG data stay byte-identical. When that cannot be guaranteed the writer refuses with a reason (a hidden pointer, shared bytes, or a thumbnail it cannot locate).
   - **PNG:** the library walks a PNG chunk by chunk (`exif_core::png`, tolerant: a bad CRC or a missing `IEND` is an issue, not a failure), and `exif_core::png::read` locates its metadata (`eXIf` Exif handed to the TIFF engine, XMP, ICC, raw-profile and text chunks, including chunks after `IEND`) without inflating or decoding anything; `exif-audit` still reports PNG as unsupported until it is wired in.
-  - **Known limits:** compressed and raw-profile PNG metadata is located but not read, and WebP is not handled.
+  - **WebP:** the library walks a WebP RIFF stream chunk by chunk (`exif_core::webp`, tolerant: the declared RIFF size never limits the walk, and size, pad-byte and `VP8X` flag disagreements are issues, not failures), and `exif_core::webp::read` locates its metadata (`EXIF` handed to the TIFF engine, `XMP ` and `ICCP` located, animation frames passed over); `exif-audit` still reports WebP as unsupported until it is wired in.
+  - **Known limits:** compressed and raw-profile PNG metadata is located but not read, and WebP metadata is located, never decoded.
 - **Verification:** nine fuzz targets (`tiff_ifd`, `jpeg_segments`, `audit`, `audit_render`, `cli_args`, `rewrite_jpeg`, `rewrite_tiff`, `png_chunks`, `webp_riff`) and an ExifTool oracle for reads, inventory and strip output (live and replayed), shown able to fail by mutated-copy red-proofs. Inventory parity against ExifTool covers 183 distinct inputs.
 - **CLI:** `exif-audit`, a read-only privacy scan with exit codes a CI job can act on (below).
 

@@ -28,14 +28,14 @@
 //! `u32::MAX`.
 
 mod issue;
-// mod metadata;
+mod metadata;
 
 use core::ops::Range;
 
 pub use issue::WebpIssue;
-// pub use metadata::{
-//     read, AnyWebpIssue, WebpExifBlock, WebpMetadata, WebpRegion, MAX_WEBP_EXIF_BLOCKS,
-// };
+pub use metadata::{
+    read, AnyWebpIssue, WebpExifBlock, WebpMetadata, WebpRegion, MAX_WEBP_EXIF_BLOCKS,
+};
 
 use crate::error::Error;
 
@@ -220,6 +220,7 @@ pub struct Webp<'a> {
     issues: Vec<WebpIssue>,
     declared_size: u32,
     vp8x: Option<Vp8x>,
+    halted: bool,
 }
 
 /// The walk's mutable state. Every issue goes through [`Walk::record`], so no
@@ -443,6 +444,7 @@ impl<'a> Webp<'a> {
             issues: walk.issues,
             declared_size: declared,
             vp8x: walk.vp8x.map(|(_, v)| v),
+            halted: walk.halted,
         })
     }
 
@@ -479,5 +481,10 @@ impl<'a> Webp<'a> {
     /// 10 bytes of a header.
     pub fn vp8x(&self) -> Option<Vp8x> {
         self.vp8x
+    }
+
+    /// Whether the walk was halted (by a framing error or a cap).
+    pub(crate) fn halted(&self) -> bool {
+        self.halted
     }
 }

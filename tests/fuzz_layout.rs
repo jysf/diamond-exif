@@ -6858,7 +6858,7 @@ mod webp_shapes;
 include!("../fuzz/shared/webp_riff_invariants.rs");
 
 /// The committed `webp_riff` seed names, pinned.
-const WEBP_SEEDS: [&str; 35] = [
+const WEBP_SEEDS: [&str; 51] = [
     "anmf-payload",
     "bad-magic",
     "chunk-past-end",
@@ -6875,6 +6875,22 @@ const WEBP_SEEDS: [&str; 35] = [
     "kind-xmp-dash",
     "kind-xmp-lower",
     "kind-xmp-nul",
+    "meta-all-three",
+    "meta-anmf-then-exif",
+    "meta-exif",
+    "meta-exif-empty",
+    "meta-exif-garbage",
+    "meta-exif-prefix",
+    "meta-exif-prefix-only",
+    "meta-exif-seventeen",
+    "meta-exif-two",
+    "meta-flags-all-wrong",
+    "meta-halted-after-exifs",
+    "meta-iccp",
+    "meta-xmp",
+    "meta-xmp-nul-id",
+    "meta-xmp-odd",
+    "meta-xmp-two",
     "minimal",
     "misplaced-vp8x-1100",
     "no-vp8x-with-exif",
@@ -6995,5 +7011,78 @@ fn webp_walk_model_red_proofs() {
     // A missed end-of-walk flag issue on a shape that has them.
     assert!(red(&flags, |o| {
         o.issues.pop();
+    }));
+}
+
+#[test]
+fn webp_seeds_are_at_least_forty_and_metadata_seeds_are_pinned() {
+    let dir = root().join("fuzz/seeds/webp_riff");
+    assert!(WEBP_SEEDS.len() >= 40);
+    let meta = webp_shapes::meta_seeds();
+    assert!(meta.len() >= 12);
+    for (name, bytes) in &meta {
+        assert!(name.starts_with("meta-"), "{name}");
+        assert!(WEBP_SEEDS.contains(name), "{name} is not pinned");
+        assert_eq!(&fs::read(dir.join(name)).expect("seed"), bytes, "{name}");
+        // Every metadata seed reads and the model accepts it.
+        exif_core::webp::read(bytes).expect("meta seed reads");
+        webp_riff_invariants::check(bytes);
+    }
+    let all = webp_shapes::seeds();
+    assert_eq!(all.len(), WEBP_SEEDS.len());
+    assert_eq!(all.len() - meta.len(), 35, "the walk seed count");
+}
+
+/// The extraction half of the model must go red when the observed answer is
+/// wrong: controls first, then a missed block, a region offset shifted by one,
+/// a dropped extraction issue and a missed region.
+#[test]
+fn webp_metadata_model_red_proofs() {
+    use std::panic::catch_unwind;
+
+    let dir = root().join("fuzz/seeds/webp_riff");
+    let red = |data: &[u8], tamper: fn(&mut webp_riff_invariants::Observed)| {
+        let data = data.to_vec();
+        catch_unwind(move || webp_riff_invariants::compare(&data, tamper)).is_err()
+    };
+    let rich = fs::read(dir.join("meta-all-three")).expect("seed");
+    let two = fs::read(dir.join("meta-exif-two")).expect("seed");
+    let prefix = fs::read(dir.join("meta-exif-prefix")).expect("seed");
+    let halted = fs::read(dir.join("meta-halted-after-exifs")).expect("seed");
+
+    assert!(!red(&rich, |_| {}));
+    assert!(!red(&two, |_| {}));
+    assert!(!red(&prefix, |_| {}));
+    assert!(!red(&halted, |_| {}));
+
+    // A region offset shifted by one.
+    assert!(red(&rich, |o| {
+        o.regions[0].1 += 1;
+    }));
+    // A missed region (and a flipped region variant).
+    assert!(red(&rich, |o| {
+        o.regions.pop();
+    }));
+    assert!(red(&rich, |o| {
+        o.regions[0].0 = !o.regions[0].0;
+    }));
+    // A missed Exif block, and a shifted tiff_at.
+    assert!(red(&two, |o| {
+        o.blocks.pop();
+    }));
+    assert!(red(&prefix, |o| {
+        o.blocks[0].1 -= 1;
+    }));
+    // A dropped extraction issue (ExtraExif) and a dropped ImproperExifHeader.
+    assert!(red(&two, |o| {
+        o.issues.pop();
+    }));
+    assert!(red(&prefix, |o| {
+        o.issues.pop();
+    }));
+    // A halt that let an extraction issue through: the halted shape has only
+    // the walk's own issue, so one more is wrong.
+    assert!(red(&halted, |o| {
+        o.issues.push((exif_core::Error::MetadataWithoutVp8x, 12));
     }));
 }

@@ -210,7 +210,133 @@ pub fn walk_seeds() -> Vec<(&'static str, Vec<u8>)> {
     ]
 }
 
+/// A TIFF payload (big-endian) with one IFD0 entry: Make (0x010F), ASCII,
+/// count 4, inline `abc\0`.
+pub fn exif_with_make() -> Vec<u8> {
+    let mut d = b"MM\x00\x2A\x00\x00\x00\x08".to_vec();
+    d.extend_from_slice(&[0, 1, 0x01, 0x0F, 0, 2, 0, 0, 0, 4]);
+    d.extend_from_slice(b"abc\0");
+    d.extend_from_slice(&[0, 0, 0, 0]);
+    d
+}
+
+/// An `EXIF` chunk with the given payload.
+pub fn exif_chunk(payload: &[u8]) -> Vec<u8> {
+    chunk(b"EXIF", payload)
+}
+
+/// An `Exif\0\0` header followed by `payload`.
+pub fn with_exif_prefix(payload: &[u8]) -> Vec<u8> {
+    let mut v = b"Exif\0\0".to_vec();
+    v.extend_from_slice(payload);
+    v
+}
+
+/// The metadata seeds (SPEC-030), all prefixed `meta-`: the DEC-019 metadata
+/// rules, extraction half.
+pub fn meta_seeds() -> Vec<(&'static str, Vec<u8>)> {
+    let make = exif_with_make();
+    let all_flags = FLAG_ICC | FLAG_EXIF | FLAG_XMP;
+    let seventeen: Vec<Vec<u8>> = std::iter::once(vp8x(FLAG_EXIF, 1, 1))
+        .chain((0..17).map(|_| exif_chunk(&tiff_empty())))
+        .collect();
+    let mut halted = riff(&[
+        exif_chunk(&with_exif_prefix(&tiff_empty())),
+        exif_chunk(&make),
+        chunk(b"XMP ", b"<x/>"),
+    ]);
+    halted.extend_from_slice(b"EXIF\x10");
+    vec![
+        (
+            "meta-exif",
+            riff(&[vp8x(FLAG_EXIF, 1, 1), vp8l(), exif_chunk(&make)]),
+        ),
+        (
+            "meta-exif-prefix",
+            riff(&[vp8x(FLAG_EXIF, 1, 1), exif_chunk(&with_exif_prefix(&make))]),
+        ),
+        (
+            "meta-exif-prefix-only",
+            riff(&[vp8x(FLAG_EXIF, 1, 1), exif_chunk(b"Exif\0\0")]),
+        ),
+        (
+            "meta-exif-empty",
+            riff(&[vp8x(FLAG_EXIF, 1, 1), exif_chunk(&[])]),
+        ),
+        (
+            "meta-exif-garbage",
+            riff(&[vp8x(FLAG_EXIF, 1, 1), exif_chunk(b"not a tiff")]),
+        ),
+        (
+            "meta-exif-two",
+            riff(&[
+                vp8x(FLAG_EXIF, 1, 1),
+                exif_chunk(&tiff_empty()),
+                exif_chunk(&make),
+            ]),
+        ),
+        ("meta-exif-seventeen", riff(&seventeen)),
+        (
+            "meta-xmp",
+            riff(&[
+                vp8x(FLAG_XMP, 1, 1),
+                vp8l(),
+                chunk(b"XMP ", b"<x:xmpmeta/>"),
+            ]),
+        ),
+        (
+            "meta-xmp-odd",
+            riff(&[vp8x(FLAG_XMP, 1, 1), chunk(b"XMP ", b"<x/>!")]),
+        ),
+        (
+            "meta-xmp-two",
+            riff(&[
+                vp8x(FLAG_XMP, 1, 1),
+                chunk(b"XMP ", b"<a/>"),
+                chunk(b"XMP ", b"<b/>"),
+            ]),
+        ),
+        (
+            "meta-xmp-nul-id",
+            riff(&[vp8x(FLAG_XMP, 1, 1), chunk(b"XMP\0", b"<x/>")]),
+        ),
+        (
+            "meta-iccp",
+            riff(&[vp8x(FLAG_ICC, 1, 1), chunk(b"ICCP", b"icc!"), vp8l()]),
+        ),
+        (
+            "meta-all-three",
+            riff(&[
+                vp8x(all_flags, 8, 8),
+                chunk(b"ICCP", b"icc!"),
+                vp8l(),
+                exif_chunk(&make),
+                chunk(b"XMP ", b"<x/>"),
+            ]),
+        ),
+        (
+            "meta-flags-all-wrong",
+            riff(&[
+                vp8x(FLAG_EXIF, 1, 1),
+                chunk(b"ICCP", b"icc!"),
+                chunk(b"XMP ", b"<x/>"),
+            ]),
+        ),
+        ("meta-halted-after-exifs", halted),
+        (
+            "meta-anmf-then-exif",
+            riff(&[
+                vp8x(FLAG_ANIM | FLAG_EXIF, 2, 2),
+                chunk(b"ANMF", &exif_chunk(&make)),
+                exif_chunk(&make),
+            ]),
+        ),
+    ]
+}
+
 /// Every seed: the walk seeds, then the metadata seeds.
 pub fn seeds() -> Vec<(&'static str, Vec<u8>)> {
-    walk_seeds()
+    let mut all = walk_seeds();
+    all.extend(meta_seeds());
+    all
 }
