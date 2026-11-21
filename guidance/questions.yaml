@@ -1325,3 +1325,60 @@ questions:
       documented, but those presets are unusable on scans and faxes. After the audit change a planner
       could keep the page; the self-check (a) would then agree. Also: a tiled IFD1 page is refused
       although the audit does not call it a Thumbnail (D.3).
+
+  - id: exif-block-offset-contract-agreement
+    question: "Does irradiance/STAGE-017's design accept DEC-015's base-first offset contract (size query, then a write at a caller-given even base with final offsets)?"
+    priority: high
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-20
+    assigned_to: jysf
+    notes: |
+      DEC-015 is `proposed` until this is answered, and SPEC-025 design waits on it. monorail-000 leans
+      the same way (its docs/upstream/diamond-exif-requests.md, request 1). monorail-000/DEC-075 item 5,
+      written before the choice, says irradiance "rebases the block's offsets", which is option (a).
+      If irradiance cannot know the base before it writes, revisit DEC-015 (option A, block-relative
+      plus a fixup list).
+
+  - id: exif-block-ifd0-identity-tags
+    question: "The requested block leaves IFD0 out, so Make, Model, Artist, Copyright, DateTime, Software, CameraSerialNumber and the DNG identity tags (UniqueCameraModel is required in a DNG) are carried by neither the block nor, as specified, irradiance. Who writes them in the export?"
+    priority: high
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-20
+    assigned_to: jysf
+    notes: |
+      For monorail-000 (its requests document and monorail-000/DEC-075 item 5). In a DNG these tags
+      are IFD0 entries, not Exif IFD entries, so ExifTool's IFD0 group of the export would differ from
+      the source even when the consumer's acceptance check ("same Exif and GPS values") passes. Options:
+      (a) irradiance writes them from caller options (it must write UniqueCameraModel anyway);
+      (b) the block result also returns a list of IFD0 entries for the placing writer to merge, which
+      makes it interpret EXIF; (c) accept the loss for v1. It also limits SPEC-027: GpsAndDevice,
+      AllPii and All reach only the entries inside the block.
+
+  - id: exif-block-byte-order-sensitive-undefined
+    question: "When the block's byte order differs from the source's, should UNDEFINED entries with byte-order-dependent contents (candidates 0x8828 OECF, 0xA20C SpatialFrequencyResponse, 0xA302 CFAPattern, 0xA40B DeviceSettingDescription) be converted by a rule proved against ExifTool, or left out and reported?"
+    priority: medium
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-20
+    assigned_to: null
+    notes: |
+      DEC-014 item 3. Settle at SPEC-025 design: confirm the candidate list against the Exif
+      specification and ExifTool, then pick per tag. Copying one unchanged into the other byte order is
+      ruled out. Measure first which source and target orders the consumer's fixtures actually pair:
+      if they never cross, the converters can wait.
+
+  - id: exif-block-crates-io-release
+    question: "Should exif-core get an early crates.io pre-release so monorail-000 can pin the Exif block builder exactly, or does the block wait for the M1f publish?"
+    priority: medium
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-20
+    assigned_to: jysf
+    notes: |
+      The consumer needs an exact pin before its PROJ-002 export spec. The design document puts the
+      crates.io publish in M1f (after the 24 h fuzz gate). STAGE-006 (on its own branch) releases only
+      the exif-audit binary and lists "publish exif-core to crates.io" as out of scope. An early
+      pre-release (0.x, flagged as pre-M1) would be a release spec with its own DEC. Nothing is urgent:
+      monorail-000's PROJ-002 has not started.
