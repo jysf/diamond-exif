@@ -60,6 +60,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "png_chunks"
+path = "fuzz_targets/png_chunks.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "rewrite_tiff"
 path = "fuzz_targets/rewrite_tiff.rs"
 test = false

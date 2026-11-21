@@ -229,6 +229,56 @@ pub enum Error {
         /// The image-count limit that was reached.
         limit: usize,
     },
+
+    /// The first eight bytes were not the PNG signature, so this is not a PNG
+    /// (PNG Specification, "PNG file signature"). Fatal (DEC-017).
+    NotPng {
+        /// The eight bytes actually found.
+        mark: [u8; 8],
+    },
+
+    /// A chunk's stored CRC-32 differs from the one computed over its type and
+    /// data. The chunk stays recorded (DEC-017).
+    BadChunkCrc {
+        /// The CRC the file stored.
+        stored: u32,
+        /// The CRC computed over the chunk's type and data.
+        computed: u32,
+    },
+
+    /// A chunk type with a byte that is not an ASCII letter. The chunk stays
+    /// recorded as an unrecognised one.
+    BadChunkType {
+        /// The four type bytes actually found.
+        chunk_type: [u8; 4],
+    },
+
+    /// A chunk declared a length above 2^31-1, the PNG maximum. The stream
+    /// cannot be resynchronised, so the walk ends there.
+    BadChunkLength {
+        /// The length the file declared.
+        length: u32,
+    },
+
+    /// The first chunk is not `IHDR`, or there is no chunk at all.
+    MissingIhdr,
+
+    /// An `IHDR` chunk whose length is not 13.
+    BadIhdr {
+        /// The length the file declared.
+        length: u32,
+    },
+
+    /// The walk reached the end of the input on a chunk boundary without
+    /// finding an `IEND` chunk.
+    MissingIend,
+
+    /// The walk reached [`crate::png::MAX_PNG_CHUNKS`] chunks and another
+    /// chunk followed.
+    TooManyChunks {
+        /// The chunk-count limit that was reached.
+        limit: usize,
+    },
 }
 
 impl fmt::Display for Error {
@@ -308,7 +358,7 @@ impl fmt::Display for Error {
                 write!(f, "JPEG walk reached the limit of {limit} segments")
             }
             Error::TooManyIssues { limit } => {
-                write!(f, "JPEG walk reached the limit of {limit} issues")
+                write!(f, "walk reached the limit of {limit} issues")
             }
             Error::ExtraExif { at } => {
                 write!(
@@ -350,6 +400,39 @@ impl fmt::Display for Error {
                     f,
                     "Multi-Picture segment at offset {at} lists more than {limit} images"
                 )
+            }
+            Error::NotPng { mark } => {
+                write!(f, "not a PNG: first bytes are")?;
+                for b in mark {
+                    write!(f, " {b:02x}")?;
+                }
+                write!(f, ", expected 89 50 4e 47 0d 0a 1a 0a")
+            }
+            Error::BadChunkCrc { stored, computed } => {
+                write!(
+                    f,
+                    "chunk CRC mismatch: stored {stored:#010x}, computed {computed:#010x}"
+                )
+            }
+            Error::BadChunkType { chunk_type } => {
+                write!(
+                    f,
+                    "chunk type {chunk_type:02x?} has a byte that is not an ASCII letter"
+                )
+            }
+            Error::BadChunkLength { length } => {
+                write!(
+                    f,
+                    "chunk declares length {length}, above the maximum of 2147483647"
+                )
+            }
+            Error::MissingIhdr => write!(f, "the first chunk is not IHDR"),
+            Error::BadIhdr { length } => {
+                write!(f, "IHDR declares length {length}, expected 13")
+            }
+            Error::MissingIend => write!(f, "no IEND chunk found"),
+            Error::TooManyChunks { limit } => {
+                write!(f, "PNG walk reached the limit of {limit} chunks")
             }
         }
     }

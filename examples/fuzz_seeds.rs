@@ -22,6 +22,9 @@ mod report_inputs;
 // in `jpeg_segments` and `audit`, byte-identical to the fixtures.
 #[path = "../tests/support/oracle_tiff.rs"]
 mod oracle_tiff;
+// SPEC-028: the PNG chunk fixtures become the `png_chunks` seeds.
+#[path = "../tests/support/png_shapes.rs"]
+mod png_shapes;
 #[path = "../tests/support/real_shapes.rs"]
 mod real_shapes;
 // SPEC-020: the strip fixtures.
@@ -1752,6 +1755,15 @@ fn main() {
         fs::write(jdir.join(name), bytes).expect("write seed");
     }
     println!("wrote {} seeds to {}", jseeds.len(), jdir.display());
+
+    // SPEC-028: the PNG chunk walker seeds, the same builders as the tests.
+    let pdir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/png_chunks");
+    fs::create_dir_all(&pdir).expect("create seeds dir");
+    let pseeds = png_shapes::seeds();
+    for (name, bytes) in &pseeds {
+        fs::write(pdir.join(name), bytes).expect("write seed");
+    }
+    println!("wrote {} seeds to {}", pseeds.len(), pdir.display());
 
     let adir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/audit");
     fs::create_dir_all(&adir).expect("create seeds dir");

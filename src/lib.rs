@@ -3,7 +3,8 @@
 //! tolerant walk, DEC-001), walks JPEG segments and locates its metadata
 //! regions ([`jpeg`]), and builds a read-only privacy audit over both
 //! ([`audit`]: container sniff, inventory, PII findings), and strips JPEG
-//! segment by segment ([`write`]: `strip` and `sanitize`, fail closed).
+//! segment by segment ([`write`]: `strip` and `sanitize`, fail closed). PNG is
+//! walked chunk by chunk ([`png`], DEC-017); its metadata is not read yet.
 
 #![forbid(unsafe_code)]
 #![deny(
@@ -17,6 +18,7 @@
 pub mod audit;
 pub mod error;
 pub mod jpeg;
+pub mod png;
 pub mod policy;
 pub mod reader;
 pub mod report;

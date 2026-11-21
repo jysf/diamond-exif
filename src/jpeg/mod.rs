@@ -1357,6 +1357,14 @@ mod tests {
                 Error::MpfImageOutsideInput { .. } => 24,
                 Error::MpfImageNotJpeg { .. } => 25,
                 Error::TooManyMpfImages { .. } => 26,
+                Error::NotPng { .. } => 27,
+                Error::BadChunkCrc { .. } => 28,
+                Error::BadChunkType { .. } => 29,
+                Error::BadChunkLength { .. } => 30,
+                Error::MissingIhdr => 31,
+                Error::BadIhdr { .. } => 32,
+                Error::MissingIend => 33,
+                Error::TooManyChunks { .. } => 34,
             }
         }
         let indices: Vec<usize> = errors.iter().map(index).collect();
