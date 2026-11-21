@@ -104,19 +104,19 @@ Walk a PNG tolerantly: fatal only when it is not a PNG; every other problem (len
 
 ## Acceptance Criteria
 
-- [ ] Not a PNG: fewer than 8 bytes is `Truncated`; any other first 8 bytes is `NotPng` carrying them; both fatal and equal under `parse_strict`.
-- [ ] A signature-only input is `Ok` with issues `MissingIhdr` and `MissingIend`; no chunks.
-- [ ] A valid minimal PNG (IHDR, IDAT, IEND) is clean: three chunks, `crc_ok()` true on each, `iend_offset()` set, empty trailer, `parse_strict` is `Ok`.
-- [ ] CRC: a wrong stored CRC gives `BadChunkCrc { stored, computed }`, the chunk stays recorded with `crc_ok() == false`, and later chunks are still walked. CRC-32 of `123456789` is `0xCBF43926` and of an `IEND` chunk `0xAE426082`.
-- [ ] Length past EOF, fewer than 12 bytes left, and a length above 2^31-1 each end the walk with exactly one `Truncated` or `BadChunkLength` at the chunk offset; the chunk is not recorded; `MissingIend` is not added.
-- [ ] First chunk not `IHDR` gives one `MissingIhdr` (walk continues); an `IHDR` of length other than 13 gives `BadIhdr`; no `IEND` at a clean end of input gives `MissingIend`; non-letter type bytes give `BadChunkType` with the chunk kept as `Other`.
-- [ ] `IEND` ends the walk; bytes after it are `trailer()`, borrowed, no issue. `after_idat()` is true exactly for chunks after the first `IDAT`.
-- [ ] Zero-copy: every `data()` and `trailer()` is a subslice of the input (pointer-range test).
-- [ ] Caps: an input with more than `MAX_PNG_CHUNKS` chunks records exactly that many and ends with one `TooManyChunks`; more than `MAX_PNG_ISSUES` ordinary issues ends with one `TooManyIssues` (total issues `<= MAX_PNG_ISSUES + 1`).
-- [ ] Panic-free over every prefix and every single-byte corruption of each seed (loop test), and over the empty input.
-- [ ] `png_chunks` fuzz target builds on nightly, its shared invariants run under `cargo test` on stable, the committed seeds (at least 24, named in the test) all parse without panic, the generator leaves all pre-existing seeds byte-identical, and CI runs a 60 s smoke for it.
-- [ ] ExifTool agreement on the DEC-017 probe shapes is recorded as the DEC says (design evidence); no new oracle test in this spec (SPEC-031).
-- [ ] `just lint`, `just test`, `just validate`, `just lint-fuzz` green; `forbid(unsafe_code)` and the five-lint deny set unchanged; no `#[allow]`.
+- [x] Not a PNG: fewer than 8 bytes is `Truncated`; any other first 8 bytes is `NotPng` carrying them; both fatal and equal under `parse_strict`.
+- [x] A signature-only input is `Ok` with issues `MissingIhdr` and `MissingIend`; no chunks.
+- [x] A valid minimal PNG (IHDR, IDAT, IEND) is clean: three chunks, `crc_ok()` true on each, `iend_offset()` set, empty trailer, `parse_strict` is `Ok`.
+- [x] CRC: a wrong stored CRC gives `BadChunkCrc { stored, computed }`, the chunk stays recorded with `crc_ok() == false`, and later chunks are still walked. CRC-32 of `123456789` is `0xCBF43926` and of an `IEND` chunk `0xAE426082`.
+- [x] Length past EOF, fewer than 12 bytes left, and a length above 2^31-1 each end the walk with exactly one `Truncated` or `BadChunkLength` at the chunk offset; the chunk is not recorded; `MissingIend` is not added.
+- [x] First chunk not `IHDR` gives one `MissingIhdr` (walk continues); an `IHDR` of length other than 13 gives `BadIhdr`; no `IEND` at a clean end of input gives `MissingIend`; non-letter type bytes give `BadChunkType` with the chunk kept as `Other`.
+- [x] `IEND` ends the walk; bytes after it are `trailer()`, borrowed, no issue. `after_idat()` is true exactly for chunks after the first `IDAT`.
+- [x] Zero-copy: every `data()` and `trailer()` is a subslice of the input (pointer-range test).
+- [x] Caps: an input with more than `MAX_PNG_CHUNKS` chunks records exactly that many and ends with one `TooManyChunks`; more than `MAX_PNG_ISSUES` ordinary issues ends with one `TooManyIssues` (total issues `<= MAX_PNG_ISSUES + 1`).
+- [x] Panic-free over every prefix and every single-byte corruption of each seed (loop test), and over the empty input.
+- [x] `png_chunks` fuzz target builds on nightly, its shared invariants run under `cargo test` on stable, the committed seeds (at least 24, named in the test) all parse without panic, the generator leaves all pre-existing seeds byte-identical, and CI runs a 60 s smoke for it.
+- [x] ExifTool agreement on the DEC-017 probe shapes is recorded as the DEC says (design evidence); no new oracle test in this spec (SPEC-031).
+- [x] `just lint`, `just test`, `just validate`, `just lint-fuzz` green; `forbid(unsafe_code)` and the five-lint deny set unchanged; no `#[allow]`.
 
 ## Failing Tests
 

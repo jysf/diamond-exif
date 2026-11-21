@@ -1394,7 +1394,7 @@ fn audit_target_is_declared_and_runs_in_ci() {
     let ci = read(".github/workflows/ci.yml");
     assert!(
         ci.contains(
-            "target: [tiff_ifd, jpeg_segments, rewrite_jpeg, rewrite_tiff, audit, audit_render, cli_args]"
+            "target: [tiff_ifd, jpeg_segments, rewrite_jpeg, rewrite_tiff, audit, audit_render, cli_args, png_chunks]"
         ),
         "the fuzz-smoke matrix must run the audit target"
     );
@@ -3244,12 +3244,12 @@ fn audit_render_target_is_declared_and_runs_in_ci() {
     }
     let ci = read(".github/workflows/ci.yml");
     assert!(
-        ci.contains("audit_render, cli_args]"),
+        ci.contains("audit_render, cli_args, png_chunks]"),
         "the fuzz-smoke matrix must run the audit_render target"
     );
     let app = read("app.just");
     assert!(
-        app.contains("audit audit_render cli_args\"") && app.contains("`audit_render`"),
+        app.contains("audit audit_render cli_args png_chunks\"") && app.contains("`audit_render`"),
         "`just fuzz-smoke` must know audit_render"
     );
 }
@@ -4871,8 +4871,8 @@ fn cli_args_target_is_declared_and_runs_in_ci() {
         target.contains("../../src/bin/exif-audit/args.rs"),
         "the target must fuzz the real parser through #[path]"
     );
-    assert!(read(".github/workflows/ci.yml").contains("audit_render, cli_args]"));
-    assert!(read("app.just").contains("audit audit_render cli_args\""));
+    assert!(read(".github/workflows/ci.yml").contains("audit_render, cli_args, png_chunks]"));
+    assert!(read("app.just").contains("audit audit_render cli_args png_chunks\""));
 }
 
 #[test]
@@ -6613,4 +6613,130 @@ fn ci_fuzz_smoke_list_includes_rewrite_tiff() {
         .expect("read rewrite_tiff seeds")
         .count();
     assert!(seeds >= 50, "{seeds} rewrite_tiff seeds");
+}
+
+// ── SPEC-028: the `png_chunks` target (PNG chunk walker, DEC-017) ───────────
+
+#[path = "support/png_shapes.rs"]
+mod png_shapes;
+
+include!("../fuzz/shared/png_chunk_invariants.rs");
+
+/// The committed `png_chunks` seed names, pinned.
+const PNG_SEEDS: [&str; 33] = [
+    "bad-chunk-type",
+    "bad-crc-idat",
+    "bad-crc-ihdr",
+    "bad-crc-texts-1100",
+    "bad-signature",
+    "chunk-after-iend",
+    "crc-vector",
+    "empty-texts-100",
+    "everything-wrong",
+    "exif-after-idat",
+    "exif-chunk",
+    "iccp-and-plte",
+    "ihdr-len-12",
+    "ihdr-len-14",
+    "ihdr-only",
+    "iend-only",
+    "iend-with-data",
+    "length-7fffffff-past-eof",
+    "length-80000000",
+    "length-past-eof",
+    "length-ffffffff",
+    "many-idat",
+    "minimal",
+    "no-ihdr",
+    "no-iend",
+    "private-chunk-type",
+    "signature-only",
+    "tail-1-byte",
+    "tail-11-bytes",
+    "text-chunks",
+    "trailer-after-iend",
+    "truncated-signature",
+    "two-ihdr",
+];
+
+#[test]
+fn png_chunks_target_is_declared_and_runs_in_ci() {
+    let fuzz = read("fuzz/Cargo.toml");
+    assert!(
+        fuzz.contains("name = \"png_chunks\"") && fuzz.contains("fuzz_targets/png_chunks.rs"),
+        "fuzz/Cargo.toml must declare the png_chunks bin"
+    );
+    assert!(root().join("fuzz/fuzz_targets/png_chunks.rs").is_file());
+    assert!(root().join("fuzz/shared/png_chunk_invariants.rs").is_file());
+    let target = read("fuzz/fuzz_targets/png_chunks.rs");
+    assert!(target.contains("png_chunk_invariants::check"));
+    assert!(read(".github/workflows/ci.yml").contains("cli_args, png_chunks]"));
+    assert!(read("app.just").contains("cli_args png_chunks\""));
+}
+
+#[test]
+fn png_chunks_seeds_are_the_builders_byte_for_byte() {
+    let dir = root().join("fuzz/seeds/png_chunks");
+    let mut names: Vec<String> = fs::read_dir(&dir)
+        .expect("png_chunks seeds")
+        .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    let mut want: Vec<String> = PNG_SEEDS.iter().map(|s| s.to_string()).collect();
+    want.sort();
+    assert_eq!(names, want, "the png_chunks seed set");
+    assert!(names.len() >= 24);
+    let built = png_shapes::seeds();
+    assert_eq!(built.len(), PNG_SEEDS.len());
+    for (name, bytes) in built {
+        let on_disk = fs::read(dir.join(name)).expect("seed");
+        assert_eq!(on_disk, bytes, "seed {name} differs from its builder");
+    }
+}
+
+#[test]
+fn png_harness_holds_on_every_seed_prefix_and_flip() {
+    let dir = root().join("fuzz/seeds/png_chunks");
+    for name in PNG_SEEDS {
+        let d = fs::read(dir.join(name)).expect("seed");
+        png_chunk_invariants::check(&d);
+        let step = (d.len() / 120).max(1);
+        let mut i = 0;
+        while i <= d.len() {
+            png_chunk_invariants::check(&d[..i]);
+            if i < d.len() {
+                let mut m = d.clone();
+                m[i] ^= 0xFF;
+                png_chunk_invariants::check(&m);
+            }
+            i += step;
+        }
+    }
+    png_chunk_invariants::check(&[]);
+}
+
+#[test]
+fn png_harness_model_is_independent_and_red_proofs_hold() {
+    // Control: the model's bitwise CRC reproduces the published check value,
+    // and a one-bit-perturbed expectation is rejected.
+    assert_eq!(
+        png_chunk_invariants::crc32_bitwise(b"123456789"),
+        0xCBF4_3926
+    );
+    assert_ne!(
+        png_chunk_invariants::crc32_bitwise(b"123456789"),
+        0xCBF4_3927
+    );
+    // A flipped data byte (stored CRC left alone) flips `crc_ok`; the harness
+    // compares it with the model's own CRC, so a walker that kept reporting
+    // the old `crc_ok` would fail `check` on the mutated copy.
+    let good = png_shapes::minimal();
+    let mut bad = good.clone();
+    bad[8 + 8] ^= 0x01; // inside IHDR's data
+    let g = exif_core::png::Png::parse(&good).expect("walks");
+    let b = exif_core::png::Png::parse(&bad).expect("walks");
+    assert!(g.chunks()[0].crc_ok());
+    assert!(!b.chunks()[0].crc_ok());
+    png_chunk_invariants::check(&good);
+    png_chunk_invariants::check(&bad);
 }

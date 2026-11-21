@@ -16,8 +16,9 @@ What works today:
 - **Strip writer:** `exif_core::strip` (and `sanitize`, which returns only the bytes) takes input bytes and a `StripPolicy` (`Gps`, `GpsAndDevice`, `AllPii`, `All`, `Everything`, or any set of categories) and returns new bytes or a typed refusal. It fails closed: the output is audited again and compared with the input's audit before it is returned, and it is never longer than the input.
   - **JPEG:** whole segments are removed; inside an Exif segment, matching IFD entries are deleted in place. Nothing grows or moves, and a Multi-Picture index stays consistent.
   - **TIFF and DNG:** the same in-place deletion, with scrubbed values zeroed. Strip and tile offsets, strip and tile data, SubIFDs and JPEG data stay byte-identical. When that cannot be guaranteed the writer refuses with a reason (a hidden pointer, shared bytes, or a thumbnail it cannot locate).
-  - **Known limits:** PNG and WebP are not handled.
-- **Verification:** seven fuzz targets (`tiff_ifd`, `jpeg_segments`, `audit`, `audit_render`, `cli_args`, `rewrite_jpeg`, `rewrite_tiff`) and an ExifTool oracle for reads, inventory and strip output (live and replayed), shown able to fail by mutated-copy red-proofs. Inventory parity against ExifTool covers 183 distinct inputs.
+  - **PNG:** the library walks a PNG chunk by chunk (`exif_core::png`, tolerant: a bad CRC or a missing `IEND` is an issue, not a failure), but reads no metadata from it yet and `exif-audit` still reports PNG as unsupported.
+  - **Known limits:** PNG metadata and WebP are not handled.
+- **Verification:** eight fuzz targets (`tiff_ifd`, `jpeg_segments`, `audit`, `audit_render`, `cli_args`, `rewrite_jpeg`, `rewrite_tiff`, `png_chunks`) and an ExifTool oracle for reads, inventory and strip output (live and replayed), shown able to fail by mutated-copy red-proofs. Inventory parity against ExifTool covers 183 distinct inputs.
 - **CLI:** `exif-audit`, a read-only privacy scan with exit codes a CI job can act on (below).
 
 See `CLAUDE.md` and `AGENTS.md`. First decision: DEC-001 (tolerant-walk policy).
@@ -139,7 +140,7 @@ just test               # cargo test (oracle tests skip LOUDLY without exiftool)
 just lint               # fmt check + clippy
 just deny               # license policy (permissive-only dependencies)
 just forbid-unsafe      # re-check that no unsafe code exists
-just fuzz-smoke [TARGET]  # 60 s smoke per fuzz target (tiff_ifd, jpeg_segments, rewrite_jpeg, rewrite_tiff, audit, audit_render, cli_args)
+just fuzz-smoke [TARGET]  # 60 s smoke per fuzz target (tiff_ifd, jpeg_segments, rewrite_jpeg, rewrite_tiff, audit, audit_render, cli_args, png_chunks)
 just oracle-record      # re-record ExifTool output for the parity fixtures
 just mutation-oracle    # mutated-copy red-proofs against the committed ExifTool records
 ```

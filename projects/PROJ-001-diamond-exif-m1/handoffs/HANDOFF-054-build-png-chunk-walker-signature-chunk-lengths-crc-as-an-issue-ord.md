@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-21
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-028
@@ -46,18 +46,17 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
-                                   #   to_agent above is a prediction from tier_map
-  verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  status: completed                # completed | blocked | rejected
+  agent: claude-sonnet-5-5         # the model that ACTUALLY ran (per the system prompt)
+  verdict: null                    # verify handoffs only
+  basis: estimate                  # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: null               # not exposed to this subagent; the orchestrator fills the harness subagent_tokens figure
+  estimated_usd: null
   duration_minutes: null
-  branch: null
+  branch: claude/spec-028-png-walker
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-21
+  notes: "No token counter is available inside this subagent run, so tokens_total is null rather than invented; the orchestrator replaces it with the harness subagent_tokens figure. About 60 tool calls."
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -135,38 +134,51 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `claude/spec-028-png-walker` (cut from `claude/spec-028-design`, aaa3c12); no PR, not pushed.
+- **Completed at:** 2026-11-21
+- **All acceptance criteria met?** yes, all 13 ticked. One handoff item not done: the CHANGELOG `[Unreleased]` entry (see Deviations).
+- **For `verify`:** n/a
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null: this subagent run exposes no token counter; the orchestrator should use the harness `subagent_tokens` figure.
+- **Estimated USD:** null
+- **Duration (minutes):** not measured
+- **Source of the number:** none available
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
+- **New decisions emitted:** none. DEC-017 unchanged.
 - **Deviations from spec:**
-  - [list]
+  - CHANGELOG `[Unreleased]` entry NOT added. `tests/release_layout.rs::changelog_and_readme_carry_the_release` requires `[Unreleased]` to be empty after the alpha cut, so any entry fails `just test`. Needs a decision: relax that pin (it will fail for every future spec that files a changelog entry) or leave the entry to the next release spec. README is updated (8 fuzz targets, the PNG line).
+  - Seeds: 33 (spec asks at least 24). No `many-chunks-over-cap` seed (it would be about 786 KB); the caps are covered by `tests/png_walk.rs` and the 1,100-chunk issue-cap seed.
+  - Existing exhaustive `Error` matches in three unit-test modules (`src/jpeg/mod.rs`, `src/jpeg/metadata.rs`, `src/tiff/mod.rs`) gained arms for the eight new variants. Test code only; no JPEG or TIFF behaviour changed.
+  - `Error::TooManyIssues` is reused for the PNG issue cap (DEC-017 lists no new variant for it), so its Display still says "JPEG walk reached the limit of N issues". Left as is (out of scope to change JPEG text); worth a one-word generalisation later.
+  - Provenance: a prose paragraph added to `docs/provenance-ledger.md` (class 1, net-new), as for the JPEG walker; no table row.
+  - Pins updated for the new target: `tests/fuzz_layout.rs` (ci.yml matrix string, app.just list string, three places), `app.just`, `ci.yml`.
+- **Policy choices where DEC-017 is silent (please review):**
+  - Issue order within one chunk: `BadChunkType`, `MissingIhdr` (first chunk only), `BadIhdr`, `BadChunkCrc`.
+  - A chunk whose own issue trips the issue cap is not recorded (the terminal `TooManyIssues` replaces that issue). So the invariant "a recorded chunk with `crc_ok() == false` has a `BadChunkCrc` issue at its offset" always holds.
+  - `TooManyChunks` fires when a further whole, well-formed chunk would be the 65,537th (a truncated one gets `Truncated` instead). Exactly 65,536 chunks is clean.
+  - `Truncated { at, len }`: `len` is 12 when fewer than 12 bytes remain, else the chunk's full size (12 + declared length). `BadChunkLength` carries the declared length; `BadIhdr` carries the length; `NotPng` carries the 8 bytes.
+  - Zero chunks at a clean end of input (signature only): `MissingIhdr` then `MissingIend`, both at the end offset (8).
+  - `BadIhdr` applies to any `IHDR` chunk, not only the first. A second `IHDR` of length 13 is no issue.
+  - The unsafe-lint gotcha: the CRC table is built without indexing (`split_first_mut` in a `const fn`), because `indexing_slicing` is denied crate-wide and `#[allow]` is forbidden.
 - **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - Decide the CHANGELOG pin (above).
+  - SPEC-029 can use `Png::trailer()` and `Chunk::range()`; the trailer is not walked.
+
+### Gates
+
+`just lint` ok; `just lint-no-allow` ok; `just forbid-unsafe` ok; `just lint-fuzz` ok; `just test` all green (0 failures; 21 tests in `tests/png_walk.rs`, 4 new in `tests/fuzz_layout.rs`, 3 CRC unit tests); `just validate` ok; `just cost-audit` ok; `just fuzz-smoke png_chunks` 60 s, 956,642 runs, no crash. `cargo run --example fuzz_seeds` leaves every pre-existing seed byte-identical (git shows no change to them). `fuzz/Cargo.lock` is rewritten by cargo on every fuzz build (exif-core 0.0.0 to 0.1.0-alpha.1); I restored it and did not commit it.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — The CHANGELOG instruction against the release-layout pin, and the issue-cap interaction (whether the chunk that trips the cap is recorded).
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — That `indexing_slicing` also bites a `const fn` table build, and the `tests/release_layout.rs` Unreleased-must-be-empty pin.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Run `cargo clippy --lib` with the `-F` lints right after writing the first module, and grep the pins in `tests/release_layout.rs` before touching CHANGELOG.
