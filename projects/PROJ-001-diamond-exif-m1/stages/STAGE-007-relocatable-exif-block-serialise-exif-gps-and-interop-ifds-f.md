@@ -76,7 +76,7 @@ Nothing is urgent: the consumer is monorail-000's PROJ-002, which has not starte
 - Covered: a source with an Interop IFD, a source with no GPS IFD, a source with no Exif IFD, and every combination of source and target byte order.
 - The same source and options give the same bytes. A block whose size or entry count exceeds the budget is refused before allocation.
 - The builder's fuzz target finds no panic in 60 s in CI, and every block it returns reads back clean.
-- The offset contract (DEC-015) is accepted by jysf with irradiance/STAGE-017's agreement before SPEC design starts.
+- The offset contract (DEC-015) is accepted by jysf with irradiance/STAGE-017's agreement before SPEC design starts. Done 2026-11-21: irradiance/DEC-072 agrees (base fixed at 8, little-endian).
 
 ## Scope
 
@@ -109,7 +109,7 @@ Nothing is urgent: the consumer is monorail-000's PROJ-002, which has not starte
 
 ### Depends on
 - STAGE-001 (the tolerant walk, the entry budget), STAGE-004 and STAGE-005 (the TIFF writer path, the audit categories, the self-check pattern).
-- External: agreement on the offset contract with irradiance/STAGE-017 (DEC-015 is `proposed` until then). Consumer context: monorail-000/DEC-075.
+- External: the offset contract is agreed with irradiance/STAGE-017 (DEC-015 accepted 2026-11-21, irradiance/DEC-072). Still open with irradiance and monorail-000: whether a GPS-only block is allowed (irradiance/DEC-072 requires an Exif IFD; DEC-014 item 1). Consumer context: monorail-000/DEC-075 and DEC-076.
 
 ### Enables
 - monorail-000's Linear DNG export (its PROJ-002), with irradiance/STAGE-017.
