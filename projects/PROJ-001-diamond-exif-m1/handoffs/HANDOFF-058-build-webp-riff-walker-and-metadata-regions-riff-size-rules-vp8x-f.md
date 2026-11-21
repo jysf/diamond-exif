@@ -58,7 +58,7 @@ handback:
   pr: null
   completed_at: 2026-11-21         # YYYY-MM-DD
   notes: "No token count is exposed to the subagent; the orchestrator replaces null with the harness figure. About 85 tool calls."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-21
 ---
 
 # HANDOFF-058: Build SPEC-030 WebP RIFF walker and metadata regions (DEC-019)

@@ -6,7 +6,7 @@
 task:
   id: SPEC-030
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: verify  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -68,11 +68,21 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: null
-  sessions: []
+  sessions:
+    - cycle: build
+      handoff: HANDOFF-058
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 263463
+      estimated_usd: 1.74
+      duration_minutes: null
+      recorded_at: 2026-11-21
+      notes: "No token count is exposed to the subagent; the orchestrator replaces null with the harness figure. About 85 tool calls."
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 263463
+    estimated_usd: 1.74
+    session_count: 1
 ---
 
 # SPEC-030: WebP RIFF walker and metadata regions: RIFF size rules, `VP8X` flags, EXIF, XMP, ICCP, pad bytes, animation chunks passed over, `webp_riff` fuzz target (DEC for the RIFF walk)
