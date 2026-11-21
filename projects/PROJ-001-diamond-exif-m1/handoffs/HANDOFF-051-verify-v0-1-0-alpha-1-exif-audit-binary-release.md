@@ -50,15 +50,15 @@ handback:
   agent: claude-opus-5-5           # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: punch-list              # verify handoffs: approved | punch-list | rejected
-  basis: transcript                # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: 1982859            # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: 25
+  basis: agent-result                # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 133171              # REAL combined count — what cost-audit reads
+  estimated_usd: 0.88              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  duration_minutes: 7
   branch: claude/alpha-release-exif-audit
   pr: null
   completed_at: 2026-11-20
-  notes: "FLOOR, measured live from subagents/agent-af98cafc183101310.jsonl (20 deduplicated messages: input 39, cache creation 117,067, cache read 1,849,191, output 16,562) before the last ~4 calls; re-sum after the session ends. estimated_usd null: no claude-opus-5-5 rate found in docs/cost-tracking.md; orchestrator to price it. About 25 tool calls."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "Round 1, PUNCH LIST (no High, 2 Medium, 8 Low). Orchestrator correction: tokens_total is the harness subagent_tokens (133,171; 29 tool uses; 392,796 ms = 6.5 min) at 6.60 USD/Mtok = 0.88 USD. The verifier self-reported 1,982,859 (transcript, cache reads included), not used."
+  synced_at: 2026-11-20
 ---
 
 # HANDOFF-051: Verify SPEC-024 (v0.1.0-alpha.1 exif-audit binary release, Phase 1 prep)

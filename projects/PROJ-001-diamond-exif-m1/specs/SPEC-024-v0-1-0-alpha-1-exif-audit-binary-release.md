@@ -60,10 +60,20 @@ cost:
       duration_minutes: 6
       recorded_at: 2026-11-20
       notes: "Orchestrator correction: tokens_total is the harness subagent_tokens (124,602; 18 tool uses; 387,304 ms = 6.5 min) at 6.60 USD/Mtok = 0.82 USD, the same basis as earlier specs. The builder reported an estimate of about 130,000 and about 24 tool calls, which is not used."
+    - cycle: verify
+      handoff: HANDOFF-051
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 133171
+      estimated_usd: 0.88
+      duration_minutes: 7
+      recorded_at: 2026-11-20
+      notes: "Round 1, PUNCH LIST (no High, 2 Medium, 8 Low). Orchestrator correction: tokens_total is the harness subagent_tokens (133,171; 29 tool uses; 392,796 ms = 6.5 min) at 6.60 USD/Mtok = 0.88 USD. The verifier self-reported 1,982,859 (transcript, cache reads included), not used."
   totals:
-    tokens_total: 124602
-    estimated_usd: 0.82
-    session_count: 1
+    tokens_total: 257773
+    estimated_usd: 1.70
+    session_count: 2
 ---
 
 # SPEC-024: v0.1.0-alpha.1 exif-audit binary release
