@@ -79,10 +79,20 @@ cost:
       duration_minutes: 11
       recorded_at: 2026-11-21
       notes: "tokens_total left null: the subagent harness exposes no token count to the agent; the orchestrator replaces it with the harness figure. Not pushed, no PR."
+    - cycle: verify
+      handoff: HANDOFF-057
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 172532
+      estimated_usd: 1.14
+      duration_minutes: 35
+      recorded_at: 2026-11-21
+      notes: "Verifier subagent cannot read its own transcript token counts; the orchestrator replaces tokens_total with the harness figure. Approved at build tip 01c36a2 (build commit a8c38c4). Two Medium findings are DEC-018 gaps (zTXt XMP, keyword over 79 bytes), not build defects."
   totals:
-    tokens_total: 189733
-    estimated_usd: 1.25
-    session_count: 1
+    tokens_total: 362265
+    estimated_usd: 2.39
+    session_count: 2
 ---
 
 # SPEC-029: PNG metadata regions: `eXIf` to the TIFF engine, `iTXt` XMP, `iCCP`, text-chunk Exif located; container independence

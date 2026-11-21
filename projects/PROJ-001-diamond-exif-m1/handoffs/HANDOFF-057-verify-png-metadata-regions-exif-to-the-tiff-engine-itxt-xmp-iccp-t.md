@@ -50,15 +50,15 @@ handback:
   agent: claude-opus-5-5           # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: approved                # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  basis: agent-result                      # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 172532              # harness subagent_tokens
+  estimated_usd: 1.14              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: 35
   branch: claude/spec-029-verify
   pr: null
   completed_at: 2026-11-21         # YYYY-MM-DD
   notes: "Verifier subagent cannot read its own transcript token counts; the orchestrator replaces tokens_total with the harness figure. Approved at build tip 01c36a2 (build commit a8c38c4). Two Medium findings are DEC-018 gaps (zTXt XMP, keyword over 79 bytes), not build defects."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-21
 ---
 
 # HANDOFF-057: Verify SPEC-029 PNG metadata regions (DEC-018)
