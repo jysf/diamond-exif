@@ -38,6 +38,10 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history and tags: the tag-on-main check below needs origin/main.
+          fetch-depth: 0
+          persist-credentials: false
       - name: tag must equal the Cargo.toml version
         id: version
         env:
@@ -70,6 +74,22 @@ jobs:
               ;;
           esac
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
+      # A tag push must be an annotated tag on a commit that is on main. (A GitHub
+      # tag ruleset restricting who may create `v*` tags is also recommended, DEC-014;
+      # that is a repository setting, not something this file can enforce.)
+      - name: tag must be annotated and on main
+        if: github.event_name == 'push'
+        run: |
+          set -eu
+          kind=$(git cat-file -t "refs/tags/${GITHUB_REF_NAME}")
+          if [ "${kind}" != "tag" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} is not annotated (object type: ${kind}); create it with git tag -a"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "::error::tagged commit ${GITHUB_SHA} is not an ancestor of origin/main; tag a commit that is on main"
+            exit 1
+          fi
 
   build:
     name: build and smoke (${{ matrix.target }})
@@ -89,6 +109,8 @@ jobs:
             os: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -130,12 +152,17 @@ jobs:
           report="${RUNNER_TEMP}/report.json"
           run=""
           if [ "${TARGET}" = "x86_64-apple-darwin" ]; then
-            # The runner is arm64; the Intel binary needs Rosetta.
+            # Always assert the architecture of the Intel binary.
+            file "${smoke}/exif-audit" | tee "${RUNNER_TEMP}/file.txt"
+            grep -q 'x86_64' "${RUNNER_TEMP}/file.txt" || { echo "::error::the Intel binary is not x86_64"; exit 1; }
+            # The runner is arm64; running the Intel binary needs Rosetta.
             if arch -x86_64 /usr/bin/true 2>/dev/null; then
               run="arch -x86_64"
+            elif [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+              echo "::error::Rosetta is not available: refusing to release an x86_64-apple-darwin binary that was never run"
+              exit 1
             else
-              echo "::warning::Rosetta is not available on this runner: the x86_64-apple-darwin binary was built and packed but NOT run"
-              file "${smoke}/exif-audit"
+              echo "::warning::Rosetta is not available on this runner: the x86_64-apple-darwin binary was built and packed but NOT run (dry run, so not fatal)"
               exit 0
             fi
           fi
@@ -172,6 +199,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           pattern: exif-audit-*
@@ -201,7 +230,7 @@ jobs:
           cat notes.md
       # Never on a dry run: only a tag push creates the (pre-)release.
       - name: create the pre-release
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}

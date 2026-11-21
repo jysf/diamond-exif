@@ -21,6 +21,12 @@ const ALLOWED_ACTIONS: [&str; 4] = [
     "actions/download-artifact@v4",
 ];
 
+/// The exact `if:` of the step that creates the release: a tag push only. Compared
+/// whole-line, so widening it (`|| always()`) is caught.
+const RELEASE_GUARD: &str =
+    "if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')";
+const PUSH_GUARD: &str = "if: github.event_name == 'push'";
+
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
@@ -75,6 +81,43 @@ fn jobs(text: &str) -> Vec<(String, String)> {
     out
 }
 
+/// The steps of a job block: each starts at a line indented exactly six spaces
+/// with `- `.
+fn steps(block: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for line in block.lines() {
+        if line.starts_with("      - ") {
+            out.push(String::new());
+        }
+        if let Some(last) = out.last_mut() {
+            last.push_str(line);
+            last.push('\n');
+        }
+    }
+    out
+}
+
+/// Every problem found in `Cargo.toml` and `Cargo.lock` for the release.
+fn cargo_problems(toml: &str, lock: &str) -> Vec<String> {
+    let mut p = Vec::new();
+    let want = format!("version = \"{VERSION}\"");
+    if !toml.contains(&want) {
+        p.push(format!("Cargo.toml version is not {VERSION}"));
+    }
+    if !toml.lines().any(|l| l.trim() == "publish = false") {
+        p.push("Cargo.toml must say publish = false".into());
+    }
+    match lock
+        .split("[[package]]")
+        .find(|s| s.contains("name = \"exif-core\""))
+    {
+        Some(pkg) if pkg.contains(&want) => {}
+        Some(_) => p.push("Cargo.lock disagrees with Cargo.toml".into()),
+        None => p.push("exif-core is not in Cargo.lock".into()),
+    }
+    p
+}
+
 /// Every problem found in a release workflow; empty means as designed.
 fn workflow_problems(raw: &str) -> Vec<String> {
     let text = without_comments(raw);
@@ -93,6 +136,19 @@ fn workflow_problems(raw: &str) -> Vec<String> {
     if on_keys != ["push:", "workflow_dispatch:"] {
         p.push(format!(
             "`on:` keys are {on_keys:?}, want push and workflow_dispatch only"
+        ));
+    }
+    let push_children: Vec<String> = on
+        .iter()
+        .skip_while(|l| l.trim_end() != "  push:")
+        .skip(1)
+        .take_while(|l| l.starts_with("    ") || l.trim().is_empty())
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.trim().to_string())
+        .collect();
+    if push_children != ["tags: ['v*']"] {
+        p.push(format!(
+            "`push:` children are {push_children:?}, want only tags: ['v*']"
         ));
     }
     let on_text = on.join("\n");
@@ -128,6 +184,32 @@ fn workflow_problems(raw: &str) -> Vec<String> {
     }
     if text.matches("contents: write").count() != 1 {
         p.push("`contents: write` must appear exactly once (the publish job)".into());
+    }
+    // No write grant anywhere but `contents: write` in publish; no per-job
+    // permissions block at all outside publish (the read-only default stands).
+    for (id, block) in &all_jobs {
+        let grants: Vec<String> = block
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| l.ends_with(": write") || l.contains("write-all"))
+            .collect();
+        if id == "publish" {
+            if grants != ["contents: write"] {
+                p.push(format!(
+                    "`publish` write grants are {grants:?}, want only contents: write"
+                ));
+            }
+        } else {
+            if !grants.is_empty() {
+                p.push(format!("job `{id}` has write grants {grants:?}"));
+            }
+            if block
+                .lines()
+                .any(|l| l.trim_start().starts_with("permissions:"))
+            {
+                p.push(format!("job `{id}` sets its own permissions"));
+            }
+        }
     }
     let ids: Vec<&str> = all_jobs.iter().map(|(i, _)| i.as_str()).collect();
     if ids != ["check", "build", "publish"] {
@@ -205,6 +287,72 @@ fn workflow_problems(raw: &str) -> Vec<String> {
         }
     }
 
+    if let Some((_, c)) = all_jobs.iter().find(|(id, _)| id == "check") {
+        if !c.contains("if [ \"${GITHUB_REF_NAME}\" != \"v${version}\" ]; then") {
+            p.push("`check` lacks the exact tag-equals-version comparison".into());
+        }
+        for bypass in ["if false", "|| true", "|| :", "set +e"] {
+            if c.contains(bypass) {
+                p.push(format!("`check` contains the bypass `{bypass}`"));
+            }
+        }
+        for needle in [
+            "fetch-depth: 0",
+            "git cat-file -t \"refs/tags/${GITHUB_REF_NAME}\"",
+            "is not annotated",
+            "git merge-base --is-ancestor \"${GITHUB_SHA}\" origin/main",
+            "not an ancestor of origin/main",
+        ] {
+            if !c.contains(needle) {
+                p.push(format!("`check` lacks `{needle}`"));
+            }
+        }
+        let ok = steps(c).iter().any(|st| {
+            st.contains("merge-base --is-ancestor")
+                && st.contains("cat-file -t")
+                && st
+                    .lines()
+                    .map(str::trim)
+                    .filter(|l| l.starts_with("if:"))
+                    .collect::<Vec<_>>()
+                    == [PUSH_GUARD]
+        });
+        if !ok {
+            p.push(
+                "the annotated-and-on-main step must be guarded by exactly the push `if:`".into(),
+            );
+        }
+    }
+    // No checkout may keep the token in .git/config.
+    for (id, block) in &all_jobs {
+        for st in steps(block)
+            .iter()
+            .filter(|st| st.contains("uses: actions/checkout@v4"))
+        {
+            if !st.contains("persist-credentials: false") {
+                p.push(format!(
+                    "a checkout in job `{id}` lacks persist-credentials: false"
+                ));
+            }
+        }
+    }
+    // Intel smoke: assert the architecture; no Rosetta is fatal on a tag push only.
+    if let Some((_, b)) = all_jobs.iter().find(|(id, _)| id == "build") {
+        let err = b.find("::error::Rosetta");
+        let warn = b.find("::warning::Rosetta");
+        let gate = b.find("[ \"${GITHUB_EVENT_NAME}\" = \"push\" ]");
+        match (gate, err, warn) {
+            (Some(g), Some(e), Some(w)) if g < e && e < w => {}
+            _ => p.push(
+                "Intel smoke: missing Rosetta must fail a tag push and only warn on a dry run"
+                    .into(),
+            ),
+        }
+        if !b.contains("grep -q 'x86_64'") {
+            p.push("Intel smoke does not assert that `file` reports x86_64".into());
+        }
+    }
+
     // Publish: checksums, then a pre-release created only for a tag push.
     match all_jobs.iter().find(|(id, _)| id == "publish") {
         Some((_, b)) => {
@@ -219,13 +367,22 @@ fn workflow_problems(raw: &str) -> Vec<String> {
                     p.push(format!("`publish` job lacks `{needle}`"));
                 }
             }
-            let guard = b.find("if: github.event_name == 'push'");
-            let create = b.find("gh release create");
-            match (guard, create) {
-                (Some(g), Some(c)) if g < c => {}
-                _ => p.push(
-                    "`gh release create` is not behind `if: github.event_name == 'push'`".into(),
-                ),
+            let create_steps: Vec<String> = steps(b)
+                .into_iter()
+                .filter(|st| st.contains("gh release create"))
+                .collect();
+            match create_steps.as_slice() {
+                [st] => {
+                    let ifs: Vec<&str> = st
+                        .lines()
+                        .map(str::trim)
+                        .filter(|l| l.starts_with("if:"))
+                        .collect();
+                    if ifs != [RELEASE_GUARD] {
+                        p.push(format!("`gh release create` step `if:` is {ifs:?}, want exactly {RELEASE_GUARD}"));
+                    }
+                }
+                _ => p.push("`gh release create` must be in exactly one step".into()),
             }
             if b.matches("gh release create").count() != 1 {
                 p.push("`gh release create` must appear exactly once".into());
@@ -238,24 +395,8 @@ fn workflow_problems(raw: &str) -> Vec<String> {
 
 #[test]
 fn cargo_version_is_the_alpha_and_publish_is_false() {
-    let cargo = read("Cargo.toml");
-    assert!(
-        cargo.contains(&format!("version = \"{VERSION}\"")),
-        "Cargo.toml version is not {VERSION}"
-    );
-    assert!(
-        cargo.lines().any(|l| l.trim() == "publish = false"),
-        "Cargo.toml must say publish = false"
-    );
-    let lock = read("Cargo.lock");
-    let pkg = lock
-        .split("[[package]]")
-        .find(|s| s.contains("name = \"exif-core\""));
-    let pkg = pkg.unwrap_or_else(|| panic!("exif-core is not in Cargo.lock"));
-    assert!(
-        pkg.contains(&format!("version = \"{VERSION}\"")),
-        "Cargo.lock disagrees with Cargo.toml"
-    );
+    let p = cargo_problems(&read("Cargo.toml"), &read("Cargo.lock"));
+    assert!(p.is_empty(), "Cargo problems:\n{}", p.join("\n"));
 }
 
 #[test]
@@ -379,8 +520,8 @@ fn red_proof_dropping_prerelease_is_rejected() {
 
 #[test]
 fn red_proof_unguarded_release_is_rejected() {
-    let p = mutated("if: github.event_name == 'push'", "if: always()");
-    assert!(p.iter().any(|m| m.contains("not behind")), "{p:?}");
+    let p = mutated(RELEASE_GUARD, "if: always()");
+    assert!(p.iter().any(|m| m.contains("`gh release create` step")), "{p:?}");
 }
 
 #[test]
@@ -394,11 +535,100 @@ fn red_proof_wrong_target_is_rejected() {
 
 #[test]
 fn red_proof_cargo_version_change_is_rejected() {
-    // The Cargo check reads the real file; prove its predicate on a mutated string.
-    let cargo = read("Cargo.toml").replacen(
+    let toml = read("Cargo.toml");
+    let lock = read("Cargo.lock");
+    assert!(cargo_problems(&toml, &lock).is_empty());
+    let bad_toml = toml.replacen(
         &format!("version = \"{VERSION}\""),
         "version = \"0.1.0\"",
         1,
     );
-    assert!(!cargo.contains(&format!("version = \"{VERSION}\"")));
+    assert!(cargo_problems(&bad_toml, &lock)
+        .iter()
+        .any(|m| m.contains("Cargo.toml version")));
+    let bad_lock = lock.replacen(
+        &format!("version = \"{VERSION}\""),
+        "version = \"0.0.0\"",
+        1,
+    );
+    assert!(cargo_problems(&toml, &bad_lock)
+        .iter()
+        .any(|m| m.contains("Cargo.lock")));
+    let no_publish = toml.replacen("publish = false", "", 1);
+    assert!(cargo_problems(&no_publish, &lock)
+        .iter()
+        .any(|m| m.contains("publish")));
+}
+
+#[test]
+fn red_proof_widened_release_guard_is_rejected() {
+    let widened = format!("{RELEASE_GUARD} || always()");
+    let p = mutated(RELEASE_GUARD, &widened);
+    assert!(
+        p.iter().any(|m| m.contains("`gh release create` step")),
+        "{p:?}"
+    );
+}
+
+#[test]
+fn red_proof_write_all_on_build_is_rejected() {
+    let p = mutated(
+        "    runs-on: ${{ matrix.os }}",
+        "    runs-on: ${{ matrix.os }}\n    permissions: write-all",
+    );
+    assert!(p.iter().any(|m| m.contains("job `build`")), "{p:?}");
+}
+
+#[test]
+fn red_proof_extra_write_grants_on_publish_are_rejected() {
+    let p = mutated(
+        "      contents: write",
+        "      contents: write\n      id-token: write",
+    );
+    assert!(
+        p.iter().any(|m| m.contains("`publish` write grants")),
+        "{p:?}"
+    );
+}
+
+#[test]
+fn red_proof_disabled_version_gate_is_rejected() {
+    let p = mutated(
+        "if [ \"${GITHUB_REF_NAME}\" != \"v${version}\" ]; then",
+        "if false && [ \"${GITHUB_REF_NAME}\" != \"v${version}\" ]; then",
+    );
+    assert!(
+        p.iter()
+            .any(|m| m.contains("tag-equals-version") || m.contains("bypass")),
+        "{p:?}"
+    );
+}
+
+#[test]
+fn red_proof_branch_filter_on_push_is_rejected() {
+    let p = mutated("    tags: ['v*']", "    tags: ['v*']\n    branches: [main]");
+    assert!(p.iter().any(|m| m.contains("`push:` children")), "{p:?}");
+}
+
+#[test]
+fn red_proof_rosetta_missing_must_fail_a_tag_push() {
+    let p = mutated("::error::Rosetta", "::warning::Rosetta");
+    assert!(p.iter().any(|m| m.contains("Intel smoke")), "{p:?}");
+}
+
+#[test]
+fn red_proof_checkout_must_not_persist_credentials() {
+    let p = mutated("          persist-credentials: false\n", "");
+    assert!(p.iter().any(|m| m.contains("persist-credentials")), "{p:?}");
+}
+
+#[test]
+fn red_proof_tag_must_be_annotated_and_on_main() {
+    let p = mutated(
+        "git merge-base --is-ancestor",
+        "git merge-base --not-checked",
+    );
+    assert!(p.iter().any(|m| m.contains("is-ancestor")), "{p:?}");
+    let p = mutated("is not annotated", "is fine");
+    assert!(p.iter().any(|m| m.contains("is not annotated")), "{p:?}");
 }
