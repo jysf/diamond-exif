@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: verifier             # implementer | verifier
   created_at: 2026-11-20
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-024
@@ -46,18 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                # completed | blocked | rejected
+  agent: claude-opus-5-5           # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
-  verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
+  verdict: punch-list              # verify handoffs: approved | punch-list | rejected
+  basis: transcript                # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 1982859            # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: null
-  branch: null
+  duration_minutes: 25
+  branch: claude/alpha-release-exif-audit
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-20
+  notes: "FLOOR, measured live from subagents/agent-af98cafc183101310.jsonl (20 deduplicated messages: input 39, cache creation 117,067, cache read 1,849,191, output 16,562) before the last ~4 calls; re-sum after the session ends. estimated_usd null: no claude-opus-5-5 rate found in docs/cost-tracking.md; orchestrator to price it. About 25 tool calls."
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -121,38 +121,118 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `claude/alpha-release-exif-audit`, reviewed at build commit `b9e391c` (HEAD `7235de1`; later commits docs only). Not pushed, no PR.
+- **Completed at:** 2026-11-20
+- **All acceptance criteria met?** No, two gaps. AC 2 is ticked but the workflow also uses `actions/upload-artifact@v4` and `actions/download-artifact@v4` (L1). AC 3 (dry run) cannot be verified until the workflow runs on a runner. The workflow itself is sound: I found no injection, no path that publishes on a dispatch, and the tag gate runs before any build. The punch list is about tests that are too loose to guard those properties, and a flawed spec pre-flight item.
+- **For `verify`:** ⚠ PUNCH LIST (0 High, 2 Medium, 8 Low)
+
+#### Findings
+
+**M1 (Medium): the static workflow checks pass several real security regressions.** `tests/release_layout.rs:118-128`, `:186-201`, `:222-229`, `:87-100`. I mutated the real `release.yml`, ran `cargo test --test release_layout release_workflow_triggers`, then ran `git checkout` (the tree was clean after each). These mutations stayed **green**:
+(a) the release guard widened to `if: github.event_name == 'push' || always()`. `b.find("if: github.event_name == 'push'")` is a substring match, so this passes, and a `dry_run: false` dispatch on a tag ref would then publish;
+(b) `permissions: write-all` added to the `build` job. Only the literal `contents: write` is looked for;
+(c) `id-token: write` and `actions: write` added to `publish`;
+(d) the tag gate disabled (`if false && [ "${GITHUB_REF_NAME}" != ... ]`). The check only looks for the needles `GITHUB_REF_NAME`, `exit 1` and similar;
+(e) `branches: [main]` added under `push:`.
+DEC-014:74 says the test "fails when a mutation breaks any designed property", which is not true.
+Fix: compare the guard line exactly (`l.trim() == "if: github.event_name == 'push'"`), and require it to be the `if:` of the step that contains `gh release create`. Reject any `write`/`write-all` permission outside `publish`, and allow exactly `contents: write` inside it. Require `push:`'s only child to be `tags:`. Add a red-proof for each of (a) to (e). Optionally harden the guard itself to `github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')`.
+The mutations that should go red did go red: adding `pull_request`, adding top-level `contents: write`, and adding `softprops/action-gh-release@v2`. Brittleness in the other direction: reformatting `tags: ['v*']` to `tags: ["v*"]` turns the check red. That is acceptable as fail-closed, but worth a comment.
+
+**M2 (Medium): the spec's pre-flight item 6 cannot work as written. Confirmed.** `SPEC-024...md:133` and `release.yml:61-66`. A tag `v0.0.0-rc.test` on a commit whose `Cargo.toml` says `0.1.0-alpha.1` fails `check` with "does not match", so `build` and `publish` never run. To make it reach `publish`, you would have to commit a `0.0.0-rc.test` version, which is a public tag and release of a fake version. That is outward-facing and proves little.
+Fix (spec amendment): drop the throw-away tag. Rollback is exercised honestly by: (1) the dispatch dry run, which exercises check, build, smoke and SHA256SUMS, everything except `gh release create`; (2) checking the delete syntax, which I did against local `gh` 2.103.3: `gh release delete <tag> --cleanup-tag --yes` takes those flags, and `gh release create` takes `--verify-tag`, `--prerelease`, `--notes-file` and `--title`; (3) running the real delete only if the real cut is bad. Optionally rehearse the whole path in a private scratch fork. Mark item 6 `[cut]`.
+
+**L1 (Low): spec AC 2 is ticked but not met as worded, and DEC-014 contradicts itself.** `SPEC-024...md:138` ("uses no action other than checkout and rust-toolchain") and `DEC-014...md:41` ("uses no third-party action", yet `dtolnay/rust-toolchain` is third-party). The builder disclosed the deviation and DEC-014:51 justifies it. Decision 5 (upload the dry-run artifacts) actually needs upload-artifact, so the spec was internally inconsistent.
+Fix: amend AC 2 and DEC-014:41 to name the four allowed actions.
+
+**L2 (Low): the Rosetta fallback can ship an Intel binary that never ran.** `release.yml:132-141`. With no Rosetta the step prints a warning, runs `file`, and exits 0 on a tag push too. Nothing asserts what `file` prints, and the `--version` equality check is skipped.
+Fix: assert that `file` prints `x86_64`, and fail when `GITHUB_EVENT_NAME = push` and Rosetta is missing. A warning is enough on a dry run. Acceptable for an alpha as is, but the dry-run log must be read for this warning.
+
+**L3 (Low): `publish` holds `contents: write` on a dry run, and its checkout keeps the token.** `release.yml:171-174`. This does not escalate anything: only users with write access can dispatch, and a dispatch runs the workflow file from the ref it names, so that ref could set its own permissions anyway. But `actions/checkout@v4` stores the write token in `.git/config` for later steps.
+Fix: add `persist-credentials: false` to the publish checkout. Optionally split the `gh release create` step into a fourth job, `if: github.event_name == 'push'`, so that only it holds write and dry runs never do.
+
+**L4 (Low): nothing checks that a tag is on `main` or that it is annotated.** `release.yml:61-71`. Any `v0.1.0-alpha.1` tag on any commit whose `Cargo.toml` matches publishes. Pre-flight item 1 asks for an annotated tag, which is also unchecked.
+Fix: add a tag ruleset on GitHub restricting `v*` creation. Optionally, in `check` (with `fetch-depth: 0`), run `git merge-base --is-ancestor "$GITHUB_SHA" origin/main` and `test "$(git cat-file -t "$GITHUB_REF")" = tag`.
+
+**L5 (Low): README Install says the release exists before it does.** `README.md:27` says "is on the GitHub releases page". Phase 1 merges to the public `main` and the cut is deferred until the user says go, so the commands fail until then.
+Fix: "will be on ... once tagged", or land the README in Phase 2.
+
+**L6 (Low): Linux checksum portability.** `README.md:38`. `shasum` is a Perl script that is missing on some minimal distributions (Alpine, Fedora minimal); `sha256sum -c -` takes the same input. I ran the `grep | shasum -a 256 -c -` form in a scratch directory: it passes and matches exactly one line for each of the three targets.
+Fix: add "on Linux without `shasum`: `| sha256sum -c -`". Also note that `xattr -d` errors harmlessly when the attribute is absent.
+
+**L7 (Low): `EXIF_AUDIT_BUILD_REF` is printed verbatim.** `src/bin/exif-audit/main.rs:64-69`. I built with the ref `"a b\nc\e[31m"`: `--version` printed the space, the newline and the ESC byte raw (`od -c`), so the "one line" contract breaks. The value is set at build time and the workflow sets it to 7 hex characters, so this is not untrusted input.
+Fix (optional): accept the ref only when it is ASCII alphanumeric and at most 40 characters, otherwise treat it as none, plus a unit test.
+
+**L8 (Low): `red_proof_cargo_version_change_is_rejected` is a tautology.** `tests/release_layout.rs:395-404`. It never calls the Cargo check's predicate; it asserts `replacen` did its job.
+Fix: factor the check into `fn cargo_problems(toml, lock) -> Vec<String>` and red-proof that function. The builder's handback says they checked the real-file mutation by hand.
+
+#### Checked and fine
+
+- No `${{ }}` in any `run:` body. Every value reaches the shell through `env:`.
+- The triggers are exactly a tag push and `workflow_dispatch`. The workflow default is `contents: read`.
+- `gh release create` runs only for `event_name == 'push'`. On this workflow that is a tag push only, so no dispatch, whatever `dry_run` says, can create a release.
+- `dry_run: false` on a branch is rejected in `check`.
+- A wrong tag fails `check`, and `build` needs `check`.
+- `publish` needs `[check, build]` with `fail-fast: false`. One failed leg skips `publish`, and the count check (`n = 3`) backs that up.
+- The `download-artifact` pattern `exif-audit-*` does not match the `SHA256SUMS` artifact.
+- The release-notes awk, run locally (BSD awk 20200816), produces exactly the 7 lines of the `[0.1.0-alpha.1]` section and stops at `## Development history`. The non-empty guard works. The runner's mawk is unverified.
+- The old `[Unreleased]` content was moved, not lost: no removed lines against `784576a`.
+- "Seven fuzz targets" matches `ci.yml`.
+- `cut -c1-7` is used both to build the ref and to compute the expected `--version`, so the equality check is self-consistent.
+- The smoke step runs under the runner default `bash -e`, and the `&& code=0 || code=$?` form is exempt from `-e`, so the logic is correct.
+- `version_line`: with no ref and with an empty ref it prints `exif-audit 0.1.0-alpha.1`; a local plain build confirms this.
+- No CLI test file changed.
+- `cargo publish --dry-run` fails with "cannot be published" (from `publish = false`).
+- The `cargo package --list` include list is unchanged in kind (src, licences, README, Cargo files).
+- A release build with `--locked` passes, so `Cargo.lock` is consistent.
+- `0.1.0-alpha.1` is valid SemVer.
+- README commands match the archive names `exif-audit-<version>-<target>.tar.gz`, and `gh release download --pattern` (repeatable) and `--repo` are valid flags.
+- `ci.yml` is byte-identical to `origin/main`. The local `main` ref is stale (11a5141), so it shows a 4-line difference, but that difference comes from SPEC-022/023, which are already on `origin/main`.
+
+#### Gates (re-run here, `RUSTUP_TOOLCHAIN=1.90.0`)
+
+`just lint` 0, `just test` 0 (934 passed, 0 failed, 10 ignored across 23 test binaries; `release_layout` 12 of 12), `just deny` 0 (licenses ok; the known "Zlib unmatched allowance" warning), `just forbid-unsafe` 0, `just validate` 0, `just cost-audit` 0.
+
+#### Could not verify here (check in the orchestrator's dry run)
+
+- That the workflow parses and runs on GitHub at all.
+- The `x86_64-unknown-linux-musl` link with no musl-tools.
+- The `x86_64-apple-darwin` cross-build, and whether `macos-latest` has Rosetta. **Read the log for the "Rosetta is not available" warning; if it appears, the Intel binary was not smoke-run (L2).**
+- `actions/*-artifact@v4` with `merge-multiple`.
+- mawk running the notes awk (read the `cat notes.md` output in the log).
+- `shasum` on ubuntu-latest.
+- `gh release create` itself, which only the tag push exercises.
+
+In the dry run, check:
+- `check` logs "not a tag ref ... dry run only".
+- The three build legs pass, each logging `smoke checks passed for <target>`.
+- `publish` logs the 3-line SHA256SUMS and `OK` lines, and the step "create the pre-release" shows **skipped**.
+- Download the artifacts and run `shasum -a 256 -c SHA256SUMS`.
+- Unpack the arm64 archive outside the repo and run `--version`; it should print `exif-audit 0.1.0-alpha.1 (<7-char sha of the dispatched commit>)`.
+- Run `file` on the Intel binary; it should say x86_64.
+- `tar -tzf` each archive and confirm the 4 files.
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** 1,982,859. This is a floor, measured live before the last ~4 calls: 20 deduplicated messages, input 39, cache creation 117,067, cache read 1,849,191, output 16,562.
+- **Estimated USD:** null. `docs/cost-tracking.md` lists no claude-opus-5-5 rate; the orchestrator prices it from the components.
+- **Duration (minutes):** about 25. About 25 tool calls.
+- **Source of the number:** the session transcript `subagents/agent-af98cafc183101310.jsonl`, measured per docs/cost-tracking.md "Measuring a cycle". This basis is not comparable with the build's harness `subagent_tokens` figure.
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
-- **Deviations from spec:**
-  - [list]
+- **New decisions emitted:** none.
+- **Deviations from spec:** none by the verifier. No code was changed: every mutation was reverted with `git checkout` and the tree was clean after each. The probe builds went to the scratchpad `CARGO_TARGET_DIR`.
 - **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - Before the cut: fix M1 (harden the tests), amend the spec for M2 and L1, and fix L5.
+  - Optional for the alpha: L2, L3, L4 (the tag ruleset is a GitHub setting the user must apply), L6, L7 and L8.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — Very little; the handoff named the likely weak spots. The local `main` ref is stale, so "byte-identical to main" first looked like a failure; the comparison should name `origin/main`.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — Spec Decision 3 (only two actions) contradicts Decision 5 (upload dry-run artifacts), which needs upload-artifact. The spec should also have stated the guard's exact semantics: tag push only, or also a `dry_run: false` dispatch on a tag.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Wrap cargo in a function from the start: zsh does not word-split `$C`, which cost one wasted mutation run.
