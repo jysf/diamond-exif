@@ -170,3 +170,17 @@ The workflow on a runner (only parsed with PyYAML and checked by the static test
 
 3. **If you did this task again, what would you do differently?**
    — Restore files by copy, not by sed (I broke the Cargo version once and fixed it).
+
+### Follow-up 1 (verify round 1 punch list, all 10 findings addressed)
+
+- **M1:** `tests/release_layout.rs` now compares the release step's `if:` exactly (tied to the step containing `gh release create`; the guard is also hardened to `push && startsWith(github.ref, 'refs/tags/v')`), rejects any write grant or per-job `permissions:` outside `publish` and anything but `contents: write` inside it, requires `tags:` to be the only child of `push:`, and rejects `if false`, `|| true`, `|| :`, `set +e` and a missing exact version comparison in `check`. One permanent red-proof test per case (a to e). Real-file demos on `release.yml` for (a) widened guard, (b) `permissions: write-all` on build, (d) `if false &&` on the gate: each turned the workflow test red; restored with `git checkout`, `git status` clean.
+- **M2:** spec pre-flight item 6 rewritten (`[cut]`, four-part honest verification, throw-away tag dropped; one sentence says why it cannot work). DEC-014 never proposed it.
+- **L1:** spec Decisions 3 and 5, AC 2 and DEC-014 name the four actions and say `dtolnay/rust-toolchain` is third-party.
+- **L2:** Intel smoke always asserts `file` reports x86_64; no Rosetta fails a tag push and only warns on a dispatch. Layout test + red-proof.
+- **L3:** `persist-credentials: false` on every checkout; test + red-proof.
+- **L4:** `check` (fetch-depth 0, tag push only) requires an annotated tag and an ancestor of `origin/main`, with specific `::error::` messages; tests + red-proofs; tag ruleset recommended in DEC-014.
+- **L5/L6:** README no longer says the release exists; `sha256sum -c -` alternative and the harmless `xattr` error noted.
+- **L7:** `version_line` accepts a ref only if non-empty, at most 64 chars, ASCII alphanumerics and `.-_`; unit tests for space, newline, ESC, tab, non-ASCII, `/`, parentheses, 65 chars; DEC-011 and DEC-014 updated.
+- **L8:** `cargo_problems(toml, lock)` is the Cargo check and its red-proof mutates the version, the lock and `publish`.
+- Not verifiable offline: the workflow on a runner (YAML parsed with PyYAML only), the fetch-depth/annotated-tag behaviour of `actions/checkout@v4`, musl and Intel builds, Rosetta, `gh release create`.
+- Tool calls used in this follow-up: about 14.

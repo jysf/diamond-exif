@@ -521,7 +521,10 @@ fn red_proof_dropping_prerelease_is_rejected() {
 #[test]
 fn red_proof_unguarded_release_is_rejected() {
     let p = mutated(RELEASE_GUARD, "if: always()");
-    assert!(p.iter().any(|m| m.contains("`gh release create` step")), "{p:?}");
+    assert!(
+        p.iter().any(|m| m.contains("`gh release create` step")),
+        "{p:?}"
+    );
 }
 
 #[test]

@@ -53,7 +53,7 @@ tags:
 | `--inventory` | (none) | off | list every inventory entry, not only findings |
 | `--max-size N` | integer bytes with optional `K`, `M`, `G` suffix (powers of 1024), at least 1 | `256M` | largest file read; a larger file is reported `failed` |
 | `-h`, `--help` | | | usage on stdout, exit 0 |
-| `-V`, `--version` | | | `exif-audit <crate version>` on stdout, exit 0. Amended by DEC-014: when `EXIF_AUDIT_BUILD_REF` was set at compile time (the release workflow sets it to the short commit SHA) the line is `exif-audit <crate version> (<ref>)`; a plain `cargo build` prints the original form |
+| `-V`, `--version` | | | `exif-audit <crate version>` on stdout, exit 0. Amended by DEC-014: when `EXIF_AUDIT_BUILD_REF` was set at compile time and is clean (non-empty, at most 64 characters, only ASCII alphanumerics, `.`, `-`, `_`; otherwise ignored) (the release workflow sets it to the short commit SHA) the line is `exif-audit <crate version> (<ref>)`; a plain `cargo build` prints the original form |
 
 Options take their value as the next argument or as `--name=value`. `--` ends options (so a path may start with `-`). At least one PATH is required. A lone `-` is a usage error (stdin is not read). Giving the same option twice is a usage error. Unknown options and bad values are usage errors whose message is fixed ASCII text (the offending argument is shown through `safe_text`).
 

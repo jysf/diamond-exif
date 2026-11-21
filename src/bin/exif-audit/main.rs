@@ -58,12 +58,28 @@ fn main() -> ExitCode {
     }
 }
 
+/// Longest build ref `--version` will print.
+const MAX_BUILD_REF_LEN: usize = 64;
+
+/// A build ref is printed only if it is non-empty, at most 64 characters and
+/// made of ASCII alphanumerics, '.', '-' and '_': it must never break the
+/// one-line contract or smuggle control characters into a terminal.
+fn build_ref_is_clean(r: &str) -> bool {
+    !r.is_empty()
+        && r.len() <= MAX_BUILD_REF_LEN
+        && r.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
+}
+
 /// The `--version` line (DEC-011): `exif-audit <crate version>`, plus ` (<ref>)`
-/// when a build ref was injected at compile time (the release workflow sets
-/// `EXIF_AUDIT_BUILD_REF` to the short commit SHA). An empty ref counts as none.
+/// when a clean build ref was injected at compile time (the release workflow sets
+/// `EXIF_AUDIT_BUILD_REF` to the short commit SHA). An empty or unclean ref counts
+/// as none.
 fn version_line(build_ref: Option<&str>) -> String {
     match build_ref {
-        Some(r) if !r.is_empty() => format!("exif-audit {} ({r})", env!("CARGO_PKG_VERSION")),
+        Some(r) if build_ref_is_clean(r) => {
+            format!("exif-audit {} ({r})", env!("CARGO_PKG_VERSION"))
+        }
         _ => format!("exif-audit {}", env!("CARGO_PKG_VERSION")),
     }
 }
@@ -134,5 +150,25 @@ mod tests {
     #[test]
     fn version_line_treats_an_empty_ref_as_none() {
         assert_eq!(version_line(Some("")), version_line(None));
+    }
+
+    #[test]
+    fn version_line_ignores_unclean_refs() {
+        for bad in [
+            "a b",
+            "abc\ndef",
+            "abc\u{1b}[31m",
+            "x\ty",
+            "é",
+            "a/b",
+            "(x)",
+        ] {
+            assert_eq!(version_line(Some(bad)), version_line(None), "{bad:?}");
+        }
+        let long = "a".repeat(65);
+        assert_eq!(version_line(Some(&long)), version_line(None));
+        let max = "a".repeat(64);
+        assert!(version_line(Some(&max)).ends_with(&format!("({max})")));
+        assert!(version_line(Some("v1.2-rc_3")).ends_with("(v1.2-rc_3)"));
     }
 }
