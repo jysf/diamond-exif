@@ -15,7 +15,7 @@
 task:
   id: SPEC-024
   type: release                    # epic | story | task | bug | chore | release
-  cycle: build  # frame | design | build | verify | ship
+  cycle: verify  # frame | design | build | verify | ship
   blocked: false
   priority: high                   # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
