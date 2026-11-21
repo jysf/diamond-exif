@@ -8,6 +8,21 @@ the patch lane files fixes here (`[Unreleased] → Fixed`), and a release spec
 
 ## [Unreleased]
 
+## [0.1.0-alpha.1] - 2026-11-20
+
+First public pre-release: the `exif-audit` binary. It is a read-only privacy scan for image metadata: point it at files or folders of JPEG, TIFF or DNG and it reports GPS, device serial numbers, authorship, free text, thumbnails, MakerNotes, XMP, IPTC and ICC, with exit codes a CI job can act on. Alpha: the CLI contract (DEC-011) is intended but not frozen.
+
+- Reports in text, JSON and CSV; `--policy` previews what stripping would leave; `--fail-on` turns findings into a failing build (exit 1 findings, 2 usage, 3 incomplete).
+- Read-only: it never writes or changes a file, reads nothing but the paths you name, and keeps no state. The strip writer exists in the library only; the CLI does not use it.
+- Checked against ExifTool as an oracle, fuzzed (seven fuzz targets in CI) and panic-free by construction.
+- Binaries for Linux x86_64 (static), macOS Apple silicon and macOS Intel, with a `SHA256SUMS` file. Unsigned: see the README for the macOS quarantine step.
+- `exif-audit --version` also shows the short commit of a release build, for example `exif-audit 0.1.0-alpha.1 (abc1234)`.
+- The library crate (`exif-core`) is not published (`publish = false` in `Cargo.toml`); its API is not stable yet.
+
+## Development history before 0.1.0-alpha.1
+
+The detailed per-spec entries from the pre-release work, kept for reference (they were filed under `[Unreleased]`).
+
 ### Added
 
 - Inventory parity against ExifTool (SPEC-013, test-only; `src/` unchanged): the audit's inventory (every IFD entry as `(group, tag id)`, every located region) is compared with `exiftool -a -u -G1 -H -s` over 247 inputs (178 distinct): hand-built fixtures, the DEC-008 one-entry TIFFs and the three fuzz-seed directories, live and replay (`tests/inventory_oracle.rs`, records in `tests/oracle-fixtures/exiftool-inventory/`). 146 of the 177 comparable distinct inputs agree exactly; 31 differences are pinned as exact multiset differences with a question each, and anything ExifTool lists that the audit does not leaves the file not clean (asserted). Red-proofs: perturbed inventories and records, byte mutations, and six library faults on a mutated copy. Also closes the SPEC-012 and SPEC-017 verify test gaps (`exif_issues` summed over blocks, region `after_scan`, thumbnail pointer types, and three entry-budget cases) and makes two quadratic fuzz-harness guards linear.

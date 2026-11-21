@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-20
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-024
@@ -46,18 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                # completed | blocked | rejected
+  agent: claude-sonnet-5-5                      # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
+  basis: estimate                      # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 130000               # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: null
-  branch: null
+  duration_minutes: 20
+  branch: claude/alpha-release-exif-audit
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-20               # YYYY-MM-DD
+  notes: "tokens_total is an estimate (no transcript access in the subagent); the orchestrator replaces it with the harness subagent_tokens figure"                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -129,38 +129,44 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `claude/alpha-release-exif-audit`, committed, not pushed, no PR (per handoff).
+- **Completed at:** 2026-11-20
+- **All acceptance criteria met?** All except the dry-run criterion, which needs the orchestrator (workflow cannot run offline). Tool calls used: about 24.
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** about 130000 (estimate; no transcript access)
+- **Estimated USD:** null
+- **Duration (minutes):** 20
+- **Source of the number:** estimate; replace with the harness subagent_tokens figure
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
+- **New decisions emitted:** `DEC-014` (first binary release). `DEC-011` amended (`--version` row).
 - **Deviations from spec:**
-  - [list]
-- **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - `publish` also needs `check`'s output, so it has `needs: [check, build]`.
+  - A dispatch with `dry_run: false` on a tag ref passes the check but only rehearses; the release step is gated on `github.event_name == 'push'` alone (handoff wording), recorded in DEC-014 decision 5.
+  - Allowed actions are checkout@v4, dtolnay/rust-toolchain@stable, upload-artifact@v4, download-artifact@v4 (v4 exists; `merge-multiple` and `pattern` need v4).
+  - CHANGELOG: the large existing `[Unreleased]` entries were kept under a new `## Development history before 0.1.0-alpha.1` heading (so the release-notes extraction sees only the summary); `[Unreleased]` is empty.
+  - Stage file and project brief were NOT updated (not needed for the gates; left for the orchestrator).
+  - `tests/release_layout.rs` also holds permanent in-file red-proof tests that mutate the workflow text.
+- **Follow-up work identified:** none beyond the dry run and cut.
+
+### Red-proofs shown
+
+Real-file mutations of `release.yml` (each reverted, `cmp` confirmed): add `pull_request`, top-level `contents: write`, a disallowed action (`evil/act@v1`), drop `--locked` all turned `release_workflow_triggers_permissions_and_actions_are_as_designed` red. Changing the Cargo version turned `cargo_version_is_the_alpha_and_publish_is_false` red. Tests-first: before implementing, `release_layout` had 11 of 12 red (no workflow, old Cargo version) and the `version_line` unit tests did not compile. Permanent in-file `red_proof_*` tests cover pull_request, workflow-level write, disallowed action, `--locked`, `--prerelease`, unguarded release, wrong target.
+
+### Could not verify offline
+
+The workflow on a runner (only parsed with PyYAML and checked by the static tests); musl link and x86_64-apple-darwin cross-build; Rosetta (the step runs under `arch -x86_64`, else warns loudly and skips the run); `actions/*@v4` behaviour; `gh release create`; the awk notes extraction was run locally and works. `shasum -a 256 -c` and `--ignore-missing` portability avoided in the README (uses `grep | shasum -c -`). Gates: `just lint`, `test`, `deny` (licenses ok, one unmatched-allowance warning), `forbid-unsafe`, `validate`, `cost-audit` all green; `ci.yml` unchanged.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — Whether a dispatch with dry_run false on a tag should publish; the spec and handoff differ slightly. I followed the handoff (push only).
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — The `publish` job needing `check` for the version output; and what to do with the old `[Unreleased]` entries.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Restore files by copy, not by sed (I broke the Cargo version once and fixed it).

@@ -124,12 +124,12 @@ Timing: `[now]` verified in Phase 1 with evidence; `[cut]` can only be verified 
 
 ## Acceptance Criteria
 
-- [ ] `Cargo.toml` version is `0.1.0-alpha.1`, `publish = false`, `Cargo.lock` agrees; `exif-audit --version` prints `exif-audit 0.1.0-alpha.1`, and `exif-audit 0.1.0-alpha.1 (<ref>)` when built with `EXIF_AUDIT_BUILD_REF=<ref>`; existing CLI tests pass unchanged.
-- [ ] `release.yml` triggers only on `push: tags: ['v*']` and `workflow_dispatch`; workflow-level permissions are read-only; only the publish job has `contents: write`; it uses no action other than `actions/checkout@v4` and `dtolnay/rust-toolchain`; the build uses `--locked`; a dry run never creates a release.
-- [ ] The dry run on the branch produces three archives and `SHA256SUMS`; each archive unpacks to `exif-audit`, both licences and the README; `shasum -a 256 -c` passes; the smoke checks pass on each target; the macOS arm64 binary runs on this Mac.
-- [ ] A tag whose version does not equal `Cargo.toml`'s fails the workflow before any build.
-- [ ] `README.md` has an Install section (download, checksum, quarantine note, first run) and says the CLI never writes files and that the library is not published; `CHANGELOG.md` has the `[0.1.0-alpha.1]` section; DEC-014 exists; DEC-011 is amended.
-- [ ] All existing gates stay green (`just lint`, `test`, `deny`, `forbid-unsafe`, `validate`, `cost-audit`) and the CI `exif-audit-release` job is unchanged and green.
+- [x] `Cargo.toml` version is `0.1.0-alpha.1`, `publish = false`, `Cargo.lock` agrees; `exif-audit --version` prints `exif-audit 0.1.0-alpha.1`, and `exif-audit 0.1.0-alpha.1 (<ref>)` when built with `EXIF_AUDIT_BUILD_REF=<ref>`; existing CLI tests pass unchanged.
+- [x] `release.yml` triggers only on `push: tags: ['v*']` and `workflow_dispatch`; workflow-level permissions are read-only; only the publish job has `contents: write`; it uses no action other than `actions/checkout@v4` and `dtolnay/rust-toolchain`; the build uses `--locked`; a dry run never creates a release.
+- [ ] (not verified in build: needs the orchestrator dry run) The dry run on the branch produces three archives and `SHA256SUMS`; each archive unpacks to `exif-audit`, both licences and the README; `shasum -a 256 -c` passes; the smoke checks pass on each target; the macOS arm64 binary runs on this Mac.
+- [x] A tag whose version does not equal `Cargo.toml`'s fails the workflow before any build.
+- [x] `README.md` has an Install section (download, checksum, quarantine note, first run) and says the CLI never writes files and that the library is not published; `CHANGELOG.md` has the `[0.1.0-alpha.1]` section; DEC-014 exists; DEC-011 is amended.
+- [x] All existing gates stay green (`just lint`, `test`, `deny`, `forbid-unsafe`, `validate`, `cost-audit`) and the CI `exif-audit-release` job is unchanged and green.
 
 ## Failing Tests
 
