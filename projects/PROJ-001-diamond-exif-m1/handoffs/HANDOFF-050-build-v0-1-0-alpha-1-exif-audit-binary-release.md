@@ -51,13 +51,13 @@ handback:
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
   basis: agent-result                # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: 124602              # REAL combined count — what cost-audit reads
-  estimated_usd: 0.82              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: 6
+  tokens_total: 281773              # REAL combined count — what cost-audit reads
+  estimated_usd: 1.86              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  duration_minutes: 11
   branch: claude/alpha-release-exif-audit
   pr: null
   completed_at: 2026-11-20               # YYYY-MM-DD
-  notes: "Orchestrator correction: tokens_total is the harness subagent_tokens (124,602; 18 tool uses; 387,304 ms = 6.5 min) at 6.60 USD/Mtok = 0.82 USD, the same basis as earlier specs. The builder reported an estimate of about 130,000 and about 24 tool calls, which is not used."
+  notes: "Cumulative: build 124,602 + verify-round-1 follow-up 157,171 = 281,773 tokens at 6.60 USD/Mtok = 1.86 USD; 387,304 ms + 244,061 ms = 10.5 min; 18 + 13 tool uses. Both figures are the harness subagent_tokens. The builder reported estimates (about 130,000 and none for the follow-up), not used."
   synced_at: 2026-11-20
 ---
 

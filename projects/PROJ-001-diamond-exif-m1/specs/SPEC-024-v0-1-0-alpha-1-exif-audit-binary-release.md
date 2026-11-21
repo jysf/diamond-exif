@@ -55,11 +55,11 @@ cost:
       agent: claude-sonnet-5-5
       interface: other
       basis: agent-result
-      tokens_total: 124602
-      estimated_usd: 0.82
-      duration_minutes: 6
+      tokens_total: 281773
+      estimated_usd: 1.86
+      duration_minutes: 11
       recorded_at: 2026-11-20
-      notes: "Orchestrator correction: tokens_total is the harness subagent_tokens (124,602; 18 tool uses; 387,304 ms = 6.5 min) at 6.60 USD/Mtok = 0.82 USD, the same basis as earlier specs. The builder reported an estimate of about 130,000 and about 24 tool calls, which is not used."
+      notes: "Cumulative: build 124,602 + verify-round-1 follow-up 157,171 = 281,773 tokens at 6.60 USD/Mtok = 1.86 USD; 387,304 ms + 244,061 ms = 10.5 min; 18 + 13 tool uses. Harness subagent_tokens, the same basis as earlier specs. The builder reported estimates, not used."
     - cycle: verify
       handoff: HANDOFF-051
       agent: claude-opus-5-5
@@ -71,8 +71,8 @@ cost:
       recorded_at: 2026-11-20
       notes: "Round 1, PUNCH LIST (no High, 2 Medium, 8 Low). Orchestrator correction: tokens_total is the harness subagent_tokens (133,171; 29 tool uses; 392,796 ms = 6.5 min) at 6.60 USD/Mtok = 0.88 USD. The verifier self-reported 1,982,859 (transcript, cache reads included), not used."
   totals:
-    tokens_total: 257773
-    estimated_usd: 1.70
+    tokens_total: 414944
+    estimated_usd: 2.74
     session_count: 2
 ---
 
