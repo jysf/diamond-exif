@@ -7,7 +7,9 @@
 //! walked chunk by chunk ([`png`], DEC-017) and its metadata is located by
 //! [`png::read`]: Exif from `eXIf` through the TIFF engine, and borrowed,
 //! never-decoded XMP, ICC, raw-profile and text regions (DEC-018). The audit
-//! does not read PNG yet.
+//! does not read PNG yet. WebP is walked chunk by chunk ([`webp`], DEC-019: the
+//! RIFF size never limits the walk) and [`webp::read`] hands `EXIF` to the TIFF
+//! engine and locates `XMP ` and `ICCP`; the audit does not read WebP yet.
 
 #![forbid(unsafe_code)]
 #![deny(
@@ -26,6 +28,7 @@ pub mod policy;
 pub mod reader;
 pub mod report;
 pub mod tiff;
+pub mod webp;
 pub mod write;
 
 pub use error::{Error, Result};

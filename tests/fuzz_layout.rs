@@ -1394,7 +1394,7 @@ fn audit_target_is_declared_and_runs_in_ci() {
     let ci = read(".github/workflows/ci.yml");
     assert!(
         ci.contains(
-            "target: [tiff_ifd, jpeg_segments, rewrite_jpeg, rewrite_tiff, audit, audit_render, cli_args, png_chunks]"
+            "target: [tiff_ifd, jpeg_segments, rewrite_jpeg, rewrite_tiff, audit, audit_render, cli_args, png_chunks, webp_riff]"
         ),
         "the fuzz-smoke matrix must run the audit target"
     );
@@ -3244,12 +3244,13 @@ fn audit_render_target_is_declared_and_runs_in_ci() {
     }
     let ci = read(".github/workflows/ci.yml");
     assert!(
-        ci.contains("audit_render, cli_args, png_chunks]"),
+        ci.contains("audit_render, cli_args, png_chunks, webp_riff]"),
         "the fuzz-smoke matrix must run the audit_render target"
     );
     let app = read("app.just");
     assert!(
-        app.contains("audit audit_render cli_args png_chunks\"") && app.contains("`audit_render`"),
+        app.contains("audit audit_render cli_args png_chunks webp_riff\"")
+            && app.contains("`audit_render`"),
         "`just fuzz-smoke` must know audit_render"
     );
 }
@@ -4871,8 +4872,10 @@ fn cli_args_target_is_declared_and_runs_in_ci() {
         target.contains("../../src/bin/exif-audit/args.rs"),
         "the target must fuzz the real parser through #[path]"
     );
-    assert!(read(".github/workflows/ci.yml").contains("audit_render, cli_args, png_chunks]"));
-    assert!(read("app.just").contains("audit audit_render cli_args png_chunks\""));
+    assert!(
+        read(".github/workflows/ci.yml").contains("audit_render, cli_args, png_chunks, webp_riff]")
+    );
+    assert!(read("app.just").contains("audit audit_render cli_args png_chunks webp_riff\""));
 }
 
 #[test]
@@ -6711,8 +6714,8 @@ fn png_chunks_target_is_declared_and_runs_in_ci() {
     assert!(root()
         .join("fuzz/shared/png_metadata_invariants.rs")
         .is_file());
-    assert!(read(".github/workflows/ci.yml").contains("cli_args, png_chunks]"));
-    assert!(read("app.just").contains("cli_args png_chunks\""));
+    assert!(read(".github/workflows/ci.yml").contains("cli_args, png_chunks, webp_riff]"));
+    assert!(read("app.just").contains("cli_args png_chunks webp_riff\""));
 }
 
 #[test]
@@ -6844,5 +6847,242 @@ fn png_metadata_model_red_proofs() {
     }));
     assert!(red(&two, |o| {
         o.issues.pop();
+    }));
+}
+
+// ── SPEC-030: the `webp_riff` target (WebP RIFF walker, DEC-019) ────────────
+
+#[path = "support/webp_shapes.rs"]
+mod webp_shapes;
+
+include!("../fuzz/shared/webp_riff_invariants.rs");
+
+/// The committed `webp_riff` seed names, pinned.
+const WEBP_SEEDS: [&str; 51] = [
+    "anmf-payload",
+    "bad-magic",
+    "chunk-past-end",
+    "exif-after-anmf",
+    "exif-before-vp8x",
+    "flags-clear-with-exif",
+    "flags-set-no-chunks",
+    "form-avi",
+    "header-only",
+    "junk-chunks-100",
+    "kind-exif-lower",
+    "kind-exif-mixed",
+    "kind-iccp-lower",
+    "kind-xmp-dash",
+    "kind-xmp-lower",
+    "kind-xmp-nul",
+    "meta-all-three",
+    "meta-anmf-then-exif",
+    "meta-exif",
+    "meta-exif-empty",
+    "meta-exif-garbage",
+    "meta-exif-prefix",
+    "meta-exif-prefix-only",
+    "meta-exif-seventeen",
+    "meta-exif-two",
+    "meta-flags-all-wrong",
+    "meta-halted-after-exifs",
+    "meta-iccp",
+    "meta-xmp",
+    "meta-xmp-nul-id",
+    "meta-xmp-odd",
+    "meta-xmp-two",
+    "minimal",
+    "misplaced-vp8x-1100",
+    "no-vp8x-with-exif",
+    "pad-missing-end",
+    "pad-missing-middle",
+    "pad-present",
+    "short-11",
+    "size-exact",
+    "size-large",
+    "size-odd",
+    "size-small",
+    "size-trailing",
+    "size-zero",
+    "tail-1-byte",
+    "tail-7-bytes",
+    "tail-partial-header",
+    "vp8x-full",
+    "vp8x-misplaced",
+    "vp8x-three-bytes",
+];
+
+#[test]
+fn webp_riff_target_is_declared_and_runs_in_ci() {
+    let fuzz = read("fuzz/Cargo.toml");
+    assert!(
+        fuzz.contains("name = \"webp_riff\"") && fuzz.contains("fuzz_targets/webp_riff.rs"),
+        "fuzz/Cargo.toml must declare the webp_riff bin"
+    );
+    assert!(root().join("fuzz/fuzz_targets/webp_riff.rs").is_file());
+    assert!(root().join("fuzz/shared/webp_riff_invariants.rs").is_file());
+    let target = read("fuzz/fuzz_targets/webp_riff.rs");
+    assert!(target.contains("webp_riff_invariants::check"));
+    assert!(read(".github/workflows/ci.yml").contains("png_chunks, webp_riff]"));
+    assert!(read("app.just").contains("png_chunks webp_riff\""));
+}
+
+#[test]
+fn webp_riff_seeds_are_the_builders_byte_for_byte() {
+    let dir = root().join("fuzz/seeds/webp_riff");
+    let mut names: Vec<String> = fs::read_dir(&dir)
+        .expect("webp_riff seeds")
+        .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    let mut want: Vec<String> = WEBP_SEEDS.iter().map(|s| s.to_string()).collect();
+    want.sort();
+    assert_eq!(names, want, "the webp_riff seed set");
+    let built = webp_shapes::seeds();
+    assert_eq!(built.len(), WEBP_SEEDS.len());
+    for (name, bytes) in built {
+        let on_disk = fs::read(dir.join(name)).expect("seed");
+        assert_eq!(on_disk, bytes, "seed {name} differs from its builder");
+    }
+}
+
+#[test]
+fn webp_harness_holds_on_every_seed_prefix_and_flip() {
+    let dir = root().join("fuzz/seeds/webp_riff");
+    for name in WEBP_SEEDS {
+        let d = fs::read(dir.join(name)).expect("seed");
+        webp_riff_invariants::check(&d);
+        let step = (d.len() / 120).max(1);
+        let mut i = 0;
+        while i <= d.len() {
+            webp_riff_invariants::check(&d[..i]);
+            if i < d.len() {
+                let mut m = d.clone();
+                m[i] ^= 0xFF;
+                webp_riff_invariants::check(&m);
+            }
+            i += step;
+        }
+    }
+    webp_riff_invariants::check(&[]);
+    // An 11-byte header is a fatal Truncated, not a panic.
+    webp_riff_invariants::check(&webp_shapes::header(4)[..11]);
+}
+
+/// The walk model must go red when the observed answer is wrong: a control
+/// first (the untouched answer passes), then the corruptions.
+#[test]
+fn webp_walk_model_red_proofs() {
+    use std::panic::catch_unwind;
+
+    let dir = root().join("fuzz/seeds/webp_riff");
+    let red = |data: &[u8], tamper: fn(&mut webp_riff_invariants::Observed)| {
+        let data = data.to_vec();
+        catch_unwind(move || webp_riff_invariants::compare(&data, tamper)).is_err()
+    };
+    let full = fs::read(dir.join("vp8x-full")).expect("seed");
+    let small = fs::read(dir.join("size-small")).expect("seed");
+    let flags = fs::read(dir.join("flags-set-no-chunks")).expect("seed");
+
+    // Controls: the untouched answers are accepted.
+    assert!(!red(&full, |_| {}));
+    assert!(!red(&small, |_| {}));
+    assert!(!red(&flags, |_| {}));
+
+    // A missed chunk.
+    assert!(red(&full, |o| {
+        o.chunks.pop();
+    }));
+    // A flipped VP8X flag bit.
+    assert!(red(&full, |o| {
+        if let Some(v) = o.vp8x.as_mut() {
+            v.0 ^= 0x08;
+        }
+    }));
+    // A chunk offset shifted by one.
+    assert!(red(&full, |o| {
+        o.chunks[0].0 += 1;
+    }));
+    // A dropped RiffSizeMismatch.
+    assert!(red(&small, |o| {
+        o.issues
+            .retain(|i| !matches!(i.0, exif_core::Error::RiffSizeMismatch { .. }));
+    }));
+    // A missed end-of-walk flag issue on a shape that has them.
+    assert!(red(&flags, |o| {
+        o.issues.pop();
+    }));
+}
+
+#[test]
+fn webp_seeds_are_at_least_forty_and_metadata_seeds_are_pinned() {
+    let dir = root().join("fuzz/seeds/webp_riff");
+    assert!(WEBP_SEEDS.len() >= 40);
+    let meta = webp_shapes::meta_seeds();
+    assert!(meta.len() >= 12);
+    for (name, bytes) in &meta {
+        assert!(name.starts_with("meta-"), "{name}");
+        assert!(WEBP_SEEDS.contains(name), "{name} is not pinned");
+        assert_eq!(&fs::read(dir.join(name)).expect("seed"), bytes, "{name}");
+        // Every metadata seed reads and the model accepts it.
+        exif_core::webp::read(bytes).expect("meta seed reads");
+        webp_riff_invariants::check(bytes);
+    }
+    let all = webp_shapes::seeds();
+    assert_eq!(all.len(), WEBP_SEEDS.len());
+    assert_eq!(all.len() - meta.len(), 35, "the walk seed count");
+}
+
+/// The extraction half of the model must go red when the observed answer is
+/// wrong: controls first, then a missed block, a region offset shifted by one,
+/// a dropped extraction issue and a missed region.
+#[test]
+fn webp_metadata_model_red_proofs() {
+    use std::panic::catch_unwind;
+
+    let dir = root().join("fuzz/seeds/webp_riff");
+    let red = |data: &[u8], tamper: fn(&mut webp_riff_invariants::Observed)| {
+        let data = data.to_vec();
+        catch_unwind(move || webp_riff_invariants::compare(&data, tamper)).is_err()
+    };
+    let rich = fs::read(dir.join("meta-all-three")).expect("seed");
+    let two = fs::read(dir.join("meta-exif-two")).expect("seed");
+    let prefix = fs::read(dir.join("meta-exif-prefix")).expect("seed");
+    let halted = fs::read(dir.join("meta-halted-after-exifs")).expect("seed");
+
+    assert!(!red(&rich, |_| {}));
+    assert!(!red(&two, |_| {}));
+    assert!(!red(&prefix, |_| {}));
+    assert!(!red(&halted, |_| {}));
+
+    // A region offset shifted by one.
+    assert!(red(&rich, |o| {
+        o.regions[0].1 += 1;
+    }));
+    // A missed region (and a flipped region variant).
+    assert!(red(&rich, |o| {
+        o.regions.pop();
+    }));
+    assert!(red(&rich, |o| {
+        o.regions[0].0 = !o.regions[0].0;
+    }));
+    // A missed Exif block, and a shifted tiff_at.
+    assert!(red(&two, |o| {
+        o.blocks.pop();
+    }));
+    assert!(red(&prefix, |o| {
+        o.blocks[0].1 -= 1;
+    }));
+    // A dropped extraction issue (ExtraExif) and a dropped ImproperExifHeader.
+    assert!(red(&two, |o| {
+        o.issues.pop();
+    }));
+    assert!(red(&prefix, |o| {
+        o.issues.pop();
+    }));
+    // A halt that let an extraction issue through: the halted shape has only
+    // the walk's own issue, so one more is wrong.
+    assert!(red(&halted, |o| {
+        o.issues.push((exif_core::Error::MetadataWithoutVp8x, 12));
     }));
 }

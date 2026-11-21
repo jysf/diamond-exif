@@ -173,3 +173,8 @@ context graph lives in the handoff file.
    (## Context is the before, ## Goal is the after): confirm the prediction,
    don't reconstruct it from memory.
    — <answer | none>
+
+## Carried from SPEC-030 verify (2026-11-21)
+
+- Add a unit test and a seed for the first-`VP8X` rule: `RIFF` + `VP8X`(0x00) + `VP8X`(0x08) + `VP8L` + `EXIF` must give `vp8x().flags() == 0` and one `ChunkFlagMismatch{EXIF, false}` (a mutant making the last `VP8X` win survives every current test). Add a `vp8x-nine-bytes` seed (a `BadVp8x` threshold of 9 is otherwise killed only by unit tests). Pin `MAX_WEBP_CHUNKS`, `MAX_WEBP_ISSUES` as literals. Run the model on all 35 walk seeds, not only the 16 `meta-` seeds.
+- Parity shapes to add: zero-length `XMP `, zero-length `XMP\0`, two `VP8X`, a short `VP8X` followed by a full one.

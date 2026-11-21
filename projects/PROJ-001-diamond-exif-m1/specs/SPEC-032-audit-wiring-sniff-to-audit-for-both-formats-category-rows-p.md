@@ -173,3 +173,8 @@ context graph lives in the handoff file.
    (## Context is the before, ## Goal is the after): confirm the prediction,
    don't reconstruct it from memory.
    — <answer | none>
+
+## Carried from SPEC-030 verify (2026-11-21)
+
+- A zero-length `Xmp` or `Icc` region (WebP) must not count as XMP or ICC present: ExifTool shows nothing for it (DEC-019 clarification).
+- PNG `Xmp`/`Icc`/`RawProfile` regions that are compressed, and PNG raw-profile text, are metadata the audit could not read (DEC-018); report them as such.

@@ -25,8 +25,11 @@ mod oracle_tiff;
 // SPEC-028: the PNG chunk fixtures become the `png_chunks` seeds.
 #[path = "../tests/support/png_shapes.rs"]
 mod png_shapes;
+// SPEC-030: the WebP RIFF fixtures become the `webp_riff` seeds.
 #[path = "../tests/support/real_shapes.rs"]
 mod real_shapes;
+#[path = "../tests/support/webp_shapes.rs"]
+mod webp_shapes;
 // SPEC-020: the strip fixtures.
 #[path = "../tests/support/strip_shapes.rs"]
 mod strip_shapes;
@@ -1764,6 +1767,15 @@ fn main() {
         fs::write(pdir.join(name), bytes).expect("write seed");
     }
     println!("wrote {} seeds to {}", pseeds.len(), pdir.display());
+
+    // SPEC-030: the WebP RIFF walker seeds, the same builders as the tests.
+    let wpdir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/webp_riff");
+    fs::create_dir_all(&wpdir).expect("create seeds dir");
+    let wpseeds = webp_shapes::seeds();
+    for (name, bytes) in &wpseeds {
+        fs::write(wpdir.join(name), bytes).expect("write seed");
+    }
+    println!("wrote {} seeds to {}", wpseeds.len(), wpdir.display());
 
     let adir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/audit");
     fs::create_dir_all(&adir).expect("create seeds dir");

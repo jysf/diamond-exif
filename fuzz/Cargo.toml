@@ -67,6 +67,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "webp_riff"
+path = "fuzz_targets/webp_riff.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "rewrite_tiff"
 path = "fuzz_targets/rewrite_tiff.rs"
 test = false
