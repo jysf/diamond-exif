@@ -309,6 +309,63 @@ pub enum Error {
         /// The region-count limit that was reached.
         limit: usize,
     },
+
+    /// The first 12 bytes are not `RIFF`, a size and `WEBP`, so this is not a
+    /// WebP (WebP Container Specification). Fatal (DEC-019).
+    NotWebp {
+        /// The 12 bytes actually found.
+        mark: [u8; 12],
+    },
+
+    /// The RIFF size field is not the input length minus 8. The walk is not
+    /// limited by it (DEC-019); this only reports the disagreement.
+    RiffSizeMismatch {
+        /// The size the file declared.
+        declared: u32,
+        /// The input length minus 8, the size an exact file would declare.
+        actual: usize,
+    },
+
+    /// An odd-sized chunk ends exactly at the end of the input, so its pad
+    /// byte is missing.
+    MissingPad {
+        /// Input offset of the chunk.
+        at: usize,
+    },
+
+    /// A `VP8X` chunk shorter than the 10 bytes its header needs.
+    BadVp8x {
+        /// The chunk length the file declared.
+        length: u32,
+    },
+
+    /// A `VP8X` chunk that is not the first chunk.
+    MisplacedVp8x {
+        /// Input offset of the chunk.
+        at: usize,
+    },
+
+    /// A `VP8X` flag disagrees with the chunks present: the flag is set and no
+    /// such chunk exists, or the chunk exists and the flag is clear. Flags are
+    /// informational (DEC-019); this never stops a read.
+    ChunkFlagMismatch {
+        /// Which flag: `"ICC"`, `"EXIF"` or `"XMP"`.
+        flag: &'static str,
+        /// Whether the flag is set.
+        declared: bool,
+    },
+
+    /// There is no `VP8X` chunk but an `EXIF`, `XMP ` or `ICCP` chunk exists.
+    MetadataWithoutVp8x,
+
+    /// A chunk code that is read as metadata although it is not the canonical
+    /// four bytes (`XMP\0` for `XMP `).
+    NonCanonicalChunkId {
+        /// The four code bytes actually found.
+        chunk_id: [u8; 4],
+        /// Input offset of the chunk.
+        at: usize,
+    },
 }
 
 impl fmt::Display for Error {
@@ -462,7 +519,7 @@ impl fmt::Display for Error {
             }
             Error::MissingIend => write!(f, "no IEND chunk found"),
             Error::TooManyChunks { limit } => {
-                write!(f, "PNG walk reached the limit of {limit} chunks")
+                write!(f, "walk reached the limit of {limit} chunks")
             }
             Error::ImproperExifHeader { at } => {
                 write!(
@@ -484,6 +541,44 @@ impl fmt::Display for Error {
             }
             Error::TooManyRegions { limit } => {
                 write!(f, "more than {limit} metadata regions were located")
+            }
+            Error::NotWebp { mark } => {
+                write!(f, "not a WebP: first bytes are")?;
+                for b in mark {
+                    write!(f, " {b:02x}")?;
+                }
+                write!(f, ", expected RIFF, a size and WEBP")
+            }
+            Error::RiffSizeMismatch { declared, actual } => {
+                write!(
+                    f,
+                    "RIFF size field says {declared}, the input has {actual} bytes after it"
+                )
+            }
+            Error::MissingPad { at } => {
+                write!(f, "odd-sized chunk at offset {at} has no pad byte")
+            }
+            Error::BadVp8x { length } => {
+                write!(f, "VP8X declares length {length}, expected at least 10")
+            }
+            Error::MisplacedVp8x { at } => {
+                write!(f, "VP8X chunk at offset {at} is not the first chunk")
+            }
+            Error::ChunkFlagMismatch { flag, declared } => {
+                if *declared {
+                    write!(f, "VP8X sets the {flag} flag but no such chunk exists")
+                } else {
+                    write!(f, "a {flag} chunk exists but the VP8X flag is clear")
+                }
+            }
+            Error::MetadataWithoutVp8x => {
+                write!(f, "metadata chunks exist but there is no VP8X chunk")
+            }
+            Error::NonCanonicalChunkId { chunk_id, at } => {
+                write!(
+                    f,
+                    "chunk at offset {at} has code {chunk_id:02x?}, read as metadata though not canonical"
+                )
             }
         }
     }

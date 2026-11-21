@@ -18,7 +18,7 @@ What works today:
   - **TIFF and DNG:** the same in-place deletion, with scrubbed values zeroed. Strip and tile offsets, strip and tile data, SubIFDs and JPEG data stay byte-identical. When that cannot be guaranteed the writer refuses with a reason (a hidden pointer, shared bytes, or a thumbnail it cannot locate).
   - **PNG:** the library walks a PNG chunk by chunk (`exif_core::png`, tolerant: a bad CRC or a missing `IEND` is an issue, not a failure), and `exif_core::png::read` locates its metadata (`eXIf` Exif handed to the TIFF engine, XMP, ICC, raw-profile and text chunks, including chunks after `IEND`) without inflating or decoding anything; `exif-audit` still reports PNG as unsupported until it is wired in.
   - **Known limits:** compressed and raw-profile PNG metadata is located but not read, and WebP is not handled.
-- **Verification:** eight fuzz targets (`tiff_ifd`, `jpeg_segments`, `audit`, `audit_render`, `cli_args`, `rewrite_jpeg`, `rewrite_tiff`, `png_chunks`) and an ExifTool oracle for reads, inventory and strip output (live and replayed), shown able to fail by mutated-copy red-proofs. Inventory parity against ExifTool covers 183 distinct inputs.
+- **Verification:** nine fuzz targets (`tiff_ifd`, `jpeg_segments`, `audit`, `audit_render`, `cli_args`, `rewrite_jpeg`, `rewrite_tiff`, `png_chunks`, `webp_riff`) and an ExifTool oracle for reads, inventory and strip output (live and replayed), shown able to fail by mutated-copy red-proofs. Inventory parity against ExifTool covers 183 distinct inputs.
 - **CLI:** `exif-audit`, a read-only privacy scan with exit codes a CI job can act on (below).
 
 See `CLAUDE.md` and `AGENTS.md`. First decision: DEC-001 (tolerant-walk policy).
@@ -140,7 +140,7 @@ just test               # cargo test (oracle tests skip LOUDLY without exiftool)
 just lint               # fmt check + clippy
 just deny               # license policy (permissive-only dependencies)
 just forbid-unsafe      # re-check that no unsafe code exists
-just fuzz-smoke [TARGET]  # 60 s smoke per fuzz target (tiff_ifd, jpeg_segments, rewrite_jpeg, rewrite_tiff, audit, audit_render, cli_args, png_chunks)
+just fuzz-smoke [TARGET]  # 60 s smoke per fuzz target (tiff_ifd, jpeg_segments, rewrite_jpeg, rewrite_tiff, audit, audit_render, cli_args, png_chunks, webp_riff)
 just oracle-record      # re-record ExifTool output for the parity fixtures
 just mutation-oracle    # mutated-copy red-proofs against the committed ExifTool records
 ```

@@ -85,7 +85,7 @@ lint-fuzz:
         --manifest-path fuzz/Cargo.toml --all-targets -- -D warnings
 
 # 60 s smoke run of a fuzz target from its committed seeds: `just fuzz-smoke
-# [TARGET]` (`tiff_ifd`, `jpeg_segments`, `rewrite_jpeg`, `rewrite_tiff`, `audit`, `audit_render`, `cli_args` or `png_chunks`); with no TARGET every target runs in
+# [TARGET]` (`tiff_ifd`, `jpeg_segments`, `rewrite_jpeg`, `rewrite_tiff`, `audit`, `audit_render`, `cli_args`, `png_chunks` or `webp_riff`); with no TARGET every target runs in
 # turn, 60 s each.
 #
 # PATH TRAP: `cargo fuzz` shells out to a bare `cargo`, which resolves to
@@ -97,7 +97,7 @@ fuzz-smoke TARGET="":
     set -euo pipefail
     export PATH="$HOME/.cargo/bin:$PATH"
     targets="{{TARGET}}"
-    if [ -z "$targets" ]; then targets="tiff_ifd jpeg_segments rewrite_jpeg rewrite_tiff audit audit_render cli_args png_chunks"; fi
+    if [ -z "$targets" ]; then targets="tiff_ifd jpeg_segments rewrite_jpeg rewrite_tiff audit audit_render cli_args png_chunks webp_riff"; fi
     for t in $targets; do
         if [ ! -f "fuzz/fuzz_targets/$t.rs" ]; then
             echo "fuzz-smoke: unknown target '$t'" >&2

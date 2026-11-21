@@ -1369,6 +1369,14 @@ mod tests {
                 Error::BadTextChunk { .. } => 36,
                 Error::BadIccpChunk { .. } => 37,
                 Error::TooManyRegions { .. } => 38,
+                Error::NotWebp { .. } => 39,
+                Error::RiffSizeMismatch { .. } => 40,
+                Error::MissingPad { .. } => 41,
+                Error::BadVp8x { .. } => 42,
+                Error::MisplacedVp8x { .. } => 43,
+                Error::ChunkFlagMismatch { .. } => 44,
+                Error::MetadataWithoutVp8x => 45,
+                Error::NonCanonicalChunkId { .. } => 46,
             }
         }
         let indices: Vec<usize> = errors.iter().map(index).collect();
