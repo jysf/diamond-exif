@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: verifier             # implementer | verifier
   created_at: 2026-11-21
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                  # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-029
@@ -46,18 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                # completed | blocked | rejected
+  agent: claude-opus-5-5           # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
-  verdict: null                    # verify handoffs: approved | punch-list | rejected
+  verdict: approved                # verify handoffs: approved | punch-list | rejected
   basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: null
-  branch: null
+  duration_minutes: 35
+  branch: claude/spec-029-verify
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-21         # YYYY-MM-DD
+  notes: "Verifier subagent cannot read its own transcript token counts; the orchestrator replaces tokens_total with the harness figure. Approved at build tip 01c36a2 (build commit a8c38c4). Two Medium findings are DEC-018 gaps (zTXt XMP, keyword over 79 bytes), not build defects."
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -119,38 +119,75 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `claude/spec-029-verify` (local, not pushed; branched from `claude/spec-029-png-metadata` at `01c36a2`, which contains build commit `a8c38c4`). No PR (verify).
+- **Completed at:** 2026-11-21
+- **All acceptance criteria met?** yes. Every SPEC-029 criterion has code and a test; gates green (below).
+- **For `verify`:** APPROVED (at `01c36a2`). No change to the build branch is required. The two Medium findings are gaps in DEC-018 (the builder followed its text exactly) and should be settled by a DEC-018 clarification before SPEC-031/SPEC-032.
+
+#### Findings
+
+**High:** none.
+
+**Medium (DEC-018 gaps, not build defects)**
+
+- **M1. A `zTXt` with keyword `XML:com.adobe.xmp` is routed to `Text`, but ExifTool reads it as XMP.** `src/png/metadata.rs:472` (`&& kind != ChunkKind::Ztxt`). Failing input: signature, IHDR, IDAT, `zTXt` with data `XML:com.adobe.xmp\0` + `\0` + zlib(an XMP packet with `dc:format="secret/zz"`), IEND. ExifTool 13.55 `-a -G1 -s -n` prints `[XMP-dc] Format : secret/zz`: it inflates the stream and parses it as XMP. With a stream that is not zlib it warns `Error inflating XML:com.adobe.xmp` and prints `[PNG] XMP : (Binary data 5 bytes ...)`, so it still names the chunk XMP. The library reports `Text { keyword: "XML:com.adobe.xmp", compressed: true }`. DEC-018 Routing only names `iTXt` and `tEXt`, so the code matches the DEC, but the measurement did not test `zTXt`. Effect: SPEC-032 would label this XMP as free text. It is still marked unreadable, because `compressed` is true. Suggested clarification: `zTXt` with that keyword gives `Xmp { compressed: true }`.
+- **M2. A text keyword over 79 bytes (and an `iTXt` flag other than 0 or 1) gives `BadTextChunk` with no region, but ExifTool reads the chunk.** `src/png/metadata.rs:360-364` and `:385-389`. Failing input: IHDR, IDAT, `tEXt` with data `"A"*80 + "\0hello"`, IEND. ExifTool prints a PNG tag named by the 80-byte keyword with value `hello`. For `iTXt` with data `Comment\0\x02\0\0\0hello`, ExifTool warns `Error inflating Comment` and prints `[PNG] Comment : (Binary data 3 bytes)`. DEC-018 and the spec's acceptance list require this exact behaviour, so the code is right by contract. For a privacy audit, though, a text value that ExifTool shows becomes only an issue with no located region. A clarification should decide this before SPEC-031 measures it: either locate the chunk anyway (`Text` plus the issue) or record it as a known divergence.
+
+**Low**
+
+- **L1. Choice (a): the halt rule suppresses more in PNG than in JPEG.** `src/png/metadata.rs:409`. A JPEG halt is caps only (`src/jpeg/mod.rs:398`). A PNG halt also comes from `Truncated` and `BadChunkLength`, and a truncated download is common. Failing input: IHDR, `tEXt "bad"` (no NUL), `eXIf "junk"`, `eXIf "junk"`, then a chunk whose length runs past the end of the input. `png_issues()` is just `[Truncated]`: `BadTextChunk` and `ExtraExif` are dropped. The regions and blocks are kept. `walker_halt_suppresses_extraction_issues_but_keeps_found_regions` pins this behaviour. It is sound and keeps DEC-017's "the halt is the last issue", but DEC-018 should say so, because the spec's wording ("add no extraction issue after the halt") also allows the narrower reading.
+- **L2. DEC-018 says "Extraction issues are at most one per chunk", but one `eXIf` can yield two.** `src/png/metadata.rs:439-447`. Failing input: two `eXIf` chunks, the second starting `Exif\0\0MM\0*`. Issues: `[ExtraExif{at}, ImproperExifHeader{at}]` at the same offset. The module doc admits it ("at most two per chunk") and the total is still bounded by constants. The DEC text needs one word changed.
+- **L3. There is no public bound on `png_issues().len()`.** JPEG has `MAX_JPEG_METADATA_ISSUES`; PNG extraction issues are not capped by `MAX_PNG_ISSUES` (1024). Failing input: 2000 `eXIf` chunks give 1999 `ExtraExif` issues, more than the walker's 1024. The total is bounded by the cap arithmetic: 2 x (65,536 + 4,096) + 1 + walker issues. That meets the DEC, but nothing asserts it and it differs from JPEG.
+- **L4. The fuzz model alone misses 7 of my 24 mutants because no seed has the shape.** Unit tests kill all 7. They are: keyword limit 78, case-insensitive `Raw profile type `, trailer cap +1 and -1, allowing `zTXt` XMP, region cap `>` and no-stop, and a 17th Exif block. No seed has a `zTXt` with the XMP keyword, a lower-case `raw profile type `, or a run of more than 4096 trailer chunks or 16 `eXIf` chunks. Adding `meta-ztxt-xmp` and `meta-raw-lowercase` seeds would let the fuzz model catch the two routing mutants. The caps are correctly left to unit tests.
+- **Observation (not a finding):** in the refactor, `frame`'s unreachable `None` arms now give `Frame::Short`, which halts with `Truncated{len: FRAME}`. The old code returned silently. They cannot be reached, because `remaining >= FRAME` and `total <= remaining` are checked first (`src/png/mod.rs:215-251`). The behaviour is identical: `tests/png_walk.rs` and `fuzz/shared/png_chunk_invariants.rs` are byte-identical to `fb54eae` and pass.
+
+#### Builder choices (a) to (f)
+
+- **(a)** Any walker halt suppresses all extraction issues. Sound, and it keeps "halt is last". Needs a DEC-018 sentence (L1).
+- **(b)** `ImproperExifHeader` only for a parsed block, and `ExtraExif` before it on the same chunk. Sound: a chunk past the 16-block cap is not looked into, and the order matches "is it extra, then what is inside". The DEC's "one per chunk" wording needs fixing (L2).
+- **(c)** `zTXt` with the XMP keyword is `Text`. Literal to the DEC, but ExifTool reads it as XMP. Needs a DEC-018 clarification (M1).
+- **(d)** `TooManyRegions` stops all extraction, blocks included, at the chunk that did not fit. Sound: it matches "extraction stops", and `region_cap_halts_once` pins the offset and the missing block. It could be stated in the DEC, but it is not ambiguous.
+- **(e)** A trailer chunk is `after_idat` if any `IDAT` comes before it, the trailer included. Sound; it is the natural reading of "after the first IDAT".
+- **(f)** Names are `&[u8]`. Sound: PNG keywords are Latin-1 by the specification, and DEC-002 calls for borrowed, allocation-free results.
+
+#### What else I checked
+
+- **Panic-freedom:** `metadata.rs` uses only `get`, `split_first`, `strip_prefix`, `checked_add` and `saturating_add`, with no indexing. The trailer loop is bounded by `MAX_PNG_TRAILER_CHUNKS` and always advances (`end >= at + 12`). The 20 s fuzz run and the prefix and flip test are clean.
+- **DEC-018 both directions:** I ran 24 mutants on an rsync'd scratch copy (the branch was never mutated). All 24 were killed with 0 survivors, after a control pass: keyword limit 80 and 78, case-insensitive XMP, case-insensitive raw prefix, trailer cap +1 and -1, `after_iend` false, trailer `after_idat` false, `ExtraExif` at `>1` and never, `zTXt` uncompressed, `iTXt` flag inverted, flag 2 accepted, `zTXt` XMP allowed, halt not suppressing, region cap `>`, region cap without stop, 17 blocks, `tiff_at` without the prefix skip, `ImproperExifHeader` dropped, raw prefix without its space, `iCCP` method skipped, `zTXt` accepted with no method byte, and walked `IDAT` not tracked into the trailer.
+- **Model independence:** acceptable. It frames, parses keywords and headers, routes and sets position flags from the raw bytes, and works out the halt from the walk's issues. From the library it takes only the chunk count, and it asserts its own framing agrees on every offset and type. The walk itself is modelled separately by `png_chunk_invariants`. Limit: it mirrors the DEC as the builder read it, so a shared misreading such as M1 cannot show up in it.
+- **Pins and scope:** 31 `meta-` seeds plus 33 older ones; all 33 older seeds are unchanged against `fb54eae`. `fuzz/Cargo.lock` is not changed in any commit (`just lint-fuzz` rewrites it locally to `0.1.0-alpha.1`; I restored it). No changes to `Cargo.toml`, `Cargo.lock` or `CHANGELOG.md`, and no new dependency. The jpeg and tiff test arms only extend the test-only `index` exhaustiveness tables. The README is accurate: PNG metadata is located, `exif-audit` still reports PNG as unsupported, and compressed or raw-profile metadata is listed as a known limit.
+- **ExifTool 13.55 extra probes:** ExifTool reads an `iTXt` `Raw profile type exif` too (it prints `[IFD0] Make : ABC`), so routing raw profiles in `iTXt` is right. A lower-case `xml:com.adobe.xmp` is a plain text tag, not XMP, so case-sensitive matching is right. With two `eXIf` chunks where the second is cut short, ExifTool reads the first; the library keeps the first block and halts on the second.
+
+#### Commands run (all from the worktree, `RUSTUP_TOOLCHAIN=1.90.0`, `~/.cargo/bin` first)
+
+- `just lint`: exit 0. `just test`: exit 0. `just lint-fuzz`: exit 0. `just validate`: exit 0. `just forbid-unsafe`: exit 0. `just cost-audit`: exit 0.
+- `PATH="$HOME/.cargo/bin:$PATH" ~/.cargo/bin/cargo +nightly fuzz run png_chunks fuzz/corpus/png_chunks fuzz/seeds/png_chunks -- -max_total_time=20`: exit 0, 524,032 runs in 21 s, cov 1139, no crash.
+- Mutation script (scratchpad copy, `cargo test --test png_metadata --test fuzz_layout --test png_walk --lib` per mutant): 24 of 24 killed.
+- `exiftool -a -G1 -s -n` on 7 hand-built PNGs (results under M1, M2 and the extra probes above).
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null. A verifier subagent cannot see its own transcript's token counts; the orchestrator should use the harness figure for this agent.
+- **Estimated USD:** null
+- **Duration (minutes):** about 35
+- **Source of the number:** none available (harness report to be transcribed by the orchestrator)
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
-- **Deviations from spec:**
-  - [list]
+- **New decisions emitted:** none. I recommend a DEC-018 clarification covering M1, M2, L1 and L2.
+- **Deviations from spec:** none found.
 - **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - DEC-018 clarification before SPEC-031: `zTXt` XMP routing, the long-keyword and bad-flag policy, the halt rule's scope, and "at most two per chunk".
+  - Add `meta-ztxt-xmp` and `meta-raw-lowercase` seeds when the routing changes (L4).
+  - Optionally add a public `MAX_PNG_METADATA_ISSUES` with a test, to match JPEG (L3).
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — Running `cargo fuzz` needs both `~/.cargo/bin` first in PATH and `+nightly`. `RUSTUP_TOOLCHAIN=nightly` alone still fails because Homebrew's rustc is on PATH. The toolchain brief says this, but the handoff's PATH line points at 1.90.0 only.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — DEC-018's ExifTool probe set left out `zTXt` with the XMP keyword and keywords over 79 bytes. Both show ExifTool reading what the DEC calls Text or invalid.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — I would probe ExifTool with every cell of the routing table (each chunk type crossed with each keyword class), not only the doubtful case named in the handoff.
