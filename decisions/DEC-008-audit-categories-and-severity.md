@@ -146,3 +146,19 @@ Four DNG identity tags get categories (they apply in any non-GPS, non-Interop IF
 Residual: `GpsAndDevice` still leaves 0xC634 (as it leaves 0x927C), because `MakerNote` is not in that preset (DEC-009).
 
 The IFD1-with-strips rule is container-aware. In a JPEG's Exif block it is unchanged (an IFD1 with strips and no 0x0201 is a `Thumbnail`). In a bare TIFF an IFD1 is a `Thumbnail` only through its JPEG pair 0x0201/0x0202; an IFD1 with strips or tiles and no 0x0201 is a page and yields no `Thumbnail` finding (one that holds both the JPEG pair and strips or tiles is still reported as a `Thumbnail`, and the writer refuses it). The discriminator is `Origin.block` (`None` for a bare TIFF).
+
+## Amendment (2026-11-21, SPEC-033): Copyright gets its own category, `Rights`
+
+Decided by the owner (jysf, 2026-11-20): a privacy strip must not remove the copyright notice by default. Because a preset is a set of categories (DEC-009), Copyright can only be kept apart from Artist if it is in a different category. A new category is added and one row moves:
+
+| Category | Severity | What it means |
+|---|---|---|
+| `Rights` | Medium | a copyright or rights notice the owner attached |
+
+| Tag | Name | Category |
+|---|---|---|
+| 0x8298 | Copyright | `Rights` (was `Authorship`) |
+
+`Authorship` now means "names a person" (Artist, CameraOwnerName, XPAuthor, Photographer, ImageEditor). `Rights` is a tag category, not a block (`is_block` is false). Its severity stays Medium, the same as before the move, because a notice usually names the rights holder ("can name a person" is the Medium definition). So no audit's `max_severity`, and no `--fail-on` exit code, changes. Only the Copyright finding's category name changes (`authorship` to `rights` in every report format). It is appended after `OtherSegment` in `Category::ALL`, as DEC-012 appended its two, so existing orderings do not move.
+
+Not covered: XMP `dc:rights` and IPTC CopyrightNotice (2:116) are inside blocks the audit does not decode. DEC-009's may-hold table records that those blocks can hold `Rights`.

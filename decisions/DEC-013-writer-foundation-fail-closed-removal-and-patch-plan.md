@@ -137,3 +137,11 @@ SPEC-020 shipped with part 4 as written. Its build and verify showed three thing
 ## Amendment (2026-11-19, SPEC-023): D.3 narrowed to JPEG
 
 The writer follows the audit: `thumbnail` is selected only when the audit has a `Thumbnail` finding in an IFD1 of that block. In a bare TIFF an IFD1 with strips or tiles is a page (DEC-008 amendment): it is kept whole, its entries go by their own categories, its strip and tile data stay protected, and the self-check expects it kept. The D.3 refusal (`ThumbnailNotLocated`, strips form) is reachable only from a JPEG Exif IFD1. An IFD1 holding both the JPEG pair and strips is still refused in every container. A JPEG thumbnail IFD1 (pair, no strips) is removed whole as before. The three presets that include `Thumbnail` now strip multi-page and tiled-page TIFFs.
+
+## Amendment (2026-11-21, SPEC-033): EXIF9 becomes EXIF10
+
+Part 4's set of categories an Exif segment can hold gains `Rights` (DEC-008 amendment of the same date): `Gps`, `DeviceId`, `Authorship`, `Rights`, `FreeText`, `Timestamps`, `CameraModel`, `Thumbnail`, `MakerNote`, `Software`. It is now called EXIF10, in code and here. Part 4 and amendment B are otherwise unchanged, read with EXIF10 for EXIF9.
+- `All` and `Everything` contain all of EXIF10, so they still remove every Exif segment whole.
+- `AllPii` is partial, as before. Copyright is now a kept entry: it is not deleted and its value bytes are not zeroed.
+- A `Custom` set that held all of the old nine and not `Rights` was whole before and is partial now. It keeps the Copyright entry instead of dropping the segment.
+- Kept and deleted entries that share out-of-line bytes are refused as `SharedBytes`, as for any kept/deleted pair. Artist and Copyright pointing at the same bytes under `AllPii` is such a pair; it used to be two deletions and is now a refusal. Fail-closed, and only reachable from a hand-built file.

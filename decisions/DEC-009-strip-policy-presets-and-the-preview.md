@@ -129,3 +129,19 @@ Revisit when the writer's first spec shows a preset cannot be implemented as sta
 ## Amendment (2026-11-09, DEC-012)
 
 The grid gains two rows, `EmbeddedImage` and `OtherSegment`, removed only by `Everything` (so `KeptUnread` under the other four presets); `may_hold` gains the same two rows (every category except itself) and `MakerNote` may hold `EmbeddedImage`. All other cells are unchanged. See DEC-012.
+
+## Amendment (2026-11-21, SPEC-033): `Rights`, kept by `AllPii`
+
+The grid gains one row (DEC-008 amendment of the same date):
+
+| Category | `Gps` | `GpsAndDevice` | `AllPii` | `All` | `Everything` |
+|---|---|---|---|---|---|
+| `Rights` | | | | removed | removed |
+
+**This departs from design section 5**, which lists Copyright among what `AllPii` removes (`docs/exif-core-design.md`, the `AllPii` doc comment). Decided by the owner on 2026-11-20. `AllPii` removes what names or locates a person or a device. A copyright notice is a statement the owner attached on purpose, and removing it by default works against the person stripping their own files. In the US, knowingly removing copyright management information is what 17 U.S.C. §1202 is about. `All` removes it because `All` means all Exif, XMP and IPTC (design section 5), and it already drops XMP `dc:rights` and the IPTC CopyrightNotice with their packets. The nesting still holds (`Rights` is in `All` and `Everything` only).
+
+The residual is stated, not hidden: a notice such as "© 2026 A. Person" names a person, and `AllPii` now leaves it. The preview reports the finding as `Kept`, and its severity (Medium) still reaches `--fail-on medium`.
+
+**May-hold rows:** `Rights` joins every block that can carry a rights field: `Thumbnail` (its own Exif), `Xmp` (`dc:rights`), `Iptc` (CopyrightNotice), `Jumbf` (C2PA assertions). `EmbeddedImage` and `OtherSegment` gain it through their "every category but itself" rule. `MakerNote` and `Icc` do not. No preset's disposition changes: `Rights` is removed only by `All` and `Everything`, and under `All` every block that may hold it is either removed (`Thumbnail`, `Xmp`, `Iptc`) or already `KeptUnread` (`Jumbf`, `EmbeddedImage`, `OtherSegment`).
+
+A `Custom` set that holds `Authorship` and not `Rights` now keeps Copyright. Before this amendment it removed it.
