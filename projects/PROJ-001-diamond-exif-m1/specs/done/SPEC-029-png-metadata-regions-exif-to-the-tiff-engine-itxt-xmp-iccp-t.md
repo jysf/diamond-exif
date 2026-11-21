@@ -6,19 +6,19 @@
 task:
   id: SPEC-029
   type: story                      # epic | story | task | bug | chore
-  cycle: verify  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
   complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: approved  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
                                    #   rejects anything" stops being a hunch and becomes a number.
-  verify_rounds: []                # every verify outcome, oldest first, appended by
+  verify_rounds: [approved]  # every verify outcome, oldest first, appended by
                                    #   `just advance-cycle` each time the spec leaves verify.
                                    #   verify_verdict keeps only the LAST one, so a spec sent
                                    #   back and then approved read as "approved": irradiance's
@@ -74,8 +74,8 @@ cost:
       agent: claude-sonnet-5-5
       interface: other
       basis: agent-result
-      tokens_total: 189733
-      estimated_usd: 1.25
+      tokens_total: 398690              # harness subagent_tokens: 189,733 (build) + 208,957 (follow-up for the two Medium DEC gaps; a resumed agent re-reads its history)
+      estimated_usd: 2.63
       duration_minutes: 11
       recorded_at: 2026-11-21
       notes: "tokens_total left null: the subagent harness exposes no token count to the agent; the orchestrator replaces it with the harness figure. Not pushed, no PR."
@@ -90,9 +90,10 @@ cost:
       recorded_at: 2026-11-21
       notes: "Verifier subagent cannot read its own transcript token counts; the orchestrator replaces tokens_total with the harness figure. Approved at build tip 01c36a2 (build commit a8c38c4). Two Medium findings are DEC-018 gaps (zTXt XMP, keyword over 79 bytes), not build defects."
   totals:
-    tokens_total: 362265
-    estimated_usd: 2.39
+    tokens_total: 571222
+    estimated_usd: 3.77
     session_count: 2
+shipped_at: 2026-11-21
 ---
 
 # SPEC-029: PNG metadata regions: `eXIf` to the TIFF engine, `iTXt` XMP, `iCCP`, text-chunk Exif located; container independence
@@ -179,22 +180,19 @@ Written first from these descriptions; fixtures come from new builders in `tests
 *Appended during **ship**. Three questions, short answers.*
 
 1. **What would I do differently next time?**
-   — <answer>
+   — Measure ExifTool on every container variant the DEC names before writing it: my probe covered iTXt and tEXt XMP but not zTXt, and did not cover odd keyword lengths or flags, which cost a follow-up round (208,957 tokens). The DEC rule 'reject what is malformed' was wrong for an audit; the rule should have been 'locate whatever the oracle reads, and report the malformation as well'.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — DEC-018 was amended (zTXt XMP, long keyword, bad iTXt flag, halt rule, two issues per chunk). For future container DECs: probe each chunk type in every compression and malformation variant before fixing the routing rules.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — No. Decoding compressed XMP, iCCP and raw-profile text needs inflation and owned buffers: a later decision, reported by the audit in SPEC-032 as metadata it could not read.
 
 4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
    the defect-escape distribution is greppable across specs:
    `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
    `none` (clean first try).
-   — <one word>
+   — verify
    *(Runtime/operational defects — the escape-prone class — only exist once the
    artifact meets its real host. `escaped` here is a signal to strengthen the
    §12 behavioral pre-flight for that surface.)*
