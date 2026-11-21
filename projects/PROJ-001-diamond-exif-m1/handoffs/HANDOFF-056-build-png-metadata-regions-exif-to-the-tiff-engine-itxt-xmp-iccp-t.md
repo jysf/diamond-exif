@@ -58,7 +58,7 @@ handback:
   pr: null
   completed_at: 2026-11-21         # YYYY-MM-DD
   notes: "tokens_total left null: the subagent harness exposes no token count to the agent; the orchestrator replaces it with the harness figure. Not pushed, no PR."  # if unusual; double-quote it — an unquoted " #" starts a YAML comment
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-21
 ---
 
 # HANDOFF-056: Build SPEC-029 PNG metadata regions (DEC-018)
