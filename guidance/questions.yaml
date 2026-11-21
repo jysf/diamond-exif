@@ -1329,11 +1329,13 @@ questions:
   - id: exif-block-offset-contract-agreement
     question: "Does irradiance/STAGE-017's design accept DEC-015's base-first offset contract (size query, then a write at a caller-given even base with final offsets)?"
     priority: high
-    status: open
+    status: answered
     raised_by: claude-opus-5-5
     raised_at: 2026-11-20
     assigned_to: jysf
     notes: |
+      ANSWERED 2026-11-21: yes. irradiance/DEC-072 (accepted, jysf/irradiance#284) agrees, with the base
+      fixed at file offset 8 and little-endian; DEC-015 accepted by jysf. Was:
       DEC-015 is `proposed` until this is answered, and SPEC-025 design waits on it. monorail-000 leans
       the same way (its docs/upstream/diamond-exif-requests.md, request 1). monorail-000/DEC-075 item 5,
       written before the choice, says irradiance "rebases the block's offsets", which is option (a).

@@ -2,7 +2,7 @@
 insight:
   id: DEC-015
   type: decision
-  confidence: 0.7                    # preferred by this repo and by monorail-000; not yet agreed with irradiance/STAGE-017's design
+  confidence: 0.85                   # agreed by irradiance/DEC-072 and monorail-000/DEC-076; nothing built on either side yet
   audience:
     - developer
     - agent
@@ -19,8 +19,8 @@ repo:
 created_at: 2026-11-20
 supersedes: null
 superseded_by: null
-status: proposed                     # binding once jysf accepts it with irradiance/STAGE-017's agreement (question exif-block-offset-contract-agreement)
-deciders: [claude]
+status: accepted                     # drafted by claude 2026-11-20 (#37); accepted by jysf 2026-11-21 after irradiance/DEC-072 agreed
+deciders: [jysf, claude]
 
 affected_scope: []
 
@@ -38,10 +38,16 @@ tags:
 The placing writer asks for the block's size, chooses where the block will start in its file (the **base**), and asks this crate to write the block for that base. Every offset inside the block is then final, and the placing writer copies the bytes unchanged.
 
 1. **Two phases.** Building the block from a source and options gives a value that reports the block's **length**, which does not depend on the base, and the **positions relative to the block start** of the Exif IFD and the GPS IFD. Writing it takes a base and either fills a caller's `&mut [u8]` of exactly that length or returns a `Vec<u8>`. This is the caller-owned output shape monorail-000/DEC-075 item 6 asks of irradiance.
-2. **The base.** The base is a byte offset from the start of the target TIFF (its header). It must be even (TIFF word alignment), and `base + length` must fit in a `u32` (classic TIFF). Otherwise the result is a typed refusal. Values inside the block are padded to even offsets relative to the block start, so an even base keeps every value aligned.
+2. **The base.** The base is a byte offset from the start of the target TIFF (its header). It must be even (TIFF word alignment), and `base + length` must fit in a `u32` (classic TIFF). Otherwise the result is a typed refusal. Values inside the block are padded to even offsets relative to the block start, so an even base keeps every value aligned. The block's length is itself even, so whatever follows it stays word-aligned.
 3. **Pointers outside the block.** The placing writer writes 0x8769 = `base + exif_position` and 0x8825 = `base + gps_position` in its IFD0, in the byte order it asked for. Those two LONG values are the only numbers it computes. Nothing inside the block is touched after this crate returns it.
 4. **The self-check runs on the exact returned bytes at that base** (DEC-014 item 9), not on a re-encoding at some other base.
 5. **Determinism.** The same source, options and base give the same bytes.
+
+## Agreement
+
+- **irradiance: agreed**, irradiance/DEC-072 (accepted, merged in jysf/irradiance#284, 2026-11-21). Its writer fixes the base at file offset 8, directly after the TIFF header, and writes little-endian. It exposes the base as a public constant and a function, and mono-core passes that value here. It copies the block verbatim, writes 0x8769 and 0x8825 as 8 + the reported positions, and checks only bounds and alignment. Changing the base needs an irradiance DEC and a breaking release. A fixed base is a special case of item 2, so nothing in this decision changes.
+- **monorail-000: agreed**, monorail-000/DEC-076 item 1 (2026-11-20).
+- **Open at the seam, decided outside this record:** irradiance/DEC-072 requires an Exif IFD whenever a block is given, while DEC-014 item 1 allows a GPS-only block. Which side gives is asked of irradiance and monorail-000. DEC-014 follows their answer.
 
 ## Context
 
@@ -66,11 +72,11 @@ The length does not depend on the base: every offset field in a classic TIFF is 
 
 ## Validation
 
-irradiance/STAGE-017's design accepts the two-phase shape, or names what it cannot do (for example, it cannot know the base before writing). SPEC-026's test placer uses the API exactly as irradiance would, at an arbitrary even base, and ExifTool reads the result. Revisit if irradiance cannot compute the base before writing, or if a second consumer needs placement-independent bytes.
+irradiance/STAGE-017's design accepted the shape (irradiance/DEC-072), with the base fixed at 8. irradiance/SPEC-081 places a block through its writer and checks it with ExifTool, and its red-proof shifts the base by 2. SPEC-026's test placer uses the API exactly as irradiance would, at an arbitrary even base, and ExifTool reads the result. Revisit if irradiance cannot compute the base before writing, or if a second consumer needs placement-independent bytes.
 
 ## References
 
 - Related specs: SPEC-025 (implements), SPEC-026 (test placer)
 - Related decisions: DEC-014 (block contents), DEC-013 part 7 (self-check pattern)
-- External: monorail-000/DEC-075 (items 5 and 6); monorail-000 `docs/upstream/diamond-exif-requests.md` (request 1, offset contract); irradiance/STAGE-017
+- External: monorail-000/DEC-075 (items 5 and 6); monorail-000/DEC-076 (item 1); monorail-000 `docs/upstream/diamond-exif-requests.md` (request 1, offset contract); irradiance/STAGE-017; irradiance/DEC-072 (jysf/irradiance#284)
 - Questions: `exif-block-offset-contract-agreement`
