@@ -49,6 +49,8 @@ mod oracle_jpeg;
 mod oracle_png;
 #[path = "../tests/support/oracle_tiff.rs"]
 mod oracle_tiff;
+#[path = "../tests/support/oracle_webp.rs"]
+mod oracle_webp;
 #[path = "../tests/support/real_shapes.rs"]
 mod real_shapes;
 #[path = "../tests/support/strip_records.rs"]
@@ -174,6 +176,7 @@ fn main() {
     );
 
     record_png(&root, &out_dir, &version);
+    record_webp(&root, &out_dir, &version);
 
     // SPEC-012: the names ExifTool gives the DEC-008 tag ids (one record, one
     // line per named tag). Run on tiny valid one-entry TIFFs, each alone under
@@ -298,6 +301,86 @@ fn record_png(root: &std::path::Path, out_dir: &std::path::Path, version: &str) 
     }
     fs::write(out_dir.join(oracle_png::WARNINGS_RECORD), text).expect("write warnings record");
     println!("oracle-record: wrote the PNG warnings record");
+}
+
+/// SPEC-034: the WebP records, shaped like [`record_png`]. Every shape was
+/// probed alone under a wall-clock limit before it joined the list; the files
+/// get a `.webp` extension (ExifTool chooses its reader partly by extension, and
+/// the `RIFF....WAVE` shape is measured under it). Seeds are recorded for the
+/// 20 Exif selectors only, as the PNG seeds are.
+fn record_webp(root: &std::path::Path, out_dir: &std::path::Path, version: &str) {
+    let mut written = 0usize;
+    for (name, bytes) in oracle_webp::fixtures() {
+        let names = oracle::webp_names();
+        let source = format!("fixture {name}");
+        let path = tools::temp_file_with_ext(&name, "webp", &bytes).expect("write temp fixture");
+        let run = tools::run_exiftool_full(&path, &names);
+        let _ = fs::remove_file(&path);
+        let (stdout, stderr) = run.expect("run exiftool");
+        let warnings = oracle::webp_warning_lines(tools::warning_lines(&stderr, &path));
+        let text = tools::record_text_jpeg(&names, version, &source, &warnings, &stdout);
+        fs::write(out_dir.join(format!("{name}.txt")), text).expect("write record");
+        written += 1;
+    }
+    let seed_dir = root.join("fuzz/seeds/webp_riff");
+    let mut seeds: Vec<PathBuf> = fs::read_dir(&seed_dir)
+        .expect("read webp seeds")
+        .map(|e| e.expect("dir entry").path())
+        .collect();
+    seeds.sort();
+    for path in seeds {
+        let name = path
+            .file_name()
+            .expect("name")
+            .to_string_lossy()
+            .into_owned();
+        let record = format!("webp-seed-{name}");
+        let names = oracle::names(oracle::SELECTORS);
+        let source = format!("seed webp_riff/{name}");
+        // The seed is copied to a `.webp` file: the committed file has no
+        // extension, and ExifTool's choice of reader depends on it.
+        let bytes = fs::read(&path).expect("read seed");
+        let tmp = tools::temp_file_with_ext(&record, "webp", &bytes).expect("write temp seed");
+        let run = tools::run_exiftool_full(&tmp, &names);
+        let _ = fs::remove_file(&tmp);
+        let (stdout, stderr) = run.expect("run exiftool");
+        let warnings = oracle::webp_warning_lines(tools::warning_lines(&stderr, &tmp));
+        let text = tools::record_text_jpeg(&names, version, &source, &warnings, &stdout);
+        fs::write(out_dir.join(format!("{record}.txt")), text).expect("write record");
+        written += 1;
+    }
+    println!("oracle-record: wrote {written} WebP records");
+
+    // The warning record, as for PNG: `-a -G1 -s -n -Warning -Error` per fixture
+    // of the table, one `## name` section each.
+    let fixtures = oracle_webp::fixtures();
+    let mut text = format!(
+        "# command: exiftool -a -G1 -s -n -Warning -Error <file>\n# exiftool-version: {version}\n\
+         # source: fixtures {}\n",
+        oracle_webp::WARNING_FIXTURES.len()
+    );
+    for name in oracle_webp::WARNING_FIXTURES {
+        let bytes = &fixtures
+            .iter()
+            .find(|(n, _)| n == name)
+            .unwrap_or_else(|| panic!("no WebP fixture {name}"))
+            .1;
+        let path = tools::temp_file_with_ext(name, "webp", bytes).expect("write temp fixture");
+        let args: Vec<String> = ["-a", "-G1", "-s", "-n", "-Warning", "-Error"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let run = tools::run_tool("exiftool", &args, &path);
+        let _ = fs::remove_file(&path);
+        let out = run.expect("run exiftool");
+        text.push_str(&format!("## {name}\n"));
+        for line in String::from_utf8_lossy(&out.stdout).lines() {
+            text.push_str(line.trim_end());
+            text.push('\n');
+        }
+    }
+    fs::write(out_dir.join(oracle_webp::WARNINGS_RECORD), text).expect("write warnings record");
+    println!("oracle-record: wrote the WebP warnings record");
 }
 
 /// SPEC-022: the same for the TIFF and DNG fixtures, into

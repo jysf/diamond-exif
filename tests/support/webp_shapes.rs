@@ -176,6 +176,21 @@ pub fn walk_seeds() -> Vec<(&'static str, Vec<u8>)> {
             riff(&[chunk(b"VP8X", &vp8x_three), exif.clone()]),
         ),
         ("vp8x-misplaced", riff(&[vp8l(), vp8x(0, 1, 1)])),
+        // SPEC-034 carried gap (a): the FIRST `VP8X` is the header; a later
+        // one (flags 0x08) is misplaced and must not replace it.
+        (
+            "vp8x-first-wins",
+            riff(&[vp8x(0, 1, 1), vp8x(FLAG_EXIF, 1, 1), vp8l(), exif.clone()]),
+        ),
+        // SPEC-034 carried gap (b): a 9-byte `VP8X` is one byte short of the
+        // 10 the header needs (`BadVp8x`), where 10 is fine.
+        (
+            "vp8x-nine-bytes",
+            riff(&[
+                chunk(b"VP8X", &[FLAG_EXIF, 0, 0, 0, 0, 0, 0, 0, 0]),
+                exif.clone(),
+            ]),
+        ),
         (
             "flags-clear-with-exif",
             riff(&[vp8x(0, 1, 1), vp8l(), exif.clone()]),

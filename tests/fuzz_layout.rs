@@ -6862,7 +6862,7 @@ mod webp_shapes;
 include!("../fuzz/shared/webp_riff_invariants.rs");
 
 /// The committed `webp_riff` seed names, pinned.
-const WEBP_SEEDS: [&str; 51] = [
+const WEBP_SEEDS: [&str; 53] = [
     "anmf-payload",
     "bad-magic",
     "chunk-past-end",
@@ -6911,8 +6911,10 @@ const WEBP_SEEDS: [&str; 51] = [
     "tail-1-byte",
     "tail-7-bytes",
     "tail-partial-header",
+    "vp8x-first-wins",
     "vp8x-full",
     "vp8x-misplaced",
+    "vp8x-nine-bytes",
     "vp8x-three-bytes",
 ];
 
@@ -7034,7 +7036,23 @@ fn webp_seeds_are_at_least_forty_and_metadata_seeds_are_pinned() {
     }
     let all = webp_shapes::seeds();
     assert_eq!(all.len(), WEBP_SEEDS.len());
-    assert_eq!(all.len() - meta.len(), 35, "the walk seed count");
+    assert_eq!(all.len() - meta.len(), 37, "the walk seed count");
+}
+
+/// SPEC-034 carried gap (d): the model is compared with the library on EVERY
+/// committed seed (walk seeds too, not only the `meta-` ones).
+#[test]
+fn webp_model_runs_on_every_walk_seed() {
+    let dir = root().join("fuzz/seeds/webp_riff");
+    let mut walk = 0;
+    for name in WEBP_SEEDS {
+        let d = fs::read(dir.join(name)).expect("seed");
+        webp_riff_invariants::compare(&d, |_| {});
+        if !name.starts_with("meta-") {
+            walk += 1;
+        }
+    }
+    assert_eq!(walk, 37, "the walk seeds the model ran on");
 }
 
 /// The extraction half of the model must go red when the observed answer is

@@ -156,7 +156,7 @@ fn check_dir(dir: &str, old: &[(&str, u64)], extra: &[&str]) {
         .unwrap_or_else(|e| panic!("{}: {e}", base.display()))
         .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
         // SPEC-031: the PNG records (`png-*`) are checked by `tests/png_oracle.rs`.
-        .filter(|n| !n.starts_with("png-"))
+        .filter(|n| !n.starts_with("png-") && !n.starts_with("webp-"))
         .collect();
     on_disk.sort();
     let mut want: Vec<String> = old.iter().map(|(n, _)| n.to_string()).collect();

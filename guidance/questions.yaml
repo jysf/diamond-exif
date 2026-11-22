@@ -1468,3 +1468,109 @@ questions:
       Right side: neither is wrong; DEC-018 keeps the library free of inflate, so an Icc
       region means "an iCCP chunk with a name and a method byte", not "a valid profile".
       Pinned in KNOWN_DIVERGENCES.
+
+  - id: webp-iccp-profile-not-validated
+    question: "ExifTool 13.55 prints ICC-header tags only for an ICCP profile it can read and validate; exif-core locates every non-empty ICCP chunk and never validates the profile (DEC-019): is locating enough?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-21
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-034). Command: exiftool -T -n -s3 <the 20 Exif selectors>
+      -XMP-xmp:CreatorTool -ICC-header:ProfileFileSignature <file>, ExifTool 13.55, files with
+      the .webp extension. Measured on webp-icc-garbage, webp-icc-stub-132 (132 zero bytes),
+      webp-icc-header-only (a valid 128-byte header, no tag table) and webp-icc-zero-tags (a
+      valid header and a tag table with 0 entries): ExifTool prints no
+      ICC-header:ProfileFileSignature (warnings such as "Bad length ICC_Profile" or "Bad
+      ICC_Profile table" are in webp-warnings.txt for the first two); exif-core locates a
+      non-empty Icc region, so the selector reads present on our side. Controls:
+      webp-icc-valid-flag-set, -flag-unset, -valid-trailing-garbage and
+      -garbage-then-valid (both present); webp-icc-empty (neither, empty regions never count).
+      Right side: neither is wrong; an Icc region means "an ICCP chunk with bytes", not "a
+      valid profile" (as PNG, png-iccp-profile-not-validated). The audit must say "located".
+      Pinned in KNOWN_DIVERGENCES.
+
+  - id: webp-xmp-content-not-parsed
+    question: "ExifTool 13.55 reads xmp:CreatorTool only from a parseable XMP packet; exif-core locates every non-empty XMP chunk and never parses its content (DEC-019): is locating enough?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-21
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-034). Command as for webp-iccp-profile-not-validated. Measured on
+      webp-xmp-garbage (non-XML bytes in an XMP chunk) and webp-xmp-nul-id-1-bytes to
+      webp-xmp-nul-id-7-bytes (an XMP\0 chunk holding the first 1 to 7 bytes of a packet):
+      ExifTool prints no XMP-xmp:CreatorTool and warns "[minor] Empty XMP"; exif-core locates
+      a non-empty Xmp region, so the selector reads present on our side. Controls:
+      webp-xmp-basic, webp-xmp-nul-id, webp-xmp-two, webp-xmp-empty-then-real (both present);
+      webp-xmp-empty and webp-xmp-nul-id-empty (neither: empty regions never count).
+      Right side: neither is wrong; an Xmp region means "an XMP chunk with bytes", not "a
+      packet that parses". The audit must say "located". Pinned in KNOWN_DIVERGENCES.
+
+  - id: webp-riff-other-forms-read-by-exiftool
+    question: "ExifTool 13.55 reads a RIFF file whose form type is WAVE or AVI, or whose magic is RIFX, as another format and prints its EXIF; exif-core's WebP reader returns an error for them: is that the intended boundary?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-21
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-034). Command as for webp-iccp-profile-not-validated. Measured on
+      webp-header-wave (RIFF, form WAVE, then an EXIF chunk with Make WaveCam),
+      webp-header-avi (form "AVI ", same chunk) and webp-header-rifx (magic RIFX, form WEBP,
+      Make RifxCam): ExifTool prints IFD0:Make for all three (RIFX with the warning
+      "Processing TIFF-like data after unknown 20-byte header"); webp::read is Err (NotWebp),
+      so our reading is all none. The files carry the .webp extension; ExifTool dispatches on
+      content as well as extension. The 11-byte and 12-byte headers agree (neither reads).
+      Right side: exif-core, for a WebP reader: these are not WebP files. A caller that wants
+      WAV or AVI metadata needs another reader. Recorded, not silenced.
+      Pinned in KNOWN_DIVERGENCES.
+
+  - id: webp-exif-block-cap
+    question: "ExifTool 13.55 reads every EXIF chunk of a WebP; exif-core keeps at most 16 (MAX_WEBP_EXIF_BLOCKS) and drops the rest: is the cap policy right, and must the audit report blocks past it?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-21
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-034 verify M1). Command as for webp-iccp-profile-not-validated. Measured
+      on webp-exif-16-then-gps (16 EXIF chunks holding the same TIFF with no GPS, then a 17th
+      holding only GPS): ExifTool prints Composite:GPSLatitude 37.4252083333333 and
+      GPSLongitude 122.096916666667; we read the first 16 and print no GPS. Control:
+      webp-exif-blocks-16 (exactly the cap, 16 distinct Makes): both read Block15, no divergence.
+      Right side: neither; the cap is OUR bounded-work policy, not a format rule. The privacy
+      consequence is real: 16 decoy blocks hide GPS from a reader that stops at the cap while
+      ExifTool shows it, so SPEC-032's audit must report that blocks past the cap exist
+      (never conclude "no GPS" from the first 16). Pinned in KNOWN_DIVERGENCES.
+
+  - id: webp-null-chunk-not-a-stop
+    question: "ExifTool 13.55 stops processing a WebP at an empty chunk whose code is four NUL bytes; exif-core treats it as an unknown chunk and reads on: is over-reading the intended side?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-21
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-034 verify M3). Command as for webp-iccp-profile-not-validated. Measured
+      on webp-null-chunk-before-exif (8 zero bytes before the EXIF chunk, RIFF size exact):
+      ExifTool warns "Encountered empty null chunk. Processing aborted" and prints no Make or
+      Model; exif-core reads AlphaCam / OnlyInA with no issue. Control webp-null-chunk-tail
+      (the 8 zero bytes after the EXIF): both read the EXIF. Right side: neither is wrong;
+      exif-core over-reads, the safe side for an audit (DEC-019 unchanged). Pinned in
+      KNOWN_DIVERGENCES and in the warning table.
+
+  - id: webp-exif-nonascii-make
+    question: "When a later EXIF block stores Make as a SHORT, ExifTool prints that value and the harness text model reads the earlier block's ASCII Make: is a typed-entry rendering needed?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-21
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-034 verify L1), a limit of the harness model, not of the library. Command
+      as for webp-iccp-profile-not-validated. Measured on webp-exif-make-short-later (EXIF with
+      Make AlphaCam, then EXIF with Make as a SHORT 7): ExifTool prints 7; the harness reads
+      AlphaCam because read_one returns none for a SHORT Make. Pinned in KNOWN_DIVERGENCES.

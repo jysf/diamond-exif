@@ -12,6 +12,7 @@
 use exif_core::jpeg::{JpegMetadata, Region};
 use exif_core::png::{PngMetadata, PngRegion};
 use exif_core::tiff::{Container, IfdKind};
+use exif_core::webp::{WebpMetadata, WebpRegion};
 
 /// How a selector's value is rendered and compared.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -322,6 +323,15 @@ const PNG_COMMAND: &str = "exiftool -T -n -s3 -IFD0:ImageWidth -IFD0:ImageHeight
      -ExifIFD:FocalLength -ExifIFD:ExifImageWidth -Composite:GPSLatitude -Composite:GPSLongitude \
      -XMP-xmp:CreatorTool -PNG:ProfileName -ICC-header:ProfileFileSignature <file>";
 
+/// The command line of a hand-built WebP fixture's ExifTool run (SPEC-034);
+/// the WebP divergences below were measured with it.
+const WEBP_COMMAND: &str = "exiftool -T -n -s3 -IFD0:ImageWidth -IFD0:ImageHeight -IFD0:Make \
+     -IFD0:Model -IFD0:Orientation -IFD0:XResolution -IFD0:Software -IFD0:ModifyDate -IFD0:Artist \
+     -IFD0:Copyright -ExifIFD:FNumber -ExifIFD:ISO -ExifIFD:DateTimeOriginal \
+     -ExifIFD:ExposureCompensation -ExifIFD:ExposureTime -ExifIFD:ExposureProgram \
+     -ExifIFD:FocalLength -ExifIFD:ExifImageWidth -Composite:GPSLatitude -Composite:GPSLongitude \
+     -XMP-xmp:CreatorTool -ICC-header:ProfileFileSignature <file>";
+
 /// Divergences measured so far (SPEC-005, ExifTool 13.55, macOS).
 pub const KNOWN_DIVERGENCES: &[Divergence] = &[
     Divergence {
@@ -545,6 +555,186 @@ pub const KNOWN_DIVERGENCES: &[Divergence] = &[
         right_side: "neither is wrong: the PNG specification allows compressed XMP (iTXt flag 1, zTXt); ExifTool reads more, exif-core stays no-inflate by DEC-018 and locates the chunk without reading its content.",
         question_id: "png-compressed-xmp-not-inflated",
     },
+    Divergence {
+        fixture: "webp-exif-16-then-gps",
+        selector: "Composite:GPSLatitude",
+        command: WEBP_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool reads the 17th EXIF chunk (the first 16 are the same TIFF with no GPS, the 17th holds GPS only) and prints the GPS value; exif-core keeps at most 16 EXIF blocks (MAX_WEBP_EXIF_BLOCKS), drops the 17th, and reads no GPS.",
+        right_side: "neither: the cap is a bounded-work policy of ours (DEC-019), not a format rule. The audit must report blocks past the cap, because 16 decoy blocks can hide GPS.",
+        question_id: "webp-exif-block-cap",
+    },
+    Divergence {
+        fixture: "webp-exif-16-then-gps",
+        selector: "Composite:GPSLongitude",
+        command: WEBP_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool reads the 17th EXIF chunk (the first 16 are the same TIFF with no GPS, the 17th holds GPS only) and prints the GPS value; exif-core keeps at most 16 EXIF blocks (MAX_WEBP_EXIF_BLOCKS), drops the 17th, and reads no GPS.",
+        right_side: "neither: the cap is a bounded-work policy of ours (DEC-019), not a format rule. The audit must report blocks past the cap, because 16 decoy blocks can hide GPS.",
+        question_id: "webp-exif-block-cap",
+    },
+    Divergence {
+        fixture: "webp-null-chunk-before-exif",
+        selector: "IFD0:Make",
+        command: WEBP_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool warns Encountered empty null chunk. Processing aborted at an 8-byte all-zero chunk before the EXIF chunk and prints no Make or Model; exif-core treats the null chunk as an unknown empty chunk, walks on and reads the EXIF.",
+        right_side: "neither is wrong: ExifTool stops at a null chunk, exif-core reads on (the over-read is the safe side for an audit, DEC-019 unchanged); the null chunk is recorded in the warning table.",
+        question_id: "webp-null-chunk-not-a-stop",
+    },
+    Divergence {
+        fixture: "webp-null-chunk-before-exif",
+        selector: "IFD0:Model",
+        command: WEBP_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool warns Encountered empty null chunk. Processing aborted at an 8-byte all-zero chunk before the EXIF chunk and prints no Make or Model; exif-core treats the null chunk as an unknown empty chunk, walks on and reads the EXIF.",
+        right_side: "neither is wrong: ExifTool stops at a null chunk, exif-core reads on (the over-read is the safe side for an audit, DEC-019 unchanged); the null chunk is recorded in the warning table.",
+        question_id: "webp-null-chunk-not-a-stop",
+    },
+    Divergence {
+        fixture: "webp-exif-make-short-later",
+        selector: "IFD0:Make",
+        command: WEBP_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool prints 7 for IFD0:Make when the later EXIF block stores Make as a SHORT (type 3) 7 and the earlier block holds the ASCII AlphaCam; the harness model cannot read a SHORT as text, skips that block and reads AlphaCam.",
+        right_side: "ExifTool: the later block's tag wins whatever its type. The library exposes the typed entry; only the harness text selector cannot render it (webp-exif-nonascii-make).",
+        question_id: "webp-exif-nonascii-make",
+    },
+    Divergence {
+        fixture: "webp-icc-garbage",
+        selector: "ICC-header:ProfileFileSignature",
+        command: WEBP_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool prints no ICC-header:ProfileFileSignature (warnings such as Bad length ICC_Profile or Bad ICC_Profile table); exif-core locates a non-empty Icc region without validating it, so its selector reads present.",
+        right_side: "neither is wrong: ExifTool validates the profile, exif-core only locates the ICCP chunk (DEC-019) and the audit must say located, not valid.",
+        question_id: "webp-iccp-profile-not-validated",
+    },
+    Divergence {
+        fixture: "webp-icc-stub-132",
+        selector: "ICC-header:ProfileFileSignature",
+        command: WEBP_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool prints no ICC-header:ProfileFileSignature (warnings such as Bad length ICC_Profile or Bad ICC_Profile table); exif-core locates a non-empty Icc region without validating it, so its selector reads present.",
+        right_side: "neither is wrong: ExifTool validates the profile, exif-core only locates the ICCP chunk (DEC-019) and the audit must say located, not valid.",
+        question_id: "webp-iccp-profile-not-validated",
+    },
+    Divergence {
+        fixture: "webp-icc-header-only",
+        selector: "ICC-header:ProfileFileSignature",
+        command: WEBP_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool prints no ICC-header:ProfileFileSignature (warnings such as Bad length ICC_Profile or Bad ICC_Profile table); exif-core locates a non-empty Icc region without validating it, so its selector reads present.",
+        right_side: "neither is wrong: ExifTool validates the profile, exif-core only locates the ICCP chunk (DEC-019) and the audit must say located, not valid.",
+        question_id: "webp-iccp-profile-not-validated",
+    },
+    Divergence {
+        fixture: "webp-icc-zero-tags",
+        selector: "ICC-header:ProfileFileSignature",
+        command: WEBP_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool prints no ICC-header:ProfileFileSignature (warnings such as Bad length ICC_Profile or Bad ICC_Profile table); exif-core locates a non-empty Icc region without validating it, so its selector reads present.",
+        right_side: "neither is wrong: ExifTool validates the profile, exif-core only locates the ICCP chunk (DEC-019) and the audit must say located, not valid.",
+        question_id: "webp-iccp-profile-not-validated",
+    },
+    Divergence {
+        fixture: "webp-xmp-garbage",
+        selector: "XMP-xmp:CreatorTool",
+        command: WEBP_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool prints no XMP-xmp:CreatorTool and warns [minor] Empty XMP (the bytes are not an XMP packet); exif-core locates a non-empty Xmp region without parsing it, so its selector reads present.",
+        right_side: "neither is wrong: ExifTool parses the packet, exif-core only locates the XMP chunk and never decodes its content (DEC-019).",
+        question_id: "webp-xmp-content-not-parsed",
+    },
+    Divergence {
+        fixture: "webp-xmp-nul-id-1-bytes",
+        selector: "XMP-xmp:CreatorTool",
+        command: WEBP_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool prints no XMP-xmp:CreatorTool and warns [minor] Empty XMP (the bytes are not an XMP packet); exif-core locates a non-empty Xmp region without parsing it, so its selector reads present.",
+        right_side: "neither is wrong: ExifTool parses the packet, exif-core only locates the XMP chunk and never decodes its content (DEC-019).",
+        question_id: "webp-xmp-content-not-parsed",
+    },
+    Divergence {
+        fixture: "webp-xmp-nul-id-2-bytes",
+        selector: "XMP-xmp:CreatorTool",
+        command: WEBP_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool prints no XMP-xmp:CreatorTool and warns [minor] Empty XMP (the bytes are not an XMP packet); exif-core locates a non-empty Xmp region without parsing it, so its selector reads present.",
+        right_side: "neither is wrong: ExifTool parses the packet, exif-core only locates the XMP chunk and never decodes its content (DEC-019).",
+        question_id: "webp-xmp-content-not-parsed",
+    },
+    Divergence {
+        fixture: "webp-xmp-nul-id-3-bytes",
+        selector: "XMP-xmp:CreatorTool",
+        command: WEBP_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool prints no XMP-xmp:CreatorTool and warns [minor] Empty XMP (the bytes are not an XMP packet); exif-core locates a non-empty Xmp region without parsing it, so its selector reads present.",
+        right_side: "neither is wrong: ExifTool parses the packet, exif-core only locates the XMP chunk and never decodes its content (DEC-019).",
+        question_id: "webp-xmp-content-not-parsed",
+    },
+    Divergence {
+        fixture: "webp-xmp-nul-id-4-bytes",
+        selector: "XMP-xmp:CreatorTool",
+        command: WEBP_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool prints no XMP-xmp:CreatorTool and warns [minor] Empty XMP (the bytes are not an XMP packet); exif-core locates a non-empty Xmp region without parsing it, so its selector reads present.",
+        right_side: "neither is wrong: ExifTool parses the packet, exif-core only locates the XMP chunk and never decodes its content (DEC-019).",
+        question_id: "webp-xmp-content-not-parsed",
+    },
+    Divergence {
+        fixture: "webp-xmp-nul-id-5-bytes",
+        selector: "XMP-xmp:CreatorTool",
+        command: WEBP_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool prints no XMP-xmp:CreatorTool and warns [minor] Empty XMP (the bytes are not an XMP packet); exif-core locates a non-empty Xmp region without parsing it, so its selector reads present.",
+        right_side: "neither is wrong: ExifTool parses the packet, exif-core only locates the XMP chunk and never decodes its content (DEC-019).",
+        question_id: "webp-xmp-content-not-parsed",
+    },
+    Divergence {
+        fixture: "webp-xmp-nul-id-6-bytes",
+        selector: "XMP-xmp:CreatorTool",
+        command: WEBP_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool prints no XMP-xmp:CreatorTool and warns [minor] Empty XMP (the bytes are not an XMP packet); exif-core locates a non-empty Xmp region without parsing it, so its selector reads present.",
+        right_side: "neither is wrong: ExifTool parses the packet, exif-core only locates the XMP chunk and never decodes its content (DEC-019).",
+        question_id: "webp-xmp-content-not-parsed",
+    },
+    Divergence {
+        fixture: "webp-xmp-nul-id-7-bytes",
+        selector: "XMP-xmp:CreatorTool",
+        command: WEBP_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool prints no XMP-xmp:CreatorTool and warns [minor] Empty XMP (the bytes are not an XMP packet); exif-core locates a non-empty Xmp region without parsing it, so its selector reads present.",
+        right_side: "neither is wrong: ExifTool parses the packet, exif-core only locates the XMP chunk and never decodes its content (DEC-019).",
+        question_id: "webp-xmp-content-not-parsed",
+    },
+    Divergence {
+        fixture: "webp-header-wave",
+        selector: "IFD0:Make",
+        command: WEBP_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool reads the EXIF chunk of this RIFF file as another format and prints IFD0:Make; exif-core returns an error (not a WebP), so every selector reads none.",
+        right_side: "exif-core is right for a WebP reader: the form type or the RIFF magic is not WEBP; ExifTool dispatches on the extension and reads the file as WAV, AVI or TIFF-like data (RIFX). Recorded, not silenced.",
+        question_id: "webp-riff-other-forms-read-by-exiftool",
+    },
+    Divergence {
+        fixture: "webp-header-rifx",
+        selector: "IFD0:Make",
+        command: WEBP_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool reads the EXIF chunk of this RIFF file as another format and prints IFD0:Make; exif-core returns an error (not a WebP), so every selector reads none.",
+        right_side: "exif-core is right for a WebP reader: the form type or the RIFF magic is not WEBP; ExifTool dispatches on the extension and reads the file as WAV, AVI or TIFF-like data (RIFX). Recorded, not silenced.",
+        question_id: "webp-riff-other-forms-read-by-exiftool",
+    },
+    Divergence {
+        fixture: "webp-header-avi",
+        selector: "IFD0:Make",
+        command: WEBP_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool reads the EXIF chunk of this RIFF file as another format and prints IFD0:Make; exif-core returns an error (not a WebP), so every selector reads none.",
+        right_side: "exif-core is right for a WebP reader: the form type or the RIFF magic is not WEBP; ExifTool dispatches on the extension and reads the file as WAV, AVI or TIFF-like data (RIFX). Recorded, not silenced.",
+        question_id: "webp-riff-other-forms-read-by-exiftool",
+    },
 ];
 
 /// For a fixture covered by an [`EXIF_ANY`] divergence: the committed record of
@@ -668,6 +858,10 @@ pub enum RegionKind {
     /// profile, whatever the name; we only locate, so a chunk whose profile is
     /// not a valid ICC header is a recorded divergence.
     PngIccRead,
+    /// WebP (SPEC-034): any located NON-EMPTY `XMP ` (or `XMP\0`) chunk.
+    WebpXmp,
+    /// WebP (SPEC-034): any located NON-EMPTY `ICCP` chunk.
+    WebpIcc,
 }
 
 /// `XMP-xmp:CreatorTool` <-> a located XMP packet, `IPTC:ObjectName` <-> a
@@ -1047,6 +1241,170 @@ pub fn compare_png(
             d.selector == m.selector || (d.selector == EXIF_UNREAD && is_exif_selector(m.selector))
         });
         if !exercised {
+            cmp.stale.push(format!(
+                "{} {}: the divergence ({}) is no longer present",
+                d.fixture, d.selector, d.question_id
+            ));
+        }
+    }
+    cmp
+}
+
+// ── WebP (SPEC-034) ─────────────────────────────────────────────────────────
+
+/// The Exif selectors for which ExifTool 13.55 keeps the FIRST `EXIF` block's
+/// value when a WebP has several, not the last. Measured per selector (SPEC-034
+/// verify H1) on `webp-exif-full-one-two` and `webp-exif-full-two-one`, two
+/// full blocks that differ in every one of the 20 selectors: these four keep
+/// the first block's value in both orders, the other 16 take the later block's.
+/// `tests/webp_oracle.rs::several_exif_model_is_per_selector_and_pinned`
+/// reads all 20 in both orders and fails if this list is wrong.
+pub const WEBP_FIRST_BLOCK_WINS: &[&str] = &[
+    "IFD0:ImageWidth",
+    "IFD0:ImageHeight",
+    "IFD0:Orientation",
+    "IFD0:XResolution",
+];
+
+/// Our reading of every selector from a WebP, modelled on what ExifTool 13.55
+/// was measured to do with several `EXIF` chunks: the tags of the blocks MERGE,
+/// a block that is not a TIFF is ignored, and the winner is PER SELECTOR: the
+/// FIRST block that has the tag for the four selectors in
+/// [`WEBP_FIRST_BLOCK_WINS`], the LAST block that has it for the other 16.
+/// This is neither the JPEG model ([`read_ours_jpeg`]: later wins, unmeasured
+/// per selector) nor the PNG one ([`read_ours_png`]: first block only).
+///
+/// A known limit (L1): a block whose value for a selector is of a type
+/// `read_one` cannot read (Make stored as SHORT) is skipped, so the earlier
+/// block's value is read, while ExifTool prints the later block's value
+/// (`webp-exif-make-short-later`, pinned as `webp-exif-nonascii-make`).
+///
+/// This is the harness's model, not a library feature: the library keeps "the
+/// first block is primary" (DEC-019).
+pub fn read_ours_webp(meta: &WebpMetadata<'_>, selectors: &[Selector]) -> Vec<Option<String>> {
+    selectors
+        .iter()
+        .map(|s| {
+            let mut read = meta
+                .exif_blocks()
+                .iter()
+                .filter_map(|b| b.container().ok().and_then(|c| read_one(c, s)));
+            if WEBP_FIRST_BLOCK_WINS.contains(&s.exiftool) {
+                read.next()
+            } else {
+                read.next_back()
+            }
+        })
+        .collect()
+}
+
+/// `XMP-xmp:CreatorTool` <-> a located NON-EMPTY XMP region; `ICC-header:
+/// ProfileFileSignature` <-> a located NON-EMPTY `ICCP` region. Empty regions
+/// never count (DEC-019). Fixtures that are meant to read carry a
+/// `xmp:CreatorTool` packet and a valid profile; ExifTool VALIDATES, we only
+/// LOCATE, so garbage is a recorded divergence.
+pub const WEBP_REGION_SELECTORS: &[RegionSelector] = &[
+    RegionSelector {
+        exiftool: "XMP-xmp:CreatorTool",
+        kind: RegionKind::WebpXmp,
+    },
+    RegionSelector {
+        exiftool: "ICC-header:ProfileFileSignature",
+        kind: RegionKind::WebpIcc,
+    },
+];
+
+/// The ExifTool selector strings of [`SELECTORS`] then [`WEBP_REGION_SELECTORS`].
+pub fn webp_names() -> Vec<&'static str> {
+    let mut v = names(SELECTORS);
+    v.extend(WEBP_REGION_SELECTORS.iter().map(|r| r.exiftool));
+    v
+}
+
+/// Our WebP region presence, one entry per [`WEBP_REGION_SELECTORS`].
+pub fn read_webp_regions(meta: &WebpMetadata<'_>) -> Vec<Option<String>> {
+    WEBP_REGION_SELECTORS
+        .iter()
+        .map(|r| {
+            let found = meta.regions().iter().any(|region| match (r.kind, region) {
+                (RegionKind::WebpXmp, WebpRegion::Xmp { data, .. }) => !data.is_empty(),
+                (RegionKind::WebpIcc, WebpRegion::Icc { data, .. }) => !data.is_empty(),
+                _ => false,
+            });
+            found.then(|| PRESENT.to_string())
+        })
+        .collect()
+}
+
+/// Our whole WebP reading: the Exif selectors (the model above), then the
+/// region presence.
+pub fn read_webp_all(meta: &WebpMetadata<'_>) -> Vec<Option<String>> {
+    let mut v = read_ours_webp(meta, SELECTORS);
+    v.extend(read_webp_regions(meta));
+    v
+}
+
+/// [`diff_png`] for WebP: value comparison for the Exif selectors, presence for
+/// the region selectors. Nothing is filtered.
+pub fn diff_webp(ours: &[Option<String>], theirs: &[Option<String>]) -> Vec<Mismatch> {
+    let n = SELECTORS.len();
+    assert_eq!(ours.len(), n + WEBP_REGION_SELECTORS.len(), "ours length");
+    assert_eq!(
+        theirs.len(),
+        n + WEBP_REGION_SELECTORS.len(),
+        "theirs length"
+    );
+    let mut out = diff(
+        ours.get(..n).unwrap_or_default(),
+        theirs.get(..n).unwrap_or_default(),
+        SELECTORS,
+    );
+    let (o, t) = (
+        ours.get(n..).unwrap_or_default(),
+        presence(theirs.get(n..).unwrap_or_default()),
+    );
+    for ((r, a), b) in WEBP_REGION_SELECTORS.iter().zip(o).zip(&t) {
+        if a != b {
+            out.push(Mismatch {
+                selector: r.exiftool,
+                ours: a.clone(),
+                theirs: b.clone(),
+            });
+        }
+    }
+    out
+}
+
+/// ExifTool's warnings for a WebP as recorded: the lines that start `Warning: `
+/// or `Error: ` (stderr of a `-T` run). Applied to `tools::warning_lines`.
+pub fn webp_warning_lines(lines: Vec<String>) -> Vec<String> {
+    lines
+        .into_iter()
+        .filter(|l| l.starts_with("Warning: ") || l.starts_with("Error: "))
+        .collect()
+}
+
+/// [`diff_webp`] plus the known-divergence accounting for fixture `name`, in
+/// both directions as [`compare_jpeg_pinned`] does: every mismatch must be
+/// covered by an exact `(fixture, selector)` entry, and every entry must still
+/// be exercised. No wildcard entry exists for WebP.
+pub fn compare_webp(
+    name: &str,
+    ours: &[Option<String>],
+    theirs: &[Option<String>],
+) -> JpegComparison {
+    let mut cmp = JpegComparison::default();
+    for m in diff_webp(ours, theirs) {
+        match known_divergence(name, m.selector) {
+            Some(_) => cmp.explained.push(m),
+            None => cmp.unexplained.push(m),
+        }
+    }
+    for d in KNOWN_DIVERGENCES
+        .iter()
+        .filter(|d| d.fixture == name && d.selector != "*")
+    {
+        if !cmp.explained.iter().any(|m| m.selector == d.selector) {
             cmp.stale.push(format!(
                 "{} {}: the divergence ({}) is no longer present",
                 d.fixture, d.selector, d.question_id
