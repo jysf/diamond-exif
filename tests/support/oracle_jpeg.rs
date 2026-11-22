@@ -85,6 +85,11 @@ fn clean(segs: &[Vec<u8>]) -> Vec<u8> {
     d
 }
 
+/// [`clean`], for the tests that build one JPEG around a few segments.
+pub fn clean_for_tests(segs: &[Vec<u8>]) -> Vec<u8> {
+    clean(segs)
+}
+
 /// A tiny TIFF whose IFD0 holds the given ASCII `(tag, text)` entries (each
 /// NUL-terminated here), little-endian.
 fn tiff_of(entries: &[(u16, &str)]) -> Vec<u8> {
@@ -263,6 +268,18 @@ fn gps_split_across_two_blocks() -> Vec<u8> {
     clean(&[exif_app1(&a), exif_app1(&b)])
 }
 
+/// Two full Exif APP1s (every one of the 20 selectors differs between
+/// `tiff_full(1)` and `tiff_full(2)`), in either order (SPEC-035): which block
+/// ExifTool keeps is measured per selector.
+fn two_full_exif(one_first: bool) -> Vec<u8> {
+    let (a, b) = (exif_app1(&t::tiff_full(1)), exif_app1(&t::tiff_full(2)));
+    if one_first {
+        clean(&[a, b])
+    } else {
+        clean(&[b, a])
+    }
+}
+
 /// The shape fixtures, in a fixed order.
 fn shapes() -> Vec<(&'static str, Vec<u8>)> {
     let basic = basic();
@@ -309,6 +326,9 @@ fn shapes() -> Vec<(&'static str, Vec<u8>)> {
         ("jpeg-two-exif-same-tag-reversed", two_exif_same_tag(false)),
         ("jpeg-two-exif-disjoint-tags", two_exif_disjoint()),
         ("jpeg-seventeen-exif-last-differs", seventeen_exif()),
+        // SPEC-035: two full blocks, both orders (the per-selector winner).
+        ("jpeg-exif-full-one-two", two_full_exif(true)),
+        ("jpeg-exif-full-two-one", two_full_exif(false)),
         // A fatal (not-a-TIFF) block next to a good one, both orders: the
         // harness model must skip the fatal block, not stop at it.
         ("jpeg-exif-good-then-fatal", good_and_fatal(true)),

@@ -464,19 +464,19 @@ fn theirs_parser_maps_region_groups_by_prefix() {
 #[test]
 fn distinct_inputs_are_counted_once_across_seed_directories() {
     let all = all_inputs();
-    assert_eq!(all.len(), 252, "inputs over the five corpora");
+    assert_eq!(all.len(), 254, "inputs over the five corpora");
     let per_corpus: Vec<usize> = inventory_corpus::CORPORA
         .iter()
         .map(|c| all.iter().filter(|i| i.corpus == *c).count())
         .collect();
-    // 61 hand-built (12 + 2 TIFF, 42 + 5 JPEG), 41 DEC-008 ids, and the seeds
+    // 63 hand-built (12 + 2 TIFF, 44 + 5 JPEG; SPEC-035 added two), 41 DEC-008 ids, and the seeds
     // (32 TIFF, 37 JPEG, 81 audit).
-    assert_eq!(per_corpus, vec![61, 41, 32, 37, 81]);
+    assert_eq!(per_corpus, vec![63, 41, 32, 37, 81]);
     let keys: BTreeSet<String> = all.iter().map(Input::key).collect();
     assert_eq!(keys.len(), all.len(), "keys are unique");
 
     let distinct = inventory_corpus::distinct(&all);
-    assert_eq!(distinct.len(), 183, "distinct inputs by content");
+    assert_eq!(distinct.len(), 185, "distinct inputs by content");
     let members: usize = distinct.iter().map(|d| d.keys.len()).sum();
     assert_eq!(members, all.len(), "every input belongs to one group");
 
@@ -658,7 +658,7 @@ fn live_inventory_parity_on_hand_built_fixtures() {
         return;
     }
     let n = live_parity(|d| d.canonical.corpus == "fixtures");
-    assert_eq!(n, 61, "all 61 hand-built fixtures are distinct and run");
+    assert_eq!(n, 63, "all 63 hand-built fixtures are distinct and run");
 }
 
 #[test]
@@ -1175,6 +1175,8 @@ fn existing_oracle_records_are_byte_identical_to_the_committed_set() {
         .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
         // SPEC-031: the PNG records (`png-*`) are checked by `tests/png_oracle.rs`.
         .filter(|n| !n.starts_with("png-") && !n.starts_with("webp-"))
+        // SPEC-035: the two full-block several-Exif JPEG records are additions.
+        .filter(|n| !n.starts_with("jpeg-exif-full-"))
         .collect();
     on_disk.sort();
     let want: Vec<String> = EXISTING_RECORDS
@@ -1727,8 +1729,8 @@ fn class_s_region_kinds_are_excluded_exactly_and_the_existing_pins_are_unchanged
     );
     // The five old corpora are the five old corpora, with their old counts.
     assert_eq!(inventory_corpus::CORPORA.len(), 5);
-    assert_eq!(all_inputs().len(), 252);
-    assert_eq!(distinct_inputs().len(), 183);
+    assert_eq!(all_inputs().len(), 254);
+    assert_eq!(distinct_inputs().len(), 185);
     // The pinned table: the same rows as before plus DEC-012's one new row
     // (`fixtures/jpeg-iptc-without-0404`); the seed row that gained `Iptc` is
     // the other change. Counted by class.

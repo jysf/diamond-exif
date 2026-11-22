@@ -455,3 +455,54 @@ pub fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
         ("signed-float-be", signed_float(true)),
     ]
 }
+
+/// A little-endian TIFF that carries a value for EVERY one of the 20 Exif
+/// selectors, each different for `v` = 1 and `v` = 2 (H1 of the SPEC-034
+/// verify): two such blocks tell which block ExifTool keeps, per selector.
+/// All values are exactly representable, so there is no rounding to argue about.
+pub fn tiff_full(v: u16) -> Vec<u8> {
+    let big = false;
+    let word = if v == 1 { "One" } else { "Two" };
+    let ifd0 = ifd(vec![
+        short(big, T_IMAGE_WIDTH, 100 * v),
+        short(big, T_IMAGE_LENGTH, 50 * v),
+        ascii(T_MAKE, format!("Make{word}\0").as_bytes()),
+        ascii(T_MODEL, format!("Model{word}\0").as_bytes()),
+        short(big, T_ORIENTATION, if v == 1 { 1 } else { 8 }),
+        rational(big, T_X_RESOLUTION, &[(72 * u32::from(v), 1)]),
+        ascii(T_SOFTWARE, format!("Soft{word}\0").as_bytes()),
+        ascii(T_DATE_TIME, format!("2020:01:0{v} 00:00:00\0").as_bytes()),
+        ascii(T_ARTIST, format!("Artist{word}\0").as_bytes()),
+        ascii(T_COPYRIGHT, format!("Copy{word}\0").as_bytes()),
+        ptr(T_EXIF_IFD, 1),
+        ptr(T_GPS_IFD, 2),
+    ]);
+    let exif = ifd(vec![
+        float(big, T_EXPOSURE_TIME, 0.125 * f32::from(v)),
+        rational(big, T_F_NUMBER, &[(28 * u32::from(v), 10)]),
+        sshort(big, T_EXPOSURE_PROGRAM, -(v as i16)),
+        short(big, T_ISO, 100 * v),
+        ascii(
+            T_DATE_TIME_ORIGINAL,
+            format!("2021:02:0{v} 01:02:03\0").as_bytes(),
+        ),
+        srational(big, T_EXPOSURE_BIAS, &[(-(v as i32), 4)]),
+        double(big, T_FOCAL_LENGTH, 4.5 * f64::from(v)),
+        slong(big, T_EXIF_IMAGE_WIDTH, -5 * i32::from(v)),
+    ]);
+    let gps = ifd(vec![
+        ascii(T_GPS_LAT_REF, b"N\0"),
+        rational(
+            big,
+            T_GPS_LAT,
+            &[(30 + u32::from(v), 1), (25, 1), (3075, 100)],
+        ),
+        ascii(T_GPS_LON_REF, b"E\0"),
+        rational(
+            big,
+            T_GPS_LON,
+            &[(120 + u32::from(v), 1), (5, 1), (4890, 100)],
+        ),
+    ]);
+    assemble(big, &[ifd0, exif, gps])
+}

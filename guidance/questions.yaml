@@ -225,14 +225,22 @@ questions:
       That is a policy, not a measurement. ANSWERED (SPEC-011, measured; no DEC
       needed, the library policy did not change): ExifTool 13.55 reads the UNION
       of the tags of all the Exif segments and, where two carry the same tag, the
-      LATER segment's value wins (jpeg-two-exif-same-tag and -reversed, committed
-      records tests/oracle-fixtures/exiftool/jpeg-two-exif-*.txt). It printed no
-      warning for either. The oracle models that rule in the test harness
-      (oracle::read_ours_jpeg). Whether the LIBRARY should expose a merged view is
-      the separate open question `several-exif-segments`.
+      LATER segment's value wins for most selectors (jpeg-two-exif-same-tag and
+      -reversed, committed records tests/oracle-fixtures/exiftool/jpeg-two-exif-*.txt).
+      It printed no warning for either. CORRECTED (SPEC-035, measured on two full
+      blocks that differ in all 20 selectors, both orders: records
+      tests/oracle-fixtures/exiftool/jpeg-exif-full-one-two.txt and
+      jpeg-exif-full-two-one.txt): the winner is PER SELECTOR. The FIRST block wins
+      IFD0:ImageWidth, IFD0:ImageHeight, IFD0:Orientation and IFD0:XResolution;
+      the LAST block wins the other 16 (the same split as WebP). The earlier "later
+      wins" statement held for Make and Model only, the two tags SPEC-011's
+      fixtures varied. The oracle models the per-selector rule in the test harness
+      (oracle::read_ours_jpeg, oracle::JPEG_FIRST_BLOCK_WINS). Whether the LIBRARY
+      should expose a merged view is the separate open question
+      `several-exif-segments`.
 
   - id: several-exif-segments
-    question: "Should exif-core expose a merged multi-Exif view (union of tags, later segment wins, as ExifTool does), or keep 'the first Exif is primary, the rest cost ExtraExif'?"
+    question: "Should exif-core expose a merged multi-Exif view (union of tags, the winning segment chosen per selector as ExifTool does), or keep 'the first Exif is primary, the rest cost ExtraExif'?"
     priority: medium
     status: open
     raised_by: claude-sonnet-5-5
@@ -242,18 +250,21 @@ questions:
       Left open for the exif-audit CLI stage. Measured (SPEC-011, ExifTool
       13.55, `exiftool -T -n -s3 <22 selectors> <file>`): with two Exif APP1
       segments carrying different IFD0:Make values ExifTool reports the later
-      one, and tags only the first carries survive (the union); with seventeen
+      one, and tags only the first carries survive (the union); SPEC-035 then
+      measured that "later wins" is not uniform: the FIRST block wins ImageWidth,
+      ImageHeight, Orientation and XResolution and the last wins the other 16
+      (jpeg-exif-full-one-two, jpeg-exif-full-two-one); with seventeen
       segments it reads the seventeenth (jpeg-seventeen-exif-last-differs:
       LastOnly17). exif-core keeps DEC-006's policy: the first block whose
       container parsed is exif(), at most 16 blocks are parsed, every further
       Exif segment costs an ExtraExif issue. The harness compares against the
-      union with the later block winning, so a multi-Exif file is checked against
+      union with the winner chosen per selector (SPEC-035), so a multi-Exif file is checked against
       what ExifTool actually reports, and the one place the cap makes ours differ
       (the 17th block) is a recorded divergence. An audit that must report every
       value a downstream ExifTool-based tool would see needs the merged view or
       a per-block listing; the data is already in exif_blocks().
-      Verify info (HANDOFF-022): "union of tags, the later block wins" is a
-      FITTED MODEL of what was measured (2, 17 and 20 blocks, fatal or damaged
+      Verify info (HANDOFF-022): "union of tags, the later block wins" (superseded
+      by the per-selector rule above, SPEC-035) was a FITTED MODEL of what was measured (2, 17 and 20 blocks, fatal or damaged
       later blocks), not ExifTool's documented rule. With two Exif APP1s,
       `exiftool -Warning` reports `[minor] File contains multi-segment EXIF`
       (the `-T` command line the oracle uses does not print it, see

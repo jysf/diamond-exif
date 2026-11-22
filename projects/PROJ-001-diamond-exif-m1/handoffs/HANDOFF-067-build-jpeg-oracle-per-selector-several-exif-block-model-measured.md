@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-22
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-035
@@ -46,18 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                # completed | blocked | rejected
+  agent: claude-sonnet-5-5         # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
+  basis: transcript                # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 6303399            # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: null
-  branch: null
+  duration_minutes: 40
+  branch: claude/spec-035-jpeg-per-selector
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-22         # YYYY-MM-DD
+  notes: "Measured from the live session transcript (48 deduplicated messages, input 95 + cache creation 167856 + cache read 6109905 + output 25543), so a floor. estimated_usd is null: no Sonnet 5.5 rate table is in the repo and I will not guess one."  # if unusual; double-quote it — an unquoted " #" starts a YAML comment
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -169,9 +169,9 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
+- **Branch / PR:** `claude/spec-035-jpeg-per-selector`, no PR (the orchestrator opens it)
+- **Completed at:** 2026-11-22
+- **All acceptance criteria met?** yes (one note: the inventory record `tests/oracle-fixtures/exiftool-inventory/fixtures.txt` gained 90 lines, the sections of the two new fixtures only; no existing line changed. The inventory corpus enumerates every JPEG fixture, so this is unavoidable.)
 - **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
 
 ### Cost self-report
@@ -180,27 +180,30 @@ Mirror what you put in the `handback:` front-matter, and say where the number
 came from. **This is the number that lands in the spec** — the orchestrator
 transcribes it via `just handback-sync`, it does not estimate it.
 
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** 6303399 (floor, live transcript)
+- **Estimated USD:** null (no rate table in the repo)
+- **Duration (minutes):** 40
+- **Source of the number:** session transcript (subagents/agent-a7d76e98c445163fc.jsonl), deduplicated per message.id
 
 ### Drift and new artifacts
 
 - **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
+  - none
 - **Deviations from spec:**
-  - [list]
+  - `tiff_full` moved from `tests/support/oracle_webp.rs` to `oracle_tiff.rs` (re-exported from `oracle_webp`), so the JPEG builders reach it without importing WebP code.
+  - Pins that count fixtures or records were updated for the two additions: `tests/jpeg_oracle.rs` (44 fixtures, 44 + 37 records, warning table rows), `tests/budget_oracle.rs` (two allowed extra records), `tests/inventory_oracle.rs` (254 inputs, 185 distinct, 63 hand-built) and `tests/mutation_oracle.rs` (185 / 184).
+  - The mutated-copy proof (`jpeg_mutant_later_block_wins_all_twenty_is_named`) mutates the probe's copy of `oracle.rs` (the harness model), not `src/`, because the model lives in the harness. Control clean first, `RED-PROOF INJECTION` marker, needle exactly once; the existing leak test covers `tests/support`.
+  - Make-as-SHORT (L1) was not re-measured for JPEG; the doc comment says so and that no JPEG fixture has such a block.
 - **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - none
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — The spec said "no other record may change" but the inventory record lists every JPEG fixture, so it necessarily gained the new sections; several count pins in four test files also had to move.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — The list of count pins that a new JPEG fixture touches (jpeg_oracle, budget_oracle, inventory_oracle, mutation_oracle) belongs in the handoff.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Grep for the fixture-count numbers (42, 252, 183, 61) up front instead of finding them one `just test` run at a time.

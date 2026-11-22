@@ -125,59 +125,7 @@ pub fn tiff_b() -> Vec<u8> {
     tiff_of(&[(t::T_MAKE, "BravoCam")])
 }
 
-/// A little-endian TIFF that carries a value for EVERY one of the 20 Exif
-/// selectors, each different for `v` = 1 and `v` = 2 (H1 of the SPEC-034
-/// verify): two such blocks tell which block ExifTool keeps, per selector.
-/// All values are exactly representable, so there is no rounding to argue about.
-pub fn tiff_full(v: u16) -> Vec<u8> {
-    let big = false;
-    let word = if v == 1 { "One" } else { "Two" };
-    let ifd0 = t::ifd(vec![
-        t::short(big, t::T_IMAGE_WIDTH, 100 * v),
-        t::short(big, t::T_IMAGE_LENGTH, 50 * v),
-        t::ascii(t::T_MAKE, format!("Make{word}\0").as_bytes()),
-        t::ascii(t::T_MODEL, format!("Model{word}\0").as_bytes()),
-        t::short(big, t::T_ORIENTATION, if v == 1 { 1 } else { 8 }),
-        t::rational(big, t::T_X_RESOLUTION, &[(72 * u32::from(v), 1)]),
-        t::ascii(t::T_SOFTWARE, format!("Soft{word}\0").as_bytes()),
-        t::ascii(
-            t::T_DATE_TIME,
-            format!("2020:01:0{v} 00:00:00\0").as_bytes(),
-        ),
-        t::ascii(t::T_ARTIST, format!("Artist{word}\0").as_bytes()),
-        t::ascii(t::T_COPYRIGHT, format!("Copy{word}\0").as_bytes()),
-        t::ptr(t::T_EXIF_IFD, 1),
-        t::ptr(t::T_GPS_IFD, 2),
-    ]);
-    let exif = t::ifd(vec![
-        t::float(big, t::T_EXPOSURE_TIME, 0.125 * f32::from(v)),
-        t::rational(big, t::T_F_NUMBER, &[(28 * u32::from(v), 10)]),
-        t::sshort(big, t::T_EXPOSURE_PROGRAM, -(v as i16)),
-        t::short(big, t::T_ISO, 100 * v),
-        t::ascii(
-            t::T_DATE_TIME_ORIGINAL,
-            format!("2021:02:0{v} 01:02:03\0").as_bytes(),
-        ),
-        t::srational(big, t::T_EXPOSURE_BIAS, &[(-(v as i32), 4)]),
-        t::double(big, t::T_FOCAL_LENGTH, 4.5 * f64::from(v)),
-        t::slong(big, t::T_EXIF_IMAGE_WIDTH, -5 * i32::from(v)),
-    ]);
-    let gps = t::ifd(vec![
-        t::ascii(t::T_GPS_LAT_REF, b"N\0"),
-        t::rational(
-            big,
-            t::T_GPS_LAT,
-            &[(30 + u32::from(v), 1), (25, 1), (3075, 100)],
-        ),
-        t::ascii(t::T_GPS_LON_REF, b"E\0"),
-        t::rational(
-            big,
-            t::T_GPS_LON,
-            &[(120 + u32::from(v), 1), (5, 1), (4890, 100)],
-        ),
-    ]);
-    t::assemble(big, &[ifd0, exif, gps])
-}
+pub use crate::oracle_tiff::tiff_full;
 
 /// An XMP packet like [`packet`] with a different `xmp:CreatorTool`.
 fn packet_with(tool: &str) -> Vec<u8> {
