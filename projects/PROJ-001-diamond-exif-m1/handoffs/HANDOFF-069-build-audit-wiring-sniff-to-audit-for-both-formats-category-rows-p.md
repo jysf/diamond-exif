@@ -42,7 +42,7 @@ repo:
 #                   Code tab reports context size, not spend.
 #   API           → the `usage` objects, summed (basis: api-usage)
 #   another agent → whatever your harness reports as total tokens
-# If your platform genuinely exposes NO token count, set tokens_total: 237190 AND
+# If your platform genuinely exposes NO token count, set tokens_total: null AND
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
@@ -51,7 +51,7 @@ handback:
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
   basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
+  tokens_total: 237190             # REAL combined count — what cost-audit reads
   estimated_usd: 1.57              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: 21
   branch: claude/spec-032-audit-a
