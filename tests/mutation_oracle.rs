@@ -38,14 +38,22 @@ mod mutate;
 mod oracle;
 #[path = "support/oracle_jpeg.rs"]
 mod oracle_jpeg;
+#[path = "support/oracle_png.rs"]
+mod oracle_png;
 #[path = "support/oracle_tiff.rs"]
 mod oracle_tiff;
+#[path = "support/oracle_webp.rs"]
+mod oracle_webp;
+#[path = "support/png_shapes.rs"]
+mod png_shapes;
 #[path = "support/probe.rs"]
 mod probe;
 #[path = "support/real_shapes.rs"]
 mod real_shapes;
 #[path = "support/tools.rs"]
 mod tools;
+#[path = "support/webp_shapes.rs"]
+mod webp_shapes;
 
 use exif_core::tiff::{Container, Link};
 use exif_core::Error;

@@ -16,7 +16,10 @@
 
 #![allow(dead_code)]
 
-use crate::{audit_tags, oracle_jpeg, oracle_tiff, real_shapes};
+use crate::{
+    audit_tags, oracle_jpeg, oracle_png, oracle_tiff, oracle_webp, png_shapes, real_shapes,
+    webp_shapes,
+};
 use std::path::{Path, PathBuf};
 
 /// The corpora, in canonical-name order.
@@ -31,7 +34,13 @@ pub const CORPORA: [&str; 5] = [
 /// Corpora added after SPEC-013. They are NOT in [`CORPORA`], so the 178
 /// existing results, their records and their counts cannot move; they have
 /// their own records and their own tests (SPEC-019).
-pub const NEW_CORPORA: [&str; 1] = ["real-shapes"];
+///
+/// `png-webp` (SPEC-036): every PNG and WebP oracle fixture, shape and committed
+/// seed (see [`png_webp_inputs`]), with the extension rule of [`Input::ext`].
+pub const NEW_CORPORA: [&str; 2] = ["real-shapes", "png-webp"];
+
+/// The name of the PNG/WebP corpus.
+pub const PNG_WEBP: &str = "png-webp";
 
 /// The prefix of the SPEC-019 seeds. They are byte copies of the `real-shapes`
 /// fixtures, which carry the record, so the three seed corpora skip them (their
@@ -73,7 +82,21 @@ impl Input {
     /// The extension of the temporary file ExifTool is run on: `jpg` for
     /// anything that starts `FF D8`, `tif` otherwise. The same rule is used by
     /// the recorder and by the live tests.
+    ///
+    /// The `png-webp` corpus (SPEC-036) uses `png` for bytes that start with the
+    /// PNG signature, `webp` for bytes that start `RIFF`, and otherwise by the
+    /// input's name (`webp` if it contains `webp`, else `png`): a corrupted
+    /// signature is still a file of the format it was made from.
     pub fn ext(&self) -> &'static str {
+        if self.corpus == PNG_WEBP {
+            if self.bytes.starts_with(b"\x89PNG") {
+                return "png";
+            }
+            if self.bytes.starts_with(b"RIFF") || self.name.contains("webp") {
+                return "webp";
+            }
+            return "png";
+        }
         if self.bytes.starts_with(&[0xFF, 0xD8]) {
             "jpg"
         } else {
@@ -136,6 +159,84 @@ fn read_seeds(root: &Path, corpus: &'static str, dir: &str) -> Vec<Input> {
         .collect()
 }
 
+/// Whether the `seed-audit` corpus left this `audit` seed out (SPEC-032): a PNG
+/// or WebP, except `audit-png-magic`. The `png-webp` corpus takes exactly these.
+fn audit_seed_is_png_or_webp(name: &str, bytes: &[u8]) -> bool {
+    if name == "audit-png-magic" {
+        return false;
+    }
+    if name.starts_with("png-") || name.starts_with("webp-") {
+        return true;
+    }
+    let png = bytes.starts_with(b"\x89PNG\r\n\x1a\n");
+    let webp = bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP";
+    png || webp
+}
+
+fn dir_files(root: &Path, dir: &str) -> Vec<(String, Vec<u8>)> {
+    let base = root.join("fuzz/seeds").join(dir);
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(&base)
+        .unwrap_or_else(|e| panic!("read {}: {e}", base.display()))
+        .map(|e| e.expect("dir entry").path())
+        .collect();
+    paths.sort();
+    paths
+        .into_iter()
+        .map(|p| {
+            let name = p
+                .file_name()
+                .expect("file name")
+                .to_string_lossy()
+                .into_owned();
+            let bytes = std::fs::read(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
+            (name, bytes)
+        })
+        .collect()
+}
+
+/// The `png-webp` inputs (SPEC-036), in this order: the PNG oracle fixtures and
+/// the `png-text-keywords` table; the WebP oracle fixtures; the PNG then the
+/// WebP shapes; the committed `png_chunks` then `webp_riff` seeds; the PNG and
+/// WebP seeds of `audit` that the old corpora leave out. Names: the fixtures
+/// keep theirs, the rest are prefixed by their source so no two differ only by
+/// directory.
+pub fn png_webp_inputs(root: &Path) -> Vec<Input> {
+    let mk = |name: String, bytes: Vec<u8>| Input {
+        corpus: PNG_WEBP,
+        name,
+        bytes,
+    };
+    let mut out = Vec::new();
+    for (name, bytes) in oracle_png::fixtures() {
+        out.push(mk(name, bytes));
+    }
+    out.push(mk(
+        oracle_png::TEXT_KEYWORDS_NAME.to_string(),
+        oracle_png::text_keywords_png(),
+    ));
+    for (name, bytes) in oracle_webp::fixtures() {
+        out.push(mk(name, bytes));
+    }
+    for (name, bytes) in png_shapes::seeds() {
+        out.push(mk(format!("png-shape-{name}"), bytes));
+    }
+    for (name, bytes) in webp_shapes::seeds() {
+        out.push(mk(format!("webp-shape-{name}"), bytes));
+    }
+    for (name, bytes) in dir_files(root, "png_chunks") {
+        out.push(mk(format!("png_chunks-{name}"), bytes));
+    }
+    for (name, bytes) in dir_files(root, "webp_riff") {
+        out.push(mk(format!("webp_riff-{name}"), bytes));
+    }
+    for (name, bytes) in dir_files(root, "audit") {
+        if audit_seed_is_png_or_webp(&name, &bytes) {
+            out.push(mk(format!("audit-{name}"), bytes));
+        }
+    }
+    out
+}
+
 /// The inputs of one corpus, in a fixed order.
 pub fn inputs(root: &Path, corpus: &str) -> Vec<Input> {
     match corpus {
@@ -190,6 +291,7 @@ pub fn inputs(root: &Path, corpus: &str) -> Vec<Input> {
                 bytes,
             })
             .collect(),
+        "png-webp" => png_webp_inputs(root),
         other => panic!("unknown corpus {other}"),
     }
 }

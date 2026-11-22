@@ -28,6 +28,11 @@
 //! three seed directories, as `group<TAB>id<TAB>name` lines (file-level groups
 //! removed). ExifTool is run once per distinct input (by content); an input it
 //! does not return on is recorded as not run.
+//!
+//! SPEC-036 adds the `png-webp` inventory corpus (every PNG and WebP oracle
+//! fixture, shape and committed seed, `png-webp.txt`), recorded like
+//! `real-shapes`: its own record, each input run once, alone, as a `.png` or
+//! `.webp` file, so the five older records do not move.
 
 #[path = "../tests/support/audit_tags.rs"]
 mod audit_tags;
@@ -51,6 +56,8 @@ mod oracle_png;
 mod oracle_tiff;
 #[path = "../tests/support/oracle_webp.rs"]
 mod oracle_webp;
+#[path = "../tests/support/png_shapes.rs"]
+mod png_shapes;
 #[path = "../tests/support/real_shapes.rs"]
 mod real_shapes;
 #[path = "../tests/support/strip_records.rs"]
@@ -63,6 +70,8 @@ mod tiff_records;
 mod tiff_shapes;
 #[path = "../tests/support/tools.rs"]
 mod tools;
+#[path = "../tests/support/webp_shapes.rs"]
+mod webp_shapes;
 
 use std::fs;
 use std::path::PathBuf;

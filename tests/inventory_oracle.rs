@@ -25,12 +25,20 @@ mod inventory_corpus;
 mod mutate;
 #[path = "support/oracle_jpeg.rs"]
 mod oracle_jpeg;
+#[path = "support/oracle_png.rs"]
+mod oracle_png;
 #[path = "support/oracle_tiff.rs"]
 mod oracle_tiff;
+#[path = "support/oracle_webp.rs"]
+mod oracle_webp;
+#[path = "support/png_shapes.rs"]
+mod png_shapes;
 #[path = "support/real_shapes.rs"]
 mod real_shapes;
 #[path = "support/tools.rs"]
 mod tools;
+#[path = "support/webp_shapes.rs"]
+mod webp_shapes;
 
 use exif_core::audit::audit;
 use exif_core::tiff::{entry_budget, Container};
@@ -1854,4 +1862,266 @@ fn comparator_is_red_when_an_embedded_image_is_dropped_added_or_the_primary_misc
         inventory::check_embedded_relation(ours_n, inventory::mpimage_groups(&lines), offset)
             .is_err()
     );
+}
+
+// ── SPEC-036 part A: the png-webp corpus and the PNG/WebP classifier ─────────
+//
+// The corpus has its own record (`png-webp.txt`) and its own counts, so the five
+// older corpora, their records and their pins cannot move. The replay, live and
+// red-proof tests that compare it with the audit are part B; these are the
+// corpus pins and the classifier cases.
+
+fn png_webp_inputs() -> Vec<Input> {
+    inventory_corpus::inputs(&root(), "png-webp")
+}
+
+fn png_webp_record() -> inventory::RecordFile {
+    let path = root()
+        .join(inventory_corpus::RECORD_DIR)
+        .join(inventory_corpus::record_file("png-webp"));
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+        panic!(
+            "cannot read {} ({e}); run `just oracle-record`",
+            path.display()
+        )
+    });
+    inventory::parse_record(&text).expect("a well-formed png-webp record")
+}
+
+fn line(group: &str, id: Option<u32>, name: &str) -> Line {
+    Line {
+        group: group.to_string(),
+        id,
+        name: name.to_string(),
+    }
+}
+
+/// The `png-webp` corpus: 555 inputs, 301 distinct by content; the five older
+/// corpora are untouched and `png-webp` is not one of them.
+#[test]
+fn png_webp_corpus_counts_are_pinned() {
+    assert_eq!(inventory_corpus::CORPORA.len(), 5);
+    assert!(!inventory_corpus::CORPORA.contains(&"png-webp"));
+    assert!(inventory_corpus::NEW_CORPORA.contains(&"png-webp"));
+    let all = png_webp_inputs();
+    assert_eq!(all.len(), 555, "inputs of png-webp");
+    assert_eq!(inventory_corpus::distinct(&all).len(), 301, "distinct");
+    // Every name is unique (a record section is keyed by it).
+    let names: BTreeSet<&str> = all.iter().map(|i| i.name.as_str()).collect();
+    assert_eq!(names.len(), all.len());
+    // The record has one section per input, in the corpus order.
+    let rec = png_webp_record();
+    assert_eq!(rec.corpus, "png-webp");
+    let want: Vec<&str> = all.iter().map(|i| i.name.as_str()).collect();
+    let have: Vec<&str> = rec.sections.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(have, want);
+    // The old corpora take none of the PNG/WebP inputs this one does, except
+    // the one bare signature `audit-png-magic` they always had.
+    for i in inventory_corpus::all_inputs(&root()) {
+        let png = i.bytes.starts_with(b"\x89PNG");
+        let webp = i.bytes.starts_with(b"RIFF");
+        assert!(
+            !(png || webp) || i.name == "audit-png-magic",
+            "{} is a PNG/WebP in an old corpus",
+            i.key()
+        );
+    }
+}
+
+/// The extension of the file ExifTool is run on: `png` for a PNG signature,
+/// `webp` for `RIFF`, by name for a corrupted signature; the old corpora keep
+/// `jpg`/`tif`.
+#[test]
+fn png_webp_extension_rule() {
+    for i in png_webp_inputs() {
+        let want = if i.bytes.starts_with(b"\x89PNG") {
+            "png"
+        } else if i.bytes.starts_with(b"RIFF") || i.name.contains("webp") {
+            "webp"
+        } else {
+            "png"
+        };
+        assert_eq!(i.ext(), want, "{}", i.key());
+    }
+    for i in inventory_corpus::all_inputs(&root()) {
+        assert!(["jpg", "tif"].contains(&i.ext()), "{}", i.key());
+    }
+}
+
+/// `PNG` with a hex id is structural (dropped), `PNG` with no id is counted.
+#[test]
+fn classifier_png_hex_dropped_and_dash_counted() {
+    use inventory::GroupClass;
+    assert_eq!(inventory::classify_group("PNG"), Some(GroupClass::Png));
+    let lines = [
+        line("PNG", Some(0), "ImageWidth"),
+        line("PNG", Some(0x0c), "Interlace"),
+        line("PNG", None, "Comment"),
+        line("PNG", None, "tIME"),
+    ];
+    let inv = inventory_of(&lines).expect("classifiable");
+    assert_eq!(inv.text_tags, 2);
+    assert!(inv.tags.is_empty() && inv.regions.is_empty());
+}
+
+/// `PNG-<chunk>` groups and `RIFF` are structural whatever their ids; so is
+/// `Trailer`; none of them reaches the multiset or the text count.
+#[test]
+fn classifier_structural_groups_are_dropped_by_name() {
+    use inventory::GroupClass;
+    for g in ["PNG-pHYs", "PNG-gAMA", "RIFF", "Trailer"] {
+        assert_eq!(
+            inventory::classify_group(g),
+            Some(GroupClass::Structural),
+            "{g}"
+        );
+    }
+    let lines = [
+        line("PNG-pHYs", Some(0), "PixelsPerUnitX"),
+        line("PNG-pHYs", Some(4), "PixelsPerUnitY"),
+        line("RIFF", Some(1), "ImageWidth"),
+        line("RIFF", None, "Unknown_exif"),
+        line("Trailer", None, "Warning"),
+    ];
+    assert_eq!(
+        inventory_of(&lines).expect("classifiable"),
+        Inventory::default()
+    );
+}
+
+/// XMP and ICC groups, with the numbered ICC groups of a second profile, are
+/// region presence for these formats as for JPEG; an unknown group is still a
+/// parse error, never a silent drop.
+#[test]
+fn classifier_regions_and_unknown_group_for_png_webp() {
+    let lines = [
+        line("XMP-xmp", None, "CreatorTool"),
+        line("ICC-header2", Some(4), "ProfileCMMType"),
+        line("ICC_Profile3", None, "ProfileDescription"),
+    ];
+    let inv = inventory_of(&lines).expect("classifiable");
+    assert_eq!(
+        inv.regions,
+        [RegionKind::Xmp, RegionKind::Icc].into_iter().collect()
+    );
+    assert_eq!(inv.text_tags, 0);
+    // `PNG-` is a prefix rule for chunk groups only: a group that merely
+    // contains "PNG" is unknown.
+    for g in ["APNG", "PNGX", "RIFX", "Trailers", "WebP"] {
+        let err = inventory_of(&[line(g, Some(1), "X")]).unwrap_err();
+        assert!(
+            matches!(&err, ParseError::UnknownGroup { group, .. } if group == g),
+            "{g}: {err}"
+        );
+    }
+}
+
+/// The text count takes part in the diff and in its display; the probe text
+/// carries it only when it is not zero, and round-trips.
+#[test]
+fn text_count_diffs_displays_and_round_trips() {
+    let a = Inventory {
+        text_tags: 3,
+        ..Inventory::default()
+    };
+    let b = Inventory {
+        text_tags: 1,
+        ..Inventory::default()
+    };
+    let d = diff(&a, &b);
+    assert_eq!((d.text_ours_only, d.text_theirs_only), (2, 0));
+    assert!(!d.is_empty());
+    assert_eq!(d.to_string(), "ours only:   text tags x2");
+    let d = diff(&b, &a);
+    assert_eq!((d.text_ours_only, d.text_theirs_only), (0, 2));
+    assert_eq!(d.to_string(), "theirs only: text tags x2");
+    assert!(diff(&a, &a).is_empty());
+    let text = inventory::probe_text(&a);
+    assert_eq!(text, "text\t3\n");
+    assert_eq!(inventory::parse_probe_text(&text).expect("parses"), a);
+    // An inventory with no text tags prints exactly what it always did.
+    assert_eq!(inventory::probe_text(&Inventory::default()), "");
+}
+
+/// PNG: only the first `eXIf` block's entries are counted (ExifTool lists the
+/// first even with `-a`), and the later block is still in the audit; WebP:
+/// every block's entries, duplicates kept.
+#[test]
+fn per_format_block_rule_of_ours() {
+    let by_name = |name: &str| -> Vec<u8> {
+        png_webp_inputs()
+            .into_iter()
+            .find(|i| i.name == name)
+            .unwrap_or_else(|| panic!("no input {name}"))
+            .bytes
+    };
+    let make = |inv: &Inventory| inv.tags.get(&("IFD0".to_string(), 0x010f)).copied();
+
+    let png = by_name("png-two-exif-same-tag");
+    let a = audit(&png);
+    let blocks: BTreeSet<Option<usize>> = a
+        .items()
+        .iter()
+        .filter(|i| matches!(i.kind(), exif_core::audit::ItemKind::Tag { .. }))
+        .map(|i| i.origin().block)
+        .collect();
+    assert_eq!(blocks, BTreeSet::from([Some(0), Some(1)]), "both listed");
+    assert_eq!(make(&ours(&a)), Some(1), "only the first block is counted");
+
+    let webp = by_name("webp-exif-two-same-tag");
+    assert_eq!(
+        make(&ours(&audit(&webp))),
+        Some(2),
+        "every block is counted"
+    );
+
+    // The committed ExifTool sections say the same.
+    let rec = png_webp_record();
+    let theirs = |name: &str| {
+        let s = rec
+            .sections
+            .iter()
+            .find(|s| s.name == name)
+            .unwrap_or_else(|| panic!("no section {name}"));
+        inventory_of(&s.lines).expect("classifiable")
+    };
+    assert_eq!(make(&theirs("png-two-exif-same-tag")), Some(1));
+    assert_eq!(make(&theirs("webp-exif-two-same-tag")), Some(2));
+}
+
+/// Our side: a PNG's `Text` and `Time` regions are the text count.
+#[test]
+fn ours_counts_text_and_time_regions() {
+    let all = png_webp_inputs();
+    let a = audit(
+        &all.iter()
+            .find(|i| i.name == "png-text-keywords")
+            .expect("the keywords fixture")
+            .bytes,
+    );
+    let n = a
+        .items()
+        .iter()
+        .filter(|i| {
+            matches!(
+                i.kind(),
+                exif_core::audit::ItemKind::Region {
+                    kind: exif_core::audit::RegionKind::Text | exif_core::audit::RegionKind::Time,
+                    ..
+                }
+            )
+        })
+        .count();
+    assert!(n > 0, "the keywords fixture has text regions");
+    assert_eq!(ours(&a).text_tags, n);
+}
+
+/// Every group ExifTool printed on the corpus classifies: nothing in the
+/// committed record is an unknown group (the measured table is in the handback
+/// of HANDOFF-073; the comparison itself is part B).
+#[test]
+fn every_group_of_the_png_webp_record_classifies() {
+    for s in png_webp_record().sections {
+        inventory_of(&s.lines).unwrap_or_else(|e| panic!("{}: {e}", s.name));
+    }
 }

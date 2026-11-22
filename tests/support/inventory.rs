@@ -19,7 +19,7 @@
 
 #![allow(dead_code)]
 
-use exif_core::audit::{FileAudit, ItemKind, RegionKind as LibRegionKind};
+use exif_core::audit::{ContainerKind, FileAudit, ItemKind, RegionKind as LibRegionKind};
 use exif_core::tiff::IfdKind;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -43,6 +43,26 @@ pub const UNMODELLED_GROUPS: [&str; 2] = ["JFIF", "Photoshop"];
 /// MakerNote as one block and does not parse it, DEC-001). Named, never dropped
 /// silently (SPEC-019).
 pub const SHAPE_ONLY_GROUPS: [&str; 2] = ["AROT", "Canon"];
+
+/// ExifTool groups of a PNG or a WebP that describe the file's structure and
+/// that the audit model has no item for, dropped by name whatever their ids
+/// (SPEC-036): `RIFF` (the VP8X/VP8/VP8L structure lines and the `-u` unknown
+/// chunks, ids `0x0000` to `0x000c` and `-`) and `Trailer` (what ExifTool makes
+/// of the bytes after a PNG's `IEND`: a warning and the byte order of an `eXIf`
+/// there, never the entries; the audit side reports those bytes as a class S
+/// `Trailer` region). Measured on the `png-webp` corpus.
+pub const STRUCTURAL_GROUPS: [&str; 2] = ["RIFF", "Trailer"];
+
+/// The prefix of the per-chunk structural groups of a PNG (`PNG-pHYs`, ...),
+/// dropped by name like [`STRUCTURAL_GROUPS`]. None occurs on the `png-webp`
+/// corpus (no `pHYs` or similar chunk in it); the prefix is the measured shape
+/// of the group from a probe run outside the corpus.
+pub const PNG_CHUNK_GROUP_PREFIX: &str = "PNG-";
+
+/// The ExifTool group of a PNG's own tags: a line with a hex id is a structural
+/// `IHDR` field (dropped), a line with no id (`-`) is a text, `tIME` or similar
+/// tag (counted, [`Inventory::text_tags`]).
+pub const PNG_GROUP: &str = "PNG";
 
 /// Region kinds the audit reports that ExifTool has no reliable counterpart
 /// for (SPEC-019 class S: audit-only region kinds). On the existing inputs they
@@ -85,6 +105,10 @@ pub enum RegionKind {
 pub struct Inventory {
     pub tags: Multiset,
     pub regions: BTreeSet<RegionKind>,
+    /// A PNG's id-less tags (SPEC-036): ExifTool's `[PNG]` lines printed with
+    /// id `-` (text chunks, `tIME`, ...); ours, the audit's `Text` and `Time`
+    /// regions. Zero for every other format.
+    pub text_tags: usize,
 }
 
 /// The ExifTool group name of a tag item, from the audit's [`IfdKind`]. `Chain`
@@ -109,6 +133,9 @@ pub fn group_of(kind: IfdKind, chain_position: usize) -> String {
 /// IFDs of the same Exif block.
 pub fn ours(a: &FileAudit<'_>) -> Inventory {
     let mut inv = Inventory::default();
+    // ExifTool lists only the FIRST `eXIf` block of a PNG, even with `-a`; a
+    // WebP's every `EXIF` block (duplicates kept), like a JPEG (SPEC-036).
+    let png = a.kind() == ContainerKind::Png;
     // Per block (`None` for a bare TIFF): the container indices of the chain
     // IFDs seen so far, in order.
     let mut chains: BTreeMap<Option<usize>, Vec<usize>> = BTreeMap::new();
@@ -137,6 +164,9 @@ pub fn ours(a: &FileAudit<'_>) -> Inventory {
                 if DIRECTORY_VALUED.contains(&tag) {
                     continue;
                 }
+                if png && item.origin().block != Some(0) {
+                    continue;
+                }
                 *inv.tags.entry((group_of(ifd, position), tag)).or_insert(0) += 1;
             }
             ItemKind::Region { kind, .. } => {
@@ -145,6 +175,17 @@ pub fn ours(a: &FileAudit<'_>) -> Inventory {
                 // `embedded_regions`), not as a region presence.
                 if CLASS_S_KINDS.contains(&kind) || kind == LibRegionKind::EmbeddedImage {
                     continue;
+                }
+                // A PNG text or `tIME` chunk is one id-less `[PNG]` line of
+                // ExifTool's; a raw profile is not counted (ExifTool decodes it
+                // into other groups or lists it under `[PNG]` with other names).
+                match kind {
+                    LibRegionKind::Text | LibRegionKind::Time => {
+                        inv.text_tags += 1;
+                        continue;
+                    }
+                    LibRegionKind::RawProfile => continue,
+                    _ => {}
                 }
                 let k = match kind {
                     LibRegionKind::Xmp | LibRegionKind::ExtendedXmp => RegionKind::Xmp,
@@ -287,6 +328,11 @@ pub enum GroupClass {
     /// A Multi-Picture group (`MPF0`, `MPImage<n>`): compared by
     /// [`mpimage_groups`], never as tags.
     MultiPicture,
+    /// A PNG or WebP structural group, dropped by name ([`STRUCTURAL_GROUPS`],
+    /// [`PNG_CHUNK_GROUP_PREFIX`]).
+    Structural,
+    /// The `PNG` group: hex-id lines are structural, id-less lines are counted.
+    Png,
 }
 
 /// Classify a group name, or `None` when it is none of the three.
@@ -296,6 +342,12 @@ pub fn classify_group(group: &str) -> Option<GroupClass> {
     }
     if group.starts_with("MPF") || group.starts_with("MPImage") {
         return Some(GroupClass::MultiPicture);
+    }
+    if group == PNG_GROUP {
+        return Some(GroupClass::Png);
+    }
+    if STRUCTURAL_GROUPS.contains(&group) || group.starts_with(PNG_CHUNK_GROUP_PREFIX) {
+        return Some(GroupClass::Structural);
     }
     if group.starts_with("XMP") {
         return Some(GroupClass::Region(RegionKind::Xmp));
@@ -349,7 +401,13 @@ pub fn inventory_of(lines: &[Line]) -> Result<Inventory, ParseError> {
             Some(GroupClass::Region(kind)) => {
                 inv.regions.insert(kind);
             }
-            Some(GroupClass::Unmodelled | GroupClass::MultiPicture) => {}
+            Some(GroupClass::Png) => {
+                // Hex id: an `IHDR` field (structural). No id: counted.
+                if l.id.is_none() {
+                    inv.text_tags += 1;
+                }
+            }
+            Some(GroupClass::Unmodelled | GroupClass::MultiPicture | GroupClass::Structural) => {}
             None => {
                 return Err(ParseError::UnknownGroup {
                     group: l.group.clone(),
@@ -373,6 +431,10 @@ pub struct InventoryDiff {
     pub theirs_only: Multiset,
     pub regions_ours_only: BTreeSet<RegionKind>,
     pub regions_theirs_only: BTreeSet<RegionKind>,
+    /// How many more id-less PNG tags we count than ExifTool lists (SPEC-036).
+    pub text_ours_only: usize,
+    /// How many more id-less `[PNG]` lines ExifTool lists than we count.
+    pub text_theirs_only: usize,
 }
 
 impl InventoryDiff {
@@ -381,6 +443,8 @@ impl InventoryDiff {
             && self.theirs_only.is_empty()
             && self.regions_ours_only.is_empty()
             && self.regions_theirs_only.is_empty()
+            && self.text_ours_only == 0
+            && self.text_theirs_only == 0
     }
 }
 
@@ -403,6 +467,8 @@ pub fn diff(ours: &Inventory, theirs: &Inventory) -> InventoryDiff {
         theirs_only: multiset_minus(&theirs.tags, &ours.tags),
         regions_ours_only: ours.regions.difference(&theirs.regions).copied().collect(),
         regions_theirs_only: theirs.regions.difference(&ours.regions).copied().collect(),
+        text_ours_only: ours.text_tags.saturating_sub(theirs.text_tags),
+        text_theirs_only: theirs.text_tags.saturating_sub(ours.text_tags),
     }
 }
 
@@ -431,6 +497,18 @@ impl fmt::Display for InventoryDiff {
         }
         for r in &self.regions_theirs_only {
             line(f, format!("theirs only: region {r:?}"))?;
+        }
+        if self.text_ours_only > 0 {
+            line(
+                f,
+                format!("ours only:   text tags x{}", self.text_ours_only),
+            )?;
+        }
+        if self.text_theirs_only > 0 {
+            line(
+                f,
+                format!("theirs only: text tags x{}", self.text_theirs_only),
+            )?;
         }
         Ok(())
     }
@@ -509,6 +587,10 @@ impl Divergence {
             theirs_only: set(self.theirs_only),
             regions_ours_only: self.regions_ours_only.iter().copied().collect(),
             regions_theirs_only: self.regions_theirs_only.iter().copied().collect(),
+            // The SPEC-036 text-tag counts are pinned in Part B; none of the
+            // older entries has one.
+            text_ours_only: 0,
+            text_theirs_only: 0,
         }
     }
 
@@ -620,6 +702,10 @@ pub fn probe_text(inv: &Inventory) -> String {
     for r in &inv.regions {
         s.push_str(&format!("region\t{r:?}\n"));
     }
+    // Only when non-zero, so the output for every older input is unchanged.
+    if inv.text_tags > 0 {
+        s.push_str(&format!("text\t{}\n", inv.text_tags));
+    }
     s
 }
 
@@ -643,6 +729,9 @@ pub fn parse_probe_text(text: &str) -> Result<Inventory, String> {
                     other => return Err(format!("unknown region kind {other:?}")),
                 };
                 inv.regions.insert(kind);
+            }
+            ["text", n] => {
+                inv.text_tags = n.parse::<usize>().map_err(|e| format!("{line:?}: {e}"))?;
             }
             _ => return Err(format!("unparseable probe line {line:?}")),
         }
