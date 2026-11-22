@@ -61,81 +61,98 @@ handback:
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
-# HANDOFF-070: <Task Title — same as the spec's title>
+# HANDOFF-070: Audit wiring: PNG and WebP into exif-audit, PART B (CLI, renderers, fuzz, oracle replay, README)
+
+**FIRST STEP, before anything else:** `git checkout -b claude/spec-032-audit-b claude/spec-032-design`
+(the design branch already contains Part A, commit `3279e13` and its cost
+commits; the harness may have started your worktree from main, which does not).
 
 ## Delegation Summary
 
-One sentence: `<from_agent>` (acting as `<from_role>`) hands `SPEC-032`
-to `<to_agent>` (acting as `<to_role>`) for the **`<cycle>`** cycle.
+`claude-opus-5-5` hands `SPEC-032` Part B to `claude-sonnet-5-5`: everything in
+the spec that Part A (HANDOFF-069) did not do. Read HANDOFF-069's Handback
+first: it lists what Part A changed outside its scope and what it left.
 
 ## Context the Receiving Agent Needs
 
-The receiving agent MUST read these before starting work. Keep the
-list tight, but don't omit anything necessary.
+Read: `AGENTS.md`, `guidance/toolchain-brief.md`, DEC-020, the spec (Outputs,
+Acceptance Criteria; Part A boxes are ticked), HANDOFF-069 Handback,
+`tests/audit_png_webp.rs` (Part A tests: reuse its fixture helpers), DEC-010
+(report schema), DEC-016 or whichever DEC governs the fuzz harness invariants
+(`grep -l audit_invariants decisions/*`).
 
-### Primary
+Toolchain: `export RUSTUP_TOOLCHAIN=1.90.0 PATH="$HOME/.cargo/bin:$PATH"`;
+fuzz needs nightly; macOS has no `timeout` (`perl -e 'alarm 8; exec @ARGV' --`);
+BSD `sed -i` needs `''`; Python for multi-line edits. No panics in `src/`,
+`indexing_slicing` denied there. Never commit `decisions/INDEX.md` or
+`fuzz/Cargo.lock`. No CHANGELOG entry. No `src/png` or `src/webp` change.
 
-- **Project brief:** `./projects/PROJ-001-<slug>/brief.md`
-- **Stage:** `./projects/PROJ-001-<slug>/stages/STAGE-008-<slug>.md`
-- **Spec:** `./projects/PROJ-001-<slug>/specs/SPEC-032-<slug>.md`
-- **Reviewer brief (OPTIONAL, verify handoffs):** `./guidance/agents/<lens>.md` —
-  pick a lens if this review should look at one thing hard. Omit for a
-  general review; see `./guidance/agents/README.md`.
-- **Toolchain brief:** `./guidance/toolchain-brief.md` — this repo's test
-  framework, lint quirks, runtime globals and gotchas. Read it; it exists so a
-  cold agent doesn't rediscover them (DEC-004 rule 5).
+## Part B, in order
 
-### Decisions that apply
+1. **Renderers and report.** Text, JSON, CSV for `ContainerKind::Png|Webp`:
+   container names, status (`Unsupported` only for HEIC, GIF, BigTIFF, empty,
+   unknown), a "not strippable" statement in the text preview and an additive
+   JSON `strippable` boolean (never remove or rename an existing key; update
+   the schema doc and golden files deliberately and say which changed), regions
+   described as "located" not "valid". New golden or shape tests for a PNG and a
+   WebP report in all three formats.
+2. **CLI gate and exit codes.** `src/bin/exif-audit/read.rs` already takes
+   `Png|Webp` after Part A (verify); CLI tests in `tests/cli.rs`: a PNG with
+   GPS in `eXIf` gives the findings exit code, a clean PNG is `ok`, a WebP with
+   unreadable metadata is `issues`, HEIC is still `unsupported`; size caps
+   unchanged; no new flag.
+3. **Fuzz.** Replace the Part A STOPGAP in `fuzz/shared/audit_invariants.rs`
+   (`rederive` returns the library's own facts for Png and Webp: circular) with
+   an independent re-derivation of the invariants for both formats, from the
+   chunk or RIFF walk, as JPEG's is. Add PNG and WebP seeds to the `audit` and
+   `audit_render` seed sets (copy from `fuzz/seeds/png_chunks` and `webp_riff`,
+   through the existing generator `examples/fuzz_seeds.rs` or table, not by
+   hand), restore the two render seeds Part A turned into GIF headers to
+   meaningful PNG ones if the harness now allows, update `tests/fuzz_layout.rs`
+   pins (and put back the `audit-png-magic` plants if they are still the right
+   test). Run `just fuzz-smoke audit` and `just fuzz-smoke audit_render`
+   (60 s, nightly) clean.
+4. **Keyword record.** A fixture `png-text-keywords` (one `tEXt` chunk per
+   keyword: Title, Author, author, AUTHOR, aUTHOR, Description, Copyright,
+   copyright, Creation Time, creation time, Software, Disclaimer, Warning,
+   Source, Comment, an unknown key) built by the one fixture table in
+   `tests/support/oracle_png.rs`, recorded through `just oracle-record`
+   (`-a -G1 -s -n`, the PNG group only is fine). A test asserts the audit's
+   keyword categories agree with the record by name mapping (Author,
+   Copyright to Authorship; CreationTime to Timestamps; Software to Software;
+   the rest FreeText). The measured rule from Part A (ExifTool uppercases the
+   keyword's first letter then compares exactly) is the pinned model; a keyword
+   whose printed name differs from the model is a recorded divergence with a
+   `questions.yaml` id, never silent. Replay + perturb red-proof (name the
+   perturbed keyword).
+5. **Category-presence replay.** New `tests/audit_png_webp_oracle.rs`: for
+   every PNG and WebP oracle fixture with a committed record
+   (`tests/oracle-fixtures/exiftool/png-*.txt`, `webp-*.txt`), the audit has a
+   Gps / Xmp / Icc finding iff ExifTool printed the matching selector
+   (`GPS*`, the XMP selector, the ICC selector), except recorded divergences
+   (reuse `KNOWN_DIVERGENCES` ids for `png-*` and `webp-*`; a case you cannot
+   explain stops you: report it). Replay always; live against ExifTool gated
+   like the siblings (`DIAMOND_EXIF_REQUIRE_ORACLE`). A perturbed record makes
+   the replay name the fixture (shown red).
+6. **README** (the two "still reports ... as unsupported" sentences, the
+   "unsupported file (a PNG, say)" sentence in the exit-code section, the
+   verification line) and `guidance/questions.yaml` for any new divergence.
+7. **Gates.** `just lint`, `just test`, `just mutation-oracle`,
+   `just forbid-unsafe`, `just validate`, `just cost-audit`, `just oracle-record`
+   twice (second run no diff), both fuzz smokes. Tick the remaining acceptance
+   boxes. Commit on `claude/spec-032-audit-b` with trailer
+   `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`. No PR. In the
+   handback leave tokens null: the orchestrator records the harness figure.
 
-- `DEC-NNN` — <one-line summary of why this matters here>
-- `DEC-MMM` — <one-line summary>
+## Budget
 
-### Constraints that apply
-
-Check `./guidance/constraints.yaml` for full text. These constraints
-apply to the paths touched by this task:
-
-- `constraint-id-1` — <one-line summary>
-- `constraint-id-2` — <one-line summary>
-
-### Prior related work
-
-- `HANDOFF-YYY` — <one-line summary, if relevant>
-- `PR #NNN` — <link, if relevant>
-
-## Expected Deliverables
-
-*(For a `verify` handoff, replace this block with the verify contract below.)*
-
-- Code changes implementing SPEC-032's Acceptance Criteria.
-- All failing tests in SPEC-032 now passing.
-- Any new tests required to cover edge cases.
-- A PR against `main` from branch `feat/spec-XXX-<slug>`.
-- PR description referencing: this handoff ID, the spec ID, the stage
-  ID, the project ID, all referenced `DEC-*`, and any new `DEC-*`
-  created during implementation.
-
-### If `cycle: verify` — the verify contract
-
-You are **not** the agent that implemented this. Review it cold.
-
-- Acceptance criteria met? Tests actually pass? Build reflection answered
-  honestly (*"nothing was unclear"* is suspicious)?
-- Decision drift — run `just decisions-audit --changed`.
-- Constraint violations; non-trivial choices missing a `DEC-*`.
-- For any criterion claiming **runtime behavior** (a component registers, a hook
-  fires, a binary resolves on PATH, a config takes effect), confirm the
-  *behavioral* surface was exercised — not just the shape validated. That is the
-  defect class that escapes (AGENTS.md §12).
-- Output exactly ONE of: ✅ APPROVED / ⚠ PUNCH LIST / ❌ REJECTED.
+About 100 tool calls or 250k context. Stop and hand back what is done if
+either is near; do not loop.
 
 ## Out of Scope
 
-Explicit list of what this handoff does NOT include. If the receiving agent
-thinks any of these need to happen, they should create a new spec in
-the stage's backlog, not expand this handoff.
-
-- ...
+SPEC-036 (tag-level inventory parity); `src/png`, `src/webp`; new
+`Category`/`Disposition`; strip; new CLI flags; a release.
 
 ## Return Criteria — how to hand back
 
