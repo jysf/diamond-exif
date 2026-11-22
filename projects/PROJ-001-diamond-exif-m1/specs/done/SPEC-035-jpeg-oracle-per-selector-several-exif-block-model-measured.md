@@ -6,19 +6,19 @@
 task:
   id: SPEC-035
   type: story                      # epic | story | task | bug | chore
-  cycle: verify  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: S                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
   complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: punch-list  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
                                    #   rejects anything" stops being a hunch and becomes a number.
-  verify_rounds: []                # every verify outcome, oldest first, appended by
+  verify_rounds: [punch-list]  # every verify outcome, oldest first, appended by
                                    #   `just advance-cycle` each time the spec leaves verify.
                                    #   verify_verdict keeps only the LAST one, so a spec sent
                                    #   back and then approved read as "approved": irradiance's
@@ -79,10 +79,21 @@ cost:
       duration_minutes: 40
       recorded_at: 2026-11-22
       notes: "Harness subagent_tokens (175,052) at 6.60 USD per Mtok; the builder self-reported 6,303,399 counting cache reads, which is not spend, so the orchestrator replaced it."
+    - cycle: verify
+      handoff: HANDOFF-068
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 178261
+      estimated_usd: 1.18
+      duration_minutes: 45
+      recorded_at: 2026-11-22
+      notes: "Harness subagent_tokens (178,261) at 6.60 USD per Mtok; the verifier self-reported 5,723,009 counting cache reads, replaced by the orchestrator."
   totals:
-    tokens_total: 175052
-    estimated_usd: 1.16
-    session_count: 1
+    tokens_total: 353313
+    estimated_usd: 2.34
+    session_count: 2
+shipped_at: 2026-11-22
 ---
 
 # SPEC-035: JPEG oracle: per-selector several-Exif-block model, measured
@@ -192,34 +203,15 @@ stays recorded.
 
 ## Reflection
 
-*Appended during **ship**. Three questions, short answers.*
-
 1. **What would I do differently next time?**
-   — <answer>
+   — Ask for the Make-as-SHORT measurement as an explicit test, not a doc note: the builder skipped it and the verifier found the JPEG model has the same limit on both the last-wins and first-wins sides. The WebP fix round's per-selector grid should have been carried into the JPEG spec at design.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — No DEC. The two "later wins" notes in questions.yaml are corrected. Process: builders and verifiers self-report cache-read-inclusive token counts (6.3M and 5.7M for work the harness metered at about 175k each); the orchestrator replaced them. The handoff template's "transcript" basis invites this.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — No. The L1 limit is now documented for JPEG, WebP and the audit notes. SPEC-032 consumes the per-selector rule.
 
-4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
-   the defect-escape distribution is greppable across specs:
-   `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
-   `none` (clean first try).
-   — <one word>
-   *(Runtime/operational defects — the escape-prone class — only exist once the
-   artifact meets its real host. `escaped` here is a signal to strengthen the
-   §12 behavioral pre-flight for that surface.)*
+4. **Where was the worst defect caught?** — verify (stale doc comments and the skipped Make-as-SHORT measurement; nothing in code or records).
 
-5. **What can a user do now that they couldn't before?** — one sentence,
-   before → after; quote the confirming number if one exists, name the outcome
-   if not. Write `none` if this spec has no user-visible outcome — that is a
-   real, greppable result, not a blank. This is the line a downstream work-log's
-   `impact` field is transcribed from, and both halves are already written above
-   (## Context is the before, ## Goal is the after): confirm the prediction,
-   don't reconstruct it from memory.
-   — <answer | none>
+5. **What can a user do now that they couldn't before?** — none (test harness only); the JPEG oracle now matches ExifTool on all 20 selectors for several Exif blocks, confirmed on a 19-shape grid.

@@ -835,10 +835,13 @@ pub const JPEG_FIRST_BLOCK_WINS: &[&str] = &[
 /// For a file with at most one Exif block this equals [`read_ours`] of that
 /// block.
 ///
-/// The Make-as-SHORT limit (L1) of the WebP model was not re-measured for JPEG:
-/// a block whose value for a selector is of a type `read_one` cannot read is
-/// skipped here too, so the earlier block's value would be read where ExifTool
-/// prints the later block's. No JPEG fixture has such a block.
+/// The Make-as-SHORT limit (L1) of the WebP model holds for JPEG too (SPEC-035
+/// verify, measured): a block whose value for a selector is of a type
+/// `read_one` cannot read is skipped, so another block's value is read where
+/// ExifTool prints this block's. Last-wins side: Make as SHORT in the later
+/// block, ExifTool prints it, we read the earlier Make. First-wins side:
+/// Orientation as ASCII in the first block, ExifTool prints it, we read the
+/// later block's. No committed fixture has such a block.
 ///
 /// This is the harness's model, deliberately not a library feature: the library
 /// keeps "the first block is primary, the rest cost `ExtraExif`" (DEC-006) and
@@ -1298,8 +1301,7 @@ pub const WEBP_FIRST_BLOCK_WINS: &[&str] = &[
 /// a block that is not a TIFF is ignored, and the winner is PER SELECTOR: the
 /// FIRST block that has the tag for the four selectors in
 /// [`WEBP_FIRST_BLOCK_WINS`], the LAST block that has it for the other 16.
-/// This is neither the JPEG model ([`read_ours_jpeg`]: later wins, unmeasured
-/// per selector) nor the PNG one ([`read_ours_png`]: first block only).
+/// This is neither the JPEG model ([`read_ours_jpeg`]: per selector, SPEC-035) nor the PNG one ([`read_ours_png`]: first block only).
 ///
 /// A known limit (L1): a block whose value for a selector is of a type
 /// `read_one` cannot read (Make stored as SHORT) is skipped, so the earlier

@@ -10,7 +10,8 @@
 //!
 //! What is compared: the 20 Exif value selectors of `oracle::SELECTORS`, read
 //! through the harness's model of ExifTool's several-Exif rule
-//! (`oracle::read_ours_jpeg`: union of tags, the later block wins), plus the
+//! (`oracle::read_ours_jpeg`: union of tags, per selector the first or the last
+//! block that has the tag, SPEC-035), plus the
 //! presence of an XMP packet and an IPTC resource on the hand-built fixtures.
 //! Every measured difference is a `KNOWN_DIVERGENCES` entry, and the tests
 //! require each one to be PRESENT, so the list cannot rot.

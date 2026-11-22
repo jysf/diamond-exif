@@ -181,9 +181,9 @@ came from. **This is the number that lands in the spec** — the orchestrator
 transcribes it via `just handback-sync`, it does not estimate it.
 
 - **Tokens (total):** 175052 (harness figure)
-- **Estimated USD:** null (no rate table in the repo)
+- **Estimated USD:** 1.16 (orchestrator: harness subagent_tokens at 6.60 USD per Mtok)
 - **Duration (minutes):** 40
-- **Source of the number:** session transcript (subagents/agent-a7d76e98c445163fc.jsonl), deduplicated per message.id
+- **Source of the number:** harness subagent_tokens (orchestrator-corrected; the builder self-reported a transcript count that included cache reads)
 
 ### Drift and new artifacts
 

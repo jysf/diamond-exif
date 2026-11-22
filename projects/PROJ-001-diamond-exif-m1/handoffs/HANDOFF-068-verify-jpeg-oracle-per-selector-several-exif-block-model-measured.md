@@ -50,15 +50,15 @@ handback:
   agent: claude-opus-5-5           # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: punch-list              # verify handoffs: approved | punch-list | rejected
-  basis: transcript                # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: 5723009            # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 178261            # REAL combined count — what cost-audit reads
+  estimated_usd: 1.18              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: 45
   branch: claude/spec-035-verify
   pr: null
   completed_at: 2026-11-22         # YYYY-MM-DD
-  notes: "Transcript subagents/agent-ac3a0c14243135951.jsonl, 44 messages deduplicated by message.id, max output per message: input 87 + output 29,386 + cache creation 158,726 + cache read 5,534,810, measured before the final edit and commit calls. Cache reads dominate; if the orchestrator uses the harness subagent_tokens figure as for HANDOFF-067, replace it. estimated_usd null: docs/cost-tracking.md has no Opus 5.5 rate."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "Harness subagent_tokens (178,261) at 6.60 USD per Mtok; the verifier self-reported 5,723,009 counting cache reads, replaced by the orchestrator."
+  synced_at: 2026-11-22
 ---
 
 # HANDOFF-068: JPEG oracle: per-selector several-Exif-block model, measured
@@ -217,7 +217,7 @@ verdict.
 
 ### Cost self-report
 
-- **Tokens (total):** 5,723,009 (input 87, output 29,386, cache creation 158,726, cache read
+- **Tokens (total):** 178,261 (harness figure; orchestrator-corrected; verifier self-report was 5,723,009 incl. cache reads) — was (input 87, output 29,386, cache creation 158,726, cache read
   5,534,810), measured before the final edit and commit calls
 - **Estimated USD:** null (docs/cost-tracking.md has no Opus 5.5 rate)
 - **Duration (minutes):** 45

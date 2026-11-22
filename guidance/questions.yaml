@@ -230,7 +230,7 @@ questions:
       It printed no warning for either. CORRECTED (SPEC-035, measured on two full
       blocks that differ in all 20 selectors, both orders: records
       tests/oracle-fixtures/exiftool/jpeg-exif-full-one-two.txt and
-      jpeg-exif-full-two-one.txt): the winner is PER SELECTOR. The FIRST block wins
+      jpeg-exif-full-two-one.txt): the winner is PER SELECTOR. The first block THAT HAS THE TAG wins
       IFD0:ImageWidth, IFD0:ImageHeight, IFD0:Orientation and IFD0:XResolution;
       the LAST block wins the other 16 (the same split as WebP). The earlier "later
       wins" statement held for Make and Model only, the two tags SPEC-011's
