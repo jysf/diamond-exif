@@ -233,6 +233,39 @@ pub fn png_webp_extras() -> Vec<(String, Vec<u8>)> {
         "png-extra-raw-exif-gps-itxt".to_string(),
         oracle_png::png(&[oracle_png::itxt(RAW_EXIF_KEYWORD, 1, &body)], &[], &[]),
     ));
+    // SPEC-036 fix round (H1): the keyword spellings ExifTool 13.55 decodes
+    // (`Raw profile type` and all-lower-case `raw profile type`, any text
+    // chunk) and one it does not (all caps), each with GPS.
+    let lower: &[u8] = b"raw profile type exif";
+    out.push((
+        "png-extra-raw-lower-exif-gps-text".to_string(),
+        oracle_png::png(&[oracle_png::text(lower, &body)], &[], &[]),
+    ));
+    out.push((
+        "png-extra-raw-lower-exif-gps-ztxt".to_string(),
+        oracle_png::png(&[oracle_png::ztxt(lower, &body)], &[], &[]),
+    ));
+    out.push((
+        "png-extra-raw-lower-exif-gps-itxt".to_string(),
+        oracle_png::png(&[oracle_png::itxt(lower, 1, &body)], &[], &[]),
+    ));
+    let app1_body = oracle_png::raw_profile_body("APP1", &data);
+    out.push((
+        "png-extra-raw-lower-app1-gps-text".to_string(),
+        oracle_png::png(
+            &[oracle_png::text(b"raw profile type APP1", &app1_body)],
+            &[],
+            &[],
+        ),
+    ));
+    out.push((
+        "png-extra-raw-allcaps-exif-gps-text".to_string(),
+        oracle_png::png(
+            &[oracle_png::text(b"RAW PROFILE TYPE EXIF", &body)],
+            &[],
+            &[],
+        ),
+    ));
     out
 }
 

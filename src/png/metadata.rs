@@ -65,8 +65,15 @@ const EXIF_PREFIX: &[u8] = b"Exif\0\0";
 /// The text keyword that marks XMP in `iTXt` and `tEXt`.
 const XMP_KEYWORD: &[u8] = b"XML:com.adobe.xmp";
 
-/// The text keyword prefix of an ImageMagick-style raw profile.
-const RAW_PROFILE_PREFIX: &[u8] = b"Raw profile type ";
+/// The text keyword prefixes of an ImageMagick-style raw profile.
+///
+/// Exactly these two spellings, measured on ExifTool 13.55 (3 text chunk
+/// kinds, 5 prefix cases, 14 names): it decodes `Raw profile type exif` and
+/// `raw profile type exif` (the all-lower-case form is looked up in lower
+/// case), and nothing else. `Raw Profile Type`, `RAW PROFILE TYPE`, a doubled
+/// or missing trailing space, and any other mix print an ordinary text tag.
+/// The profile name after the prefix does not change which prefixes count.
+const RAW_PROFILE_PREFIXES: [&[u8]; 2] = [b"Raw profile type ", b"raw profile type "];
 
 /// Bytes of chunk framing before the data: length and type.
 const CHUNK_HEAD: usize = 8;
@@ -163,7 +170,9 @@ pub enum PngRegion<'a> {
         /// The chunk is after `IEND`.
         after_iend: bool,
     },
-    /// An ImageMagick-style `Raw profile type <name>` text chunk. Its text is
+    /// An ImageMagick-style `Raw profile type <name>` text chunk (the keyword
+    /// is `Raw profile type ` or the all-lower-case `raw profile type `, the
+    /// two spellings ExifTool decodes). Its text is
     /// hex, and zlib-compressed first when `compressed`; neither is decoded.
     RawProfile {
         /// Input offset of the chunk.
@@ -497,7 +506,10 @@ impl<'a> Extract<'a> {
                         after_idat,
                         after_iend,
                     }
-                } else if let Some(profile) = keyword.strip_prefix(RAW_PROFILE_PREFIX) {
+                } else if let Some(profile) = RAW_PROFILE_PREFIXES
+                    .iter()
+                    .find_map(|prefix| keyword.strip_prefix(*prefix))
+                {
                     PngRegion::RawProfile {
                         offset,
                         profile,

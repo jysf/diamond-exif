@@ -1904,8 +1904,8 @@ fn line(group: &str, id: Option<u32>, name: &str) -> Line {
     }
 }
 
-/// The `png-webp` corpus: 571 inputs (555 of Part A and the 16 hostile extras of
-/// Part B), 317 distinct by content; the five older
+/// The `png-webp` corpus: 576 inputs (555 of Part A and the 21 hostile extras of
+/// Part B and the fix round), 322 distinct by content; the five older
 /// corpora are untouched and `png-webp` is not one of them.
 #[test]
 fn png_webp_corpus_counts_are_pinned() {
@@ -1913,8 +1913,8 @@ fn png_webp_corpus_counts_are_pinned() {
     assert!(!inventory_corpus::CORPORA.contains(&"png-webp"));
     assert!(inventory_corpus::NEW_CORPORA.contains(&"png-webp"));
     let all = png_webp_inputs();
-    assert_eq!(all.len(), 571, "inputs of png-webp");
-    assert_eq!(inventory_corpus::distinct(&all).len(), 317, "distinct");
+    assert_eq!(all.len(), 576, "inputs of png-webp");
+    assert_eq!(inventory_corpus::distinct(&all).len(), 322, "distinct");
     // Every name is unique (a record section is keyed by it).
     let names: BTreeSet<&str> = all.iter().map(|i| i.name.as_str()).collect();
     assert_eq!(names.len(), all.len());
@@ -2251,7 +2251,7 @@ fn png_webp_live_parity() {
         checked += 1;
     }
     assert!(errors.is_empty(), "{}", errors.join("\n"));
-    assert_eq!(checked, 317, "every distinct png-webp input runs live");
+    assert_eq!(checked, 322, "every distinct png-webp input runs live");
 }
 
 /// The dropped `[PNG]` names are measured, listed as constants and pinned: the
@@ -2425,11 +2425,7 @@ fn text_and_time_count_agrees() {
             )
         })
         .collect();
-    assert_eq!(
-        pinned.len(),
-        10,
-        "7 bad text, 2 after IEND, 1 raw keyword case"
-    );
+    assert_eq!(pinned.len(), 9, "7 bad text, 2 after IEND");
     for d in png_webp_distinct() {
         if inventory_corpus::is_not_run(&d) {
             continue;
@@ -2473,7 +2469,7 @@ fn every_png_webp_divergence_has_a_question_entry() {
     let text = std::fs::read_to_string(root().join("guidance/questions.yaml"))
         .expect("read guidance/questions.yaml");
     let rows = png_webp_rows();
-    assert_eq!(rows.len(), 56, "53 of the first replay and 3 of the extras");
+    assert_eq!(rows.len(), 59, "52 of the first replay and 7 of the extras");
     let mut ids = BTreeSet::new();
     for k in rows {
         assert!(k.fixture.starts_with("png-webp/"), "{}", k.fixture);
@@ -2493,7 +2489,6 @@ fn every_png_webp_divergence_has_a_question_entry() {
             "png-after-iend-in-trailer",
             "png-bad-text-chunk-not-listed",
             "png-iccp-located-no-exiftool-group",
-            "png-raw-profile-keyword-case",
             "png-raw-profile-not-decoded",
             "png-xmp-content-not-parsed",
             "png-xmp-flag-2-located-not-read",
@@ -2518,9 +2513,9 @@ fn png_webp_hiding_rows_are_never_clean() {
             assert!(!audit(&b).health().clean, "{}", k.fixture);
         }
     }
-    // 10 raw profile, 7 bad text, 1 cap, 3 other forms (the raw keyword case
-    // and the after-IEND rows list more, not less, than ExifTool).
-    assert_eq!(hiding, 21);
+    // 14 raw profile, 7 bad text, 1 cap, 3 other forms (the after-IEND rows
+    // list more, not less, than ExifTool).
+    assert_eq!(hiding, 25);
 }
 
 /// A pinned divergence that stops holding fails, and one whose difference

@@ -1675,21 +1675,23 @@ questions:
       (KNOWN_DIVERGENCES, Class P).
 
   - id: png-raw-profile-keyword-case
-    question: "ExifTool 13.55 treats the keyword \"raw profile type exif\" (lower case) as a raw profile and prints EXIF_Profile, where the audit lists the chunk as an ordinary Text region: should the audit's raw-profile keyword match be case-insensitive?"
+    question: "ExifTool 13.55 treats the keyword \"raw profile type exif\" (lower case) as a raw profile and decodes it, where the audit listed the chunk as an ordinary Text region: should the audit's raw-profile keyword match be case-insensitive?"
     priority: low
-    status: open
+    status: answered
     raised_by: claude-sonnet-5-5
     raised_at: 2026-11-22
     assigned_to: null
     notes: |
-      DIVERGENCE (SPEC-036). Command: exiftool -a -u -G1 -H -s <file> (the png-webp inventory record, ExifTool 13.55, tests/oracle-fixtures/exiftool-inventory/png-webp.txt).
-      Measured on png-shape-meta-raw-lowercase (a tEXt chunk with the keyword in lower case next
-      to a tEXt XML:com.adobe.xmp): ExifTool prints [PNG] Xmlcomadobexmp and [PNG] EXIF_Profile
-      (a raw-profile tag, dropped by name from the text count); the audit lists two Text regions
-      (no RawProfile), so it counts one text tag more than ExifTool (text tags x1 ours-only).
-      Right side: neither is wrong for an audit (a Text region is still located and reported);
-      the raw profile is not decoded either way. Pinned in tests/support/inventory.rs
-      (KNOWN_DIVERGENCES, Class P).
+      ANSWERED (SPEC-036 fix round, HANDOFF-076). The first text of this entry said the raw profile
+      "is not decoded either way"; that was false. ExifTool decodes it: a tEXt or zTXt chunk with
+      the keyword "raw profile type exif" and a valid Exif payload makes it list IFD0 and GPS
+      entries, while the audit called the file clean. That was a real audit bug (DEC-020 clause 5
+      makes any raw profile unreadable). Measured rule (ExifTool 13.55, three text chunk kinds):
+      exactly "Raw profile type " and the all-lower-case "raw profile type " are raw profiles; every
+      other case mix prints an ordinary text tag. src/png/metadata.rs now matches those two
+      prefixes (not case-insensitively, which would be wider than ExifTool). The divergence is gone;
+      the files fall under png-raw-profile-not-decoded like the upper-case ones. See DEC-018,
+      "Clarifications from the SPEC-036 verify".
 
   - id: png-xmp-content-not-parsed
     question: "ExifTool 13.55 prints no XMP group for a PNG XML:com.adobe.xmp chunk it cannot use (empty, invalid, an empty xmpmeta, a zTXt that does not inflate), where the audit locates an Xmp region: is located-not-valid the intended side, as for the flag-2 iTXt?"
