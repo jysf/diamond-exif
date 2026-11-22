@@ -42,7 +42,7 @@ repo:
 #                   Code tab reports context size, not spend.
 #   API           → the `usage` objects, summed (basis: api-usage)
 #   another agent → whatever your harness reports as total tokens
-# If your platform genuinely exposes NO token count, set tokens_total: null AND
+# If your platform genuinely exposes NO token count, set tokens_total: 237190 AND
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
@@ -52,12 +52,12 @@ handback:
   verdict: null                    # verify handoffs: approved | punch-list | rejected
   basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
   tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: null
+  estimated_usd: 1.57              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  duration_minutes: 21
   branch: claude/spec-032-audit-a
   pr: null
   completed_at: 2026-11-22         # YYYY-MM-DD
-  notes: "Part A only. tokens_total, estimated_usd and duration_minutes are left null: the orchestrator replaces them with the harness figure (a subagent cannot read its own transcript)."   # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  notes: "Part A only; cost is the harness subagent_tokens figure recorded by the orchestrator."   # if unusual; double-quote it — an unquoted " #" starts a YAML comment
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -182,10 +182,10 @@ Mirror what you put in the `handback:` front-matter, and say where the number
 came from. **This is the number that lands in the spec** — the orchestrator
 transcribes it via `just handback-sync`, it does not estimate it.
 
-- **Tokens (total):** null: the orchestrator replaces it with the harness figure
-- **Estimated USD:** null (same reason)
-- **Duration (minutes):** null (same reason)
-- **Source of the number:** none available to the subagent; harness report by the orchestrator
+- **Tokens (total):** 237190 (harness subagent_tokens)
+- **Estimated USD:** 1.57 (6.60 USD per Mtok)
+- **Duration (minutes):** 21
+- **Source of the number:** harness subagent_tokens, recorded by the orchestrator
 
 ### Drift and new artifacts
 
