@@ -81,7 +81,7 @@ STAGE-008 shipped the readers and the audit, and the audit's preview states plai
 
 ## Spec Backlog
 
-- [ ] SPEC-036 (frame) — [M] Tag-level inventory parity against ExifTool for PNG and WebP (carried from STAGE-008)
+- [ ] SPEC-036 (design) — [L, two builder parts] Tag-level inventory parity against ExifTool for PNG and WebP (carried from STAGE-008)
 - [ ] SPEC-037 (frame) — [L] PNG strip: whole-chunk removal under StripPolicy, `eXIf` decision, self-verify, `rewrite_png` fuzz, DEC-021
 - [ ] SPEC-038 (frame) — [L] WebP strip: RIFF-level removal, size and `VP8X` rewrite, self-verify, `rewrite_webp` fuzz, DEC-022
 - [ ] SPEC-039 (frame) — [M] ExifTool write parity (I3) for both strips; audit and CLI switch-over

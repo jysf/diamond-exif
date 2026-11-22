@@ -6,10 +6,10 @@
 task:
   id: SPEC-036
   type: story                      # epic | story | task | bug | chore
-  cycle: design                    # frame | design | build | verify | ship
+  cycle: design  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
-  complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
+  complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
   complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
@@ -36,9 +36,9 @@ handoff:
   created_at: null
 
 references:
-  decisions: []                    # [DEC-NNN, DEC-MMM]
+  decisions: [DEC-020]                 # [DEC-NNN, DEC-MMM]
   constraints: []                  # [constraint-id-1, constraint-id-2]
-  related_specs: [SPEC-032, SPEC-031, SPEC-034]             # [SPEC-NNN]
+  related_specs: [SPEC-013, SPEC-019, SPEC-031, SPEC-032, SPEC-034]             # [SPEC-NNN]
 
 # Blocking dependencies: specs that must SHIP before this one can start.
 # Distinct from references.related_specs (informational). Feeds the ready-set
@@ -67,7 +67,7 @@ cost:
   # design. Never a gate — its only job is to be compared with the actual
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
-  tokens_estimate: null
+  tokens_estimate: 600000
   sessions: []
   totals:
     tokens_total: 0
@@ -77,27 +77,67 @@ cost:
 
 # SPEC-036: Tag-level inventory parity against ExifTool for PNG and WebP (carried from STAGE-008)
 
-> **OUTLINE, `cycle: frame`.** This spec exists so its ID is stable and
-> siblings can declare `depends_on`. Capture **scope** (Context / Goal /
-> Non-Goals) and **dependencies** only: the *approach* is designed just in time
-> when this moves to `design`. Do not pre-design it here.
-
 ## Context
 
-Carried from STAGE-008 (deferred at its close). The inventory oracle (`tests/inventory_oracle.rs`, `tests/support/inventory_corpus.rs`) compares our per-entry inventory with ExifTool's group and tag ids for JPEG and TIFF. PNG and WebP are audited since SPEC-032 but only their category presence is checked. The strip specs below verify an output by re-auditing it, so the inventory they rely on must itself be checked against ExifTool first.
+Carried from STAGE-008. The inventory oracle (SPEC-013, SPEC-019) compares the audit's items with ExifTool's `-a -u -G1 -H -s` listing as a **multiset of `(group, tag id)`** plus a **set of region kinds**, with every difference either a pinned divergence or a failure. It covers TIFF and JPEG only. PNG and WebP have been audited since SPEC-032, but only the presence of GPS, XMP and ICC findings is checked against ExifTool. The strips in STAGE-010 verify their output by re-auditing it, so the audit's inventory of these two formats must itself be checked, tag by tag, first. SPEC-032 left the PNG and WebP copies and shapes in `fuzz/seeds/audit` out of the existing five corpora for this reason.
+
+Measured at design (ExifTool 13.55, `-a -u -G1 -H -s`):
+- A PNG prints IHDR tags in group `PNG` with hex ids (`0x0000` ImageWidth to `0x000c` Interlace); text and `tIME` tags in group `PNG` with id `-` (no id); other structural chunks in groups `PNG-<chunk>` (e.g. `PNG-pHYs`, ids `0x0000`...).
+- A two-`eXIf` PNG lists only the FIRST block's entries even with `-a`; a two-`EXIF` WebP lists BOTH blocks' entries (duplicates kept). WebP structure lines are group `RIFF` (`WebP_Flags`, `ImageWidth`, `AlphaIsUsed`, ...).
+- Exif entries inside `eXIf` and `EXIF` appear in the usual `IFD0`, `ExifIFD`, `GPS`, ... groups.
 
 ## Goal
 
-Tag-level inventory parity for PNG and WebP: the Exif entries ExifTool lists for the `eXIf` and `EXIF` chunks, and the region groups it prints (`PNG`, `XMP`, `ICC_Profile`, text keywords), compared with the audit's items on the PNG and WebP fixtures and seeds, with the comparator red-proofed and every divergence recorded.
+A third inventory corpus, `png-webp`, run through the existing comparator extended for these two formats: Exif entries as a multiset of `(group, id)`, XMP and ICC as presence, the PNG text and `tIME` tags as a count, structural groups dropped by name, everything else a pinned divergence with a measured cause and a `guidance/questions.yaml` id. Replay always, live against ExifTool gated like its siblings, comparator red-proofed (replay-and-perturb and mutated-copy).
+
+## Inputs
+
+- `tests/support/inventory.rs` (comparator; `#[path]`-included by the probe crate, so it must stay free of other support modules), `inventory_corpus.rs`, `tests/inventory_oracle.rs` (the SPEC-019 `real-shapes` section is the template), `tests/mutation_oracle.rs`, `examples/oracle_record.rs`
+- Fixture sources: `tests/support/oracle_png.rs` (fixtures, `TEXT_KEYWORDS`), `oracle_webp.rs`, `png_shapes.rs`, `webp_shapes.rs`, the committed seeds `fuzz/seeds/{png_chunks,webp_riff,audit}`
+- `src/audit/mod.rs` (`audit_png`, `audit_webp`, `Origin`, `RegionKind::{Text, RawProfile, Time, ...}`), DEC-020, DEC-018, DEC-019
+- ExifTool 13.55 (run, never read), the existing `KNOWN_DIVERGENCES` and questions for png/webp
+
+## Outputs
+
+- **Modified `tests/support/inventory.rs`:** group classification for `PNG` (hex id: structural; id `-`: counted text/time tag), `PNG-*` and `RIFF` (structural, dropped by name, listed in a constant like `UNMODELLED_GROUPS`), the XMP and ICC groups for these formats as region presence; a `text_tags` count on `Inventory`; `ours` taking a per-format block rule (PNG: only the first `eXIf` block's tag items, because ExifTool reads only the first; WebP: every listed block) and counting our `Text` and `Time` regions against ExifTool's `PNG` id-less lines; `Trailer`, `OtherApp`, `Comment` stay class S. The classification is MEASURED: Part A lists every `(group, id-or-dash)` ExifTool prints across the corpus before anything is dropped, and the list is pinned.
+- **Modified `tests/support/inventory_corpus.rs`:** `png-webp` in `NEW_CORPORA` (its own record, so the 178 existing results and counts cannot move, as SPEC-019 did); extension by corpus (`png` / `webp`, the existing `jpg`/`tif` rule untouched for the five old corpora).
+- **Modified `examples/oracle_record.rs`:** records the new corpus to `tests/oracle-fixtures/exiftool-inventory/png-webp.txt` (idempotent).
+- **Modified `tests/inventory_oracle.rs`, `tests/mutation_oracle.rs`:** replay, live and red-proof tests for the new corpus; pins for the new counts (the old pins unchanged).
+- **Modified `src/audit` only if a real bug is found**: record it and fix in a fix round, never silently.
+- **Modified `guidance/questions.yaml`:** an id per new divergence class.
+
+## Acceptance Criteria
+
+- [ ] The corpus holds every PNG and WebP oracle fixture, the `png-text-keywords` table, the PNG and WebP shapes and the committed `png_chunks`, `webp_riff` and `audit` PNG/WebP seeds, deduplicated by bytes; the count is pinned.
+- [ ] Every `(group, id)` ExifTool prints on the corpus is either compared, counted or dropped by a named constant; an unknown group is a parse error, not a silent drop.
+- [ ] For every input the audit and ExifTool agree on the Exif multiset, XMP and ICC presence and the text/time count, or the difference equals a pinned `KNOWN_DIVERGENCES` entry (exact multiset difference, measured cause, `questions.yaml` id); a divergence that stops holding fails.
+- [ ] PNG: only the first `eXIf` block is compared and the later blocks are asserted present in the audit (a test), not silently dropped; WebP: every listed block compared, the 17th-block case pinned (`webp-exif-block-cap`).
+- [ ] Hostile edges measured and covered (design variant grid, in the Failing Tests): raw-profile exif (with and without GPS), `tIME` lengths 0 to 12, empty regions, nameless empty `iCCP`, text after `IEND`, `eXIf` before and after `IDAT` and after `IEND`, XMP in `iTXt`/`tEXt`/`zTXt`/compressed, keyword spellings, WebP VP8X flags wrong, odd chunk without pad, animated, trailing bytes, 16 vs 17 blocks.
+- [ ] Red-proofs: replay-and-perturb on the new record names the perturbed `(group, id)`; at least three mutated-copy proofs (e.g. a `Text` region counted twice, `Time` items dropped, the PNG first-block rule removed) each fail the new tests; control first, one injection, marker not leaked; `just mutation-oracle` green.
+- [ ] No change to any existing inventory record, count or test result; `just oracle-record` idempotent; `just lint`, `just test`, `just forbid-unsafe`, `just validate`, `just cost-audit` green on the pinned 1.90.0.
+
+## Failing Tests
+
+- **`tests/inventory_oracle.rs`** (new section, SPEC-036): corpus pins; `png_webp_replay_is_clean_or_pinned`; `png_webp_live_parity` (gated); `png_first_block_rule_and_later_blocks_listed`; `webp_every_block_compared_and_cap_pinned`; `text_and_time_count_agrees`; `unknown_group_is_a_parse_error`; `every_png_webp_divergence_has_a_question_entry`; `a_png_webp_divergence_that_stops_being_one_fails`.
+- **Unit tests in `tests/support/inventory.rs`'s consumers:** classifier cases for `PNG` hex, `PNG` dash, `PNG-pHYs`, `RIFF`.
+- **`tests/mutation_oracle.rs`:** three mutants as above.
 
 ## Non-Goals
 
-- Strip or any writer change; new audit behaviour (a difference found here is recorded or fixed in its own spec).
-- Inflating compressed text or raw profiles to list their tags.
+- Strip or any writer change; new audit behaviour (a real bug found here is fixed in its own round, recorded).
+- Listing tags inside compressed text, raw profiles, XMP or ICC.
+- Value comparison (this is the tag-level inventory, not values).
+- Changing the five existing corpora, their records or counts.
 
 ## Notes for the Implementer
 
-SPEC-032 excluded the PNG and WebP copies and shapes in `fuzz/seeds/audit` from the inventory corpus (`tests/support/inventory_corpus.rs`) because this spec owns them. The audit lists every Exif block; ExifTool reads only the first PNG `eXIf` and merges WebP blocks (per-selector rule, SPEC-034): decide per case what is a recorded difference. Hostile edges to measure in the design (SPEC-032 lesson): raw-profile exif, `tIME` lengths, empty regions, 17th WebP block.
+- **Two builder parts so a stop is clean.** Part A: comparator classification, corpus, recorder, the committed record and the measured group list (commit). Part B: replay/live/divergence tests, red-proofs, questions, docs. Part A hands back the measured table of every group and id and every raw difference before any divergence is pinned.
+- Follow SPEC-019's `real-shapes` wiring exactly (own record, own tests, counts separate).
+- `inventory.rs` is copied next to the probe crate: no new `use` of other support modules.
+- Per-format model lives in the harness, deliberately not a library feature (as `read_ours_jpeg`/`read_ours_webp`).
+- Known differences to expect, not hide: ExifTool decodes raw profiles into groups the audit does not list (`png-raw-profile-not-decoded`; the audit marks such a file unreadable); a 17th WebP block (`webp-exif-block-cap`); ICC and XMP regions ExifTool validates and the audit locates (`webp-iccp-profile-not-validated`, `webp-xmp-content-not-parsed`); `creation time` keyword spelling (`png-creation-time-keyword-case`); a nameless length-0 `iCCP` (walk issue, no located region).
+- ExifTool: `perl -e 'alarm 8; exec @ARGV' -- exiftool ...` (macOS has no `timeout`); never run on an input that may not return without the limit; probe each new hostile shape under the limit first.
+- Budget about 100 tool calls or 250k context per agent; expect two builder agents.
 
 ---
 
