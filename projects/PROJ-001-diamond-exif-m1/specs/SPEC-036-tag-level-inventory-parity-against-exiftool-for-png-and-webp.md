@@ -6,7 +6,7 @@
 task:
   id: SPEC-036
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: verify  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -68,11 +68,31 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: 600000
-  sessions: []
+  sessions:
+    - cycle: build
+      handoff: HANDOFF-073
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 194639
+      estimated_usd: 1.28
+      duration_minutes: null
+      recorded_at: 2026-11-22
+      notes: "transcribed from HANDOFF-073 by handback-sync"
+    - cycle: build
+      handoff: HANDOFF-074
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 271968
+      estimated_usd: 1.79
+      duration_minutes: null
+      recorded_at: 2026-11-22
+      notes: "Part B done: 56 png-webp divergences pinned (Class P), replay/live/red-proof tests, 5 new questions; tokens_total left null by instruction, the orchestrator measures it."
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 466607
+    estimated_usd: 3.07
+    session_count: 2
 ---
 
 # SPEC-036: Tag-level inventory parity against ExifTool for PNG and WebP (carried from STAGE-008)

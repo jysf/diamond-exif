@@ -50,15 +50,15 @@ handback:
   agent: claude-sonnet-5-5                    # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  basis: agent-result                      # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 271968               # REAL combined count — what cost-audit reads
+  estimated_usd: 1.79              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
   branch: claude/spec-036-part-b
   pr: null
   completed_at: 2026-11-22             # YYYY-MM-DD
   notes: "Part B done: 56 png-webp divergences pinned (Class P), replay/live/red-proof tests, 5 new questions; tokens_total left null by instruction, the orchestrator measures it."  # if unusual; double-quote it — an unquoted " #" starts a YAML comment
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-22
 ---
 
 # HANDOFF-074: Tag-level inventory parity for PNG and WebP, PART B (decisions, tests, divergences, red-proofs)
@@ -212,8 +212,8 @@ Mirror what you put in the `handback:` front-matter, and say where the number
 came from. **This is the number that lands in the spec** — the orchestrator
 transcribes it via `just handback-sync`, it does not estimate it.
 
-- **Tokens (total):** null (left to the orchestrator by instruction)
-- **Estimated USD:** <number, or null>
+- **Tokens (total):** 271968 (harness subagent_tokens)
+- **Estimated USD:** 1.79
 - **Duration (minutes):** <estimate>
 - **Source of the number:** `/cost` | API `usage` | harness report | none available
 
