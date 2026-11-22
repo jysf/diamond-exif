@@ -6,7 +6,7 @@
 task:
   id: SPEC-032
   type: story                      # epic | story | task | bug | chore
-  cycle: frame                     # frame | design | build | verify | ship
+  cycle: design  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -36,9 +36,9 @@ handoff:
   created_at: null
 
 references:
-  decisions: []                    # [DEC-NNN, DEC-MMM]
+  decisions: [DEC-020]                 # [DEC-NNN, DEC-MMM]
   constraints: []                  # [constraint-id-1, constraint-id-2]
-  related_specs: []                # [SPEC-NNN]
+  related_specs: [SPEC-029, SPEC-030, SPEC-031, SPEC-034, SPEC-035, SPEC-033]             # [SPEC-NNN]
 
 # Blocking dependencies: specs that must SHIP before this one can start.
 # Distinct from references.related_specs (informational). Feeds the ready-set
@@ -67,7 +67,7 @@ cost:
   # design. Never a gate — its only job is to be compared with the actual
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
-  tokens_estimate: null
+  tokens_estimate: 650000
   sessions: []
   totals:
     tokens_total: 0
@@ -75,70 +75,154 @@ cost:
     session_count: 0
 ---
 
-# SPEC-032: Audit wiring: sniff to audit for both formats, category rows, preview and fail-closed refusal in the writer, renderers, README, CHANGELOG
-
-> **OUTLINE — `cycle: frame`.** This spec exists so its ID is stable and
-> siblings can declare `depends_on: [SPEC-032]`. Capture **scope** (Context /
-> Goal / Non-Goals) and **dependencies** only — the *approach* is designed
-> just-in-time when this moves to `design`. Do not pre-design it here.
+# SPEC-032: Audit wiring: PNG and WebP into exif-audit (kinds, text-keyword categories, honest preview, CLI)
 
 ## Context
 
-Fifth and last spec of STAGE-008. `src/audit/sniff.rs` already recognises PNG and WebP, but `exif-audit` reports them as unsupported and the writer has no refusal path for them.
+Last spec of STAGE-008. The readers exist and are oracle-checked (SPEC-028 to
+031, 034); `sniff` names both formats and `write::strip` already refuses them,
+but `audit()`, the CLI read gate (`src/bin/exif-audit/read.rs`) and the
+renderers still call PNG and WebP unsupported. Design is in **DEC-020** (read
+it first; it carries the decisions below). Measured at design (ExifTool 13.55):
+PNG `tEXt` keywords print as `PNG:Title`, `Author`, `Description`, `Copyright`,
+`CreationTime` (keyword `Creation Time`), `Software`, `Disclaimer`,
+`PNGWarning` (keyword `Warning`), `Source`, `Comment`; unknown keywords print as
+their own names; lowercase `author` printed as `Author`, `AUTHOR` as `AUTHOR`;
+a `tIME` chunk prints `PNG:ModifyDate`; `pHYs` prints non-personal tags.
 
 ## Goal
 
-Dispatch PNG and WebP into the audit: inventory and PII findings with category rows for the new region kinds (DEC-008 amendment), inventory parity against ExifTool group/tag ids on fixtures, text/JSON/CSV output, a strip preview that marks both formats not strippable and the writer's fail-closed refusal, plus README and CHANGELOG lines and fuzz seeds for the audit targets.
+`exif-audit` audits PNG and WebP: every Exif block inventoried (nothing merged),
+located XMP, ICC, text, raw-profile and `tIME` regions as items and findings
+under existing categories, text keywords categorised, a preview that never
+claims a removal, the writer still refusing both, and renderers, CLI gate,
+fuzz seeds and README updated.
 
 ## Inputs
 
-What the implementer will read or consume.
-
-- **Files to read:** `path/to/file.ext` — why
-- **External APIs:** <name, docs link, auth requirements>
-- **Related code paths:** `src/some/module/`
+- DEC-020, DEC-008, DEC-009, DEC-010, DEC-017, DEC-018, DEC-019
+- `src/audit/{mod,category,preview,sniff}.rs` (`audit_jpeg` is the model)
+- `src/png/metadata.rs` (`PngRegion`, `PngExifBlock`, `PngMetadata`),
+  `src/webp/metadata.rs`, `src/png/mod.rs` (`ChunkKind`, `trailer()`)
+- `src/report/{mod,text,json,csv}.rs`, `src/bin/exif-audit/read.rs`,
+  `src/write/mod.rs` (`strip`)
+- Fixture builders: `tests/support/oracle_png.rs`, `oracle_webp.rs`,
+  `png_shapes.rs`, `webp_shapes.rs`; committed records
+  `tests/oracle-fixtures/exiftool/{png,webp}-*.txt`
+- `guidance/questions.yaml` entries cited by `KNOWN_DIVERGENCES` for the two
+  formats
 
 ## Outputs
 
-What the implementer will produce.
-
-- **Files created:** `path/to/new.ext` — purpose
-- **Files modified:** `path/to/existing.ext` — what changes
-- **New endpoints / functions / components:** <names and signatures>
-- **New flags / options:** each flag's accepted values **and its default** — an
-  unstated default makes the implementer guess.
-- **Database changes:** <migrations, if any>
+- **Modified `src/audit/`:** `ContainerKind::{Png, Webp}` (enum becomes
+  `#[non_exhaustive]`); `RegionKind::{Text, RawProfile, Time}`; `audit_png` and
+  `audit_webp` beside `audit_jpeg`; `region_category` rows plus a
+  `text_keyword_category(keyword: &[u8]) -> Category` table (data, one row per
+  keyword) in `category.rs`; `Preview::strippable()`; docs updated (module
+  doc, `Health::jpeg_issues` = container-layer issues for every format,
+  `Origin::after_scan` = after the image data).
+- **Modified `src/write/mod.rs`:** refusal carries `ContainerKind::Png|Webp`.
+- **Modified `src/report/*`, `src/bin/exif-audit/read.rs`:** read gate takes
+  `Png|Webp`; status `Unsupported` only for HEIC, GIF, BigTIFF, empty,
+  unknown; `container_name`; text, JSON (additive `strippable`) and CSV say
+  "not strippable" for these formats and "located" not "valid" for regions.
+- **Fuzz:** PNG and WebP seeds added to `audit` and `audit_render` (copied from
+  the existing `png_chunks` and `webp_riff` seeds, generated by the one
+  existing script or table), `tests/fuzz_layout.rs` pins updated.
+- **Tests and records:** per-shape unit tests, keyword table test, a committed
+  `png-text-keywords` fixture and record (tag names ExifTool prints for the
+  keyword set), the category-presence replay and live tests, red-proofs.
+- **Docs:** README (the two "still reports ... as unsupported" statements, the
+  verification and exit-code lines), `guidance/questions.yaml` if a new
+  divergence appears. **No CHANGELOG entry** (`tests/release_layout.rs` pins
+  `[Unreleased]` empty).
 
 ## Acceptance Criteria
 
-Testable outcomes. Each must map to at least one test. Cover happy
-path, error cases, edge cases.
-
-- [ ] Criterion 1 (testable)
-- [ ] Criterion 2 (testable)
-- [ ] Criterion 3 (testable)
+- [ ] `audit()` returns `ContainerKind::Png` / `Webp` for those inputs; every
+      other sniffed kind is unchanged; truncated or `Err` parses are
+      `unreadable(kind)`, never clean.
+- [ ] Every parsed Exif block of a PNG and a WebP is inventoried with its block
+      index and chunk index; two blocks give two sets of items; no merge.
+- [ ] A WebP with 17 `EXIF` blocks (GPS only in the 17th) is not clean, and its
+      preview is unreliable; a test names the case.
+- [ ] Regions: `Xmp`, `Icc` (PNG `iCCP`, WebP `ICCP`), `Text`, `RawProfile`,
+      `Time`, PNG `Trailer`; a length-0 region has an item and no finding;
+      after-IDAT / after-IEND is recorded in `Origin::after_scan`.
+- [ ] Text keywords: Author and Copyright to `Authorship`, Creation Time to
+      `Timestamps`, Software to `Software`, others `FreeText`; the match rule
+      (exact vs first-letter case) is MEASURED against ExifTool on at least
+      `Author`, `author`, `AUTHOR`, `aUTHOR` and pinned; the committed
+      `png-text-keywords` record agrees with the table (a keyword ExifTool
+      prints under a different name is a recorded divergence, not silent).
+- [ ] `preview()` of a PNG or WebP: every finding `Kept`, `removed == 0`,
+      `reliable()` false, `strippable()` false, for every `StripPolicy`; JPEG and
+      TIFF previews unchanged byte for byte.
+- [ ] `strip()` of a PNG and of a WebP returns `StripError::Unsupported` with
+      the new kind, for every policy; no output bytes.
+- [ ] CLI: a PNG with GPS in `eXIf` exits with the findings code, a clean PNG
+      is `ok`, a WebP with unreadable metadata is `issues`, HEIC is still
+      `unsupported`; text, JSON, CSV golden/shape tests updated for the new
+      kinds; no new CLI flag.
+- [ ] Category-presence replay: for every PNG and WebP oracle fixture with a
+      committed record, the audit has a GPS / Xmp / Icc finding iff ExifTool
+      printed the GPS / XMP / ICC selector, except recorded divergences
+      (`png-*`, `webp-*` ids in `KNOWN_DIVERGENCES`); a perturbed record makes
+      the replay name the fixture (shown red); live test gated like its
+      siblings.
+- [ ] No panic on hostile input: `audit` and `audit_render` fuzz 60 s clean with
+      the new seeds.
+- [ ] `just lint`, `just test`, `just mutation-oracle`, `just forbid-unsafe`,
+      `just validate`, `just cost-audit`, `just oracle-record` idempotent,
+      `just fuzz-smoke audit`, `just fuzz-smoke audit_render` green.
 
 ## Failing Tests
 
-Written during the **design** cycle, BEFORE handoff. The implementer's
-job in **build** is to make these pass.
-
-- **`path/to/test.file`**
-  - `"test description 1"` — asserts: ...
-  - `"test description 2"` — asserts: ...
+- **`src/audit/mod.rs` tests** (or `src/audit/png_webp_tests.rs`): kind
+  dispatch; two-block inventory; 17-block WebP not clean; region matrix per
+  shape; empty region has no finding; keyword table; unreadable parse.
+- **`src/audit/preview.rs`:** PNG and WebP are `Kept`, `strippable()` false,
+  JPEG unchanged.
+- **`src/write` tests:** `strip` refuses both for all policies.
+- **`tests/audit_png_webp_oracle.rs`** (new): category-presence replay + live,
+  perturbation red-proof, keyword record test.
+- **`src/report` and CLI tests:** the new kinds in the three renderers; the
+  exit-code cases above.
+- **`tests/fuzz_layout.rs`:** seed pins.
 
 ## Non-Goals
 
-- Strip or sanitise support for PNG or WebP (M1d)
-- A new release or version bump
-- New CLI flags
+- Strip or sanitise PNG or WebP (M1d); new CLI flags; a release or version.
+- Tag-level inventory parity against ExifTool for PNG and WebP: **SPEC-036**
+  (new backlog item; the inventory oracle has its own corpus and group map).
+- Inflating compressed regions, parsing XMP or ICC, decoding raw profiles.
+- A new `Category` or a `Disposition` variant (DEC-020); a rights category is
+  SPEC-033's.
+- Other PNG chunks (`pHYs`, `gAMA`, ...): not personal.
 
 ## Notes for the Implementer
 
-Carried from the SPEC-034 verify (2026-11-22): `webp::read`'s `exif()` is the FIRST block only, but ExifTool merges several WebP `EXIF` chunks (the first block wins ImageWidth, ImageHeight, Orientation and XResolution, the last wins the other 16 selectors). The audit must walk `exif_blocks()`, never rely on `exif()`, apply that per-selector rule where it reports one value, and report blocks past `MAX_WEBP_EXIF_BLOCKS` (16): ExifTool reads a 17th block, so decoy blocks can hide GPS. An `ICCP` or `XMP ` region can be located yet unreadable to ExifTool: say "located", not "valid". An empty region is not metadata. ExifTool stops at an empty null chunk; we read on (the safe side).
-
-Gotchas, style preferences, reuse opportunities. Keep short — the full
-context graph lives in the handoff file.
+- **Build in two commits so a stop is clean.** Part A: `src/audit`, `src/write`
+  and their unit tests (the model). Part B: report, CLI, fuzz seeds, oracle
+  replay, README. Commit after A. If the budget is near, hand back after A.
+- Mirror `audit_jpeg`: one `Builder`, `push`, `finish`. Do not invent a second
+  accumulator. `indexing_slicing` and the five-lint deny set apply in `src/`.
+- The audit reports no single value, so the per-selector first/last rule of
+  SPEC-034/035 does not apply; but the audit must walk `exif_blocks()` and
+  never rely on `exif()` (first block only).
+- PNG ExifTool reads only the first `eXIf`; the audit shows all (privacy). Do
+  not "fix" this to match ExifTool.
+- ExifTool stops at an empty WebP null chunk and we read on; ExifTool reads a
+  17th WebP block and we do not. Neither is a new divergence to hide: both are
+  already recorded; the second must show up as not-clean.
+- A located `ICCP` or `XMP ` can be unreadable to ExifTool: wording says
+  "located".
+- Make the keyword table data (array of `(&[u8], Category)`), tested row by
+  row, so SPEC-033 can re-home Copyright in one line.
+- Measure with `perl -e 'alarm 8; exec @ARGV' -- exiftool -a -G1 -s -n`
+  (macOS has no `timeout`); `just oracle-record` for the new record.
+- Budget: about 100 tool calls or 250k context per agent; expect two builder
+  agents (A then B) rather than one long run.
 
 ---
 
