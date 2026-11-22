@@ -1633,3 +1633,99 @@ questions:
       Author and Copyright (also author, copyright) are Authorship, Software and software
       are Software, AUTHOR, aUTHOR, COPYRIGHT and SOFTWARE print as their own names and stay
       FreeText, every other keyword is FreeText.
+
+  - id: png-bad-text-chunk-not-listed
+    question: "ExifTool 13.55 prints an unparsable PNG text chunk (no separator, empty, bad CRC, a truncated iTXt, a zTXt without a method) as a generic [PNG] tag, where the audit lists no Text region for it: is a walk issue without a located region the intended side?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-22
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-036). Command: exiftool -a -u -G1 -H -s <file> (the png-webp inventory record, ExifTool 13.55, tests/oracle-fixtures/exiftool-inventory/png-webp.txt).
+      Measured on png-text-no-nul, png-shape-meta-text-no-nul (tEXt with no NUL: TextualData),
+      png-shape-meta-itxt-truncated (InternationalText), png-shape-meta-ztxt-no-method
+      (CompressedText), png-shape-empty-texts-100 and png-shape-bad-crc-texts-1100 (one
+      TextualData per chunk, 100 and 1100), png-shape-meta-halted-after-text (a good Comment
+      plus a TextualData). The audit counts a Text region only for a chunk it can parse
+      (keyword and body); an unparsable chunk is a walk issue, never a region. The inventory
+      counts id-less [PNG] lines against Text and Time regions, so the difference is ExifTool-only
+      text tags: 1 on the single-chunk inputs, 100 and 1100 on the two bulk inputs. The audit
+      says these files are not clean (ours_hides is true: the comparison fails if one is
+      reported clean). Right side: ExifTool's tag is evidence of a chunk the audit cannot read;
+      whether the audit should report an unreadable text chunk as a finding is open. Pinned in
+      tests/support/inventory.rs (KNOWN_DIVERGENCES, Class P).
+
+  - id: png-after-iend-in-trailer
+    question: "ExifTool 13.55 prints the chunks after a PNG's IEND in the group Trailer (a Comment tag, no XMP or ICC group, an eXIf only as a byte order) while the audit lists them as Text, Xmp and Icc regions (DEC-020): is the audit's listing, which errs toward reporting more, the intended side?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-22
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-036). Command: exiftool -a -u -G1 -H -s <file> (the png-webp inventory record, ExifTool 13.55, tests/oracle-fixtures/exiftool-inventory/png-webp.txt).
+      Measured on png-shape-meta-trailer-chunks (tEXt Comment, iTXt XML:com.adobe.xmp, iCCP and
+      eXIf after IEND) and png-shape-meta-trailer-truncated (a Comment after IEND): ExifTool
+      prints [Trailer] Warning and [Trailer] Comment, and nothing in the PNG, XMP or ICC groups.
+      The inventory keeps Trailer structural (dropped by name), so the audit's Text, Xmp and Icc
+      regions after IEND are ours-only: text tags x1 on both inputs, plus regions Xmp and Icc on
+      the first. Right side: neither is wrong; DEC-020 lists what the bytes contain, wherever
+      they are, and the strip removes them. Pinned in tests/support/inventory.rs
+      (KNOWN_DIVERGENCES, Class P).
+
+  - id: png-raw-profile-keyword-case
+    question: "ExifTool 13.55 treats the keyword \"raw profile type exif\" (lower case) as a raw profile and prints EXIF_Profile, where the audit lists the chunk as an ordinary Text region: should the audit's raw-profile keyword match be case-insensitive?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-22
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-036). Command: exiftool -a -u -G1 -H -s <file> (the png-webp inventory record, ExifTool 13.55, tests/oracle-fixtures/exiftool-inventory/png-webp.txt).
+      Measured on png-shape-meta-raw-lowercase (a tEXt chunk with the keyword in lower case next
+      to a tEXt XML:com.adobe.xmp): ExifTool prints [PNG] Xmlcomadobexmp and [PNG] EXIF_Profile
+      (a raw-profile tag, dropped by name from the text count); the audit lists two Text regions
+      (no RawProfile), so it counts one text tag more than ExifTool (text tags x1 ours-only).
+      Right side: neither is wrong for an audit (a Text region is still located and reported);
+      the raw profile is not decoded either way. Pinned in tests/support/inventory.rs
+      (KNOWN_DIVERGENCES, Class P).
+
+  - id: png-xmp-content-not-parsed
+    question: "ExifTool 13.55 prints no XMP group for a PNG XML:com.adobe.xmp chunk it cannot use (empty, invalid, an empty xmpmeta, a zTXt that does not inflate), where the audit locates an Xmp region: is located-not-valid the intended side, as for the flag-2 iTXt?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-22
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-036). Command: exiftool -a -u -G1 -H -s <file> (the png-webp inventory record, ExifTool 13.55, tests/oracle-fixtures/exiftool-inventory/png-webp.txt).
+      Measured on png-shape-meta-ztxt-xmp (zTXt that does not inflate: "Error inflating
+      XML:com.adobe.xmp", a [PNG] XMP line of 0 bytes), audit-audit-png-empty-regions (an empty
+      tEXt XML:com.adobe.xmp: "Invalid XMP") and audit-audit-png-two-exif-regions (a tEXt with an
+      empty xmpmeta: no tag, no XMP group). ExifTool lists no XMP group on any of them; the
+      audit locates an Xmp region (DEC-018, DEC-020). The two audit-audit files also hold an iCCP
+      whose region the audit locates and ExifTool prints as ProfileName and ICC_Profile in group
+      PNG only, so they differ by Icc too (see png-iccp-located-no-exiftool-group). Right side:
+      neither is wrong; the audit LOCATES, ExifTool VALIDATES. Pinned in
+      tests/support/inventory.rs (KNOWN_DIVERGENCES, Class P).
+
+  - id: png-iccp-located-no-exiftool-group
+    question: "ExifTool 13.55 prints a PNG iCCP chunk as ProfileName and ICC_Profile in group PNG and never as an ICC group when the profile does not inflate or its length is wrong, where the audit locates an Icc region: is located-not-valid the intended side?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-22
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-036). Command: exiftool -a -u -G1 -H -s <file> (the png-webp inventory record, ExifTool 13.55, tests/oracle-fixtures/exiftool-inventory/png-webp.txt).
+      Measured on png-iccp-bad-header (20 zero bytes: "Bad length ICC_Profile"),
+      png-shape-iccp-and-plte, png-shape-meta-iccp, png-shape-meta-iccp-empty-name and
+      png-shape-meta-iccp-name-80 (profiles that do not inflate: "Error inflating iCCP"): the
+      [PNG] ProfileName and ICC_Profile lines are dropped by name from the text count
+      (PNG_DROPPED_NAMES), no ICC-header or ICC_Profile group is printed, and the audit locates an
+      Icc region (ours-only region Icc). A nameless length-0 iCCP is a walk issue in the audit
+      (no region), and ExifTool prints no group either, so it does not differ. Right side: neither
+      is wrong; the audit LOCATES, ExifTool VALIDATES (the WebP counterpart is
+      webp-iccp-profile-not-validated). Pinned in tests/support/inventory.rs
+      (KNOWN_DIVERGENCES, Class P).

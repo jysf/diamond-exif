@@ -194,6 +194,48 @@ fn dir_files(root: &Path, dir: &str) -> Vec<(String, Vec<u8>)> {
         .collect()
 }
 
+/// The raw-profile keyword of the extras below (ImageMagick's spelling).
+const RAW_EXIF_KEYWORD: &[u8] = b"Raw profile type exif";
+
+/// Hostile shapes the oracle fixtures, shapes and seeds do not hold (SPEC-036
+/// Part B, the variant grid): a `tIME` chunk of every length 0 to 12 (the valid
+/// one is 7), and a raw-profile EXIF with GPS entries in a `tEXt`, a `zTXt` and
+/// an `iTXt` chunk. They belong to this corpus only, so no existing record,
+/// fixture list or count of another oracle moves.
+pub fn png_webp_extras() -> Vec<(String, Vec<u8>)> {
+    let mut out = Vec::new();
+    let time: [u8; 12] = [0x07, 0xE8, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    for len in 0..=12usize {
+        // Longer than the 12 bytes of the prefix: pad with zeros.
+        let mut data = time[..len.min(12)].to_vec();
+        data.resize(len, 0);
+        out.push((
+            format!("png-extra-time-len-{len}"),
+            oracle_png::png(&[oracle_png::chunk(b"tIME", &data)], &[], &[]),
+        ));
+    }
+    let gps = oracle_tiff::fixtures()
+        .into_iter()
+        .find(|(n, _)| *n == "exif-gps-full-le")
+        .map(|(_, b)| b)
+        .expect("the exif-gps-full-le TIFF fixture");
+    let data = [&b"Exif\0\0"[..], &gps].concat();
+    let body = oracle_png::raw_profile_body("exif", &data);
+    out.push((
+        "png-extra-raw-exif-gps-text".to_string(),
+        oracle_png::png(&[oracle_png::text(RAW_EXIF_KEYWORD, &body)], &[], &[]),
+    ));
+    out.push((
+        "png-extra-raw-exif-gps-ztxt".to_string(),
+        oracle_png::png(&[oracle_png::ztxt(RAW_EXIF_KEYWORD, &body)], &[], &[]),
+    ));
+    out.push((
+        "png-extra-raw-exif-gps-itxt".to_string(),
+        oracle_png::png(&[oracle_png::itxt(RAW_EXIF_KEYWORD, 1, &body)], &[], &[]),
+    ));
+    out
+}
+
 /// The `png-webp` inputs (SPEC-036), in this order: the PNG oracle fixtures and
 /// the `png-text-keywords` table; the WebP oracle fixtures; the PNG then the
 /// WebP shapes; the committed `png_chunks` then `webp_riff` seeds; the PNG and
@@ -233,6 +275,10 @@ pub fn png_webp_inputs(root: &Path) -> Vec<Input> {
         if audit_seed_is_png_or_webp(&name, &bytes) {
             out.push(mk(format!("audit-{name}"), bytes));
         }
+    }
+    // Last, so the order of every input above is unchanged.
+    for (name, bytes) in png_webp_extras() {
+        out.push(mk(name, bytes));
     }
     out
 }

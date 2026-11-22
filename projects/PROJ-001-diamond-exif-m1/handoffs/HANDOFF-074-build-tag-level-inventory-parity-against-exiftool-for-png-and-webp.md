@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-22
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-036
@@ -46,18 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                # completed | blocked | rejected
+  agent: claude-sonnet-5-5                    # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
   basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
-  branch: null
+  branch: claude/spec-036-part-b
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-22             # YYYY-MM-DD
+  notes: "Part B done: 56 png-webp divergences pinned (Class P), replay/live/red-proof tests, 5 new questions; tokens_total left null by instruction, the orchestrator measures it."  # if unusual; double-quote it — an unquoted " #" starts a YAML comment
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -201,9 +201,9 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
+- **Branch / PR:** claude/spec-036-part-b (no PR, by instruction)
+- **Completed at:** 2026-11-22
+- **All acceptance criteria met?** yes
 - **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
 
 ### Cost self-report
@@ -212,7 +212,7 @@ Mirror what you put in the `handback:` front-matter, and say where the number
 came from. **This is the number that lands in the spec** — the orchestrator
 transcribes it via `just handback-sync`, it does not estimate it.
 
-- **Tokens (total):** <real number, or null + why>
+- **Tokens (total):** null (left to the orchestrator by instruction)
 - **Estimated USD:** <number, or null>
 - **Duration (minutes):** <estimate>
 - **Source of the number:** `/cost` | API `usage` | harness report | none available

@@ -265,7 +265,7 @@ fn main() {
     };
     if inventory_mode {
         let audit = exif_core::audit::audit(&data);
-        print!("{}", inventory::probe_text(&inventory::ours(&audit)));
+        print!("{}", inventory::probe_text(&inventory::ours_of(&data, &audit)));
         return;
     }
     let ours = if data.starts_with(&[0xFF, 0xD8]) {

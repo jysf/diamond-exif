@@ -1579,8 +1579,13 @@ fn the_gps_live_variant_skips_loudly_and_required_mode_fails() {
 use inventory::{Inventory, InventoryDiff, Multiset, RegionKind};
 
 fn inv_input(key: &str) -> inventory_corpus::Input {
-    inventory_corpus::all_inputs(&root())
-        .into_iter()
+    // The png-webp corpus (SPEC-036) is not one of the five older corpora.
+    let mut all = inventory_corpus::all_inputs(&root());
+    all.extend(inventory_corpus::inputs(
+        &root(),
+        inventory_corpus::PNG_WEBP,
+    ));
+    all.into_iter()
         .find(|i| i.key() == key)
         .unwrap_or_else(|| panic!("no inventory input {key}"))
 }
@@ -1605,7 +1610,8 @@ fn inv_theirs(key: &str) -> Inventory {
         .find(|s| s.name == name)
         .unwrap_or_else(|| panic!("no section {name}"));
     let mut inv = inventory::inventory_of(&sec.lines).expect("classifiable");
-    if !inv_input(key).is_jpeg() {
+    // Region groups of a bare TIFF are Class H; a PNG or WebP keeps them.
+    if corpus != inventory_corpus::PNG_WEBP && !inv_input(key).is_jpeg() {
         inv.regions.clear();
     }
     inv
@@ -1669,7 +1675,7 @@ fn assert_inventory_control(label: &str, keys: &[&str]) {
         // The probe's reading is the in-process one.
         assert_eq!(
             mine,
-            inventory::ours(&audit),
+            inventory::ours_of(&bytes, &audit),
             "{label}: the probe's inventory of {key} is not the in-process one"
         );
         // And clean unless pinned; `clean` is taken from the audit itself.
@@ -1907,4 +1913,98 @@ fn inventory_mutant_i6_iptc_region_as_xmp_is_named() {
     assert!(d.ours_only.is_empty() && d.theirs_only.is_empty());
     // The XMP fixture is unaffected: the fault is specific to IPTC.
     assert!(inv_diff(&all, "fixtures/jpeg-xmp").is_empty());
+}
+
+// ── SPEC-036: PNG and WebP inventory mutants (p1 to p3) ─────────────────────
+//
+// Same shape as i1 to i6: the control on the unmutated copy first (the probe
+// reproduces the in-process inventory and is clean against the committed
+// record, or exactly pinned), then ONE injection with an exactly-once needle
+// and the RED-PROOF INJECTION marker, which must not leak into the repository.
+
+/// How many regions of `kind` the audit of `key` holds.
+fn png_regions_of(key: &str, kind: exif_core::audit::RegionKind) -> usize {
+    let bytes = inv_input(key).bytes;
+    exif_core::audit::audit(&bytes)
+        .items()
+        .iter()
+        .filter(
+            |i| matches!(i.kind(), exif_core::audit::ItemKind::Region { kind: k, .. } if k == kind),
+        )
+        .count()
+}
+
+// Mutant p1. Needle (src/audit/mod.rs, `audit_png`, the region loop): the push
+// of the located region. Every `Text` region is pushed twice, so the text count
+// is ours-only by exactly the number of text chunks.
+#[test]
+fn inventory_mutant_p1_text_region_counted_twice_is_named() {
+    let key = "png-webp/png-text-keywords";
+    let n = png_regions_of(key, exif_core::audit::RegionKind::Text);
+    assert!(n > 10, "the keywords fixture has many text chunks ({n})");
+    let needle = "        let len = region.data().len();\n        regions.push(ChunkRegion {\n            offset: region.offset(),\n            kind,\n            segment: chunk_index(&offsets, region.offset(), chunks.len()),\n            len,\n            // A length-0 PNG region still has its finding:";
+    let replacement = "        let len = region.data().len();\n        if kind == RegionKind::Text { regions.push(ChunkRegion { offset: region.offset(), kind, segment: chunk_index(&offsets, region.offset(), chunks.len()), len, category: Some(category), after_scan: false }); }\n        regions.push(ChunkRegion {\n            offset: region.offset(),\n            kind,\n            segment: chunk_index(&offsets, region.offset(), chunks.len()),\n            len,\n            // A length-0 PNG region still has its finding:";
+    let inject = |src: &Path| {
+        probe::inject_replace(&src.join("audit/mod.rs"), needle, &marked(replacement));
+    };
+    let all = inventory_control_then_mutant("inventory-p1", &[key], &inject);
+    let d = inv_diff(&all, key);
+    assert_eq!((d.text_ours_only, d.text_theirs_only), (n, 0));
+    assert!(d
+        .to_string()
+        .contains(&format!("ours only:   text tags x{n}")));
+    assert!(d.ours_only.is_empty() && d.theirs_only.is_empty());
+}
+
+// Mutant p2. Needle (src/audit/mod.rs, `audit_png`):
+//   if &chunk.chunk_type() == b"tIME" {
+// `tIME` chunks are no longer found: the time tags ExifTool prints are
+// theirs-only, one per chunk.
+#[test]
+fn inventory_mutant_p2_time_items_dropped_is_named() {
+    let keys = [
+        "png-webp/png-extra-time-len-7",
+        "png-webp/png-extra-time-len-0",
+    ];
+    let inject = |src: &Path| {
+        probe::inject_replace(
+            &src.join("audit/mod.rs"),
+            "if &chunk.chunk_type() == b\"tIME\" {",
+            &marked("if false && &chunk.chunk_type() == b\"tIME\" {"),
+        );
+    };
+    let all = inventory_control_then_mutant("inventory-p2", &keys, &inject);
+    for key in keys {
+        let d = inv_diff(&all, key);
+        assert_eq!((d.text_ours_only, d.text_theirs_only), (0, 1), "{key}");
+        assert!(d.to_string().contains("theirs only: text tags x1"), "{key}");
+    }
+}
+
+// Mutant p3. Needle (src/audit/mod.rs, `audit_png`, the Exif origin): the block
+// index of every `eXIf` entry is 0, so the audit can no longer tell which block
+// an entry came from and the PNG first-block rule counts the wrong entries:
+// with two blocks both are counted (an ours-only duplicate), and when the first
+// block is fatal the second block's entries are lost (theirs-only).
+#[test]
+fn inventory_mutant_p3_png_first_block_rule_defeated_is_named() {
+    let keys = [
+        "png-webp/png-two-exif-same-tag",
+        "png-webp/png-exif-fatal-then-good",
+    ];
+    let needle = "                    block: Some(index),\n                    segment: Some(chunk_index(&offsets, block.offset(), chunks.len())),\n                    after_scan: block.after_idat() || block.after_iend(),";
+    let replacement = "                    block: Some(0),\n                    segment: Some(chunk_index(&offsets, block.offset(), chunks.len())),\n                    after_scan: block.after_idat() || block.after_iend(),";
+    let inject = |src: &Path| {
+        probe::inject_replace(&src.join("audit/mod.rs"), needle, &marked(replacement));
+    };
+    let all = inventory_control_then_mutant("inventory-p3", &keys, &inject);
+    let d = inv_diff(&all, keys[0]);
+    assert_eq!(d.ours_only, set(&[("IFD0", 0x010f, 1)]));
+    assert!(d.theirs_only.is_empty());
+    let d = inv_diff(&all, keys[1]);
+    assert!(d.ours_only.is_empty());
+    assert!(
+        !d.theirs_only.is_empty(),
+        "the second block's entries are lost"
+    );
 }

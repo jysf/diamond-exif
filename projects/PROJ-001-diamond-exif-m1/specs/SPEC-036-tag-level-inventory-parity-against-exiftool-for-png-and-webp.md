@@ -108,13 +108,13 @@ A third inventory corpus, `png-webp`, run through the existing comparator extend
 
 ## Acceptance Criteria
 
-- [ ] The corpus holds every PNG and WebP oracle fixture, the `png-text-keywords` table, the PNG and WebP shapes and the committed `png_chunks`, `webp_riff` and `audit` PNG/WebP seeds, deduplicated by bytes; the count is pinned.
-- [ ] Every `(group, id)` ExifTool prints on the corpus is either compared, counted or dropped by a named constant; an unknown group is a parse error, not a silent drop.
-- [ ] For every input the audit and ExifTool agree on the Exif multiset, XMP and ICC presence and the text/time count, or the difference equals a pinned `KNOWN_DIVERGENCES` entry (exact multiset difference, measured cause, `questions.yaml` id); a divergence that stops holding fails.
-- [ ] PNG: only the first `eXIf` block is compared and the later blocks are asserted present in the audit (a test), not silently dropped; WebP: every listed block compared, the 17th-block case pinned (`webp-exif-block-cap`).
-- [ ] Hostile edges measured and covered (design variant grid, in the Failing Tests): raw-profile exif (with and without GPS), `tIME` lengths 0 to 12, empty regions, nameless empty `iCCP`, text after `IEND`, `eXIf` before and after `IDAT` and after `IEND`, XMP in `iTXt`/`tEXt`/`zTXt`/compressed, keyword spellings, WebP VP8X flags wrong, odd chunk without pad, animated, trailing bytes, 16 vs 17 blocks.
-- [ ] Red-proofs: replay-and-perturb on the new record names the perturbed `(group, id)`; at least three mutated-copy proofs (e.g. a `Text` region counted twice, `Time` items dropped, the PNG first-block rule removed) each fail the new tests; control first, one injection, marker not leaked; `just mutation-oracle` green.
-- [ ] No change to any existing inventory record, count or test result; `just oracle-record` idempotent; `just lint`, `just test`, `just forbid-unsafe`, `just validate`, `just cost-audit` green on the pinned 1.90.0.
+- [x] The corpus holds every PNG and WebP oracle fixture, the `png-text-keywords` table, the PNG and WebP shapes and the committed `png_chunks`, `webp_riff` and `audit` PNG/WebP seeds, deduplicated by bytes; the count is pinned.
+- [x] Every `(group, id)` ExifTool prints on the corpus is either compared, counted or dropped by a named constant; an unknown group is a parse error, not a silent drop.
+- [x] For every input the audit and ExifTool agree on the Exif multiset, XMP and ICC presence and the text/time count, or the difference equals a pinned `KNOWN_DIVERGENCES` entry (exact multiset difference, measured cause, `questions.yaml` id); a divergence that stops holding fails.
+- [x] PNG: only the first `eXIf` block is compared and the later blocks are asserted present in the audit (a test), not silently dropped; WebP: every listed block compared, the 17th-block case pinned (`webp-exif-block-cap`).
+- [x] Hostile edges measured and covered (design variant grid, in the Failing Tests): raw-profile exif (with and without GPS), `tIME` lengths 0 to 12, empty regions, nameless empty `iCCP`, text after `IEND`, `eXIf` before and after `IDAT` and after `IEND`, XMP in `iTXt`/`tEXt`/`zTXt`/compressed, keyword spellings, WebP VP8X flags wrong, odd chunk without pad, animated, trailing bytes, 16 vs 17 blocks.
+- [x] Red-proofs: replay-and-perturb on the new record names the perturbed `(group, id)`; at least three mutated-copy proofs (e.g. a `Text` region counted twice, `Time` items dropped, the PNG first-block rule removed) each fail the new tests; control first, one injection, marker not leaked; `just mutation-oracle` green.
+- [x] No change to any existing inventory record, count or test result; `just oracle-record` idempotent; `just lint`, `just test`, `just forbid-unsafe`, `just validate`, `just cost-audit` green on the pinned 1.90.0.
 
 ## Failing Tests
 
