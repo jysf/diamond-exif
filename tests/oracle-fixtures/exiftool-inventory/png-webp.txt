@@ -18299,3 +18299,408 @@ PNG	0x000a	Compression
 PNG	0x000b	Filter
 PNG	0x000c	Interlace
 PNG	-	RAWPROFILETYPEEXIF
+## png-extra-chunk-gama
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	Gamma
+## png-extra-chunk-srgb
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	SRGBRendering
+## png-extra-chunk-bkgd
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	BackgroundColor
+## png-extra-chunk-trns
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	Transparency
+## png-extra-chunk-sbit
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	SignificantBits
+## png-extra-chunk-offs
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	ImageOffset
+## png-extra-chunk-idot
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	AppleDataOffsets
+## png-extra-chunk-pcal
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	PixelCalibration
+## png-extra-chunk-hist
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	PaletteHistogram
+## png-extra-chunk-splt
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	SuggestedPalette
+## png-extra-chunk-dsig
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	DigitalSignature
+## png-extra-chunk-cpip
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	OLEInfo
+## png-extra-chunk-gifg
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	GIFGraphicControlExtension
+## png-extra-chunk-gifx
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	GIFApplicationExtension
+## png-extra-chunk-frac
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	FractalParameters
+## png-extra-chunk-meta
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	MeTa
+## png-extra-chunk-zxif
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	zxIf
+## png-extra-chunk-txmp
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+## png-extra-chunk-chrm
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	0x0000	WhitePointX
+PNG	0x0001	WhitePointY
+PNG	0x0002	RedX
+PNG	0x0003	RedY
+PNG	0x0004	GreenX
+PNG	0x0005	GreenY
+PNG	0x0006	BlueX
+PNG	0x0007	BlueY
+## png-extra-chunk-scal
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	0x0000	SubjectUnits
+PNG	0x0001	SubjectPixelWidth
+PNG	0x0002	SubjectPixelHeight
+## png-extra-chunk-ster
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	0x0000	StereoMode
+## png-extra-chunk-vpag
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	0x0000	VirtualImageWidth
+PNG	0x0001	VirtualImageHeight
+PNG	0x0002	VirtualPageUnits
+## png-extra-chunk-actl
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	0x0000	AnimationFrames
+PNG	0x0001	AnimationPlays
+## png-extra-chunk-fctl
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+## png-extra-chunk-phys
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG-pHYs	0x0000	PixelsPerUnitX
+PNG-pHYs	0x0004	PixelsPerUnitY
+PNG-pHYs	0x0008	PixelUnits
+## png-extra-chunk-cicp
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG-cICP	0x0000	ColorPrimaries
+PNG-cICP	0x0001	TransferCharacteristics
+PNG-cICP	0x0002	MatrixCoefficients
+PNG-cICP	0x0003	VideoFullRangeFlag
+## png-extra-chunk-mdcv
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+## png-extra-chunk-clli
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+## png-extra-chunk-time
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	ModifyDate
+## png-extra-chunk-plte
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	Palette
+## png-extra-cancel-after-iend-text-plus-badtext
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	TextualData
+Trailer	-	Warning
+Trailer	-	Comment
+## png-extra-cancel-gama-plus-after-iend-text
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	Gamma
+Trailer	-	Warning
+Trailer	-	Comment
+## png-extra-kw-xmp-plus-badtext
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	XMP
+PNG	-	TextualData
+## png-extra-kw-xmp
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	XMP
+## png-extra-kw-palette
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	Palette
+## png-extra-kw-profilename
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	ProfileName
+## png-extra-kw-icc-profile
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	ICC_Profile
+## png-extra-kw-my-profile
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	My_Profile
+## png-extra-kw-exif-profile
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	EXIF_Profile
+## png-extra-kw-rawprofiletypex
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	RawProfileTypeX
+## png-extra-kw-raw-mixed-case
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	RawProfileTypeExif
+## png-extra-kw-gamma
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	Gamma
+## png-extra-kw-exif-like
+PNG	0x0000	ImageWidth
+PNG	0x0004	ImageHeight
+PNG	0x0008	BitDepth
+PNG	0x0009	ColorType
+PNG	0x000a	Compression
+PNG	0x000b	Filter
+PNG	0x000c	Interlace
+PNG	-	EXIf

@@ -1904,8 +1904,8 @@ fn line(group: &str, id: Option<u32>, name: &str) -> Line {
     }
 }
 
-/// The `png-webp` corpus: 576 inputs (555 of Part A and the 21 hostile extras of
-/// Part B and the fix round), 322 distinct by content; the five older
+/// The `png-webp` corpus: 619 inputs (555 of Part A and the 64 hostile extras of
+/// Part B and the fix round), 364 distinct by content; the five older
 /// corpora are untouched and `png-webp` is not one of them.
 #[test]
 fn png_webp_corpus_counts_are_pinned() {
@@ -1913,8 +1913,8 @@ fn png_webp_corpus_counts_are_pinned() {
     assert!(!inventory_corpus::CORPORA.contains(&"png-webp"));
     assert!(inventory_corpus::NEW_CORPORA.contains(&"png-webp"));
     let all = png_webp_inputs();
-    assert_eq!(all.len(), 576, "inputs of png-webp");
-    assert_eq!(inventory_corpus::distinct(&all).len(), 322, "distinct");
+    assert_eq!(all.len(), 619, "inputs of png-webp");
+    assert_eq!(inventory_corpus::distinct(&all).len(), 364, "distinct");
     // Every name is unique (a record section is keyed by it).
     let names: BTreeSet<&str> = all.iter().map(|i| i.name.as_str()).collect();
     assert_eq!(names.len(), all.len());
@@ -1973,12 +1973,17 @@ fn classifier_png_hex_dropped_and_dash_counted() {
     assert!(inv.tags.is_empty() && inv.regions.is_empty());
 }
 
-/// `PNG-<chunk>` groups and `RIFF` are structural whatever their ids; so is
-/// `Trailer`; none of them reaches the multiset or the text count.
+/// `PNG-<chunk>` groups and `RIFF` are structural whatever their ids; none of
+/// them reaches the multiset or the text count. `Trailer` is not structural any
+/// more (fix round, H2): its id-less lines are bucket (b).
 #[test]
 fn classifier_structural_groups_are_dropped_by_name() {
     use inventory::GroupClass;
-    for g in ["PNG-pHYs", "PNG-gAMA", "RIFF", "Trailer"] {
+    assert_eq!(
+        inventory::classify_group("Trailer"),
+        Some(GroupClass::Trailer)
+    );
+    for g in ["PNG-pHYs", "PNG-gAMA", "RIFF"] {
         assert_eq!(
             inventory::classify_group(g),
             Some(GroupClass::Structural),
@@ -1991,11 +1996,99 @@ fn classifier_structural_groups_are_dropped_by_name() {
         line("RIFF", Some(1), "ImageWidth"),
         line("RIFF", None, "Unknown_exif"),
         line("Trailer", None, "Warning"),
+        line("Trailer", None, "ExifByteOrder"),
     ];
     assert_eq!(
         inventory_of(&lines).expect("classifiable"),
         Inventory::default()
     );
+}
+
+/// The three text buckets of ExifTool's side: normal `PNG` lines (a), the
+/// id-less chunk tags of `Trailer` (b), the unparseable-chunk names in either
+/// group (c). A dropped chunk name is dropped in both groups.
+#[test]
+fn theirs_splits_the_id_less_lines_into_three_buckets() {
+    let lines = [
+        line("PNG", None, "Comment"),
+        line("PNG", None, "ModifyDate"),
+        line("PNG", None, "Gamma"),
+        line("PNG", None, "TextualData"),
+        line("PNG", None, "InternationalText"),
+        line("Trailer", None, "Warning"),
+        line("Trailer", None, "Comment"),
+        line("Trailer", None, "TagY"),
+        line("Trailer", None, "ProfileName"),
+        line("Trailer", None, "CompressedText"),
+    ];
+    let inv = inventory_of(&lines).expect("classifiable");
+    assert_eq!(
+        (inv.text_tags, inv.trailer_text_tags, inv.bad_text_tags),
+        (2, 2, 3)
+    );
+}
+
+/// Bucket (c) equality, measured: ExifTool's `TextualData`, `InternationalText`
+/// and `CompressedText` lines equal the `BadTextChunk` issues of `png::read` on
+/// chunks that gave no region. On every png-webp input except the two pinned
+/// rows (our walk has halted before the chunk) it holds; a `BadTextChunk` WITH
+/// a region (an empty keyword, 80 bytes or more) is an ordinary tag of bucket
+/// (a) and is not counted in (c); and a file with such a chunk is never clean.
+#[test]
+fn bad_text_bucket_is_the_issues_without_a_region() {
+    let pinned: BTreeMap<&str, usize> = png_webp_rows()
+        .iter()
+        .filter(|k| k.bad_ours_only > 0 || k.bad_theirs_only > 0)
+        .map(|k| (k.fixture, k.bad_theirs_only))
+        .collect();
+    assert_eq!(
+        pinned,
+        BTreeMap::from([
+            ("png-webp/png-shape-bad-crc-texts-1100", 1100),
+            ("png-webp/png-shape-meta-halted-after-text", 1),
+        ])
+    );
+    let mut with_bad = 0usize;
+    let mut with_region_issue = 0usize;
+    for d in png_webp_distinct() {
+        if inventory_corpus::is_not_run(&d) {
+            continue;
+        }
+        let b = &d.canonical.bytes;
+        let a = audit(b);
+        let ours = ours_of(b, &a);
+        let theirs = png_webp_theirs(&d.canonical.name);
+        assert_eq!(
+            (
+                ours.bad_text_tags.saturating_sub(theirs.bad_text_tags),
+                theirs.bad_text_tags.saturating_sub(ours.bad_text_tags),
+            ),
+            (
+                0,
+                pinned.get(d.canonical.key().as_str()).copied().unwrap_or(0)
+            ),
+            "{}",
+            d.canonical.key()
+        );
+        if ours.bad_text_tags > 0 {
+            with_bad += 1;
+            assert!(!a.health().clean, "{}", d.canonical.key());
+        }
+        if let Ok(meta) = exif_core::png::read(b) {
+            let issues = meta
+                .png_issues()
+                .iter()
+                .filter(|i| matches!(i.error(), exif_core::Error::BadTextChunk { .. }))
+                .count();
+            if issues > inventory::bad_text_chunks(&meta) {
+                with_region_issue += 1;
+            }
+        }
+    }
+    // The inputs that have a bad chunk and an issue-with-region chunk exist, so
+    // both halves of the rule are exercised.
+    assert!(with_bad >= 5, "{with_bad}");
+    assert!(with_region_issue >= 1, "{with_region_issue}");
 }
 
 /// XMP and ICC groups, with the numbered ICC groups of a second profile, are
@@ -2251,7 +2344,7 @@ fn png_webp_live_parity() {
         checked += 1;
     }
     assert!(errors.is_empty(), "{}", errors.join("\n"));
-    assert_eq!(checked, 322, "every distinct png-webp input runs live");
+    assert_eq!(checked, 364, "every distinct png-webp input runs live");
 }
 
 /// The dropped `[PNG]` names are measured, listed as constants and pinned: the
@@ -2260,16 +2353,45 @@ fn png_webp_live_parity() {
 fn png_dropped_names_are_pinned() {
     assert_eq!(
         inventory::PNG_DROPPED_NAMES,
-        ["ProfileName", "ICC_Profile", "Palette", "eXIf", "XMP"]
+        [
+            "ProfileName",
+            "ICC_Profile",
+            "Palette",
+            "eXIf",
+            "XMP",
+            "Gamma",
+            "SRGBRendering",
+            "BackgroundColor",
+            "Transparency",
+            "SignificantBits",
+            "ImageOffset",
+            "AppleDataOffsets",
+            "PixelCalibration",
+            "PaletteHistogram",
+            "SuggestedPalette",
+            "DigitalSignature",
+            "OLEInfo",
+            "GIFGraphicControlExtension",
+            "GIFApplicationExtension",
+            "FractalParameters",
+            "MeTa",
+            "zxIf",
+        ]
+    );
+    assert_eq!(
+        inventory::PNG_BAD_TEXT_NAMES,
+        ["TextualData", "InternationalText", "CompressedText"]
+    );
+    assert_eq!(
+        inventory::TRAILER_STRUCTURAL_NAMES,
+        ["Warning", "ExifByteOrder"]
     );
     assert_eq!(inventory::PNG_DROPPED_PREFIX, "RawProfileType");
     assert_eq!(inventory::PNG_DROPPED_SUFFIX, "_Profile");
+    for n in inventory::PNG_DROPPED_NAMES {
+        assert!(!inventory::png_dashed_name_is_counted(n), "{n}");
+    }
     for n in [
-        "ProfileName",
-        "ICC_Profile",
-        "Palette",
-        "eXIf",
-        "XMP",
         "EXIF_Profile",
         "XMP_Profile",
         "RawProfileTypeFoo",
@@ -2278,9 +2400,6 @@ fn png_dropped_names_are_pinned() {
         assert!(!inventory::png_dashed_name_is_counted(n), "{n}");
     }
     for n in [
-        "TextualData",
-        "InternationalText",
-        "CompressedText",
         "Comment",
         "Xmlcomadobexmp",
         "CreationTime",
@@ -2409,33 +2528,63 @@ fn webp_every_block_compared_and_cap_pinned() {
     );
 }
 
-/// The text count: ours (Text and Time regions) equals ExifTool's counted
-/// id-less `[PNG]` lines on every input except the pinned ones, and the pinned
-/// text differences are exactly the rows with a text count; every `tIME` length
-/// 0 to 12 agrees.
+/// The text counts, bucket by bucket: (a) ours (Text and Time regions not after
+/// `IEND`) against ExifTool's id-less `[PNG]` lines, (b) our Text regions after
+/// `IEND` against its id-less `Trailer` lines, (c) bad text chunks (see
+/// `bad_text_bucket_is_the_issues_without_a_region`). Each bucket equals on
+/// every input except the pinned ones, and the pinned differences are exactly
+/// the rows with a count; every `tIME` length 0 to 12 agrees.
 #[test]
 fn text_and_time_count_agrees() {
-    let pinned: BTreeMap<String, (usize, usize)> = png_webp_rows()
+    type Key = (usize, usize, usize, usize, usize, usize);
+    let pinned: BTreeMap<String, Key> = png_webp_rows()
         .iter()
-        .filter(|k| k.text_ours_only > 0 || k.text_theirs_only > 0)
+        .filter(|k| {
+            k.text_ours_only
+                + k.text_theirs_only
+                + k.trailer_ours_only
+                + k.trailer_theirs_only
+                + k.bad_ours_only
+                + k.bad_theirs_only
+                > 0
+        })
         .map(|k| {
             (
                 k.fixture.to_string(),
-                (k.text_ours_only, k.text_theirs_only),
+                (
+                    k.text_ours_only,
+                    k.text_theirs_only,
+                    k.trailer_ours_only,
+                    k.trailer_theirs_only,
+                    k.bad_ours_only,
+                    k.bad_theirs_only,
+                ),
             )
         })
         .collect();
-    assert_eq!(pinned.len(), 9, "7 bad text, 2 after IEND");
+    assert_eq!(
+        pinned.len(),
+        13,
+        "10 keyword collisions (a), the trailer row (b), 2 halted walks (c)"
+    );
     for d in png_webp_distinct() {
         if inventory_corpus::is_not_run(&d) {
             continue;
         }
         let b = &d.canonical.bytes;
-        let ours = ours_of(b, &audit(b)).text_tags;
-        let theirs = png_webp_theirs(&d.canonical.name).text_tags;
-        let want = pinned.get(&d.canonical.key()).copied().unwrap_or((0, 0));
+        let ours = ours_of(b, &audit(b));
+        let theirs = png_webp_theirs(&d.canonical.name);
+        let want = pinned.get(&d.canonical.key()).copied().unwrap_or_default();
+        let sub = |x: usize, y: usize| x.saturating_sub(y);
         assert_eq!(
-            (ours.saturating_sub(theirs), theirs.saturating_sub(ours)),
+            (
+                sub(ours.text_tags, theirs.text_tags),
+                sub(theirs.text_tags, ours.text_tags),
+                sub(ours.trailer_text_tags, theirs.trailer_text_tags),
+                sub(theirs.trailer_text_tags, ours.trailer_text_tags),
+                sub(ours.bad_text_tags, theirs.bad_text_tags),
+                sub(theirs.bad_text_tags, ours.bad_text_tags),
+            ),
             want,
             "{}",
             d.canonical.key()
@@ -2469,7 +2618,11 @@ fn every_png_webp_divergence_has_a_question_entry() {
     let text = std::fs::read_to_string(root().join("guidance/questions.yaml"))
         .expect("read guidance/questions.yaml");
     let rows = png_webp_rows();
-    assert_eq!(rows.len(), 59, "52 of the first replay and 7 of the extras");
+    assert_eq!(
+        rows.len(),
+        63,
+        "46 of the first replay and 17 of the extras (7 raw profile, 10 keyword collisions)"
+    );
     let mut ids = BTreeSet::new();
     for k in rows {
         assert!(k.fixture.starts_with("png-webp/"), "{}", k.fixture);
@@ -2490,6 +2643,7 @@ fn every_png_webp_divergence_has_a_question_entry() {
             "png-bad-text-chunk-not-listed",
             "png-iccp-located-no-exiftool-group",
             "png-raw-profile-not-decoded",
+            "png-text-keyword-collides-with-chunk-tag-name",
             "png-xmp-content-not-parsed",
             "png-xmp-flag-2-located-not-read",
             "webp-exif-block-cap",
@@ -2499,6 +2653,144 @@ fn every_png_webp_divergence_has_a_question_entry() {
             "webp-xmp-content-not-parsed",
         ])
     );
+}
+
+/// SPEC-036 verify M2: the text keywords that print like a name the by-name
+/// classification drops. ExifTool's printed tag of each is read from the
+/// committed record, the list of collisions is pinned, each is dropped by the
+/// classifier (so counted on neither side, an ours-only text tag on ours) and
+/// is a pinned divergence of the one class; `eXIf` is NOT a collision (ExifTool
+/// prints `EXIf`, which is counted, and the sides agree).
+#[test]
+fn text_keyword_collisions_are_listed_and_pinned() {
+    let rec = png_webp_record();
+    let printed = |input: &str| -> Vec<String> {
+        let s = rec
+            .sections
+            .iter()
+            .find(|s| s.name == input)
+            .unwrap_or_else(|| panic!("no section {input}"));
+        s.lines
+            .iter()
+            .filter(|l| l.group == "PNG" && l.id.is_none())
+            .map(|l| l.name.clone())
+            .collect()
+    };
+    let listed: Vec<&str> = inventory_corpus::COLLISION_KEYWORDS
+        .iter()
+        .map(|(n, _)| *n)
+        .collect();
+    assert_eq!(
+        listed,
+        [
+            "xmp",
+            "palette",
+            "profilename",
+            "icc-profile",
+            "my-profile",
+            "exif-profile",
+            "rawprofiletypex",
+            "raw-mixed-case",
+            "gamma",
+            "exif-like"
+        ]
+    );
+    let pinned: BTreeSet<&str> = png_webp_rows()
+        .iter()
+        .filter(|k| k.question == "png-text-keyword-collides-with-chunk-tag-name")
+        .map(|k| k.fixture)
+        .collect();
+    for (name, keyword) in inventory_corpus::COLLISION_KEYWORDS {
+        let input = format!("png-extra-kw-{name}");
+        let tags = printed(&input);
+        assert_eq!(tags.len(), 1, "{input}: {tags:?}");
+        let key = format!("png-webp/{input}");
+        if keyword == b"eXIf" {
+            assert_eq!(tags[0], "EXIf");
+            assert!(inventory::png_dashed_name_is_counted(&tags[0]));
+            assert!(!pinned.contains(key.as_str()), "{key}");
+        } else {
+            assert!(!inventory::png_dashed_name_is_counted(&tags[0]), "{input}");
+            assert!(pinned.contains(key.as_str()), "{key}");
+        }
+    }
+    // The input with a collision beside a bad text chunk is the tenth row.
+    assert!(pinned.contains("png-webp/png-extra-kw-xmp-plus-badtext"));
+    assert_eq!(pinned.len(), 10);
+}
+
+/// SPEC-036 verify H2: the three inputs where opposite differences used to
+/// cancel in one net text count. Each bucket is now compared on its own: two
+/// agree in every bucket (with a count in two different buckets, so a net count
+/// could not have told them from a clean file), and the third shows its
+/// collision loudly. A perturbed ExifTool listing names the bucket.
+#[test]
+fn the_cancelling_inputs_are_compared_bucket_by_bucket() {
+    let buckets = |i: &Inventory| (i.text_tags, i.trailer_text_tags, i.bad_text_tags);
+    let cases = [
+        // (input, ours, theirs)
+        (
+            "png-extra-cancel-after-iend-text-plus-badtext",
+            (0, 1, 1),
+            (0, 1, 1),
+        ),
+        (
+            "png-extra-cancel-gama-plus-after-iend-text",
+            (0, 1, 0),
+            (0, 1, 0),
+        ),
+        ("png-extra-kw-xmp-plus-badtext", (1, 0, 1), (0, 0, 1)),
+    ];
+    for (name, ours, theirs) in cases {
+        assert_eq!(buckets(&png_webp_ours(name)), ours, "{name} ours");
+        assert_eq!(buckets(&png_webp_theirs(name)), theirs, "{name} theirs");
+    }
+    // Perturbation: one more `Trailer` Comment on ExifTool's side of the first
+    // input is a named difference in bucket (b), not a cancellation.
+    let name = "png-extra-cancel-after-iend-text-plus-badtext";
+    let mut lines = png_webp_lines(name);
+    lines.push(line("Trailer", None, "Comment"));
+    let d = diff(
+        &png_webp_ours(name),
+        &inventory_of(&lines).expect("classifiable"),
+    );
+    assert!(
+        d.to_string().contains("theirs only: trailer text tags x1"),
+        "{d}"
+    );
+    // And dropping their Trailer Comment is named in bucket (b) as ours only,
+    // although (a) and (c) agree.
+    let mut lines = png_webp_lines(name);
+    lines.retain(|l| l.group != "Trailer" || l.name == "Warning");
+    let d = diff(
+        &png_webp_ours(name),
+        &inventory_of(&lines).expect("classifiable"),
+    );
+    assert!(
+        d.to_string().contains("ours only:   trailer text tags x1"),
+        "{d}"
+    );
+}
+
+/// SPEC-036 verify L1: every Class P row names the canonical key of a distinct
+/// input (the first input with those bytes), and no key is named twice, so no
+/// row is dead (a duplicate-bytes input would never be replayed under its key).
+#[test]
+fn class_p_rows_have_canonical_unique_keys() {
+    let canonical: BTreeSet<String> = png_webp_distinct()
+        .iter()
+        .map(|d| d.canonical.key())
+        .collect();
+    let mut seen = BTreeSet::new();
+    for k in KNOWN_DIVERGENCES.iter().filter(|k| k.class == Class::P) {
+        assert!(
+            canonical.contains(k.fixture),
+            "{}: not the canonical key of a distinct input",
+            k.fixture
+        );
+        assert!(seen.insert(k.fixture), "{}: named twice", k.fixture);
+    }
+    assert_eq!(seen.len(), png_webp_rows().len());
 }
 
 /// Every row that hides something (ExifTool lists what we do not) is on a file
@@ -2513,23 +2805,24 @@ fn png_webp_hiding_rows_are_never_clean() {
             assert!(!audit(&b).health().clean, "{}", k.fixture);
         }
     }
-    // 14 raw profile, 7 bad text, 1 cap, 3 other forms (the after-IEND rows
-    // list more, not less, than ExifTool).
-    assert_eq!(hiding, 25);
+    // 14 raw profile, 2 bad text (our walk halted), 1 cap, 3 other forms (the
+    // keyword collisions list more, not less, than ExifTool; the trailer row is
+    // a located XMP whose contents ExifTool prints as an id-less Trailer line).
+    assert_eq!(hiding, 20);
 }
 
 /// A pinned divergence that stops holding fails, and one whose difference
 /// changes fails, by name.
 #[test]
 fn a_png_webp_divergence_that_stops_being_one_fails() {
-    let name = "png-text-no-nul";
+    let name = "png-shape-meta-halted-after-text";
     let key = format!("png-webp/{name}");
     let b = png_webp_bytes(name);
     let a = audit(&b);
     let mine = ours_of(&b, &a);
     // Control: the real difference matches its row.
     let real = diff(&mine, &png_webp_theirs(name));
-    assert_eq!((real.text_ours_only, real.text_theirs_only), (0, 1));
+    assert_eq!((real.bad_ours_only, real.bad_theirs_only), (0, 1));
     assert_eq!(
         check_against(KNOWN_DIVERGENCES, &key, &real, a.health().clean),
         Ok(())
@@ -2542,9 +2835,9 @@ fn a_png_webp_divergence_that_stops_being_one_fails() {
             fixture: key.clone()
         })
     );
-    // Changes: one more text tag on their side.
+    // Changes: one more unparseable chunk on their side.
     let mut grown = real.clone();
-    grown.text_theirs_only += 1;
+    grown.bad_theirs_only += 1;
     assert!(matches!(
         check_against(KNOWN_DIVERGENCES, &key, &grown, a.health().clean),
         Err(CheckError::ChangedDiff { .. })

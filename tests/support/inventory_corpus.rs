@@ -197,6 +197,22 @@ fn dir_files(root: &Path, dir: &str) -> Vec<(String, Vec<u8>)> {
 /// The raw-profile keyword of the extras below (ImageMagick's spelling).
 const RAW_EXIF_KEYWORD: &[u8] = b"Raw profile type exif";
 
+/// The text keywords of the collision inputs (name, keyword): each prints the
+/// same tag name as a chunk tag the by-name classification drops. The mixed
+/// raw-prefix one is what ExifTool prints for `Raw Profile Type exif`.
+pub const COLLISION_KEYWORDS: [(&str, &[u8]); 10] = [
+    ("xmp", b"XMP"),
+    ("palette", b"Palette"),
+    ("profilename", b"ProfileName"),
+    ("icc-profile", b"ICC_Profile"),
+    ("my-profile", b"My_Profile"),
+    ("exif-profile", b"EXIF_Profile"),
+    ("rawprofiletypex", b"RawProfileTypeX"),
+    ("raw-mixed-case", b"Raw Profile Type exif"),
+    ("gamma", b"Gamma"),
+    ("exif-like", b"eXIf"),
+];
+
 /// Hostile shapes the oracle fixtures, shapes and seeds do not hold (SPEC-036
 /// Part B, the variant grid): a `tIME` chunk of every length 0 to 12 (the valid
 /// one is 7), and a raw-profile EXIF with GPS entries in a `tEXt`, a `zTXt` and
@@ -266,6 +282,132 @@ pub fn png_webp_extras() -> Vec<(String, Vec<u8>)> {
             &[],
         ),
     ));
+    // SPEC-036 fix round (M1): one chunk per input for every standard PNG chunk
+    // ExifTool 13.55 prints id-less in group `PNG` (the names dropped in
+    // `PNG_DROPPED_NAMES`) and for the ones it prints with hex ids or in a
+    // `PNG-<chunk>` group, so the green tests exercise each.
+    let be32 = |v: u32| v.to_be_bytes().to_vec();
+    let chunk_inputs: Vec<(&str, [u8; 4], Vec<u8>)> = vec![
+        ("gama", *b"gAMA", be32(45455)),
+        ("srgb", *b"sRGB", vec![0]),
+        ("bkgd", *b"bKGD", vec![0, 0x80]),
+        ("trns", *b"tRNS", vec![0, 0x80]),
+        ("sbit", *b"sBIT", vec![8]),
+        ("offs", *b"oFFs", [be32(1), be32(2), vec![0]].concat()),
+        (
+            "idot",
+            *b"iDOT",
+            [2u32, 0, 0, 1, 1, 40, 0]
+                .iter()
+                .flat_map(|v| be32(*v))
+                .collect(),
+        ),
+        (
+            "pcal",
+            *b"pCAL",
+            [
+                b"cal\0".to_vec(),
+                be32(0),
+                be32(100),
+                vec![0, 1],
+                b"unit\0".to_vec(),
+            ]
+            .concat(),
+        ),
+        (
+            "hist",
+            *b"hIST",
+            [1u16, 2, 3, 4, 5]
+                .iter()
+                .flat_map(|v| v.to_be_bytes())
+                .collect(),
+        ),
+        (
+            "splt",
+            *b"sPLT",
+            [b"pal\0".to_vec(), vec![8, 1, 2, 3, 4, 0, 5]].concat(),
+        ),
+        ("dsig", *b"dSIG", vec![0; 4]),
+        ("cpip", *b"cpIp", vec![b'x']),
+        ("gifg", *b"gIFg", vec![0, 0, 0, 10]),
+        ("gifx", *b"gIFx", b"NETSCAPE2.0".to_vec()),
+        ("frac", *b"fRAc", vec![0; 30]),
+        ("meta", *b"meTa", vec![b'x']),
+        ("zxif", *b"zxIf", vec![b'x']),
+        ("txmp", *b"tXMP", vec![b'x']),
+        (
+            "chrm",
+            *b"cHRM",
+            [31270u32, 32900, 64000, 33000, 30000, 60000, 15000, 6000]
+                .iter()
+                .flat_map(|v| be32(*v))
+                .collect(),
+        ),
+        (
+            "scal",
+            *b"sCAL",
+            [vec![1], b"1.0\0".to_vec(), b"2.0".to_vec()].concat(),
+        ),
+        ("ster", *b"sTER", vec![0]),
+        ("vpag", *b"vpAg", [be32(10), be32(20), vec![1]].concat()),
+        ("actl", *b"acTL", [be32(1), be32(0)].concat()),
+        (
+            "fctl",
+            *b"fcTL",
+            [
+                be32(0),
+                be32(1),
+                be32(1),
+                be32(0),
+                be32(0),
+                vec![0, 1, 0, 1, 0, 0],
+            ]
+            .concat(),
+        ),
+        ("phys", *b"pHYs", [be32(2835), be32(2835), vec![1]].concat()),
+        ("cicp", *b"cICP", vec![1, 13, 0, 1]),
+        ("mdcv", *b"mDCV", vec![0; 24]),
+        ("clli", *b"cLLI", [be32(1000), be32(400)].concat()),
+        ("time", *b"tIME", vec![0x07, 0xE8, 1, 2, 3, 4, 5]),
+        ("plte", *b"PLTE", (1u8..=15).collect()),
+    ];
+    for (name, kind, data) in chunk_inputs {
+        out.push((
+            format!("png-extra-chunk-{name}"),
+            oracle_png::png(&[oracle_png::chunk(&kind, &data)], &[], &[]),
+        ));
+    }
+    // SPEC-036 fix round (H2): the three verify inputs where opposite
+    // differences used to cancel in one net text count.
+    let late = oracle_png::text(b"Comment", b"late");
+    out.push((
+        "png-extra-cancel-after-iend-text-plus-badtext".to_string(),
+        oracle_png::png(&[oracle_png::chunk(b"tEXt", b"nosep")], &[], &late),
+    ));
+    out.push((
+        "png-extra-cancel-gama-plus-after-iend-text".to_string(),
+        oracle_png::png(&[oracle_png::chunk(b"gAMA", &be32(45455))], &[], &late),
+    ));
+    out.push((
+        "png-extra-kw-xmp-plus-badtext".to_string(),
+        oracle_png::png(
+            &[
+                oracle_png::text(b"XMP", b"hello"),
+                oracle_png::chunk(b"tEXt", b"nosep2"),
+            ],
+            &[],
+            &[],
+        ),
+    ));
+    // SPEC-036 fix round (M2): a text keyword that prints exactly like a name
+    // the by-name classification drops (`png-text-keyword-collides-with-chunk-
+    // tag-name`).
+    for (name, keyword) in COLLISION_KEYWORDS {
+        out.push((
+            format!("png-extra-kw-{name}"),
+            oracle_png::png(&[oracle_png::text(keyword, b"v")], &[], &[]),
+        ));
+    }
     out
 }
 
