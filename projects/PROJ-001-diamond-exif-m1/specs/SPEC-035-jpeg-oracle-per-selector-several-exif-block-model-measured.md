@@ -6,7 +6,7 @@
 task:
   id: SPEC-035
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: verify  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: S                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -68,11 +68,21 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: 350000
-  sessions: []
+  sessions:
+    - cycle: build
+      handoff: HANDOFF-067
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 175052
+      estimated_usd: 1.16
+      duration_minutes: 40
+      recorded_at: 2026-11-22
+      notes: "Harness subagent_tokens (175,052) at 6.60 USD per Mtok; the builder self-reported 6,303,399 counting cache reads, which is not spend, so the orchestrator replaced it."
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 175052
+    estimated_usd: 1.16
+    session_count: 1
 ---
 
 # SPEC-035: JPEG oracle: per-selector several-Exif-block model, measured
