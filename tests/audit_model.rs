@@ -118,7 +118,8 @@ fn audit_never_panics_on_every_committed_seed() {
             seen[slot] += 1;
         }
     }
-    assert_eq!(seen, [32, 37 + 17, 81 + 17]);
+    // SPEC-032: 86 + 17 audit seeds, plus the 72 PNG and 53 WebP copies.
+    assert_eq!(seen, [32, 37 + 17, 86 + 17 + 72 + 53]);
 }
 
 // ── SPEC-013, carried from the SPEC-012 verify (HANDOFF-024 F2/F3/F4) ───────

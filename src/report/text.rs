@@ -15,7 +15,12 @@ use super::{
 };
 
 /// The disposition's wording (DEC-009: `kept` is not an all-clear).
-fn disposition_text(d: Disposition) -> &'static str {
+fn disposition_text(d: Disposition, strippable: bool) -> &'static str {
+    // A container the writer refuses removes nothing: say so instead of the
+    // policy wording (DEC-020).
+    if !strippable {
+        return "kept (not strippable)";
+    }
     match d {
         Disposition::Removed => "removed",
         Disposition::Kept => "kept (not targeted by this policy)",
@@ -82,6 +87,7 @@ fn finding_line(
     out: &mut String,
     f: &Finding<'_>,
     disposition: Option<Disposition>,
+    strippable: bool,
     opts: &RenderOptions,
 ) {
     out.push_str(&format!(
@@ -112,13 +118,18 @@ fn finding_line(
     value_text(out, &f.at, opts);
     if let Some(d) = disposition {
         out.push_str(": ");
-        out.push_str(disposition_text(d));
+        out.push_str(disposition_text(d, strippable));
     }
     out.push('\n');
 }
 
 fn preview_lines(out: &mut String, p: &Preview) {
-    if p.reliable() {
+    if !p.strippable() {
+        out.push_str(&format!(
+            "  preview ({}): not strippable: the writer refuses this container, so nothing would be removed; every finding is kept\n",
+            p.policy().name()
+        ));
+    } else if p.reliable() {
         let c = p.counts();
         out.push_str(&format!(
             "  preview ({}): removed {}, kept {}, kept_unread {}; residual findings {}, residual severity {}\n",
@@ -166,7 +177,7 @@ fn file_block(out: &mut String, entry: &FileEntry<'_>, opts: &RenderOptions) {
             let pv = preview_of(a, opts);
             for (i, f) in a.findings().iter().enumerate() {
                 let d = pv.as_ref().and_then(|p| p.disposition(i));
-                finding_line(out, f, d, opts);
+                finding_line(out, f, d, pv.as_ref().is_none_or(Preview::strippable), opts);
             }
             if let Some(p) = &pv {
                 preview_lines(out, p);

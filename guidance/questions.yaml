@@ -1585,3 +1585,44 @@ questions:
       as for webp-iccp-profile-not-validated. Measured on webp-exif-make-short-later (EXIF with
       Make AlphaCam, then EXIF with Make as a SHORT 7): ExifTool prints 7; the harness reads
       AlphaCam because read_one returns none for a SHORT Make. Pinned in KNOWN_DIVERGENCES.
+
+  - id: png-xmp-flag-2-located-not-read
+    question: "The audit reports an Xmp finding for a PNG iTXt chunk with the XMP keyword and a compression flag of 2 (an invalid flag), where ExifTool 13.55 reports \"Error inflating\" and prints no XMP: is located-not-valid the intended side for the audit?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-22
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-032). Command: the png record command (exiftool -T -n -s3 ...
+      -XMP-xmp:CreatorTool ... <file>). Measured on png-xmp-itxt-flag-2 (keyword
+      XML:com.adobe.xmp, iTXt flag 2, text field a packet): ExifTool prints no
+      XMP-xmp:CreatorTool (it tries to inflate and fails: "Error inflating
+      XML:com.adobe.xmp"); exif-core locates an Xmp region (compressed = true, DEC-018) and
+      the audit reports an Xmp finding. Right side: neither is wrong; the audit LOCATES,
+      ExifTool VALIDATES (DEC-020: a located region may be unreadable to ExifTool, the
+      reports say "located", never "valid"). The audit errs toward reporting more. Pinned in
+      tests/audit_png_webp_oracle.rs (DIFFERENCES).
+
+  - id: png-creation-time-keyword-case
+    question: "ExifTool 13.55 prints the tag CreationTime for the PNG keywords \"creation time\" and \"Creation time\" as well as \"Creation Time\"; the audit's measured rule (first letter upper-cased, then exact) calls only \"Creation Time\" and \"creation Time\" a timestamp: is the audit's table the intended side?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-22
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-032). Command: exiftool -a -G1 -s -n <file> on png-text-keywords (one
+      tEXt chunk per keyword, value v:<keyword>), the [PNG] group kept in
+      tests/oracle-fixtures/exiftool/png-text-keywords.txt. Measured: the keywords
+      "Creation Time", "creation Time", "creation time" and "Creation time" all print as
+      PNG:CreationTime. The SPEC-032 part A measurement (without -n, with -d) showed that only
+      the first two are treated as the standard date tag (reformatted by -d); the other two
+      print the same name but are an auto-named tag whose value is left alone. The audit
+      table (text_keyword_category) follows that rule, so "creation time" and "Creation time"
+      are FreeText (medium), not Timestamps (low). Right side: neither is wrong; the audit
+      errs toward the higher severity, never the lower. Pinned in
+      tests/audit_png_webp_oracle.rs (KEYWORD_DIVERGENCES). The other keywords agree by name:
+      Author and Copyright (also author, copyright) are Authorship, Software and software
+      are Software, AUTHOR, aUTHOR, COPYRIGHT and SOFTWARE print as their own names and stay
+      FreeText, every other keyword is FreeText.

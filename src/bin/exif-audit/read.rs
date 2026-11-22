@@ -3,8 +3,8 @@
 //!
 //! Sniff first: the first 12 bytes are read and sniffed with the library's
 //! `sniff`. A container the library does not read is answered from those bytes
-//! alone and the rest of the file is never read. A TIFF or a JPEG is read
-//! whole, bounded by `--max-size`.
+//! alone and the rest of the file is never read. A TIFF, a JPEG, a PNG or a
+//! WebP is read whole, bounded by `--max-size`.
 //!
 //! Every failure text is one of the closed list below, chosen by
 //! `io::ErrorKind` or by the condition, never from the operating system's own
@@ -59,7 +59,7 @@ impl Failure {
 /// What reading a regular file gave.
 #[derive(Debug)]
 pub enum Loaded {
-    /// A TIFF or a JPEG, whole: audit it.
+    /// A TIFF, a JPEG, a PNG or a WebP, whole: audit it.
     Whole(Vec<u8>),
     /// A container the library does not read (or an empty or unknown file):
     /// the first bytes only; `audit` of them is the `unsupported` entry.
@@ -158,7 +158,10 @@ pub fn read_file(path: &Path, max_size: u64) -> Loaded {
     if let Err(e) = (&mut file).take(HEAD_LEN).read_to_end(&mut head) {
         return Loaded::Failed(io_failure(e.kind(), true));
     }
-    if !matches!(sniff(&head), Sniffed::Tiff | Sniffed::Jpeg) {
+    if !matches!(
+        sniff(&head),
+        Sniffed::Tiff | Sniffed::Jpeg | Sniffed::Png | Sniffed::Webp
+    ) {
         return Loaded::Head(head);
     }
     // A file longer than the cap is rejected from its length without reading

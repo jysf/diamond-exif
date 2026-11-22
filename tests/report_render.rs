@@ -8,8 +8,12 @@
 //! * a truncated audit previews conservatively end to end (carried F2);
 //! * the largest output at the audit caps is measured.
 
+#[path = "support/png_shapes.rs"]
+mod png_shapes;
 #[path = "support/report_inputs.rs"]
 mod report_inputs;
+#[path = "support/webp_shapes.rs"]
+mod webp_shapes;
 
 include!("../fuzz/shared/audit_invariants.rs");
 include!("../fuzz/shared/render_check.rs");
@@ -133,6 +137,96 @@ fn golden_files_are_unchanged_and_the_builder_reproduces_them() {
             path.display()
         );
     }
+}
+
+/// A big-endian TIFF whose IFD0 points at a GPS IFD holding `GPSLatitudeRef`.
+fn tiff_with_gps() -> Vec<u8> {
+    let mut d = b"MM\x00\x2A\x00\x00\x00\x08".to_vec();
+    d.extend_from_slice(&[0, 1, 0x88, 0x25, 0, 4, 0, 0, 0, 1, 0, 0, 0, 26]);
+    d.extend_from_slice(&[0, 0, 0, 0]);
+    d.extend_from_slice(&[0, 1, 0, 1, 0, 2, 0, 0, 0, 2, b'N', 0, 0, 0]);
+    d.extend_from_slice(&[0, 0, 0, 0]);
+    d
+}
+
+/// A PNG and a WebP for the SPEC-032 golden: both audited, neither strippable.
+fn png_and_webp() -> (Vec<u8>, Vec<u8>) {
+    let mut png_parts = vec![
+        png_shapes::ihdr(),
+        png_shapes::exif_chunk(&tiff_with_gps()),
+        png_shapes::text(b"Author", b"A. Person"),
+        png_shapes::text(b"Title", b"a title"),
+        png_shapes::text(b"XML:com.adobe.xmp", b"<x:xmpmeta/>"),
+        png_shapes::chunk(b"tIME", &[0x07, 0xE8, 1, 2, 3, 4, 5]),
+        png_shapes::idat(),
+        png_shapes::iend(),
+    ];
+    png_parts.push(b"TRAILER".to_vec());
+    let png = png_shapes::png(&png_parts);
+    let webp = webp_shapes::riff(&[
+        webp_shapes::vp8x(
+            webp_shapes::FLAG_ICC | webp_shapes::FLAG_EXIF | webp_shapes::FLAG_XMP,
+            1,
+            1,
+        ),
+        webp_shapes::vp8l(),
+        webp_shapes::exif_chunk(&tiff_with_gps()),
+        webp_shapes::chunk(b"XMP ", b"<x:xmpmeta/>"),
+        webp_shapes::chunk(b"ICCP", b"icc profile"),
+    ]);
+    (png, webp)
+}
+
+/// SPEC-032 / DEC-020: a PNG and a WebP in all three formats, with inventory
+/// and values. Both are audited ("located", never "valid"), neither is
+/// strippable: JSON `preview.strippable` is false, the text says "not
+/// strippable", the CSV disposition cell says `not_strippable`. Golden files
+/// `tests/golden/report-png-webp.{txt,json,csv}`.
+#[test]
+fn golden_png_and_webp_report_in_all_three_formats() {
+    let (png, webp) = png_and_webp();
+    let files = vec![
+        FileEntry {
+            label: b"photos/shot.png",
+            result: FileResult::Audited(audit(&png)),
+        },
+        FileEntry {
+            label: b"photos/shot.webp",
+            result: FileResult::Audited(audit(&webp)),
+        },
+    ];
+    let opts = RenderOptions {
+        policy: Some(StripPolicy::AllPii),
+        inventory: true,
+        values: true,
+    };
+    for (ext, format) in [
+        ("txt", Format::Text),
+        ("json", Format::Json),
+        ("csv", Format::Csv),
+    ] {
+        let got = render(format, &files, &opts);
+        let path = root().join(format!("tests/golden/report-png-webp.{ext}"));
+        let want = fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        assert_eq!(
+            got.as_bytes(),
+            &want[..],
+            "{ext}: the output differs from {}; a golden file changes only by a deliberate edit",
+            path.display()
+        );
+    }
+    // The facts the golden files carry, stated here as well.
+    let json = render(Format::Json, &files, &opts);
+    assert_eq!(json.matches("\"strippable\":false").count(), 2);
+    assert!(json.contains("\"container\":\"png\""));
+    assert!(json.contains("\"container\":\"webp\""));
+    assert!(json.contains("\"region\":\"time\""));
+    assert!(json.contains("\"region\":\"text\""));
+    let text = render(Format::Text, &files, &opts);
+    assert!(text.matches("not strippable").count() >= 2);
+    assert!(!text.contains("valid"), "regions are located, never valid");
+    // The summary does not count either file as a reliable one.
+    assert!(json.contains("\"reliable_files\":0,\"unreliable_files\":2"));
 }
 
 // ── the cross product ───────────────────────────────────────────────────────

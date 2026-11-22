@@ -100,6 +100,30 @@ fn read_seeds(root: &Path, corpus: &'static str, dir: &str) -> Vec<Input> {
             !p.file_name()
                 .is_some_and(|n| n.to_string_lossy().starts_with(SHAPE_SEED_PREFIX))
         })
+        // SPEC-032: the `audit` target also holds PNG and WebP seeds. Tag-level
+        // inventory parity for those two formats is SPEC-036, so they stay out
+        // of this corpus; `audit-png-magic` (a bare signature, no item) was
+        // already in it and stays, so the pinned records do not move.
+        .filter(|p| {
+            let name = p.file_name().map(|n| n.to_string_lossy().into_owned());
+            if name.as_deref() == Some("audit-png-magic") {
+                return true;
+            }
+            // The copies of the walker seeds (some are not even a PNG or a WebP).
+            if dir == "audit"
+                && name
+                    .as_deref()
+                    .is_some_and(|n| n.starts_with("png-") || n.starts_with("webp-"))
+            {
+                return false;
+            }
+            let Ok(bytes) = std::fs::read(p) else {
+                return true;
+            };
+            let png = bytes.starts_with(b"\x89PNG\r\n\x1a\n");
+            let webp = bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP";
+            !(png || webp) || dir != "audit"
+        })
         .map(|p| Input {
             corpus,
             name: p

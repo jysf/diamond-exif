@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-22
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-032
@@ -46,18 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                # completed | blocked | rejected
+  agent: claude-sonnet-5-5                      # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
   basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
-  branch: null
+  branch: claude/spec-032-audit-b
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-22         # YYYY-MM-DD
+  notes: "tokens left null by instruction: the orchestrator records the harness figure"   # if unusual; double-quote it — an unquoted " #" starts a YAML comment
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -182,9 +182,9 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
+- **Branch / PR:** `claude/spec-032-audit-b` (no PR opened, by instruction)
+- **Completed at:** 2026-11-22
+- **All acceptance criteria met?** yes (the per-criterion list is in the report to the orchestrator; two judgement calls are under Deviations)
 - **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
 
 ### Cost self-report
@@ -193,27 +193,35 @@ Mirror what you put in the `handback:` front-matter, and say where the number
 came from. **This is the number that lands in the spec** — the orchestrator
 transcribes it via `just handback-sync`, it does not estimate it.
 
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null: left for the orchestrator to record from the harness
+- **Estimated USD:** null
+- **Duration (minutes):** not measured
+- **Source of the number:** none available to the agent (orchestrator records the harness figure)
 
 ### Drift and new artifacts
 
 - **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
+  - none
 - **Deviations from spec:**
-  - [list]
+  - CSV `disposition` cell is `not_strippable` for a finding of a PNG or WebP when a policy is set (no new column: the CSV header and the 19 fields are unchanged). JSON per-finding `disposition` stays `kept`, with the additive `preview.strippable` boolean (last key of `preview`); `schema_version` is not bumped. Text says "kept (not strippable)" per finding and one "not strippable" preview line. Golden `report-full-house.json` changed (its two previews gained `"strippable":true`); new goldens `report-png-webp.{txt,json,csv}`.
+  - Summary reliability: `Summary::reliable_files` now uses the same rule as `Preview::reliable` (a PNG or WebP is never reliable), so a run of only PNGs reports no residual number.
+  - Handoff step 2 says a WebP with unreadable metadata is `issues`; by DEC-010 part 5 a failed Exif block is `unreadable` (exit 3, tested) and a walk-only issue is `issues` (tested separately).
+  - The `png-text-keywords` fixture is its own table (`TEXT_KEYWORDS` in `tests/support/oracle_png.rs`), not an entry of `oracle_png::fixtures()`, so the 23-selector record set and its counts are untouched. Its record is `png-text-keywords.txt` (`-a -G1 -s -n`, `[PNG]` group), added to the PNG record-set test.
+  - Keyword divergence recorded: `creation time` and `Creation time` print as `CreationTime` but the audit (measured rule) keeps them FreeText; question `png-creation-time-keyword-case`.
+  - Category-presence differences (17, all explained, all listed in `DIFFERENCES` with existing question ids except one new): raw-profile XMP (3, `png-raw-profile-not-decoded`), `png-xmp-itxt-flag-2` (new `png-xmp-flag-2-located-not-read`), `webp-exif-16-then-gps` (`webp-exif-block-cap`, audit is not clean: tested), WebP ICC (4) and XMP (8) validated by ExifTool only.
+  - Fuzz seeds: all 72 `png_chunks` and 53 `webp_riff` seeds are copied into `audit` (as `png-*`, `webp-*`) plus five explicit PNG/WebP shapes; the inventory-parity corpus excludes them (SPEC-036), `tests/support/inventory_corpus.rs`. The two render seeds are real PNG ones again, and `render-gif-all-pii-values`, `render-png-all-pii-inventory-values`, `render-webp-gps-inventory-values` are new.
+  - Fuzz harness: `audit_invariants.rs` now re-derives PNG and WebP independently (chunk and RIFF lists, typed-again keyword rule, own index lookup, own after-image rule), with `strippable` in the preview model; `render_invariants.rs` follows (`reliable_of`, `strippable`, region names, CSV cell). 21 new plants.
+  - The audit and `audit_render` seed sets changed, so `tests/fuzz_layout.rs`, `tests/audit_model.rs`, `tests/policy_preview.rs`, `tests/budget_oracle.rs` pins were updated.
 - **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - none beyond SPEC-036 (tag-level inventory parity)
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — Where the CSV should say "not strippable" without a new column, and that the render harness has its own copy of the `reliable` rule.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — That every test counting the `audit` seed directory (inventory corpus, budget oracle, preview nesting) pins its size and would move when seeds are added.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Grep for every consumer of the seed directories and of `reliable` before adding seeds, then change them in one pass.

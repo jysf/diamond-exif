@@ -301,6 +301,34 @@ fn record_png(root: &std::path::Path, out_dir: &std::path::Path, version: &str) 
     }
     fs::write(out_dir.join(oracle_png::WARNINGS_RECORD), text).expect("write warnings record");
     println!("oracle-record: wrote the PNG warnings record");
+
+    // SPEC-032: the text-keyword record. `-a -G1 -s -n` over the keyword fixture,
+    // the `[PNG]` group only (the other groups are not about keywords). Each
+    // line is `[PNG] <tag name> : <value>`; the value is `v:<keyword>`.
+    let bytes = oracle_png::text_keywords_png();
+    let path = tools::temp_file_with_ext(oracle_png::TEXT_KEYWORDS_NAME, "png", &bytes)
+        .expect("write temp fixture");
+    let args: Vec<String> = ["-a", "-G1", "-s", "-n"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let run = tools::run_tool("exiftool", &args, &path);
+    let _ = fs::remove_file(&path);
+    let out = run.expect("run exiftool");
+    let mut text = format!(
+        "# command: exiftool -a -G1 -s -n <file> (the [PNG] group only)\n# exiftool-version: {version}\n\
+         # source: fixture {}\n",
+        oracle_png::TEXT_KEYWORDS_NAME
+    );
+    for line in String::from_utf8_lossy(&out.stdout).lines() {
+        if line.starts_with("[PNG] ") {
+            text.push_str(line.trim_end());
+            text.push('\n');
+        }
+    }
+    fs::write(out_dir.join(oracle_png::TEXT_KEYWORDS_RECORD), text)
+        .expect("write text-keywords record");
+    println!("oracle-record: wrote the PNG text-keywords record");
 }
 
 /// SPEC-034: the WebP records, shaped like [`record_png`]. Every shape was

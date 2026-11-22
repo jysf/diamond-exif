@@ -14,10 +14,14 @@
 mod cli_tree;
 #[path = "support/oracle_tiff.rs"]
 mod oracle_tiff;
+#[path = "support/png_shapes.rs"]
+mod png_shapes;
 #[path = "support/real_shapes.rs"]
 mod real_shapes;
 #[path = "support/report_inputs.rs"]
 mod report_inputs;
+#[path = "support/webp_shapes.rs"]
+mod webp_shapes;
 
 include!("../fuzz/shared/render_check.rs");
 
@@ -1554,4 +1558,175 @@ fn the_new_structures_print_in_every_format_and_the_exit_codes_are_unchanged() {
         .cwd(&t.root)
         .run();
     assert_eq!(exit_of(&out), 0);
+}
+
+// ── PNG and WebP (SPEC-032, DEC-020) ────────────────────────────────────────
+
+/// A big-endian TIFF whose IFD0 points at a GPS IFD holding `GPSLatitudeRef`.
+fn tiff_with_gps() -> Vec<u8> {
+    let mut d = b"MM\x00\x2A\x00\x00\x00\x08".to_vec();
+    d.extend_from_slice(&[0, 1, 0x88, 0x25, 0, 4, 0, 0, 0, 1, 0, 0, 0, 26]);
+    d.extend_from_slice(&[0, 0, 0, 0]);
+    d.extend_from_slice(&[0, 1, 0, 1, 0, 2, 0, 0, 0, 2, b'N', 0, 0, 0]);
+    d.extend_from_slice(&[0, 0, 0, 0]);
+    d
+}
+
+fn png_around(parts: &[Vec<u8>]) -> Vec<u8> {
+    let mut all = vec![png_shapes::ihdr()];
+    all.extend_from_slice(parts);
+    all.push(png_shapes::idat());
+    all.push(png_shapes::iend());
+    png_shapes::png(&all)
+}
+
+/// What a `--json` run said about its one file.
+struct One {
+    out: Out,
+    status: String,
+    container: String,
+    categories: Vec<String>,
+    strippable: Option<bool>,
+}
+
+fn one_file(t: &Tree, name: &str) -> One {
+    let out = Cmd::new().args(["--json", name]).cwd(&t.root).run();
+    let j = json_of(&out);
+    let f = j.get("files").and_then(J::as_arr).expect("files")[0].clone();
+    let status = f
+        .get("status")
+        .and_then(J::as_str)
+        .expect("status")
+        .to_string();
+    let container = f
+        .get("container")
+        .and_then(J::as_str)
+        .unwrap_or("")
+        .to_string();
+    let categories: Vec<String> = f
+        .get("findings")
+        .and_then(J::as_arr)
+        .expect("findings")
+        .iter()
+        .map(|x| {
+            x.get("category")
+                .and_then(J::as_str)
+                .expect("category")
+                .to_string()
+        })
+        .collect();
+    let strippable = f
+        .get("preview")
+        .and_then(|p| p.get("strippable"))
+        .and_then(|b| match b {
+            J::Bool(v) => Some(*v),
+            _ => None,
+        });
+    One {
+        out,
+        status,
+        container,
+        categories,
+        strippable,
+    }
+}
+
+#[test]
+fn a_png_with_gps_in_exif_exits_with_the_findings_code() {
+    let t = Tree::new("png-gps");
+    t.write(
+        "gps.png",
+        &png_around(&[png_shapes::exif_chunk(&tiff_with_gps())]),
+    );
+    let r = one_file(&t, "gps.png");
+    assert_eq!(exit_of(&r.out), 1, "{}", r.out.text());
+    assert_eq!((r.status.as_str(), r.container.as_str()), ("ok", "png"));
+    assert!(
+        r.categories.iter().any(|c| c == "gps"),
+        "{:?}",
+        r.categories
+    );
+    // The audit is real, the preview says it cannot strip.
+    assert_eq!(r.strippable, Some(false));
+    // The text report says so too.
+    let text = Cmd::new().args(["gps.png"]).cwd(&t.root).run();
+    assert!(text.text().contains("not strippable"), "{}", text.text());
+}
+
+#[test]
+fn a_clean_png_and_a_clean_webp_are_ok_and_exit_zero() {
+    let t = Tree::new("png-clean");
+    t.write("a.png", &png_shapes::minimal());
+    t.write("b.webp", &webp_shapes::minimal());
+    for (name, container) in [("a.png", "png"), ("b.webp", "webp")] {
+        let r = one_file(&t, name);
+        assert_eq!(exit_of(&r.out), 0, "{name}: {}", r.out.text());
+        assert_eq!(
+            (r.status.as_str(), r.container.as_str()),
+            ("ok", container),
+            "{name}"
+        );
+        assert!(r.categories.is_empty(), "{name}: {:?}", r.categories);
+    }
+}
+
+#[test]
+fn a_webp_with_unreadable_or_odd_metadata_is_not_ok() {
+    let t = Tree::new("webp-bad");
+    // An EXIF chunk whose payload is not a TIFF: unreadable metadata. DEC-010
+    // part 5 names that status `unreadable` (a failed block): exit 3.
+    let junk = webp_shapes::riff(&[
+        webp_shapes::vp8x(webp_shapes::FLAG_EXIF, 1, 1),
+        webp_shapes::vp8l(),
+        webp_shapes::exif_chunk(b"not a tiff payload"),
+    ]);
+    t.write("junk.webp", &junk);
+    let r = one_file(&t, "junk.webp");
+    assert_eq!(
+        (r.status.as_str(), r.container.as_str()),
+        ("unreadable", "webp")
+    );
+    assert_eq!(exit_of(&r.out), 3, "{}", r.out.text());
+    // A walk issue only (the VP8X flag disagrees with the EXIF chunk): status
+    // `issues`; exit 0 without --strict, 3 with it.
+    let odd = webp_shapes::riff(&[
+        webp_shapes::vp8x(0, 1, 1),
+        webp_shapes::vp8l(),
+        webp_shapes::exif_chunk(&webp_shapes::exif_with_make()),
+    ]);
+    t.write("odd.webp", &odd);
+    let r = one_file(&t, "odd.webp");
+    assert_eq!(r.status, "issues", "{}", r.out.text());
+    assert_eq!(exit_of(&r.out), 0);
+    let strict = Cmd::new().args(["--strict", "odd.webp"]).cwd(&t.root).run();
+    assert_eq!(exit_of(&strict), 3);
+}
+
+#[test]
+fn heic_is_still_unsupported_and_png_obeys_the_size_cap() {
+    let t = Tree::new("heic");
+    t.write("a.heic", b"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00");
+    let r = one_file(&t, "a.heic");
+    assert_eq!(exit_of(&r.out), 0);
+    assert_eq!(
+        (r.status.as_str(), r.container.as_str(), r.categories.len()),
+        ("unsupported", "heic", 0)
+    );
+    // A PNG over --max-size is a failure like a TIFF or a JPEG.
+    let png = png_shapes::minimal();
+    t.write("big.png", &png);
+    let cap = (png.len() - 1).to_string();
+    let out = Cmd::new()
+        .args(["--json", "--max-size", &cap, "big.png"])
+        .cwd(&t.root)
+        .run();
+    assert_eq!(exit_of(&out), 3);
+    assert_eq!(
+        files_of(&json_of(&out)),
+        vec![(
+            "big.png".to_string(),
+            "failed".to_string(),
+            Some("larger than --max-size".to_string())
+        )]
+    );
 }

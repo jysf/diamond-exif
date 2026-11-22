@@ -239,6 +239,8 @@ fn json_has_the_pinned_key_order_at_every_level() {
             "reliable",
             "residual_findings",
             "residual_severity",
+            // Additive (DEC-020): last, so every earlier key keeps its place.
+            "strippable",
         ],
         "preview",
     );

@@ -18,7 +18,9 @@
 
 #[allow(dead_code)]
 mod render_invariants {
-    use super::audit_invariants::{h_want, rederive, severity_of, Facts, What, H_PRESETS};
+    use super::audit_invariants::{
+        h_want, rederive, reliable_of, severity_of, Facts, What, H_PRESETS,
+    };
     use super::render_check::{naive_safe_text, parse_csv, parse_csv_quoted, parse_json, J};
     use exif_core::audit::audit;
     use exif_core::jpeg;
@@ -77,7 +79,7 @@ mod render_invariants {
     pub const IFDS: [&str; 8] = [
         "ifd0", "ifd1", "chain", "sub", "exif", "gps", "interop", "other",
     ];
-    pub const REGIONS: [&str; 9] = [
+    pub const REGIONS: [&str; 12] = [
         "xmp",
         "extended_xmp",
         "iptc",
@@ -87,6 +89,9 @@ mod render_invariants {
         "comment",
         "other_app",
         "trailer",
+        "text",
+        "raw_profile",
+        "time",
     ];
 
     /// A region kind's report name (DEC-010 as amended by DEC-012), typed by
@@ -102,6 +107,9 @@ mod render_invariants {
             "Comment" => "comment",
             "OtherApp" => "other_app",
             "Trailer" => "trailer",
+            "Text" => "text",
+            "RawProfile" => "raw_profile",
+            "Time" => "time",
             other => return format!("?{other}"),
         }
         .to_string()
@@ -187,12 +195,13 @@ mod render_invariants {
         "failed_blocks",
         "inventory_truncated",
     ];
-    const PREVIEW_KEYS: [&str; 5] = [
+    const PREVIEW_KEYS: [&str; 6] = [
         "policy",
         "counts",
         "reliable",
         "residual_findings",
         "residual_severity",
+        "strippable",
     ];
 
     fn snake(debug_name: &str) -> &'static str {
@@ -223,6 +232,8 @@ mod render_invariants {
         match f.kind.as_str() {
             "Tiff" => "tiff".to_string(),
             "Jpeg" => "jpeg".to_string(),
+            "Png" => "png".to_string(),
+            "Webp" => "webp".to_string(),
             other => lower(
                 other
                     .trim_start_matches("Unsupported(")
@@ -304,6 +315,30 @@ mod render_invariants {
                         }
                     }
                     for _ in meta.regions() {
+                        out.push(None);
+                    }
+                }
+            }
+            // A PNG or a WebP: the Exif blocks' tags, then one entry (never a
+            // payload) for each region item the expected audit lists.
+            kind @ ("Png" | "Webp") => {
+                if kind == "Png" {
+                    if let Ok(m) = exif_core::png::read(data) {
+                        for b in m.exif_blocks() {
+                            if let Ok(c) = b.container() {
+                                walk(c, &mut out);
+                            }
+                        }
+                    }
+                } else if let Ok(m) = exif_core::webp::read(data) {
+                    for b in m.exif_blocks() {
+                        if let Ok(c) = b.container() {
+                            walk(c, &mut out);
+                        }
+                    }
+                }
+                for item in rederive(data).items {
+                    if matches!(item.what, What::Region { .. }) {
                         out.push(None);
                     }
                 }
@@ -765,6 +800,7 @@ mod render_invariants {
                 uint(req(counts, k)?, k)?;
             }
             boolean(req(p, "reliable")?, "preview.reliable")?;
+            boolean(req(p, "strippable")?, "preview.strippable")?;
             null_or_uint(req(p, "residual_findings")?, "preview.residual_findings")?;
             null_or_in(
                 req(p, "residual_severity")?,
@@ -1134,10 +1170,11 @@ mod render_invariants {
         match (&want_prev, p.is_null()) {
             (None, true) => {}
             (Some(wp), false) => {
-                let reliable = w.health.clean && !w.health.truncated;
+                let reliable = reliable_of(w);
                 let counts = req(p, "counts")?;
                 if string(req(p, "policy")?, "policy")? != POLICY_NAMES[c.policy.unwrap_or(0)]
                     || boolean(req(p, "reliable")?, "reliable")? != reliable
+                    || boolean(req(p, "strippable")?, "strippable")? != wp.strippable
                     || uint(req(counts, "removed")?, "removed")? != wp.removed as u64
                     || uint(req(counts, "kept")?, "kept")? != wp.kept as u64
                     || uint(req(counts, "kept_unread")?, "kept_unread")? != wp.kept_unread as u64
@@ -1244,8 +1281,17 @@ mod render_invariants {
         let status = status_of_facts(w);
         let container = container_of(w);
         let prev = c.policy.map(|_| h_want(w, &c.removed));
+        // A container the writer refuses: the cell says so (DEC-020).
         let disp_of = |fi: usize| -> Option<String> {
-            prev.as_ref().and_then(|p| p.dispositions.get(fi)).cloned()
+            prev.as_ref().and_then(|p| {
+                p.dispositions.get(fi).map(|d| {
+                    if p.strippable {
+                        d.clone()
+                    } else {
+                        "not_strippable".to_string()
+                    }
+                })
+            })
         };
         let mut rows = Vec::new();
         if c.inventory {
@@ -1561,7 +1607,7 @@ mod render_invariants {
         let st = status_of_facts(w);
         let count =
             |name: &str| -> usize { usize::from(st == name) + usize::from(name == "failed") };
-        let reliable = w.health.clean && !w.health.truncated;
+        let reliable = reliable_of(w);
         let mut by: Vec<(String, usize)> = CATS.iter().map(|c| (c.0.to_string(), 0)).collect();
         for f in &w.findings {
             tick(1);

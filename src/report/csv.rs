@@ -135,8 +135,16 @@ fn audited_rows(out: &mut String, entry: &FileEntry<'_>, a: &FileAudit<'_>, opts
     let pv = preview_of(a, opts);
     let disposition = |finding: usize| -> String {
         pv.as_ref()
-            .and_then(|p| p.disposition(finding))
-            .map(|d| d.name().to_string())
+            .and_then(|p| p.disposition(finding).map(|d| (p, d)))
+            .map(|(p, d)| {
+                // A container the writer refuses: no removal is previewed
+                // (DEC-020). The cell says so instead of `kept`.
+                if p.strippable() {
+                    d.name().to_string()
+                } else {
+                    "not_strippable".to_string()
+                }
+            })
             .unwrap_or_default()
     };
     let mut rows = 0usize;

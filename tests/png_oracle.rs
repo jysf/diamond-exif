@@ -415,6 +415,8 @@ fn the_png_record_set_is_exactly_the_fixtures_and_the_seeds() {
     );
     // And the one extra record: ExifTool's warnings for the warning table.
     want.push(oracle_png::WARNINGS_RECORD.to_string());
+    // And the text-keyword record of SPEC-032 (`tests/audit_png_webp_oracle.rs`).
+    want.push(oracle_png::TEXT_KEYWORDS_RECORD.to_string());
     want.sort();
     assert_eq!(on_disk, want);
 }

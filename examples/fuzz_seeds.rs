@@ -1163,6 +1163,8 @@ fn overlapping_subifds(n: usize) -> Vec<u8> {
 fn audit_seeds(
     tiff: &[(&str, Vec<u8>)],
     jpeg: &[(&'static str, Vec<u8>)],
+    png: &[(&'static str, Vec<u8>)],
+    webp: &[(&'static str, Vec<u8>)],
 ) -> Vec<(String, Vec<u8>)> {
     let le = Writer { big: false };
     let mut out: Vec<(String, Vec<u8>)> = Vec::new();
@@ -1171,6 +1173,13 @@ fn audit_seeds(
     }
     for (n, b) in jpeg {
         out.push((format!("jpeg-{n}"), b.clone()));
+    }
+    // SPEC-032: every PNG chunk and WebP RIFF seed is also an audit input.
+    for (n, b) in png {
+        out.push((format!("png-{n}"), b.clone()));
+    }
+    for (n, b) in webp {
+        out.push((format!("webp-{n}"), b.clone()));
     }
     let exif = |tiff: &[u8]| japp(0xE1, b"Exif\0\0", tiff);
     let gps_thumb = tiff_gps_and_thumbnail(&le);
@@ -1226,9 +1235,109 @@ fn audit_seeds(
         // category, so the preview's may-hold relation is in the corpus.
         ("audit-full-house-tiff", report_inputs::full_house_tiff()),
         ("audit-full-house-jpeg", report_inputs::full_house_jpeg()),
+        // SPEC-032: PNG and WebP shapes that reach every region kind, the
+        // keyword rule, the empty-region rule and the trailer.
+        ("audit-png-text-time-trailer", png_text_time_trailer()),
+        ("audit-png-two-exif-regions", png_two_exif_regions(&le)),
+        ("audit-png-empty-regions", png_empty_regions()),
+        ("audit-webp-exif-xmp-icc", webp_exif_xmp_icc(&le)),
+        ("audit-webp-empty-regions", webp_empty_regions()),
     ];
     out.extend(new.into_iter().map(|(n, b)| (n.to_string(), b)));
     out
+}
+
+/// The PNG of the render seeds: GPS Exif and the text, time and trailer of
+/// [`png_text_time_trailer`].
+fn png_text_time_trailer_with_gps() -> Vec<u8> {
+    let mut all = vec![
+        png_shapes::ihdr(),
+        png_shapes::exif_chunk(&tiff_gps_and_thumbnail(&Writer { big: false })),
+        png_shapes::text(b"Author", b"someone"),
+        png_shapes::text(b"XML:com.adobe.xmp", b"<x:xmpmeta/>"),
+        png_shapes::chunk(b"tIME", &[0x07, 0xE8, 1, 2, 3, 4, 5]),
+        png_shapes::idat(),
+        png_shapes::iend(),
+    ];
+    all.push(b"TRAILER BYTES".to_vec());
+    png_shapes::png(&all)
+}
+
+/// A PNG around `parts`: IHDR first, then the parts, an IDAT and the IEND.
+fn png_around(parts: &[Vec<u8>]) -> Vec<u8> {
+    let mut all = vec![png_shapes::ihdr()];
+    all.extend_from_slice(parts);
+    all.push(png_shapes::idat());
+    all.push(png_shapes::iend());
+    png_shapes::png(&all)
+}
+
+/// Text keywords on both sides of the match rule (SPEC-032), a `tIME` chunk,
+/// a text chunk after the image data, and bytes after `IEND`.
+fn png_text_time_trailer() -> Vec<u8> {
+    let mut all = vec![
+        png_shapes::ihdr(),
+        png_shapes::text(b"Author", b"someone"),
+        png_shapes::text(b"author", b"someone"),
+        png_shapes::text(b"AUTHOR", b"someone"),
+        png_shapes::text(b"Copyright", b"c"),
+        png_shapes::text(b"Creation Time", b"2024:01:01"),
+        png_shapes::text(b"Software", b"tool"),
+        png_shapes::text(b"Title", b"a title"),
+        png_shapes::chunk(b"tIME", &[0x07, 0xE8, 1, 2, 3, 4, 5]),
+        png_shapes::chunk(b"tIME", &[0x07, 0xE8, 1]),
+        png_shapes::idat(),
+        png_shapes::text(b"Comment", b"after the image data"),
+        png_shapes::iend(),
+    ];
+    all.push(b"TRAILER BYTES".to_vec());
+    png_shapes::png(&all)
+}
+
+/// Two `eXIf` blocks (GPS in the second), XMP, ICC and a raw profile.
+fn png_two_exif_regions(w: &Writer) -> Vec<u8> {
+    png_around(&[
+        png_shapes::exif_chunk(&make_and_gps(w)),
+        png_shapes::exif_chunk(&tiff_gps_and_thumbnail(w)),
+        png_shapes::text(b"XML:com.adobe.xmp", b"<x:xmpmeta/>"),
+        png_shapes::iccp(b"sRGB", 0, b"zz"),
+        png_shapes::raw_profile("exif", b"4578"),
+    ])
+}
+
+/// Regions of length 0: an item each, no finding.
+fn png_empty_regions() -> Vec<u8> {
+    png_around(&[
+        png_shapes::text(b"Author", b""),
+        png_shapes::text(b"XML:com.adobe.xmp", b""),
+        png_shapes::iccp(b"sRGB", 0, b""),
+        png_shapes::text(b"Title", b"kept"),
+    ])
+}
+
+/// A WebP with Exif (a GPS entry and a thumbnail), XMP and ICC after the image.
+fn webp_exif_xmp_icc(w: &Writer) -> Vec<u8> {
+    webp_shapes::riff(&[
+        webp_shapes::vp8x(
+            webp_shapes::FLAG_ICC | webp_shapes::FLAG_EXIF | webp_shapes::FLAG_XMP,
+            1,
+            1,
+        ),
+        webp_shapes::vp8l(),
+        webp_shapes::exif_chunk(&tiff_gps_and_thumbnail(w)),
+        webp_shapes::chunk(b"XMP ", b"<x:xmpmeta/>"),
+        webp_shapes::chunk(b"ICCP", b"icc profile"),
+    ])
+}
+
+/// Empty `XMP ` and `ICCP` chunks: items, no findings.
+fn webp_empty_regions() -> Vec<u8> {
+    webp_shapes::riff(&[
+        webp_shapes::vp8x(webp_shapes::FLAG_ICC | webp_shapes::FLAG_XMP, 1, 1),
+        webp_shapes::chunk(b"XMP ", b""),
+        webp_shapes::vp8l(),
+        webp_shapes::chunk(b"ICCP", b""),
+    ])
 }
 
 /// One `audit_render` input: the options byte, the label length, the label,
@@ -1248,10 +1357,12 @@ fn render_seeds() -> Vec<(String, Vec<u8>)> {
     const VAL: u8 = 16;
     let house = report_inputs::full_house_jpeg();
     let house_tiff = report_inputs::full_house_tiff();
-    // An unsupported container with a `.png` label. The bytes were a PNG
-    // signature until PNG was audited (SPEC-032, DEC-020); the seed names are
-    // historical, a GIF header keeps the unsupported cases covered.
-    let png = [b'G', b'I', b'F', b'8', b'9', b'a', 0, 0, 0, 0];
+    // A PNG with GPS in `eXIf`, standard keywords, XMP, a `tIME` chunk and
+    // bytes after `IEND` (SPEC-032, DEC-020): the audited-but-not-strippable
+    // case of every renderer. The seed names are historical ("png-signature").
+    let png = png_text_time_trailer_with_gps();
+    let gif = [b'G', b'I', b'F', b'8', b'9', b'a', 0, 0, 0, 0];
+    let webp = webp_exif_xmp_icc(&Writer { big: false });
     let long_ascii = {
         let payload: Vec<u8> = (0..300u32).map(|i| b'a' + (i % 26) as u8).collect();
         report_inputs::tiff_with_payloads(&[(0x010F, 2, &payload)])
@@ -1333,11 +1444,22 @@ fn render_seeds() -> Vec<(String, Vec<u8>)> {
             render_seed(3 | VAL, b"a;=1+cmd|' /C calc'!A0", &semi),
         ),
         ("label-empty-png", render_seed(3, b"", &png)),
+        // An unsupported file next to the PNG cases (the GIF stands in for any
+        // container the library does not read).
+        ("gif-all-pii-values", render_seed(3 | VAL, b"s.gif", &gif)),
         (
             "ascii-payload-300-bytes",
             render_seed(3 | INV | VAL, b"long.tif", &long_ascii),
         ),
         ("png-signature-values", render_seed(5 | VAL, b"s.png", &png)),
+        (
+            "png-all-pii-inventory-values",
+            render_seed(3 | INV | VAL, b"p.png", &png),
+        ),
+        (
+            "webp-gps-inventory-values",
+            render_seed(1 | INV | VAL, b"w.webp", &webp),
+        ),
         ("empty-file", render_seed(1 | INV | VAL, b"empty", b"")),
         // SPEC-019: the Multi-Picture file and the split Photoshop file under
         // several option bytes (policies, inventory, values, failure bits).
@@ -1782,7 +1904,7 @@ fn main() {
 
     let adir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/audit");
     fs::create_dir_all(&adir).expect("create seeds dir");
-    let aseeds = audit_seeds(&seeds, &jseeds);
+    let aseeds = audit_seeds(&seeds, &jseeds, &pseeds, &wpseeds);
     for (name, bytes) in &aseeds {
         fs::write(adir.join(name), bytes).expect("write seed");
     }

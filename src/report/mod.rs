@@ -235,7 +235,10 @@ impl Summary {
                 self.max_severity = Some(m);
             }
         }
-        let reliable = a.health().clean && !a.health().inventory_truncated;
+        // The same rule as `Preview::reliable`: a PNG or a WebP is never
+        // reliable, the writer refuses it (DEC-020).
+        let strippable = !matches!(a.kind(), ContainerKind::Png | ContainerKind::Webp);
+        let reliable = strippable && a.health().clean && !a.health().inventory_truncated;
         if reliable {
             self.reliable_files = self.reliable_files.saturating_add(1);
             if let (Some(policy), Some(total)) = (opts.policy, self.residual_findings.as_mut()) {

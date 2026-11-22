@@ -149,7 +149,7 @@ fuzz seeds and README updated.
 - [x] Regions: `Xmp`, `Icc` (PNG `iCCP`, WebP `ICCP`), `Text`, `RawProfile`,
       `Time`, PNG `Trailer`; a length-0 region has an item and no finding;
       after-IDAT / after-IEND is recorded in `Origin::after_scan`.
-- [ ] Text keywords: Author and Copyright to `Authorship`, Creation Time to
+- [x] Text keywords: Author and Copyright to `Authorship`, Creation Time to
       `Timestamps`, Software to `Software`, others `FreeText`; the match rule
       (exact vs first-letter case) is MEASURED against ExifTool on at least
       `Author`, `author`, `AUTHOR`, `aUTHOR` and pinned; the committed
@@ -160,19 +160,19 @@ fuzz seeds and README updated.
       TIFF previews unchanged byte for byte.
 - [x] `strip()` of a PNG and of a WebP returns `StripError::Unsupported` with
       the new kind, for every policy; no output bytes.
-- [ ] CLI: a PNG with GPS in `eXIf` exits with the findings code, a clean PNG
+- [x] CLI: a PNG with GPS in `eXIf` exits with the findings code, a clean PNG
       is `ok`, a WebP with unreadable metadata is `issues`, HEIC is still
       `unsupported`; text, JSON, CSV golden/shape tests updated for the new
       kinds; no new CLI flag.
-- [ ] Category-presence replay: for every PNG and WebP oracle fixture with a
+- [x] Category-presence replay: for every PNG and WebP oracle fixture with a
       committed record, the audit has a GPS / Xmp / Icc finding iff ExifTool
       printed the GPS / XMP / ICC selector, except recorded divergences
       (`png-*`, `webp-*` ids in `KNOWN_DIVERGENCES`); a perturbed record makes
       the replay name the fixture (shown red); live test gated like its
       siblings.
-- [ ] No panic on hostile input: `audit` and `audit_render` fuzz 60 s clean with
+- [x] No panic on hostile input: `audit` and `audit_render` fuzz 60 s clean with
       the new seeds.
-- [ ] `just lint`, `just test`, `just mutation-oracle`, `just forbid-unsafe`,
+- [x] `just lint`, `just test`, `just mutation-oracle`, `just forbid-unsafe`,
       `just validate`, `just cost-audit`, `just oracle-record` idempotent,
       `just fuzz-smoke audit`, `just fuzz-smoke audit_render` green.
 

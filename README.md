@@ -4,7 +4,7 @@ Panic-free, pure-Rust, zero-copy EXIF/XMP/IPTC/ICC metadata reader, writer and s
 
 | Piece | Status | License |
 |---|---|---|
-| `exif-core` | reader, read-only audit model and a strip writer for JPEG, TIFF and DNG (M1a to M1c); PNG and WebP are read by the library only; `set` operations not yet | MIT/Apache-2.0 |
+| `exif-core` | reader, read-only audit model and a strip writer for JPEG, TIFF and DNG (M1a to M1c); PNG and WebP are read and audited but not yet stripped; `set` operations not yet | MIT/Apache-2.0 |
 | `exif-audit` CLI (read-only scanner) | released as a pre-release binary (`v0.1.0-alpha.1`, see Install); or `cargo build --release --bin exif-audit` | free |
 | `exif-pro` (compliance tier) | scaffold only | paid |
 
@@ -16,10 +16,10 @@ What works today:
 - **Strip writer:** `exif_core::strip` (and `sanitize`, which returns only the bytes) takes input bytes and a `StripPolicy` (`Gps`, `GpsAndDevice`, `AllPii`, `All`, `Everything`, or any set of categories) and returns new bytes or a typed refusal. It fails closed: the output is audited again and compared with the input's audit before it is returned, and it is never longer than the input.
   - **JPEG:** whole segments are removed; inside an Exif segment, matching IFD entries are deleted in place. Nothing grows or moves, and a Multi-Picture index stays consistent.
   - **TIFF and DNG:** the same in-place deletion, with scrubbed values zeroed. Strip and tile offsets, strip and tile data, SubIFDs and JPEG data stay byte-identical. When that cannot be guaranteed the writer refuses with a reason (a hidden pointer, shared bytes, or a thumbnail it cannot locate).
-  - **PNG:** the library walks a PNG chunk by chunk (`exif_core::png`, tolerant: a bad CRC or a missing `IEND` is an issue, not a failure), and `exif_core::png::read` locates its metadata (`eXIf` Exif handed to the TIFF engine, XMP, ICC, raw-profile and text chunks, including chunks after `IEND`) without inflating or decoding anything; `exif-audit` still reports PNG as unsupported until it is wired in.
-  - **WebP:** the library walks a WebP RIFF stream chunk by chunk (`exif_core::webp`, tolerant: the declared RIFF size never limits the walk, and size, pad-byte and `VP8X` flag disagreements are issues, not failures), and `exif_core::webp::read` locates its metadata (`EXIF` handed to the TIFF engine, `XMP ` and `ICCP` located, animation frames passed over); `exif-audit` still reports WebP as unsupported until it is wired in.
+  - **PNG:** the library walks a PNG chunk by chunk (`exif_core::png`, tolerant: a bad CRC or a missing `IEND` is an issue, not a failure), and `exif_core::png::read` locates its metadata (`eXIf` Exif handed to the TIFF engine, XMP, ICC, raw-profile and text chunks, including chunks after `IEND`) without inflating or decoding anything. `exif-audit` audits PNG: every `eXIf` block is inventoried (none is merged: ExifTool reads only the first), and the located XMP, ICC, text, raw-profile and `tIME` chunks and any bytes after `IEND` become findings (text chunks by keyword: `Author` and `Copyright` are authorship, `Creation Time` a timestamp, `Software` software, the rest free text). The report says "located", never "valid", and a PNG is **not strippable** yet: its preview keeps every finding and says so (`strippable: false` in JSON), and `strip` refuses it.
+  - **WebP:** the library walks a WebP RIFF stream chunk by chunk (`exif_core::webp`, tolerant: the declared RIFF size never limits the walk, and size, pad-byte and `VP8X` flag disagreements are issues, not failures), and `exif_core::webp::read` locates its metadata (`EXIF` handed to the TIFF engine, `XMP ` and `ICCP` located, animation frames passed over). `exif-audit` audits WebP the same way (every `EXIF` block inventoried, `XMP ` and `ICCP` located; a file with more `EXIF` blocks than the library keeps is never reported clean) and likewise reports it **not strippable**. HEIC, GIF, BigTIFF, empty and unknown files stay `unsupported`.
   - **Known limits:** compressed and raw-profile PNG metadata is located but not read, and WebP metadata is located, never decoded.
-- **Verification:** nine fuzz targets (`tiff_ifd`, `jpeg_segments`, `audit`, `audit_render`, `cli_args`, `rewrite_jpeg`, `rewrite_tiff`, `png_chunks`, `webp_riff`) and an ExifTool oracle for reads, inventory and strip output (live and replayed), shown able to fail by mutated-copy red-proofs. Inventory parity against ExifTool covers 183 distinct inputs.
+- **Verification:** nine fuzz targets (`tiff_ifd`, `jpeg_segments`, `audit`, `audit_render`, `cli_args`, `rewrite_jpeg`, `rewrite_tiff`, `png_chunks`, `webp_riff`) and an ExifTool oracle for reads, inventory and strip output (live and replayed), shown able to fail by mutated-copy red-proofs. Inventory parity against ExifTool covers 183 distinct inputs (JPEG and TIFF; PNG and WebP are checked for category presence: a GPS, XMP or ICC finding exactly when ExifTool prints the matching tag, and for the tag name ExifTool gives each PNG text keyword).
 - **CLI:** `exif-audit`, a read-only privacy scan with exit codes a CI job can act on (below).
 
 See `CLAUDE.md` and `AGENTS.md`. First decision: DEC-001 (tolerant-walk policy).
@@ -115,7 +115,7 @@ Exit codes:
 | `3` | incomplete: a file failed or was unreadable (with `--strict`, also `unsupported` or `issues`) |
 | `4` | the report could not be written to stdout (a closed pipe, a full disk) |
 
-Incomplete outranks findings, so a CI job never reads "1" as "everything else was fine". An unsupported file (a PNG, say) is never counted as clean: it is reported as `unsupported`, and it fails the run only under `--strict`.
+Incomplete outranks findings, so a CI job never reads "1" as "everything else was fine". An unsupported file (a HEIC, say) is never counted as clean: it is reported as `unsupported`, and it fails the run only under `--strict`.
 
 **A CI gate** (fail the build when any file leaks a GPS position or a device serial; the default `--fail-on high`):
 
