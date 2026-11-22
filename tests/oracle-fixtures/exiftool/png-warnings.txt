@@ -1,6 +1,6 @@
 # command: exiftool -a -G1 -s -n -Warning -Error <file>
 # exiftool-version: 13.55
-# source: fixtures 20
+# source: fixtures 24
 ## png-exif-prefix
 [ExifTool]      Warning                         : Improper "Exif00" header in EXIF chunk
 ## png-no-iend
@@ -34,6 +34,10 @@
 [ExifTool]      Warning                         : Invalid eXIf chunk
 ## png-exif-bad-crc
 ## png-keyword-80
+## png-keyword-79
+## png-text-no-nul
+## png-iccp-name-80
+## png-iccp-name-empty
 ## png-exif-basic-le
 ## png-xmp-itxt
 ## png-iccp-valid

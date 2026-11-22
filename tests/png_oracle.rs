@@ -204,7 +204,7 @@ fn png_fixtures_are_deterministic_and_uniquely_named() {
     names.sort_unstable();
     names.dedup();
     assert_eq!(names.len(), count, "fixture names must be unique");
-    assert_eq!(count, 12 + 37, "12 wrapped TIFFs and 37 shapes");
+    assert_eq!(count, 12 + 46, "12 wrapped TIFFs and 46 shapes");
     for (tiff, _) in oracle_tiff::fixtures() {
         assert!(
             !names.contains(&tiff),
@@ -247,6 +247,15 @@ fn png_fixtures_are_deterministic_and_uniquely_named() {
         "png-exif-and-raw-exif",
         "png-trailer-bytes",
         "png-exif-before-ihdr",
+        "png-iccp-name-79",
+        "png-iccp-name-80",
+        "png-iccp-name-empty",
+        "png-xmp-itxt-lang",
+        "png-xmp-itxt-lang-compressed",
+        "png-xmp-itxt-translated",
+        "png-xmp-itxt-lang-translated",
+        "png-exif-xmp-iccp",
+        "png-text-no-nul",
     ] {
         assert!(names.contains(&shape), "missing fixture {shape}");
     }
@@ -333,7 +342,7 @@ fn replay_png_records_are_clean_on_an_unmodified_reading() {
         }
         seeds += 1;
     }
-    assert_eq!(fixtures, 49);
+    assert_eq!(fixtures, 58);
     assert_eq!(seeds, 68);
 }
 
@@ -1203,6 +1212,10 @@ const WARNING_TABLE: &[WarningRow] = &[
     // keyword length, we report both.
     ("png-exif-bad-crc", "BadChunkCrc", "ok", &[]),
     ("png-keyword-80", "BadTextChunk", "", &[]),
+    ("png-keyword-79", "", "", &[]),
+    ("png-text-no-nul", "BadTextChunk", "", &[]),
+    ("png-iccp-name-80", "BadIccpChunk", "", &[]),
+    ("png-iccp-name-empty", "BadIccpChunk", "", &[]),
     // Clean on both sides.
     ("png-exif-basic-le", "", "ok", &[]),
     ("png-xmp-itxt", "", "", &[]),
@@ -1374,4 +1387,119 @@ fn name_bytes(name: &str) -> &'static [u8] {
     ALL.get_or_init(|| oracle_png::fixtures().into_iter().collect())
         .get(name)
         .unwrap_or_else(|| panic!("no PNG fixture named {name}"))
+}
+
+/// What we locate, as the comparable form of an `oracle_png::Expect`.
+fn located(bytes: &[u8]) -> Vec<oracle_png::Expect> {
+    let m = png::read(bytes).expect("a PNG");
+    m.regions()
+        .iter()
+        .map(|r| match *r {
+            PngRegion::Xmp {
+                compressed, data, ..
+            } => oracle_png::Expect {
+                kind: "xmp",
+                compressed,
+                name: Vec::new(),
+                data: data.to_vec(),
+            },
+            PngRegion::Icc {
+                name, method, data, ..
+            } => {
+                assert_eq!(method, 0, "the builders write method 0");
+                oracle_png::Expect {
+                    kind: "icc",
+                    // The builders' zlib stream is the compressed profile.
+                    compressed: true,
+                    name: name.to_vec(),
+                    data: data.to_vec(),
+                }
+            }
+            PngRegion::RawProfile {
+                profile,
+                compressed,
+                data,
+                ..
+            } => oracle_png::Expect {
+                kind: "raw",
+                compressed,
+                name: profile.to_vec(),
+                data: data.to_vec(),
+            },
+            PngRegion::Text {
+                keyword,
+                compressed,
+                data,
+                ..
+            } => oracle_png::Expect {
+                kind: "text",
+                compressed,
+                name: keyword.to_vec(),
+                data: data.to_vec(),
+            },
+            _ => panic!("an unknown region kind"),
+        })
+        .collect()
+}
+
+/// SPEC-031 verify M3: the comparator sees presence only, so a region we locate
+/// with the wrong bytes would pass it. For every hand-built fixture the located
+/// regions (kind, compression, name, and the exact bytes of the packet, profile
+/// or text) equal what the independent builders wrote; a fixture with no
+/// expectation locates nothing. No ExifTool needed.
+#[test]
+fn located_region_bytes_equal_what_the_builders_wrote() {
+    let expected = oracle_png::expected_regions();
+    let mut checked = 0usize;
+    for (name, bytes) in oracle_png::fixtures() {
+        let want: Vec<oracle_png::Expect> = expected
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, e)| e.clone())
+            .unwrap_or_default();
+        assert_eq!(located(&bytes), want, "{name}: located regions");
+        checked += want.len();
+    }
+    for (n, _) in &expected {
+        assert!(
+            oracle_png::fixtures().iter().any(|(f, _)| f == n),
+            "{n} is not a fixture"
+        );
+    }
+    assert!(checked >= 25, "only {checked} regions checked");
+}
+
+/// Measured rules (verify M1 and M2), pinned beside the records: ExifTool reads
+/// an `iCCP` whatever the length of its name (and prints no name when it is
+/// empty), and treats an `iTXt` XMP keyword with a non-empty language tag as
+/// plain text whatever the translated keyword.
+#[test]
+fn iccp_names_and_itxt_language_tags_agree_with_exiftool() {
+    let icc = index_of("PNG:ProfileName");
+    let xmp = index_of("XMP-xmp:CreatorTool");
+    for (name, has_name) in [
+        ("png-iccp-name-79", true),
+        ("png-iccp-name-80", true),
+        ("png-iccp-name-empty", false),
+    ] {
+        let theirs = theirs_fixture(name);
+        let ours = ours_fixture(&fixture(name));
+        assert_eq!(theirs[icc].is_some(), has_name, "{name}: ExifTool");
+        assert_eq!(ours[icc].is_some(), has_name, "{name}: ours");
+        // The chunk is located in every case.
+        assert_eq!(located(&fixture(name)).len(), 1, "{name}");
+    }
+    for (name, is_xmp) in [
+        ("png-xmp-itxt", true),
+        ("png-xmp-itxt-translated", true),
+        ("png-xmp-itxt-lang", false),
+        ("png-xmp-itxt-lang-compressed", false),
+        ("png-xmp-itxt-lang-translated", false),
+    ] {
+        let theirs = theirs_fixture(name);
+        let ours = ours_fixture(&fixture(name));
+        assert_eq!(theirs[xmp].is_some(), is_xmp, "{name}: ExifTool");
+        assert_eq!(ours[xmp].is_some(), is_xmp, "{name}: ours");
+        assert!(compare(name, &ours, &theirs).is_clean(), "{name}");
+    }
 }

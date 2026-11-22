@@ -1419,6 +1419,14 @@ questions:
       the record of the bare TIFF (png-exif-basic-le) so the entry cannot hide a change.
       Cost of leaving it: an audit of an ImageMagick-written PNG reports no Exif, where
       ExifTool reports it; the audit still locates the region (SPEC-032).
+      Worse, when a PNG has BOTH an eXIf chunk and a raw profile, ExifTool merges the two and
+      the later (raw) value wins (png-exif-and-raw-exif: IFD0:Make is listed twice with -a,
+      AlphaCam then RawCam, and RawCam is shown), including tags that exist only in the raw
+      profile (such as GPS). An audit or strip that trusts the eXIf chunk alone can therefore
+      miss metadata a reader shows. SPEC-032 and the strip work should at least flag a
+      RawProfile region beside an eXIf. Empty regions are reported as located (for example a
+      zero-length tEXt XMP: ExifTool says "Invalid XMP", we report a 0-byte readable Xmp
+      region): consumers must not count an empty region as metadata present.
 
   - id: png-compressed-xmp-not-inflated
     question: "ExifTool 13.55 inflates compressed XMP text chunks (iTXt flag 1, zTXt) and exif-core only locates them (DEC-018): is locating enough for the audit and the stripper?"

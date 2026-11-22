@@ -148,7 +148,7 @@ fn xmp_routes_for_itxt_and_legacy_text() {
     let k = b"XML:com.adobe.xmp";
     let d = wrap(&[
         itxt(k, 0, b"", b"", b"<a/>"),
-        itxt(k, 1, b"en", b"tr", &[0x78, 1, 2]),
+        itxt(k, 1, b"", b"tr", &[0x78, 1, 2]),
         text(k, b"<c/>"),
     ]);
     let m = read(&d).expect("reads");
@@ -392,10 +392,10 @@ fn iccp_located_and_bad_headers_are_issues() {
         .collect();
     assert_eq!(got, [(&b"sRGB"[..], 0, &[0x78, 1, 2][..]), (b"p", 7, b"")]);
 
+    // No NUL, or no method byte: nothing to locate (ExifTool reads no ICC either).
     let kw80 = [b'a'; 80];
     for c in [
         chunk(b"iCCP", b""),
-        chunk(b"iCCP", b"\0\0abc"),
         chunk(b"iCCP", b"sRGB"),
         chunk(b"iCCP", b"sRGB\0"),
         chunk(b"iCCP", &kw80),
@@ -404,6 +404,77 @@ fn iccp_located_and_bad_headers_are_issues() {
         let m = read(&d).expect("reads");
         assert!(m.regions().is_empty());
         assert_eq!(errors(&d), [Error::BadIccpChunk { at: FIRST }]);
+    }
+}
+
+/// Measured (ExifTool 13.55): an empty profile name, and names of 80, 81 and 200
+/// bytes, are read as ICC. They are located, with one `BadIccpChunk` issue; a
+/// name of 79 bytes is located with none.
+#[test]
+fn iccp_names_of_any_length_are_located() {
+    for (len, bad) in [
+        (0usize, true),
+        (1, false),
+        (79, false),
+        (80, true),
+        (81, true),
+        (200, true),
+    ] {
+        let name = vec![b'N'; len];
+        let d = wrap(&[iccp(&name, 0, &[9, 8])]);
+        let m = read(&d).expect("reads");
+        match m.regions() {
+            [PngRegion::Icc {
+                name: n,
+                method,
+                data,
+                ..
+            }] => {
+                assert_eq!((*n, *method, *data), (&name[..], 0, &[9u8, 8][..]), "{len}");
+            }
+            other => panic!("{len}: {other:?}"),
+        }
+        let want: Vec<Error> = if bad {
+            vec![Error::BadIccpChunk { at: FIRST }]
+        } else {
+            vec![]
+        };
+        assert_eq!(errors(&d), want, "{len}");
+    }
+}
+
+/// Measured (ExifTool 13.55, flags 0 and 1): an `iTXt` with the XMP keyword and a
+/// NON-empty language tag is not XMP (a plain text tag); the translated keyword
+/// does not matter.
+#[test]
+fn itxt_xmp_keyword_with_a_language_tag_is_text() {
+    let k = b"XML:com.adobe.xmp";
+    for flag in [0u8, 1] {
+        for lang in [&b"en-US"[..], b"x", b"EN"] {
+            for tr in [&b""[..], b"XMP Daten"] {
+                let d = wrap(&[itxt(k, flag, lang, tr, b"<a/>")]);
+                let m = read(&d).expect("reads");
+                match m.regions() {
+                    [PngRegion::Text {
+                        keyword,
+                        compressed,
+                        data,
+                        ..
+                    }] => {
+                        assert_eq!(
+                            (*keyword, *compressed, *data),
+                            (&k[..], flag == 1, &b"<a/>"[..])
+                        );
+                    }
+                    other => panic!("{flag} {lang:?} {tr:?}: {other:?}"),
+                }
+                assert!(m.is_clean());
+            }
+        }
+        // Empty language tag: XMP, whatever the translated keyword.
+        let d = wrap(&[itxt(k, flag, b"", b"XMP Daten", b"<a/>")]);
+        let m = read(&d).expect("reads");
+        assert!(matches!(m.regions(), [PngRegion::Xmp { .. }]));
     }
 }
 

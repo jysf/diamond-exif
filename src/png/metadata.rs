@@ -150,7 +150,9 @@ pub enum PngRegion<'a> {
     Icc {
         /// Input offset of the chunk.
         offset: usize,
-        /// The profile name, 1 to 79 bytes.
+        /// The profile name: the bytes before the first NUL, of any length
+        /// (the specification allows 1 to 79; an empty or longer name is
+        /// located with a [`Error::BadIccpChunk`] issue, as ExifTool reads it).
         name: &'a [u8],
         /// The compression-method byte as found (0 is zlib/deflate).
         method: u8,
@@ -357,14 +359,12 @@ struct TextParts<'a> {
     /// The chunk is malformed but still locatable (DEC-018): a keyword of 80
     /// bytes or more, or an `iTXt` flag other than 0 or 1.
     bad: bool,
-}
-
-/// Position of the NUL that ends a keyword or profile name, which must be 1 to
-/// 79 bytes: the first NUL within the first 80 bytes, not at position 0.
-fn name_end(data: &[u8]) -> Option<usize> {
-    let head = data.get(..data.len().min(MAX_KEYWORD.saturating_add(1)))?;
-    let end = head.iter().position(|&b| b == 0)?;
-    (end > 0).then_some(end)
+    /// An `iTXt` whose language tag is not empty. Measured (ExifTool 13.55,
+    /// both compression flags, tags `en-US`, `x`, `EN`): such a chunk with the
+    /// keyword `XML:com.adobe.xmp` is NOT XMP, only a plain text tag; the
+    /// translated keyword does not matter (an empty tag and a translated
+    /// keyword is XMP). So it is located as [`PngRegion::Text`].
+    tagged: bool,
 }
 
 /// The header of a `tEXt`, `zTXt` or `iTXt` chunk. `None` when there is nothing
@@ -384,6 +384,7 @@ fn text_parts(kind: ChunkKind, data: &[u8]) -> Option<TextParts<'_>> {
             compressed: false,
             value: rest,
             bad,
+            tagged: false,
         }),
         // A method byte follows the keyword; the text is always compressed.
         ChunkKind::Ztxt => Some(TextParts {
@@ -391,6 +392,7 @@ fn text_parts(kind: ChunkKind, data: &[u8]) -> Option<TextParts<'_>> {
             compressed: true,
             value: rest.get(1..)?,
             bad,
+            tagged: false,
         }),
         ChunkKind::Itxt => {
             let (&flag, rest) = rest.split_first()?;
@@ -408,6 +410,7 @@ fn text_parts(kind: ChunkKind, data: &[u8]) -> Option<TextParts<'_>> {
                 compressed,
                 value,
                 bad,
+                tagged: lang_end > 0,
             })
         }
         _ => None,
@@ -476,6 +479,7 @@ impl<'a> Extract<'a> {
                     compressed,
                     value,
                     bad,
+                    tagged,
                 }) = text_parts(kind, data)
                 else {
                     self.record(Error::BadTextChunk { at: offset }, offset);
@@ -484,7 +488,7 @@ impl<'a> Extract<'a> {
                 if bad {
                     self.record(Error::BadTextChunk { at: offset }, offset);
                 }
-                let region = if keyword == XMP_KEYWORD {
+                let region = if keyword == XMP_KEYWORD && !tagged {
                     PngRegion::Xmp {
                         offset,
                         compressed,
@@ -514,7 +518,12 @@ impl<'a> Extract<'a> {
                 self.push_region(region, offset);
             }
             ChunkKind::Iccp => {
-                let parsed = name_end(data).and_then(|end| {
+                // The name is the bytes before the first NUL, of any length
+                // (measured, ExifTool 13.55: names of 0, 1, 79, 80, 81 and 200
+                // bytes all give the ICC header tags; a chunk with no NUL or no
+                // method byte gives none). Empty or 80 bytes and more is
+                // malformed but located, like a long text keyword.
+                let parsed = data.iter().position(|&b| b == 0).and_then(|end| {
                     let name = data.get(..end)?;
                     let rest = data.get(end.checked_add(1)?..)?;
                     let (&method, body) = rest.split_first()?;
@@ -524,6 +533,9 @@ impl<'a> Extract<'a> {
                     self.record(Error::BadIccpChunk { at: offset }, offset);
                     return;
                 };
+                if name.is_empty() || name.len() > MAX_KEYWORD {
+                    self.record(Error::BadIccpChunk { at: offset }, offset);
+                }
                 self.push_region(
                     PngRegion::Icc {
                         offset,

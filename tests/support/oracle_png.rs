@@ -193,12 +193,26 @@ pub fn ztxt(keyword: &[u8], body: &[u8]) -> Vec<u8> {
 /// `iTXt`: keyword, NUL, compression flag, method, empty language tag, NUL, empty
 /// translated keyword, NUL, then the text (a zlib stream when `flag` is 1).
 pub fn itxt(keyword: &[u8], flag: u8, body: &[u8]) -> Vec<u8> {
+    itxt_full(keyword, flag, b"", b"", body)
+}
+
+/// `iTXt` with a language tag and a translated keyword (each NUL-terminated).
+pub fn itxt_full(keyword: &[u8], flag: u8, lang: &[u8], translated: &[u8], body: &[u8]) -> Vec<u8> {
     let text = if flag == 1 {
         zlib_stored(body)
     } else {
         body.to_vec()
     };
-    chunk(b"iTXt", &[keyword, &[0, flag, 0, 0, 0][..], &text].concat())
+    let head = [
+        keyword,
+        &[0, flag, 0][..],
+        lang,
+        &[0][..],
+        translated,
+        &[0][..],
+    ]
+    .concat();
+    chunk(b"iTXt", &[&head[..], &text].concat())
 }
 
 /// An ICC profile: the 128-byte header (total length, version 2.1.0, class
@@ -462,6 +476,159 @@ fn shapes() -> Vec<(&'static str, Vec<u8>)> {
             clean(&[text(&keyword_80[..79], b"value")]),
         ),
         ("png-keyword-80", clean(&[text(&keyword_80, b"value")])),
+        // iCCP profile names (SPEC-031 verify M1): 79 bytes, 80 bytes, empty.
+        (
+            "png-iccp-name-79",
+            clean(&[iccp(&[b'N'; 79], &icc_profile())]),
+        ),
+        (
+            "png-iccp-name-80",
+            clean(&[iccp(&[b'N'; 80], &icc_profile())]),
+        ),
+        ("png-iccp-name-empty", clean(&[iccp(b"", &icc_profile())])),
+        // iTXt XMP with a language tag and/or a translated keyword (M2).
+        (
+            "png-xmp-itxt-lang",
+            clean(&[itxt_full(XMP_KEYWORD, 0, b"en-US", b"", &xmp)]),
+        ),
+        (
+            "png-xmp-itxt-lang-compressed",
+            clean(&[itxt_full(XMP_KEYWORD, 1, b"en-US", b"", &xmp)]),
+        ),
+        (
+            "png-xmp-itxt-translated",
+            clean(&[itxt_full(XMP_KEYWORD, 0, b"", b"XMP Daten", &xmp)]),
+        ),
+        (
+            "png-xmp-itxt-lang-translated",
+            clean(&[itxt_full(XMP_KEYWORD, 0, b"en-US", b"XMP Daten", &xmp)]),
+        ),
+        // A text chunk with no NUL: nothing to locate, one BadTextChunk issue.
+        ("png-text-no-nul", clean(&[chunk(b"tEXt", b"nonulhere")])),
+        // An eXIf, an XMP chunk and an iCCP together (a second region matters).
+        (
+            "png-exif-xmp-iccp",
+            clean(&[
+                exif_chunk(&basic),
+                itxt(XMP_KEYWORD, 0, &xmp),
+                iccp(b"diamond", &icc_profile()),
+            ]),
+        ),
+    ]
+}
+
+/// One region a fixture is expected to locate, written from what the builders
+/// above put in the chunk (not from `src/`): `kind` is `xmp`, `icc`, `raw` or
+/// `text`; `name` is the profile name, the raw-profile suffix or the keyword
+/// (empty for XMP); `data` is the exact bytes of the text field or of the zlib
+/// stream.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Expect {
+    pub kind: &'static str,
+    pub compressed: bool,
+    pub name: Vec<u8>,
+    pub data: Vec<u8>,
+}
+
+fn ex(kind: &'static str, compressed: bool, name: &[u8], data: Vec<u8>) -> Expect {
+    Expect {
+        kind,
+        compressed,
+        name: name.to_vec(),
+        data,
+    }
+}
+
+/// The regions each hand-built fixture must locate, in chunk order. A fixture not
+/// listed (every wrapped TIFF, the `eXIf` shapes) must locate none.
+pub fn expected_regions() -> Vec<(&'static str, Vec<Expect>)> {
+    let xmp = xmp_packet();
+    let xz = zlib_stored(&xmp);
+    let prof = zlib_stored(&icc_profile());
+    let raw_exif = raw_profile_body("exif", &raw_exif_data());
+    let raw_xmp = raw_profile_body("xmp", &xmp);
+    let raw_mixed = raw_profile_body(
+        "exif",
+        &[&b"Exif\0\0"[..], &tiff_of(&[(t::T_MAKE, "RawCam")])].concat(),
+    );
+    let xmp_r = |c: bool, d: &[u8]| ex("xmp", c, b"", d.to_vec());
+    let icc = |n: &[u8]| ex("icc", true, n, prof.clone());
+    vec![
+        ("png-xmp-itxt", vec![xmp_r(false, &xmp)]),
+        ("png-xmp-itxt-compressed", vec![xmp_r(true, &xz)]),
+        ("png-xmp-text", vec![xmp_r(false, &xmp)]),
+        ("png-xmp-ztxt", vec![xmp_r(true, &xz)]),
+        ("png-xmp-itxt-flag-2", vec![xmp_r(true, &xmp)]),
+        ("png-xmp-after-idat", vec![xmp_r(false, &xmp)]),
+        (
+            "png-xmp-other-keyword",
+            vec![ex("text", false, b"Comment", xmp.clone())],
+        ),
+        (
+            "png-xmp-lowercase-keyword",
+            vec![ex("text", false, b"xml:com.adobe.xmp", xmp.clone())],
+        ),
+        (
+            "png-xmp-itxt-lang",
+            vec![ex("text", false, XMP_KEYWORD, xmp.clone())],
+        ),
+        (
+            "png-xmp-itxt-lang-compressed",
+            vec![ex("text", true, XMP_KEYWORD, xz.clone())],
+        ),
+        ("png-xmp-itxt-translated", vec![xmp_r(false, &xmp)]),
+        (
+            "png-xmp-itxt-lang-translated",
+            vec![ex("text", false, XMP_KEYWORD, xmp.clone())],
+        ),
+        ("png-iccp-valid", vec![icc(b"diamond")]),
+        (
+            "png-iccp-bad-header",
+            vec![ex("icc", true, b"diamond", zlib_stored(&[0u8; 20]))],
+        ),
+        ("png-iccp-name-79", vec![icc(&[b'N'; 79])]),
+        ("png-iccp-name-80", vec![icc(&[b'N'; 80])]),
+        ("png-iccp-name-empty", vec![icc(b"")]),
+        (
+            "png-exif-xmp-iccp",
+            vec![xmp_r(false, &xmp), icc(b"diamond")],
+        ),
+        (
+            "png-raw-exif-text",
+            vec![ex("raw", false, b"exif", raw_exif.clone())],
+        ),
+        (
+            "png-raw-exif-ztxt",
+            vec![ex("raw", true, b"exif", zlib_stored(&raw_exif))],
+        ),
+        (
+            "png-raw-exif-itxt",
+            vec![ex("raw", true, b"exif", zlib_stored(&raw_exif))],
+        ),
+        (
+            "png-raw-xmp-text",
+            vec![ex("raw", false, b"xmp", raw_xmp.clone())],
+        ),
+        (
+            "png-raw-xmp-ztxt",
+            vec![ex("raw", true, b"xmp", zlib_stored(&raw_xmp))],
+        ),
+        (
+            "png-raw-xmp-itxt",
+            vec![ex("raw", true, b"xmp", zlib_stored(&raw_xmp))],
+        ),
+        (
+            "png-exif-and-raw-exif",
+            vec![ex("raw", false, b"exif", raw_mixed)],
+        ),
+        (
+            "png-keyword-79",
+            vec![ex("text", false, &[b'k'; 79], b"value".to_vec())],
+        ),
+        (
+            "png-keyword-80",
+            vec![ex("text", false, &[b'k'; 80], b"value".to_vec())],
+        ),
     ]
 }
 
@@ -505,6 +672,10 @@ pub const WARNING_FIXTURES: &[&str] = &[
     "png-exif-not-tiff",
     "png-exif-bad-crc",
     "png-keyword-80",
+    "png-keyword-79",
+    "png-text-no-nul",
+    "png-iccp-name-80",
+    "png-iccp-name-empty",
     "png-exif-basic-le",
     "png-xmp-itxt",
     "png-iccp-valid",

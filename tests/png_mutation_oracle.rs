@@ -353,13 +353,13 @@ fn mutant_trailer_scan_disabled_is_named() {
 }
 
 // Mutant p5: `XML:com.adobe.xmp` routing is broken. Needle:
-// `let region = if keyword == XMP_KEYWORD {`. No XMP is found.
+// `let region = if keyword == XMP_KEYWORD && !tagged {`. No XMP is found.
 #[test]
 fn mutant_xmp_keyword_routing_broken_is_named() {
     let inject = |src: &Path| {
         probe::inject_replace(
             &src.join("png/metadata.rs"),
-            "let region = if keyword == XMP_KEYWORD {",
+            "let region = if keyword == XMP_KEYWORD && !tagged {",
             &marked("let region = if keyword == b\"XML:com.adobe.xmx\" {"),
         );
     };
@@ -705,7 +705,7 @@ fn injection_marker_does_not_leak_into_src_or_tests_support() {
         "self.blocks.push(PngExifBlock {",
         "data.strip_prefix(EXIF_PREFIX)",
         "for _ in 0..MAX_PNG_TRAILER_CHUNKS {",
-        "let region = if keyword == XMP_KEYWORD {",
+        "let region = if keyword == XMP_KEYWORD && !tagged {",
         "ChunkKind::Iccp => {",
         "let compressed = flag != 0;",
     ] {

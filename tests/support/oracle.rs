@@ -515,7 +515,7 @@ pub const KNOWN_DIVERGENCES: &[Divergence] = &[
         command: PNG_COMMAND,
         exiftool_version: "13.55",
         measured_stdout: "ExifTool reads both the eXIf chunk (Make AlphaCam, Model OnlyInA) and the raw-profile Exif (Make RawCam) and prints the later: Make = RawCam, Model = OnlyInA; exif-core reads the eXIf only: Make = AlphaCam, Model = OnlyInA.",
-        right_side: "exif-core for the specification (eXIf is the one defined Exif chunk, DEC-006/DEC-018 first block is primary); the raw profile is a convention, and the merge rule between the two is ExifTool's choice.",
+        right_side: "exif-core for the specification (eXIf is the one defined Exif chunk, DEC-006/DEC-018 first block is primary); the raw profile is a convention, and the merge rule between the two is ExifTool's choice. Consequence: ExifTool merges both chunks and the later (raw) value wins, so an audit or strip that trusts the eXIf chunk alone can miss values a reader shows, including tags that exist only in the raw profile (such as GPS).",
         question_id: "png-raw-profile-not-decoded",
     },
     Divergence {
@@ -849,12 +849,17 @@ pub fn read_ours_png(meta: &PngMetadata<'_>, selectors: &[Selector]) -> Vec<Opti
         .collect()
 }
 
-/// `XMP-xmp:CreatorTool` <-> an XMP text chunk we can read (uncompressed), and
-/// `PNG:ProfileName` <-> a located `iCCP` chunk. ExifTool prints the profile name
-/// for any `iCCP` chunk, valid profile or not (measured: `png-iccp-valid`,
-/// `png-iccp-bad-header`), so a located chunk is the right ours-side presence;
-/// the ICC content is not compared. A compressed XMP chunk is located but not
-/// readable (DEC-018), so for it the selector is a recorded divergence.
+/// `XMP-xmp:CreatorTool` <-> XMP carrying `xmp:CreatorTool` (every XMP fixture
+/// holds that tag): ours is present when an XMP text chunk we can READ
+/// (uncompressed) is located, so a located-but-compressed one is a recorded
+/// divergence (DEC-018). `PNG:ProfileName` <-> a located `iCCP` chunk WITH a
+/// name: ExifTool prints the profile name for any `iCCP` chunk that has one,
+/// valid profile or not (measured: `png-iccp-valid`, `png-iccp-bad-header`,
+/// names of 1, 79, 80, 81 and 200 bytes), and none for an empty name although it
+/// still reads the ICC (`png-iccp-name-empty`). The located bytes themselves are
+/// checked against the builders' by `png_oracle`
+/// (`located_region_bytes_equal_what_the_builders_wrote`); no ICC content is
+/// compared with ExifTool.
 pub const PNG_REGION_SELECTORS: &[RegionSelector] = &[
     RegionSelector {
         exiftool: "XMP-xmp:CreatorTool",
@@ -881,7 +886,7 @@ pub fn read_png_regions(meta: &PngMetadata<'_>) -> Vec<Option<String>> {
         .map(|r| {
             let found = meta.regions().iter().any(|region| match (r.kind, region) {
                 (RegionKind::PngXmpReadable, PngRegion::Xmp { compressed, .. }) => !*compressed,
-                (RegionKind::PngIcc, PngRegion::Icc { .. }) => true,
+                (RegionKind::PngIcc, PngRegion::Icc { name, .. }) => !name.is_empty(),
                 _ => false,
             });
             found.then(|| PRESENT.to_string())

@@ -93,3 +93,10 @@ Revisit if SPEC-031 shows ExifTool reading a metadata chunk class this routing m
 - Related specs: SPEC-029, SPEC-031, SPEC-032
 - Related decisions: DEC-017 (walk), DEC-006 and DEC-012 (JPEG analogue), DEC-002 (borrowed slices), DEC-001
 - External: PNG Specification Third Edition (`eXIf`, `iTXt`, `tEXt`, `zTXt`, `iCCP`); ExifTool 13.55 behaviour measured in the SPEC-029 design
+
+## Clarifications from the SPEC-031 verify (2026-11-21)
+
+Measured with ExifTool 13.55 (records `png-iccp-name-*` and `png-xmp-itxt-*` in `tests/oracle-fixtures/exiftool/`):
+
+- **`iCCP` name.** ExifTool reads the profile (the `ICC-header` tags) whatever the length of the name: 0, 1, 79, 80, 81 and 200 bytes all give them (it prints no `PNG:ProfileName` for an empty name). So the name is the bytes before the first NUL, of any length; an empty name or one of 80 bytes and more is malformed but located: one `BadIccpChunk` issue and the `Icc` region, the rule already used for a long text keyword. A chunk with no NUL, or with no method byte, still gives `BadIccpChunk` and no region (ExifTool prints a name for those but reads no ICC from them).
+- **`iTXt` language tag.** With the keyword `XML:com.adobe.xmp`, flag 0 or 1, a non-empty language tag (`en-US`, `x` and `EN` measured) makes the chunk plain text for ExifTool, not XMP, whatever the translated keyword; an empty language tag is XMP even with a translated keyword. So such a chunk is located as a `Text` region, not `Xmp`.
