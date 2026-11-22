@@ -243,6 +243,22 @@ fn escape(s: &str) -> String {
 
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
+    // SPEC-036 fix round: `probe --theirs <record> <section>` prints the
+    // inventory of ExifTool's committed answer for one input, built by the
+    // (possibly faulted) COPY of inventory.rs, so a fault in the harness's own
+    // classification of ExifTool's lines is visible too.
+    if args.first().is_some_and(|a| a == "--theirs") {
+        let text = std::fs::read_to_string(&args[1]).expect("read the record");
+        let rec = inventory::parse_record(&text).expect("parse the record");
+        let sec = rec
+            .sections
+            .iter()
+            .find(|s| s.name == args[2])
+            .expect("the record section");
+        let inv = inventory::inventory_of(&sec.lines).expect("classifiable");
+        print!("{}", inventory::probe_text(&inv));
+        return;
+    }
     // SPEC-013: `probe --inventory <file>` prints the audit's inventory (the
     // lines `inventory::ours` builds), not the oracle readings.
     let inventory_mode = args.first().is_some_and(|a| a == "--inventory");
@@ -265,7 +281,7 @@ fn main() {
     };
     if inventory_mode {
         let audit = exif_core::audit::audit(&data);
-        print!("{}", inventory::probe_text(&inventory::ours(&audit)));
+        print!("{}", inventory::probe_text(&inventory::ours_of(&data, &audit)));
         return;
     }
     let ours = if data.starts_with(&[0xFF, 0xD8]) {
@@ -462,6 +478,23 @@ pub fn run_probe_inventory(bin: &Path, file: &Path) -> Result<String, String> {
             "probe --inventory failed ({}) on {}:\n{}",
             run.status,
             file.display(),
+            String::from_utf8_lossy(&run.stderr)
+        ));
+    }
+    String::from_utf8(run.stdout).map_err(|e| format!("probe stdout: {e}"))
+}
+
+/// Run a built probe in `--theirs` mode: the inventory (as `probe_text`) of the
+/// section `section` of the record file `record`, built by the probe's copy of
+/// inventory.rs.
+pub fn run_probe_theirs(bin: &Path, record: &Path, section: &str) -> Result<String, String> {
+    let mut cmd = Command::new(bin);
+    cmd.arg("--theirs").arg(record).arg(section);
+    let run = run_with_limit(cmd, &format!("probe {}", bin.display()), run_limit())?;
+    if !run.status.success() {
+        return Err(format!(
+            "probe --theirs failed ({}) on {section}:\n{}",
+            run.status,
             String::from_utf8_lossy(&run.stderr)
         ));
     }

@@ -1633,3 +1633,141 @@ questions:
       Author and Copyright (also author, copyright) are Authorship, Software and software
       are Software, AUTHOR, aUTHOR, COPYRIGHT and SOFTWARE print as their own names and stay
       FreeText, every other keyword is FreeText.
+
+  - id: png-bad-text-chunk-not-listed
+    question: "ExifTool 13.55 keeps reading PNG text chunks past a chunk with a bad CRC and prints each unparsable one as a generic [PNG] tag, where the audit walk halts at the first bad CRC (DEC-017) and lists none of them: is stopping at the first bad CRC the intended side?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-22
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-036; reworded in the fix round, HANDOFF-076). Command: exiftool -a -u -H -G1 -s
+      <file> (the png-webp inventory record, ExifTool 13.55, tests/oracle-fixtures/exiftool-inventory/png-webp.txt).
+      The id-less [PNG] lines named TextualData, InternationalText and CompressedText are ExifTool's
+      tags for a text chunk it cannot parse (no separator, empty, truncated iTXt, zTXt without a
+      method, bad CRC). They are now their own bucket (c) of the text comparison, and the
+      measured equality is: ExifTool's count equals the number of BadTextChunk issues of png::read
+      on chunks that gave no region (an empty keyword or one of 80 bytes or more is a
+      BadTextChunk issue WITH a region; ExifTool lists those as ordinary tags, bucket a). On every
+      png-webp input that equality holds, so the first-round rows (png-text-no-nul,
+      png-shape-meta-text-no-nul, png-shape-meta-itxt-truncated, png-shape-meta-ztxt-no-method,
+      png-shape-empty-texts-100) are no longer divergences. Two rows remain, both where our walk
+      has stopped before the chunk: png-shape-bad-crc-texts-1100 (1100 bad-CRC text chunks; the
+      walk halts at the first bad CRC, so we see none: theirs only bad text chunks x1100) and
+      png-shape-meta-halted-after-text (a text chunk after the chunk that halts the walk: x1).
+      The audit says both files are not clean (ours_hides is true). Right side: the halt is the
+      walk's DEC-017 policy; ExifTool's tags are evidence of chunks the audit never saw. Pinned in
+      tests/support/inventory.rs (KNOWN_DIVERGENCES, Class P).
+
+  - id: png-after-iend-in-trailer
+    question: "ExifTool 13.55 prints the tags of chunks after a PNG's IEND it cannot read in the group Trailer (an invalid XMP as TagY, an iCCP that does not inflate as ProfileName and ICC_Profile), where the audit lists the Xmp and Icc regions it located there (DEC-020): is the audit's listing, which errs toward reporting more, the intended side?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-22
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-036; rewritten in the fix round, HANDOFF-076, because the first text
+      overgeneralised). Command: exiftool -a -u -G1 -H -s <file> (the png-webp inventory record,
+      ExifTool 13.55, tests/oracle-fixtures/exiftool-inventory/png-webp.txt).
+      MEASURED RULE for chunks after IEND: ExifTool prints a [Trailer] Warning, and then the same
+      tags the chunk gives before IEND where it can read the contents. An eXIf after IEND lists its
+      entries in IFD0 and the like (png-exif-after-iend agrees; [Trailer] ExifByteOrder is its
+      own line), and a valid iTXt XMP lists XMP-xmp (png-xmp-itxt-after-iend agrees). A text chunk
+      prints [Trailer] Comment. Only contents ExifTool cannot read land in Trailer instead of
+      their own group: png-shape-meta-trailer-chunks has an XMP whose body is <y/> ([Trailer]
+      TagY) and an iCCP that does not inflate ([Trailer] ProfileName, [Trailer] ICC_Profile).
+      The cause is the invalid contents, not the placement after IEND.
+      The inventory now compares the id-less Trailer lines as bucket (b), against our Text regions
+      after IEND, and drops [Trailer] Warning and ExifByteOrder by name. On the one remaining
+      row ExifTool has the Comment and the TagY (2) against our one Text: theirs only trailer
+      text x1, and regions Xmp and Icc ours only (we locate the two chunks). The row
+      png-shape-meta-trailer-truncated (a Comment after IEND) agrees now. Right side: neither is
+      wrong; DEC-020 lists what the bytes contain, wherever they are, and the strip removes them.
+      Pinned in tests/support/inventory.rs (KNOWN_DIVERGENCES, Class P).
+
+  - id: png-raw-profile-keyword-case
+    question: "ExifTool 13.55 treats the keyword \"raw profile type exif\" (lower case) as a raw profile and decodes it, where the audit listed the chunk as an ordinary Text region: should the audit's raw-profile keyword match be case-insensitive?"
+    priority: low
+    status: answered
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-22
+    assigned_to: null
+    notes: |
+      ANSWERED (SPEC-036 fix round, HANDOFF-076). The first text of this entry said the raw profile
+      "is not decoded either way"; that was false. ExifTool decodes it: a tEXt or zTXt chunk with
+      the keyword "raw profile type exif" and a valid Exif payload makes it list IFD0 and GPS
+      entries, while the audit called the file clean. That was a real audit bug (DEC-020 clause 5
+      makes any raw profile unreadable). Measured rule (ExifTool 13.55, three text chunk kinds):
+      exactly "Raw profile type " and the all-lower-case "raw profile type " are raw profiles; every
+      other case mix prints an ordinary text tag. src/png/metadata.rs now matches those two
+      prefixes (not case-insensitively, which would be wider than ExifTool). The divergence is gone;
+      the files fall under png-raw-profile-not-decoded like the upper-case ones. See DEC-018,
+      "Clarifications from the SPEC-036 verify".
+
+  - id: png-xmp-content-not-parsed
+    question: "ExifTool 13.55 prints no XMP group for a PNG XML:com.adobe.xmp chunk it cannot use (empty, invalid, an empty xmpmeta, a zTXt that does not inflate), where the audit locates an Xmp region: is located-not-valid the intended side, as for the flag-2 iTXt?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-22
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-036). Command: exiftool -a -u -G1 -H -s <file> (the png-webp inventory record, ExifTool 13.55, tests/oracle-fixtures/exiftool-inventory/png-webp.txt).
+      Measured on png-shape-meta-ztxt-xmp (zTXt that does not inflate: "Error inflating
+      XML:com.adobe.xmp", a [PNG] XMP line of 0 bytes), audit-audit-png-empty-regions (an empty
+      tEXt XML:com.adobe.xmp: "Invalid XMP") and audit-audit-png-two-exif-regions (a tEXt with an
+      empty xmpmeta: no tag, no XMP group). ExifTool lists no XMP group on any of them; the
+      audit locates an Xmp region (DEC-018, DEC-020). The two audit-audit files also hold an iCCP
+      whose region the audit locates and ExifTool prints as ProfileName and ICC_Profile in group
+      PNG only, so they differ by Icc too (see png-iccp-located-no-exiftool-group). Right side:
+      neither is wrong; the audit LOCATES, ExifTool VALIDATES. Pinned in
+      tests/support/inventory.rs (KNOWN_DIVERGENCES, Class P).
+
+  - id: png-iccp-located-no-exiftool-group
+    question: "ExifTool 13.55 prints a PNG iCCP chunk as ProfileName and ICC_Profile in group PNG and never as an ICC group when the profile does not inflate or its length is wrong, where the audit locates an Icc region: is located-not-valid the intended side?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-22
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-036). Command: exiftool -a -u -G1 -H -s <file> (the png-webp inventory record, ExifTool 13.55, tests/oracle-fixtures/exiftool-inventory/png-webp.txt).
+      Measured on png-iccp-bad-header (20 zero bytes: "Bad length ICC_Profile"),
+      png-shape-iccp-and-plte, png-shape-meta-iccp, png-shape-meta-iccp-empty-name and
+      png-shape-meta-iccp-name-80 (profiles that do not inflate: "Error inflating iCCP"): the
+      [PNG] ProfileName and ICC_Profile lines are dropped by name from the text count
+      (PNG_DROPPED_NAMES), no ICC-header or ICC_Profile group is printed, and the audit locates an
+      Icc region (ours-only region Icc). A nameless length-0 iCCP is a walk issue in the audit
+      (no region), and ExifTool prints no group either, so it does not differ. Right side: neither
+      is wrong; the audit LOCATES, ExifTool VALIDATES (the WebP counterpart is
+      webp-iccp-profile-not-validated). Pinned in tests/support/inventory.rs
+      (KNOWN_DIVERGENCES, Class P).
+
+  - id: png-text-keyword-collides-with-chunk-tag-name
+    question: "The inventory drops ExifTool's id-less [PNG] lines whose name is a chunk tag (XMP, Palette, ProfileName, ICC_Profile, Gamma, ...), a RawProfileType prefix or an _Profile suffix, so a real text chunk whose keyword is spelled the same loses its tag from ExifTool's count: is this limit of the by-name classification acceptable, or should the harness read the chunk type some other way?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-22
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-036 fix round, HANDOFF-076, finding M2). Command: exiftool -a -u -G1 -H -s
+      <file> (the png-webp inventory record, ExifTool 13.55).
+      ExifTool prints a text chunk's value under a tag named after its keyword, in the same group
+      and with the same id (-) as a chunk tag of the same spelling. The harness cannot tell them
+      apart: it classifies the id-less [PNG] lines by name (PNG_DROPPED_NAMES, the RawProfileType
+      prefix, the _Profile suffix, in tests/support/inventory.rs) and does not see which chunk a
+      line came from. A tEXt chunk with the keyword XMP, Palette, ProfileName, ICC_Profile,
+      My_Profile, EXIF_Profile, RawProfileTypeX, Gamma (any dropped name) or the mixed-case
+      Raw Profile Type exif (ExifTool prints RawProfileTypeExif) is therefore ours only: text
+      tags x1. The eXIf-spelled keyword is NOT a collision (ExifTool prints it as EXIf, which is
+      counted, and the sides agree). Measured on the ten inputs png-extra-kw-{xmp, palette,
+      profilename, icc-profile, my-profile, exif-profile, rawprofiletypex, raw-mixed-case, gamma,
+      xmp-plus-badtext} (the last has a bad text chunk beside the XMP keyword; it used to cancel).
+      This is a limit of the by-name classification, not a defect in the audit (it lists the Text
+      region correctly): no cleverer rule is attempted. Each row is a loud difference on its own;
+      with the three buckets it can no longer cancel against another text line.
+      Right side: neither (a documented limit of the harness). Pinned in
+      tests/support/inventory.rs (KNOWN_DIVERGENCES, Class P).

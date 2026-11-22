@@ -25,19 +25,27 @@ mod inventory_corpus;
 mod mutate;
 #[path = "support/oracle_jpeg.rs"]
 mod oracle_jpeg;
+#[path = "support/oracle_png.rs"]
+mod oracle_png;
 #[path = "support/oracle_tiff.rs"]
 mod oracle_tiff;
+#[path = "support/oracle_webp.rs"]
+mod oracle_webp;
+#[path = "support/png_shapes.rs"]
+mod png_shapes;
 #[path = "support/real_shapes.rs"]
 mod real_shapes;
 #[path = "support/tools.rs"]
 mod tools;
+#[path = "support/webp_shapes.rs"]
+mod webp_shapes;
 
 use exif_core::audit::audit;
 use exif_core::tiff::{entry_budget, Container};
 use exif_core::Error;
 use inventory::{
-    check_against, diff, inventory_of, ours, parse_stdout, theirs, CheckError, Class, Inventory,
-    Line, ParseError, RegionKind, Side, KNOWN_DIVERGENCES,
+    check_against, diff, inventory_of, ours, ours_of, parse_stdout, theirs, CheckError, Class,
+    Inventory, Line, ParseError, RegionKind, Side, KNOWN_DIVERGENCES,
 };
 use inventory_corpus::{Distinct, Input};
 use std::collections::{BTreeMap, BTreeSet};
@@ -127,7 +135,7 @@ fn their_inventory(lines: &[Line], is_jpeg: bool) -> Inventory {
 /// Compare one distinct input against `their` inventory and the table.
 fn check_input(d: &Distinct, their: &Inventory) -> Result<(), CheckError> {
     let a = audit(&d.canonical.bytes);
-    let mine = ours(&a);
+    let mine = ours_of(&d.canonical.bytes, &a);
     let d_ = diff(&mine, their);
     check_against(KNOWN_DIVERGENCES, &d.canonical.key(), &d_, a.health().clean)
 }
@@ -219,7 +227,8 @@ fn count_of(inv: &Inventory, group: &str, id: u16) -> usize {
 }
 
 fn ours_of_key(key: &str) -> Inventory {
-    ours(&audit(&bytes_of(key)))
+    let bytes = bytes_of(key);
+    ours_of(&bytes, &audit(&bytes))
 }
 
 fn theirs_of_key(key: &str) -> Inventory {
@@ -551,8 +560,14 @@ fn replay_every_corpus_is_clean_except_pinned_divergences() {
 
     // The table is exactly what was compared: every row names a distinct input,
     // no row twice, and the count of rows is the measured set.
-    let keys: BTreeSet<&str> = KNOWN_DIVERGENCES.iter().map(|k| k.fixture).collect();
-    assert_eq!(keys.len(), KNOWN_DIVERGENCES.len(), "a row twice");
+    // (The png-webp rows, Class P, are SPEC-036's and are checked by its own
+    // tests; this replay covers the five older corpora.)
+    let old: Vec<&inventory::Divergence> = KNOWN_DIVERGENCES
+        .iter()
+        .filter(|k| k.class != Class::P)
+        .collect();
+    let keys: BTreeSet<&str> = old.iter().map(|k| k.fixture).collect();
+    assert_eq!(keys.len(), old.len(), "a row twice");
     let canonical: BTreeSet<String> = distinct_inputs()
         .iter()
         .map(|d| d.canonical.key())
@@ -561,7 +576,7 @@ fn replay_every_corpus_is_clean_except_pinned_divergences() {
         assert!(canonical.contains(*k), "{k} is not a canonical input key");
     }
     assert_eq!(
-        KNOWN_DIVERGENCES.len(),
+        old.len(),
         34,
         "5 A, 2 B, 1 C, 4 D, 1 E, 6 F, 15 R (one R row is new: DEC-012's Photoshop rule)"
     );
@@ -912,7 +927,8 @@ fn ours_hides_implies_not_clean_for_every_divergence() {
             "{}: ours_hides disagrees with its sets",
             k.fixture
         );
-        if k.class == Class::E {
+        if k.class == Class::E || k.class == Class::P {
+            // The png-webp rows (Class P) have their own test, SPEC-036.
             continue;
         }
         if k.ours_hides {
@@ -1854,4 +1870,1063 @@ fn comparator_is_red_when_an_embedded_image_is_dropped_added_or_the_primary_misc
         inventory::check_embedded_relation(ours_n, inventory::mpimage_groups(&lines), offset)
             .is_err()
     );
+}
+
+// ── SPEC-036 part A: the png-webp corpus and the PNG/WebP classifier ─────────
+//
+// The corpus has its own record (`png-webp.txt`) and its own counts, so the five
+// older corpora, their records and their pins cannot move. The replay, live and
+// red-proof tests that compare it with the audit are part B; these are the
+// corpus pins and the classifier cases.
+
+fn png_webp_inputs() -> Vec<Input> {
+    inventory_corpus::inputs(&root(), "png-webp")
+}
+
+fn png_webp_record() -> inventory::RecordFile {
+    let path = root()
+        .join(inventory_corpus::RECORD_DIR)
+        .join(inventory_corpus::record_file("png-webp"));
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+        panic!(
+            "cannot read {} ({e}); run `just oracle-record`",
+            path.display()
+        )
+    });
+    inventory::parse_record(&text).expect("a well-formed png-webp record")
+}
+
+fn line(group: &str, id: Option<u32>, name: &str) -> Line {
+    Line {
+        group: group.to_string(),
+        id,
+        name: name.to_string(),
+    }
+}
+
+/// The `png-webp` corpus: 619 inputs (555 of Part A and the 64 hostile extras of
+/// Part B and the fix round), 364 distinct by content; the five older
+/// corpora are untouched and `png-webp` is not one of them.
+#[test]
+fn png_webp_corpus_counts_are_pinned() {
+    assert_eq!(inventory_corpus::CORPORA.len(), 5);
+    assert!(!inventory_corpus::CORPORA.contains(&"png-webp"));
+    assert!(inventory_corpus::NEW_CORPORA.contains(&"png-webp"));
+    let all = png_webp_inputs();
+    assert_eq!(all.len(), 619, "inputs of png-webp");
+    assert_eq!(inventory_corpus::distinct(&all).len(), 364, "distinct");
+    // Every name is unique (a record section is keyed by it).
+    let names: BTreeSet<&str> = all.iter().map(|i| i.name.as_str()).collect();
+    assert_eq!(names.len(), all.len());
+    // The record has one section per input, in the corpus order.
+    let rec = png_webp_record();
+    assert_eq!(rec.corpus, "png-webp");
+    let want: Vec<&str> = all.iter().map(|i| i.name.as_str()).collect();
+    let have: Vec<&str> = rec.sections.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(have, want);
+    // The old corpora take none of the PNG/WebP inputs this one does, except
+    // the one bare signature `audit-png-magic` they always had.
+    for i in inventory_corpus::all_inputs(&root()) {
+        let png = i.bytes.starts_with(b"\x89PNG");
+        let webp = i.bytes.starts_with(b"RIFF");
+        assert!(
+            !(png || webp) || i.name == "audit-png-magic",
+            "{} is a PNG/WebP in an old corpus",
+            i.key()
+        );
+    }
+}
+
+/// The extension of the file ExifTool is run on: `png` for a PNG signature,
+/// `webp` for `RIFF`, by name for a corrupted signature; the old corpora keep
+/// `jpg`/`tif`.
+#[test]
+fn png_webp_extension_rule() {
+    for i in png_webp_inputs() {
+        let want = if i.bytes.starts_with(b"\x89PNG") {
+            "png"
+        } else if i.bytes.starts_with(b"RIFF") || i.name.contains("webp") {
+            "webp"
+        } else {
+            "png"
+        };
+        assert_eq!(i.ext(), want, "{}", i.key());
+    }
+    for i in inventory_corpus::all_inputs(&root()) {
+        assert!(["jpg", "tif"].contains(&i.ext()), "{}", i.key());
+    }
+}
+
+/// `PNG` with a hex id is structural (dropped), `PNG` with no id is counted.
+#[test]
+fn classifier_png_hex_dropped_and_dash_counted() {
+    use inventory::GroupClass;
+    assert_eq!(inventory::classify_group("PNG"), Some(GroupClass::Png));
+    let lines = [
+        line("PNG", Some(0), "ImageWidth"),
+        line("PNG", Some(0x0c), "Interlace"),
+        line("PNG", None, "Comment"),
+        line("PNG", None, "tIME"),
+    ];
+    let inv = inventory_of(&lines).expect("classifiable");
+    assert_eq!(inv.text_tags, 2);
+    assert!(inv.tags.is_empty() && inv.regions.is_empty());
+}
+
+/// `PNG-<chunk>` groups and `RIFF` are structural whatever their ids; none of
+/// them reaches the multiset or the text count. `Trailer` is not structural any
+/// more (fix round, H2): its id-less lines are bucket (b).
+#[test]
+fn classifier_structural_groups_are_dropped_by_name() {
+    use inventory::GroupClass;
+    assert_eq!(
+        inventory::classify_group("Trailer"),
+        Some(GroupClass::Trailer)
+    );
+    for g in ["PNG-pHYs", "PNG-gAMA", "RIFF"] {
+        assert_eq!(
+            inventory::classify_group(g),
+            Some(GroupClass::Structural),
+            "{g}"
+        );
+    }
+    let lines = [
+        line("PNG-pHYs", Some(0), "PixelsPerUnitX"),
+        line("PNG-pHYs", Some(4), "PixelsPerUnitY"),
+        line("RIFF", Some(1), "ImageWidth"),
+        line("RIFF", None, "Unknown_exif"),
+        line("Trailer", None, "Warning"),
+        line("Trailer", None, "ExifByteOrder"),
+    ];
+    assert_eq!(
+        inventory_of(&lines).expect("classifiable"),
+        Inventory::default()
+    );
+}
+
+/// The three text buckets of ExifTool's side: normal `PNG` lines (a), the
+/// id-less chunk tags of `Trailer` (b), the unparseable-chunk names in either
+/// group (c). A dropped chunk name is dropped in both groups.
+#[test]
+fn theirs_splits_the_id_less_lines_into_three_buckets() {
+    let lines = [
+        line("PNG", None, "Comment"),
+        line("PNG", None, "ModifyDate"),
+        line("PNG", None, "Gamma"),
+        line("PNG", None, "TextualData"),
+        line("PNG", None, "InternationalText"),
+        line("Trailer", None, "Warning"),
+        line("Trailer", None, "Comment"),
+        line("Trailer", None, "TagY"),
+        line("Trailer", None, "ProfileName"),
+        line("Trailer", None, "CompressedText"),
+    ];
+    let inv = inventory_of(&lines).expect("classifiable");
+    assert_eq!(
+        (inv.text_tags, inv.trailer_text_tags, inv.bad_text_tags),
+        (2, 2, 3)
+    );
+}
+
+/// Bucket (c) equality, measured: ExifTool's `TextualData`, `InternationalText`
+/// and `CompressedText` lines equal the `BadTextChunk` issues of `png::read` on
+/// chunks that gave no region. On every png-webp input except the two pinned
+/// rows (our walk has halted before the chunk) it holds; a `BadTextChunk` WITH
+/// a region (an empty keyword, 80 bytes or more) is an ordinary tag of bucket
+/// (a) and is not counted in (c); and a file with such a chunk is never clean.
+#[test]
+fn bad_text_bucket_is_the_issues_without_a_region() {
+    let pinned: BTreeMap<&str, usize> = png_webp_rows()
+        .iter()
+        .filter(|k| k.bad_ours_only > 0 || k.bad_theirs_only > 0)
+        .map(|k| (k.fixture, k.bad_theirs_only))
+        .collect();
+    assert_eq!(
+        pinned,
+        BTreeMap::from([
+            ("png-webp/png-shape-bad-crc-texts-1100", 1100),
+            ("png-webp/png-shape-meta-halted-after-text", 1),
+        ])
+    );
+    let mut with_bad = 0usize;
+    let mut with_region_issue = 0usize;
+    for d in png_webp_distinct() {
+        if inventory_corpus::is_not_run(&d) {
+            continue;
+        }
+        let b = &d.canonical.bytes;
+        let a = audit(b);
+        let ours = ours_of(b, &a);
+        let theirs = png_webp_theirs(&d.canonical.name);
+        assert_eq!(
+            (
+                ours.bad_text_tags.saturating_sub(theirs.bad_text_tags),
+                theirs.bad_text_tags.saturating_sub(ours.bad_text_tags),
+            ),
+            (
+                0,
+                pinned.get(d.canonical.key().as_str()).copied().unwrap_or(0)
+            ),
+            "{}",
+            d.canonical.key()
+        );
+        if ours.bad_text_tags > 0 {
+            with_bad += 1;
+            assert!(!a.health().clean, "{}", d.canonical.key());
+        }
+        if let Ok(meta) = exif_core::png::read(b) {
+            let issues = meta
+                .png_issues()
+                .iter()
+                .filter(|i| matches!(i.error(), exif_core::Error::BadTextChunk { .. }))
+                .count();
+            if issues > inventory::bad_text_chunks(&meta) {
+                with_region_issue += 1;
+            }
+        }
+    }
+    // The inputs that have a bad chunk and an issue-with-region chunk exist, so
+    // both halves of the rule are exercised.
+    assert!(with_bad >= 5, "{with_bad}");
+    assert!(with_region_issue >= 1, "{with_region_issue}");
+}
+
+/// XMP and ICC groups, with the numbered ICC groups of a second profile, are
+/// region presence for these formats as for JPEG; an unknown group is still a
+/// parse error, never a silent drop.
+#[test]
+fn classifier_regions_and_unknown_group_for_png_webp() {
+    let lines = [
+        line("XMP-xmp", None, "CreatorTool"),
+        line("ICC-header2", Some(4), "ProfileCMMType"),
+        line("ICC_Profile3", None, "ProfileDescription"),
+    ];
+    let inv = inventory_of(&lines).expect("classifiable");
+    assert_eq!(
+        inv.regions,
+        [RegionKind::Xmp, RegionKind::Icc].into_iter().collect()
+    );
+    assert_eq!(inv.text_tags, 0);
+    // `PNG-` is a prefix rule for chunk groups only: a group that merely
+    // contains "PNG" is unknown.
+    for g in ["APNG", "PNGX", "RIFX", "Trailers", "WebP"] {
+        let err = inventory_of(&[line(g, Some(1), "X")]).unwrap_err();
+        assert!(
+            matches!(&err, ParseError::UnknownGroup { group, .. } if group == g),
+            "{g}: {err}"
+        );
+    }
+}
+
+/// The text count takes part in the diff and in its display; the probe text
+/// carries it only when it is not zero, and round-trips.
+#[test]
+fn text_count_diffs_displays_and_round_trips() {
+    let a = Inventory {
+        text_tags: 3,
+        ..Inventory::default()
+    };
+    let b = Inventory {
+        text_tags: 1,
+        ..Inventory::default()
+    };
+    let d = diff(&a, &b);
+    assert_eq!((d.text_ours_only, d.text_theirs_only), (2, 0));
+    assert!(!d.is_empty());
+    assert_eq!(d.to_string(), "ours only:   text tags x2");
+    let d = diff(&b, &a);
+    assert_eq!((d.text_ours_only, d.text_theirs_only), (0, 2));
+    assert_eq!(d.to_string(), "theirs only: text tags x2");
+    assert!(diff(&a, &a).is_empty());
+    let text = inventory::probe_text(&a);
+    assert_eq!(text, "text\t3\n");
+    assert_eq!(inventory::parse_probe_text(&text).expect("parses"), a);
+    // An inventory with no text tags prints exactly what it always did.
+    assert_eq!(inventory::probe_text(&Inventory::default()), "");
+}
+
+/// PNG: only the first `eXIf` block's entries are counted (ExifTool lists the
+/// first even with `-a`), and the later block is still in the audit; WebP:
+/// every block's entries, duplicates kept.
+#[test]
+fn per_format_block_rule_of_ours() {
+    let by_name = |name: &str| -> Vec<u8> {
+        png_webp_inputs()
+            .into_iter()
+            .find(|i| i.name == name)
+            .unwrap_or_else(|| panic!("no input {name}"))
+            .bytes
+    };
+    let make = |inv: &Inventory| inv.tags.get(&("IFD0".to_string(), 0x010f)).copied();
+
+    let png = by_name("png-two-exif-same-tag");
+    let a = audit(&png);
+    let blocks: BTreeSet<Option<usize>> = a
+        .items()
+        .iter()
+        .filter(|i| matches!(i.kind(), exif_core::audit::ItemKind::Tag { .. }))
+        .map(|i| i.origin().block)
+        .collect();
+    assert_eq!(blocks, BTreeSet::from([Some(0), Some(1)]), "both listed");
+    assert_eq!(
+        make(&ours_of(&png, &a)),
+        Some(1),
+        "only the first block is counted"
+    );
+
+    let webp = by_name("webp-exif-two-same-tag");
+    assert_eq!(
+        make(&ours_of(&webp, &audit(&webp))),
+        Some(2),
+        "every block is counted"
+    );
+
+    // The committed ExifTool sections say the same.
+    let rec = png_webp_record();
+    let theirs = |name: &str| {
+        let s = rec
+            .sections
+            .iter()
+            .find(|s| s.name == name)
+            .unwrap_or_else(|| panic!("no section {name}"));
+        inventory_of(&s.lines).expect("classifiable")
+    };
+    assert_eq!(make(&theirs("png-two-exif-same-tag")), Some(1));
+    assert_eq!(make(&theirs("webp-exif-two-same-tag")), Some(2));
+}
+
+/// Our side: a PNG's `Text` and `Time` regions are the text count.
+#[test]
+fn ours_counts_text_and_time_regions() {
+    let all = png_webp_inputs();
+    let bytes = all
+        .iter()
+        .find(|i| i.name == "png-text-keywords")
+        .expect("the keywords fixture")
+        .bytes
+        .clone();
+    let a = audit(&bytes);
+    let n = a
+        .items()
+        .iter()
+        .filter(|i| {
+            matches!(
+                i.kind(),
+                exif_core::audit::ItemKind::Region {
+                    kind: exif_core::audit::RegionKind::Text | exif_core::audit::RegionKind::Time,
+                    ..
+                }
+            )
+        })
+        .count();
+    assert!(n > 0, "the keywords fixture has text regions");
+    assert_eq!(ours_of(&bytes, &a).text_tags, n);
+}
+
+/// Every group ExifTool printed on the corpus classifies: nothing in the
+/// committed record is an unknown group (the measured table is in the handback
+/// of HANDOFF-073; the comparison itself is part B).
+#[test]
+fn every_group_of_the_png_webp_record_classifies() {
+    for s in png_webp_record().sections {
+        inventory_of(&s.lines).unwrap_or_else(|e| panic!("{}: {e}", s.name));
+    }
+}
+
+// ── SPEC-036 part B: replay, live, divergences ──────────────────────────────
+
+/// Every distinct input of `png-webp` that ExifTool returned on, with its
+/// committed inventory and ours.
+fn png_webp_distinct() -> Vec<Distinct> {
+    inventory_corpus::distinct(&png_webp_inputs())
+}
+
+fn png_webp_replay() -> Vec<CheckError> {
+    let rec = png_webp_record();
+    let mut errors = Vec::new();
+    for d in png_webp_distinct() {
+        if inventory_corpus::is_not_run(&d) {
+            continue;
+        }
+        let sec = rec
+            .sections
+            .iter()
+            .find(|s| s.name == d.canonical.name)
+            .unwrap_or_else(|| panic!("no section {}", d.canonical.name));
+        let their = inventory_of(&sec.lines).expect("classifiable groups");
+        if let Err(e) = check_input(&d, &their) {
+            errors.push(e);
+        }
+    }
+    errors
+}
+
+#[test]
+fn png_webp_replay_is_clean_or_pinned() {
+    let errors = png_webp_replay();
+    assert!(
+        errors.is_empty(),
+        "{} differences:\n{}",
+        errors.len(),
+        errors
+            .iter()
+            .map(|e| e.to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+}
+
+fn png_webp_bytes(name: &str) -> Vec<u8> {
+    png_webp_inputs()
+        .into_iter()
+        .find(|i| i.name == name)
+        .unwrap_or_else(|| panic!("no input {name}"))
+        .bytes
+}
+
+fn png_webp_theirs(name: &str) -> Inventory {
+    let rec = png_webp_record();
+    let s = rec
+        .sections
+        .iter()
+        .find(|s| s.name == name)
+        .unwrap_or_else(|| panic!("no section {name}"));
+    inventory_of(&s.lines).expect("classifiable")
+}
+
+fn png_webp_ours(name: &str) -> Inventory {
+    let b = png_webp_bytes(name);
+    ours_of(&b, &audit(&b))
+}
+
+fn png_webp_rows() -> Vec<&'static inventory::Divergence> {
+    KNOWN_DIVERGENCES
+        .iter()
+        .filter(|k| k.class == Class::P)
+        .collect()
+}
+
+/// Live parity on the distinct inputs of `png-webp`: ExifTool's answer is the
+/// committed one and the comparison against the table is clean (gated like its
+/// siblings, `DIAMOND_EXIF_REQUIRE_ORACLE`).
+#[test]
+fn png_webp_live_parity() {
+    if !live_gate("png_webp_live_parity") {
+        return;
+    }
+    let rec = png_webp_record();
+    let mut checked = 0usize;
+    let mut errors: Vec<String> = Vec::new();
+    for d in png_webp_distinct() {
+        if inventory_corpus::is_not_run(&d) {
+            continue;
+        }
+        let (stderr, lines) = live_lines(&d.canonical);
+        let sec = rec
+            .sections
+            .iter()
+            .find(|s| s.name == d.canonical.name)
+            .expect("a committed section");
+        if lines != sec.lines || stderr != sec.stderr {
+            // Say WHAT differs: the committed and the live text of the side that
+            // does (a record made on another ExifTool or perl build shows here).
+            errors.push(format!(
+                "{}: the live listing differs from the committed record (re-record and review)\n  stderr: committed {:?} live {:?}\n  lines: committed {:?} live {:?}",
+                d.canonical.key(),
+                sec.stderr,
+                stderr,
+                sec.lines,
+                lines
+            ));
+        }
+        match inventory_of(&lines) {
+            Ok(their) => {
+                if let Err(e) = check_input(&d, &their) {
+                    errors.push(e.to_string());
+                }
+            }
+            Err(e) => errors.push(format!("{}: {e}", d.canonical.key())),
+        }
+        checked += 1;
+    }
+    assert!(errors.is_empty(), "{}", errors.join("\n"));
+    assert_eq!(checked, 364, "every distinct png-webp input runs live");
+}
+
+/// The dropped `[PNG]` names are measured, listed as constants and pinned: the
+/// exact names, the prefix and the suffix; each constant occurs in the record.
+#[test]
+fn png_dropped_names_are_pinned() {
+    assert_eq!(
+        inventory::PNG_DROPPED_NAMES,
+        [
+            "ProfileName",
+            "ICC_Profile",
+            "Palette",
+            "eXIf",
+            "XMP",
+            "Gamma",
+            "SRGBRendering",
+            "BackgroundColor",
+            "Transparency",
+            "SignificantBits",
+            "ImageOffset",
+            "AppleDataOffsets",
+            "PixelCalibration",
+            "PaletteHistogram",
+            "SuggestedPalette",
+            "DigitalSignature",
+            "OLEInfo",
+            "GIFGraphicControlExtension",
+            "GIFApplicationExtension",
+            "FractalParameters",
+            "MeTa",
+            "zxIf",
+        ]
+    );
+    assert_eq!(
+        inventory::PNG_BAD_TEXT_NAMES,
+        ["TextualData", "InternationalText", "CompressedText"]
+    );
+    assert_eq!(
+        inventory::TRAILER_STRUCTURAL_NAMES,
+        ["Warning", "ExifByteOrder"]
+    );
+    assert_eq!(inventory::PNG_DROPPED_PREFIX, "RawProfileType");
+    assert_eq!(inventory::PNG_DROPPED_SUFFIX, "_Profile");
+    for n in inventory::PNG_DROPPED_NAMES {
+        assert!(!inventory::png_dashed_name_is_counted(n), "{n}");
+    }
+    for n in [
+        "EXIF_Profile",
+        "XMP_Profile",
+        "RawProfileTypeFoo",
+        "RawProfileTypeXxxx:",
+    ] {
+        assert!(!inventory::png_dashed_name_is_counted(n), "{n}");
+    }
+    for n in [
+        "Comment",
+        "Xmlcomadobexmp",
+        "CreationTime",
+        "PNGWarning",
+        "Title-fr",
+        "Profile",
+        "xmp",
+    ] {
+        assert!(inventory::png_dashed_name_is_counted(n), "{n}");
+    }
+    // The measured set: every dropped constant occurs in the record.
+    let mut seen_exact: BTreeSet<&str> = BTreeSet::new();
+    let (mut seen_prefix, mut seen_suffix) = (false, false);
+    let rec = png_webp_record();
+    for s in &rec.sections {
+        for l in s
+            .lines
+            .iter()
+            .filter(|l| l.group == "PNG" && l.id.is_none())
+        {
+            if let Some(n) = inventory::PNG_DROPPED_NAMES
+                .iter()
+                .find(|n| **n == l.name.as_str())
+            {
+                seen_exact.insert(n);
+            }
+            seen_prefix |= l.name.starts_with(inventory::PNG_DROPPED_PREFIX);
+            seen_suffix |= l.name.ends_with(inventory::PNG_DROPPED_SUFFIX);
+        }
+    }
+    assert_eq!(
+        seen_exact,
+        inventory::PNG_DROPPED_NAMES
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+    );
+    assert!(seen_prefix && seen_suffix);
+}
+
+/// PNG: ExifTool reads the first `eXIf` block that is a valid TIFF and stops.
+/// The caller computes that block (the audit cannot tell); the later blocks are
+/// still in the audit (asserted, not silently dropped).
+#[test]
+fn png_first_block_rule_and_later_blocks_listed() {
+    let blocks_with_tags = |b: &[u8]| -> BTreeSet<Option<usize>> {
+        audit(b)
+            .items()
+            .iter()
+            .filter(|i| matches!(i.kind(), exif_core::audit::ItemKind::Tag { .. }))
+            .map(|i| i.origin().block)
+            .collect()
+    };
+    let total = |inv: &Inventory| -> usize { inv.tags.values().sum() };
+
+    // First block parses: only it counts; the second is still listed.
+    let b = png_webp_bytes("png-two-exif-same-tag");
+    assert_eq!(inventory::png_first_ok_block(&b), Some(0));
+    assert_eq!(blocks_with_tags(&b), BTreeSet::from([Some(0), Some(1)]));
+    assert_eq!(
+        png_webp_ours("png-two-exif-same-tag"),
+        png_webp_theirs("png-two-exif-same-tag")
+    );
+
+    // First block fatal, second good: ExifTool reads the second.
+    let b = png_webp_bytes("png-exif-fatal-then-good");
+    assert_eq!(inventory::png_first_ok_block(&b), Some(1));
+    assert!(blocks_with_tags(&b).contains(&Some(1)));
+    let (o, t) = (
+        png_webp_ours("png-exif-fatal-then-good"),
+        png_webp_theirs("png-exif-fatal-then-good"),
+    );
+    assert!(total(&o) > 0, "the second block's entries count");
+    assert_eq!(o, t);
+
+    // A valid first block with no entries: ExifTool stops there.
+    let name = "png-shape-meta-exif-two";
+    let b = png_webp_bytes(name);
+    assert_eq!(inventory::png_first_ok_block(&b), Some(0));
+    assert_eq!(png_webp_ours(name), png_webp_theirs(name));
+
+    // No parseable block: nothing counts, on either side.
+    for name in ["png-exif-not-tiff", "png-exif-empty"] {
+        let b = png_webp_bytes(name);
+        assert_eq!(inventory::png_first_ok_block(&b), None, "{name}");
+        assert_eq!(total(&png_webp_ours(name)), 0, "{name}");
+        assert_eq!(png_webp_ours(name), png_webp_theirs(name), "{name}");
+    }
+}
+
+/// WebP: every listed block is compared, duplicates kept; the 17th block is
+/// pinned (`webp-exif-block-cap`).
+#[test]
+fn webp_every_block_compared_and_cap_pinned() {
+    let make = |inv: &Inventory| inv.tags.get(&("IFD0".to_string(), 0x010f)).copied();
+    assert_eq!(make(&png_webp_ours("webp-exif-two-same-tag")), Some(2));
+    assert_eq!(make(&png_webp_theirs("webp-exif-two-same-tag")), Some(2));
+    assert_eq!(
+        png_webp_ours("webp-exif-two-same-tag-reversed"),
+        png_webp_theirs("webp-exif-two-same-tag-reversed")
+    );
+    // Sixteen blocks agree; the seventeenth is the pinned cap.
+    assert_eq!(
+        png_webp_ours("webp-exif-blocks-16"),
+        png_webp_theirs("webp-exif-blocks-16")
+    );
+    let row = png_webp_rows()
+        .into_iter()
+        .find(|k| k.fixture == "png-webp/webp-exif-16-then-gps")
+        .expect("the 17th-block row");
+    assert_eq!(row.question, "webp-exif-block-cap");
+    assert!(row.ours_hides);
+    let gps = |inv: &Inventory| -> usize {
+        inv.tags
+            .iter()
+            .filter(|((g, _), _)| g == "GPS")
+            .map(|(_, n)| *n)
+            .sum()
+    };
+    assert_eq!(
+        (
+            gps(&png_webp_ours("webp-exif-16-then-gps")),
+            gps(&png_webp_theirs("webp-exif-16-then-gps"))
+        ),
+        (0, 4),
+        "ExifTool lists the 17th block's GPS"
+    );
+}
+
+/// The text counts, bucket by bucket: (a) ours (Text and Time regions not after
+/// `IEND`) against ExifTool's id-less `[PNG]` lines, (b) our Text regions after
+/// `IEND` against its id-less `Trailer` lines, (c) bad text chunks (see
+/// `bad_text_bucket_is_the_issues_without_a_region`). Each bucket equals on
+/// every input except the pinned ones, and the pinned differences are exactly
+/// the rows with a count; every `tIME` length 0 to 12 agrees.
+#[test]
+fn text_and_time_count_agrees() {
+    type Key = (usize, usize, usize, usize, usize, usize);
+    let pinned: BTreeMap<String, Key> = png_webp_rows()
+        .iter()
+        .filter(|k| {
+            k.text_ours_only
+                + k.text_theirs_only
+                + k.trailer_ours_only
+                + k.trailer_theirs_only
+                + k.bad_ours_only
+                + k.bad_theirs_only
+                > 0
+        })
+        .map(|k| {
+            (
+                k.fixture.to_string(),
+                (
+                    k.text_ours_only,
+                    k.text_theirs_only,
+                    k.trailer_ours_only,
+                    k.trailer_theirs_only,
+                    k.bad_ours_only,
+                    k.bad_theirs_only,
+                ),
+            )
+        })
+        .collect();
+    assert_eq!(
+        pinned.len(),
+        13,
+        "10 keyword collisions (a), the trailer row (b), 2 halted walks (c)"
+    );
+    for d in png_webp_distinct() {
+        if inventory_corpus::is_not_run(&d) {
+            continue;
+        }
+        let b = &d.canonical.bytes;
+        let ours = ours_of(b, &audit(b));
+        let theirs = png_webp_theirs(&d.canonical.name);
+        let want = pinned.get(&d.canonical.key()).copied().unwrap_or_default();
+        let sub = |x: usize, y: usize| x.saturating_sub(y);
+        assert_eq!(
+            (
+                sub(ours.text_tags, theirs.text_tags),
+                sub(theirs.text_tags, ours.text_tags),
+                sub(ours.trailer_text_tags, theirs.trailer_text_tags),
+                sub(theirs.trailer_text_tags, ours.trailer_text_tags),
+                sub(ours.bad_text_tags, theirs.bad_text_tags),
+                sub(theirs.bad_text_tags, ours.bad_text_tags),
+            ),
+            want,
+            "{}",
+            d.canonical.key()
+        );
+    }
+    for len in 0..=12usize {
+        let name = format!("png-extra-time-len-{len}");
+        assert_eq!(
+            png_webp_ours(&name).text_tags,
+            png_webp_theirs(&name).text_tags,
+            "{name}"
+        );
+    }
+}
+
+/// An unknown group in a listing of these formats is a parse error.
+#[test]
+fn unknown_group_is_a_parse_error() {
+    for g in ["Trailer2", "RIFX", "PNG2", "Foo", "WebP", "APP14"] {
+        let err = inventory_of(&[line(g, Some(1), "X"), line("PNG", None, "Comment")]).unwrap_err();
+        assert!(
+            matches!(&err, ParseError::UnknownGroup { group, .. } if group == g),
+            "{g}: {err}"
+        );
+    }
+}
+
+/// Every png-webp divergence names an existing question.
+#[test]
+fn every_png_webp_divergence_has_a_question_entry() {
+    let text = std::fs::read_to_string(root().join("guidance/questions.yaml"))
+        .expect("read guidance/questions.yaml");
+    let rows = png_webp_rows();
+    assert_eq!(
+        rows.len(),
+        63,
+        "46 of the first replay and 17 of the extras (7 raw profile, 10 keyword collisions)"
+    );
+    let mut ids = BTreeSet::new();
+    for k in rows {
+        assert!(k.fixture.starts_with("png-webp/"), "{}", k.fixture);
+        assert!(
+            text.contains(&format!("  - id: {}\n", k.question)),
+            "{}: no question {} in guidance/questions.yaml",
+            k.fixture,
+            k.question
+        );
+        assert!(!k.measured.is_empty(), "{}: no measured output", k.fixture);
+        assert!(k.hides_is_consistent(), "{}", k.fixture);
+        ids.insert(k.question);
+    }
+    assert_eq!(
+        ids,
+        BTreeSet::from([
+            "png-after-iend-in-trailer",
+            "png-bad-text-chunk-not-listed",
+            "png-iccp-located-no-exiftool-group",
+            "png-raw-profile-not-decoded",
+            "png-text-keyword-collides-with-chunk-tag-name",
+            "png-xmp-content-not-parsed",
+            "png-xmp-flag-2-located-not-read",
+            "webp-exif-block-cap",
+            "webp-iccp-profile-not-validated",
+            "webp-null-chunk-not-a-stop",
+            "webp-riff-other-forms-read-by-exiftool",
+            "webp-xmp-content-not-parsed",
+        ])
+    );
+}
+
+/// SPEC-036 verify M2: the text keywords that print like a name the by-name
+/// classification drops. ExifTool's printed tag of each is read from the
+/// committed record, the list of collisions is pinned, each is dropped by the
+/// classifier (so counted on neither side, an ours-only text tag on ours) and
+/// is a pinned divergence of the one class; `eXIf` is NOT a collision (ExifTool
+/// prints `EXIf`, which is counted, and the sides agree).
+#[test]
+fn text_keyword_collisions_are_listed_and_pinned() {
+    let rec = png_webp_record();
+    let printed = |input: &str| -> Vec<String> {
+        let s = rec
+            .sections
+            .iter()
+            .find(|s| s.name == input)
+            .unwrap_or_else(|| panic!("no section {input}"));
+        s.lines
+            .iter()
+            .filter(|l| l.group == "PNG" && l.id.is_none())
+            .map(|l| l.name.clone())
+            .collect()
+    };
+    let listed: Vec<&str> = inventory_corpus::COLLISION_KEYWORDS
+        .iter()
+        .map(|(n, _)| *n)
+        .collect();
+    assert_eq!(
+        listed,
+        [
+            "xmp",
+            "palette",
+            "profilename",
+            "icc-profile",
+            "my-profile",
+            "exif-profile",
+            "rawprofiletypex",
+            "raw-mixed-case",
+            "gamma",
+            "exif-like"
+        ]
+    );
+    let pinned: BTreeSet<&str> = png_webp_rows()
+        .iter()
+        .filter(|k| k.question == "png-text-keyword-collides-with-chunk-tag-name")
+        .map(|k| k.fixture)
+        .collect();
+    for (name, keyword) in inventory_corpus::COLLISION_KEYWORDS {
+        let input = format!("png-extra-kw-{name}");
+        let tags = printed(&input);
+        assert_eq!(tags.len(), 1, "{input}: {tags:?}");
+        let key = format!("png-webp/{input}");
+        if keyword == b"eXIf" {
+            assert_eq!(tags[0], "EXIf");
+            assert!(inventory::png_dashed_name_is_counted(&tags[0]));
+            assert!(!pinned.contains(key.as_str()), "{key}");
+        } else {
+            assert!(!inventory::png_dashed_name_is_counted(&tags[0]), "{input}");
+            assert!(pinned.contains(key.as_str()), "{key}");
+        }
+    }
+    // The input with a collision beside a bad text chunk is the tenth row.
+    assert!(pinned.contains("png-webp/png-extra-kw-xmp-plus-badtext"));
+    assert_eq!(pinned.len(), 10);
+}
+
+/// SPEC-036 verify H2: the three inputs where opposite differences used to
+/// cancel in one net text count. Each bucket is now compared on its own: two
+/// agree in every bucket (with a count in two different buckets, so a net count
+/// could not have told them from a clean file), and the third shows its
+/// collision loudly. A perturbed ExifTool listing names the bucket.
+#[test]
+fn the_cancelling_inputs_are_compared_bucket_by_bucket() {
+    let buckets = |i: &Inventory| (i.text_tags, i.trailer_text_tags, i.bad_text_tags);
+    let cases = [
+        // (input, ours, theirs)
+        (
+            "png-extra-cancel-after-iend-text-plus-badtext",
+            (0, 1, 1),
+            (0, 1, 1),
+        ),
+        (
+            "png-extra-cancel-gama-plus-after-iend-text",
+            (0, 1, 0),
+            (0, 1, 0),
+        ),
+        ("png-extra-kw-xmp-plus-badtext", (1, 0, 1), (0, 0, 1)),
+    ];
+    for (name, ours, theirs) in cases {
+        assert_eq!(buckets(&png_webp_ours(name)), ours, "{name} ours");
+        assert_eq!(buckets(&png_webp_theirs(name)), theirs, "{name} theirs");
+    }
+    // Perturbation: one more `Trailer` Comment on ExifTool's side of the first
+    // input is a named difference in bucket (b), not a cancellation.
+    let name = "png-extra-cancel-after-iend-text-plus-badtext";
+    let mut lines = png_webp_lines(name);
+    lines.push(line("Trailer", None, "Comment"));
+    let d = diff(
+        &png_webp_ours(name),
+        &inventory_of(&lines).expect("classifiable"),
+    );
+    assert!(
+        d.to_string().contains("theirs only: trailer text tags x1"),
+        "{d}"
+    );
+    // And dropping their Trailer Comment is named in bucket (b) as ours only,
+    // although (a) and (c) agree.
+    let mut lines = png_webp_lines(name);
+    lines.retain(|l| l.group != "Trailer" || l.name == "Warning");
+    let d = diff(
+        &png_webp_ours(name),
+        &inventory_of(&lines).expect("classifiable"),
+    );
+    assert!(
+        d.to_string().contains("ours only:   trailer text tags x1"),
+        "{d}"
+    );
+}
+
+/// SPEC-036 verify L1: every Class P row names the canonical key of a distinct
+/// input (the first input with those bytes), and no key is named twice, so no
+/// row is dead (a duplicate-bytes input would never be replayed under its key).
+#[test]
+fn class_p_rows_have_canonical_unique_keys() {
+    let canonical: BTreeSet<String> = png_webp_distinct()
+        .iter()
+        .map(|d| d.canonical.key())
+        .collect();
+    let mut seen = BTreeSet::new();
+    for k in KNOWN_DIVERGENCES.iter().filter(|k| k.class == Class::P) {
+        assert!(
+            canonical.contains(k.fixture),
+            "{}: not the canonical key of a distinct input",
+            k.fixture
+        );
+        assert!(seen.insert(k.fixture), "{}: named twice", k.fixture);
+    }
+    assert_eq!(seen.len(), png_webp_rows().len());
+}
+
+/// Every row that hides something (ExifTool lists what we do not) is on a file
+/// the audit does not call clean.
+#[test]
+fn png_webp_hiding_rows_are_never_clean() {
+    let mut hiding = 0usize;
+    for k in png_webp_rows() {
+        if k.ours_hides {
+            hiding += 1;
+            let b = png_webp_bytes(k.fixture.trim_start_matches("png-webp/"));
+            assert!(!audit(&b).health().clean, "{}", k.fixture);
+        }
+    }
+    // 14 raw profile, 2 bad text (our walk halted), 1 cap, 3 other forms (the
+    // keyword collisions list more, not less, than ExifTool; the trailer row is
+    // a located XMP whose contents ExifTool prints as an id-less Trailer line).
+    assert_eq!(hiding, 20);
+}
+
+/// A pinned divergence that stops holding fails, and one whose difference
+/// changes fails, by name.
+#[test]
+fn a_png_webp_divergence_that_stops_being_one_fails() {
+    let name = "png-shape-meta-halted-after-text";
+    let key = format!("png-webp/{name}");
+    let b = png_webp_bytes(name);
+    let a = audit(&b);
+    let mine = ours_of(&b, &a);
+    // Control: the real difference matches its row.
+    let real = diff(&mine, &png_webp_theirs(name));
+    assert_eq!((real.bad_ours_only, real.bad_theirs_only), (0, 1));
+    assert_eq!(
+        check_against(KNOWN_DIVERGENCES, &key, &real, a.health().clean),
+        Ok(())
+    );
+    // Stops being one: ExifTool agrees with us.
+    let none = diff(&mine, &mine);
+    assert_eq!(
+        check_against(KNOWN_DIVERGENCES, &key, &none, a.health().clean),
+        Err(CheckError::StoppedDiverging {
+            fixture: key.clone()
+        })
+    );
+    // Changes: one more unparseable chunk on their side.
+    let mut grown = real.clone();
+    grown.bad_theirs_only += 1;
+    assert!(matches!(
+        check_against(KNOWN_DIVERGENCES, &key, &grown, a.health().clean),
+        Err(CheckError::ChangedDiff { .. })
+    ));
+    // A clean file with a hidden text tag is refused.
+    assert!(matches!(
+        check_against(KNOWN_DIVERGENCES, &key, &real, true),
+        Err(CheckError::HidesButClean { .. })
+    ));
+}
+
+// ── SPEC-036 red-proofs: perturbing the committed record ─────────────────────
+
+fn png_webp_lines(name: &str) -> Vec<Line> {
+    png_webp_record()
+        .sections
+        .into_iter()
+        .find(|s| s.name == name)
+        .unwrap_or_else(|| panic!("no section {name}"))
+        .lines
+}
+
+/// Replay-and-perturb: an entry deleted from, or a text line added to, the
+/// committed ExifTool record is named by the comparison; the control is clean.
+#[test]
+fn png_webp_oracle_names_a_perturbed_record() {
+    let name = "png-exif-basic-le";
+    let key = format!("png-webp/{name}");
+    let b = png_webp_bytes(name);
+    let a = audit(&b);
+    let mine = ours_of(&b, &a);
+    let lines = png_webp_lines(name);
+    let control = diff(&mine, &inventory_of(&lines).expect("classifiable"));
+    assert!(control.is_empty(), "control: {control}");
+
+    // Delete the IFD0 Make line (0x010f).
+    let cut: Vec<Line> = lines
+        .iter()
+        .filter(|l| !(l.group == "IFD0" && l.id == Some(0x010f)))
+        .cloned()
+        .collect();
+    assert_eq!(cut.len() + 1, lines.len());
+    let d = diff(&mine, &inventory_of(&cut).expect("classifiable"));
+    let err = check_against(KNOWN_DIVERGENCES, &key, &d, a.health().clean).unwrap_err();
+    assert!(
+        err.to_string().contains("ours only:   IFD0 0x010f x1"),
+        "{err}"
+    );
+
+    // Add one id-less [PNG] tag: the count is named.
+    let mut more = lines.clone();
+    more.push(line("PNG", None, "Comment"));
+    let d = diff(&mine, &inventory_of(&more).expect("classifiable"));
+    let err = check_against(KNOWN_DIVERGENCES, &key, &d, a.health().clean).unwrap_err();
+    assert!(
+        err.to_string().contains("theirs only: text tags x1"),
+        "{err}"
+    );
+
+    // Change the group of a line: both sides are named.
+    let regrouped: Vec<Line> = lines
+        .iter()
+        .map(|l| {
+            if l.group == "IFD0" && l.id == Some(0x0110) {
+                Line {
+                    group: "GPS".to_string(),
+                    ..l.clone()
+                }
+            } else {
+                l.clone()
+            }
+        })
+        .collect();
+    let d = diff(&mine, &inventory_of(&regrouped).expect("classifiable"));
+    let msg = d.to_string();
+    assert!(msg.contains("ours only:   IFD0 0x0110 x1"), "{msg}");
+    assert!(msg.contains("theirs only: GPS 0x0110 x1"), "{msg}");
+
+    // An unknown group injected into the record is a parse error, not a drop.
+    let mut bad = lines.clone();
+    bad.push(line("Mystery", Some(1), "X"));
+    assert!(matches!(
+        inventory_of(&bad),
+        Err(ParseError::UnknownGroup { .. })
+    ));
 }

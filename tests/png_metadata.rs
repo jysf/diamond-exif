@@ -211,16 +211,65 @@ fn keyword_matching_is_case_sensitive() {
     let d = wrap(&[
         text(b"xml:com.adobe.xmp", b"a"),
         text(b"XML:COM.ADOBE.XMP", b"b"),
-        text(b"raw profile type exif", b"c"),
         text(b"Raw Profile Type exif", b"d"),
         text(b"XML:com.adobe.xmp ", b"e"),
     ]);
     let m = read(&d).expect("reads");
-    assert_eq!(m.regions().len(), 5);
+    assert_eq!(m.regions().len(), 4);
     assert!(m
         .regions()
         .iter()
         .all(|r| matches!(r, PngRegion::Text { .. })));
+}
+
+/// Measured on ExifTool 13.55: it decodes exactly `Raw profile type <name>` and
+/// the all-lower-case `raw profile type <name>`, in tEXt, zTXt and iTXt; every
+/// other spelling of the prefix is an ordinary text tag.
+#[test]
+fn raw_profile_keyword_has_exactly_two_spellings_in_every_text_chunk() {
+    let decoded: [&[u8]; 2] = [b"Raw profile type exif", b"raw profile type exif"];
+    // A doubled space is the prefix plus a name that starts with a space (a
+    // RawProfile region, as any unknown name is), so it is not listed here.
+    let plain: [&[u8]; 7] = [
+        b"RAW PROFILE TYPE exif",
+        b"Raw Profile Type exif",
+        b"raw Profile type exif",
+        b"Raw profile Type exif",
+        b"RAW profile type exif",
+        b"Raw profile typeexif",
+        b"raw profile typeexif",
+    ];
+    for key in decoded {
+        let d = wrap(&[
+            text(key, b"a"),
+            ztxt(key, &[0x78, 1]),
+            itxt(key, 0, b"", b"", b"c"),
+        ]);
+        let m = read(&d).expect("reads");
+        assert_eq!(m.regions().len(), 3);
+        assert!(
+            m.regions().iter().all(|r| matches!(
+                r,
+                PngRegion::RawProfile { profile, .. } if *profile == b"exif"
+            )),
+            "{key:?}"
+        );
+    }
+    for key in plain {
+        let d = wrap(&[
+            text(key, b"a"),
+            ztxt(key, &[0x78, 1]),
+            itxt(key, 0, b"", b"", b"c"),
+        ]);
+        let m = read(&d).expect("reads");
+        assert_eq!(m.regions().len(), 3);
+        assert!(
+            m.regions()
+                .iter()
+                .all(|r| matches!(r, PngRegion::Text { .. })),
+            "{key:?}"
+        );
+    }
 }
 
 #[test]

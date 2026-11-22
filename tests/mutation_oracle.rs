@@ -38,14 +38,22 @@ mod mutate;
 mod oracle;
 #[path = "support/oracle_jpeg.rs"]
 mod oracle_jpeg;
+#[path = "support/oracle_png.rs"]
+mod oracle_png;
 #[path = "support/oracle_tiff.rs"]
 mod oracle_tiff;
+#[path = "support/oracle_webp.rs"]
+mod oracle_webp;
+#[path = "support/png_shapes.rs"]
+mod png_shapes;
 #[path = "support/probe.rs"]
 mod probe;
 #[path = "support/real_shapes.rs"]
 mod real_shapes;
 #[path = "support/tools.rs"]
 mod tools;
+#[path = "support/webp_shapes.rs"]
+mod webp_shapes;
 
 use exif_core::tiff::{Container, Link};
 use exif_core::Error;
@@ -1571,8 +1579,13 @@ fn the_gps_live_variant_skips_loudly_and_required_mode_fails() {
 use inventory::{Inventory, InventoryDiff, Multiset, RegionKind};
 
 fn inv_input(key: &str) -> inventory_corpus::Input {
-    inventory_corpus::all_inputs(&root())
-        .into_iter()
+    // The png-webp corpus (SPEC-036) is not one of the five older corpora.
+    let mut all = inventory_corpus::all_inputs(&root());
+    all.extend(inventory_corpus::inputs(
+        &root(),
+        inventory_corpus::PNG_WEBP,
+    ));
+    all.into_iter()
         .find(|i| i.key() == key)
         .unwrap_or_else(|| panic!("no inventory input {key}"))
 }
@@ -1597,7 +1610,8 @@ fn inv_theirs(key: &str) -> Inventory {
         .find(|s| s.name == name)
         .unwrap_or_else(|| panic!("no section {name}"));
     let mut inv = inventory::inventory_of(&sec.lines).expect("classifiable");
-    if !inv_input(key).is_jpeg() {
+    // Region groups of a bare TIFF are Class H; a PNG or WebP keeps them.
+    if corpus != inventory_corpus::PNG_WEBP && !inv_input(key).is_jpeg() {
         inv.regions.clear();
     }
     inv
@@ -1661,7 +1675,7 @@ fn assert_inventory_control(label: &str, keys: &[&str]) {
         // The probe's reading is the in-process one.
         assert_eq!(
             mine,
-            inventory::ours(&audit),
+            inventory::ours_of(&bytes, &audit),
             "{label}: the probe's inventory of {key} is not the in-process one"
         );
         // And clean unless pinned; `clean` is taken from the audit itself.
@@ -1899,4 +1913,275 @@ fn inventory_mutant_i6_iptc_region_as_xmp_is_named() {
     assert!(d.ours_only.is_empty() && d.theirs_only.is_empty());
     // The XMP fixture is unaffected: the fault is specific to IPTC.
     assert!(inv_diff(&all, "fixtures/jpeg-xmp").is_empty());
+}
+
+// ── SPEC-036: PNG and WebP inventory mutants (p1 to p3) ─────────────────────
+//
+// Same shape as i1 to i6: the control on the unmutated copy first (the probe
+// reproduces the in-process inventory and is clean against the committed
+// record, or exactly pinned), then ONE injection with an exactly-once needle
+// and the RED-PROOF INJECTION marker, which must not leak into the repository.
+
+/// How many regions of `kind` the audit of `key` holds.
+fn png_regions_of(key: &str, kind: exif_core::audit::RegionKind) -> usize {
+    let bytes = inv_input(key).bytes;
+    exif_core::audit::audit(&bytes)
+        .items()
+        .iter()
+        .filter(
+            |i| matches!(i.kind(), exif_core::audit::ItemKind::Region { kind: k, .. } if k == kind),
+        )
+        .count()
+}
+
+// Mutant p1. Needle (src/audit/mod.rs, `audit_png`, the region loop): the push
+// of the located region. Every `Text` region is pushed twice, so the text count
+// is ours-only by exactly the number of text chunks.
+#[test]
+fn inventory_mutant_p1_text_region_counted_twice_is_named() {
+    let key = "png-webp/png-text-keywords";
+    let n = png_regions_of(key, exif_core::audit::RegionKind::Text);
+    assert!(n > 10, "the keywords fixture has many text chunks ({n})");
+    let needle = "        let len = region.data().len();\n        regions.push(ChunkRegion {\n            offset: region.offset(),\n            kind,\n            segment: chunk_index(&offsets, region.offset(), chunks.len()),\n            len,\n            // A length-0 PNG region still has its finding:";
+    let replacement = "        let len = region.data().len();\n        if kind == RegionKind::Text { regions.push(ChunkRegion { offset: region.offset(), kind, segment: chunk_index(&offsets, region.offset(), chunks.len()), len, category: Some(category), after_scan: false }); }\n        regions.push(ChunkRegion {\n            offset: region.offset(),\n            kind,\n            segment: chunk_index(&offsets, region.offset(), chunks.len()),\n            len,\n            // A length-0 PNG region still has its finding:";
+    let inject = |src: &Path| {
+        probe::inject_replace(&src.join("audit/mod.rs"), needle, &marked(replacement));
+    };
+    let all = inventory_control_then_mutant("inventory-p1", &[key], &inject);
+    let d = inv_diff(&all, key);
+    assert_eq!((d.text_ours_only, d.text_theirs_only), (n, 0));
+    assert!(d
+        .to_string()
+        .contains(&format!("ours only:   text tags x{n}")));
+    assert!(d.ours_only.is_empty() && d.theirs_only.is_empty());
+}
+
+// Mutant p2. Needle (src/audit/mod.rs, `audit_png`):
+//   if &chunk.chunk_type() == b"tIME" {
+// `tIME` chunks are no longer found: the time tags ExifTool prints are
+// theirs-only, one per chunk.
+#[test]
+fn inventory_mutant_p2_time_items_dropped_is_named() {
+    let keys = [
+        "png-webp/png-extra-time-len-7",
+        "png-webp/png-extra-time-len-0",
+    ];
+    let inject = |src: &Path| {
+        probe::inject_replace(
+            &src.join("audit/mod.rs"),
+            "if &chunk.chunk_type() == b\"tIME\" {",
+            &marked("if false && &chunk.chunk_type() == b\"tIME\" {"),
+        );
+    };
+    let all = inventory_control_then_mutant("inventory-p2", &keys, &inject);
+    for key in keys {
+        let d = inv_diff(&all, key);
+        assert_eq!((d.text_ours_only, d.text_theirs_only), (0, 1), "{key}");
+        assert!(d.to_string().contains("theirs only: text tags x1"), "{key}");
+    }
+}
+
+// Mutant p3. Needle (src/audit/mod.rs, `audit_png`, the Exif origin): the block
+// index of every `eXIf` entry is 0, so the audit can no longer tell which block
+// an entry came from and the PNG first-block rule counts the wrong entries:
+// with two blocks both are counted (an ours-only duplicate), and when the first
+// block is fatal the second block's entries are lost (theirs-only).
+#[test]
+fn inventory_mutant_p3_png_first_block_rule_defeated_is_named() {
+    let keys = [
+        "png-webp/png-two-exif-same-tag",
+        "png-webp/png-exif-fatal-then-good",
+    ];
+    let needle = "                    block: Some(index),\n                    segment: Some(chunk_index(&offsets, block.offset(), chunks.len())),\n                    after_scan: block.after_idat() || block.after_iend(),";
+    let replacement = "                    block: Some(0),\n                    segment: Some(chunk_index(&offsets, block.offset(), chunks.len())),\n                    after_scan: block.after_idat() || block.after_iend(),";
+    let inject = |src: &Path| {
+        probe::inject_replace(&src.join("audit/mod.rs"), needle, &marked(replacement));
+    };
+    let all = inventory_control_then_mutant("inventory-p3", &keys, &inject);
+    let d = inv_diff(&all, keys[0]);
+    assert_eq!(d.ours_only, set(&[("IFD0", 0x010f, 1)]));
+    assert!(d.theirs_only.is_empty());
+    let d = inv_diff(&all, keys[1]);
+    assert!(d.ours_only.is_empty());
+    assert!(
+        !d.theirs_only.is_empty(),
+        "the second block's entries are lost"
+    );
+}
+
+// ── SPEC-036 fix round (L2): mutants of the harness itself ──────────────────
+//
+// p1 to p3 fault `src/audit`; these four fault the inventory MODEL
+// (tests/support/inventory.rs, copied into the staged probe crate): the PNG
+// first-OK-block rule, the WebP block rule, the raw-profile count and the
+// dropped-name list. The probe runs both sides (`--inventory` for ours,
+// `--theirs <record> <section>` for ExifTool's committed answer), so a fault on
+// either side shows. Same shape: control on the unmutated copy first (every key
+// equal to the in-process reading and agreeing with its record or exactly
+// pinned), then ONE injection, an exactly-once needle, the RED-PROOF INJECTION
+// marker (which cannot leak: the injection is in the staged copy only).
+
+/// Both sides of every key through one probe build: `(key, ours, theirs)`.
+fn inventory_pair_probe(
+    label: &str,
+    keys: &[&str],
+    inject: Option<&dyn Fn(&Path)>,
+) -> Result<Vec<(String, Inventory, Inventory)>, String> {
+    let files = TempDir::new(&format!("{label}-files"));
+    let crate_dir = TempDir::new(label);
+    probe::stage_probe_crate(crate_dir.path(), inject);
+    let bin = probe::build_probe(crate_dir.path())?;
+    let record = root()
+        .join(inventory_corpus::RECORD_DIR)
+        .join(inventory_corpus::record_file(inventory_corpus::PNG_WEBP));
+    let mut out = Vec::new();
+    for key in keys {
+        let input = inv_input(key);
+        let path = files
+            .path()
+            .join(format!("{}.{}", key.replace('/', "_"), input.ext()));
+        std::fs::write(&path, &input.bytes).expect("write input");
+        let ours = inventory::parse_probe_text(&probe::run_probe_inventory(&bin, &path)?)
+            .map_err(|e| format!("{key}: {e}"))?;
+        let name = key.split_once('/').expect("corpus/name").1;
+        let theirs = inventory::parse_probe_text(&probe::run_probe_theirs(&bin, &record, name)?)
+            .map_err(|e| format!("{key}: {e}"))?;
+        out.push(((*key).to_string(), ours, theirs));
+    }
+    Ok(out)
+}
+
+fn harness_control_then_mutant(
+    label: &str,
+    keys: &[&str],
+    inject: &dyn Fn(&Path),
+) -> Vec<(String, Inventory, Inventory)> {
+    let control = inventory_pair_probe(&format!("{label}-control"), keys, None)
+        .unwrap_or_else(|e| panic!("{label}: the CONTROL could not be built or run: {e}"));
+    for (key, ours, theirs) in control {
+        let bytes = inv_input(&key).bytes;
+        let audit = exif_core::audit::audit(&bytes);
+        assert_eq!(
+            ours,
+            inventory::ours_of(&bytes, &audit),
+            "{label}: the probe's inventory of {key} is not the in-process one"
+        );
+        assert_eq!(theirs, inv_theirs(&key), "{label}: theirs of {key}");
+        let d = inventory::diff(&ours, &theirs);
+        inventory::check_against(inventory::KNOWN_DIVERGENCES, &key, &d, audit.health().clean)
+            .unwrap_or_else(|e| panic!("{label}: the unmutated control is not clean: {e}"));
+    }
+    inventory_pair_probe(&format!("{label}-mutant"), keys, Some(inject))
+        .unwrap_or_else(|e| panic!("{label}: the MUTANT could not be built or run: {e}"))
+}
+
+fn pair_diff(all: &[(String, Inventory, Inventory)], key: &str) -> InventoryDiff {
+    let (_, ours, theirs) = all
+        .iter()
+        .find(|(k, _, _)| k == key)
+        .unwrap_or_else(|| panic!("no result for {key}"));
+    let d = inventory::diff(ours, theirs);
+    println!("MUTANT RESULT {key}:\n{d}");
+    d
+}
+
+/// The probe copy of inventory.rs inside a staged `src/`.
+fn staged_inventory(src: &Path) -> PathBuf {
+    src.join("bin/probe/inventory.rs")
+}
+
+// Mutant h1. Needle (tests/support/inventory.rs, `png_first_ok_block`):
+//   .position(|b| b.container().is_ok())
+// The "first block that parses" rule becomes "the first block": with a fatal
+// first block the good second block's entries are lost (theirs-only), and the
+// two-good-blocks input is unchanged (the rule's other half).
+#[test]
+fn harness_mutant_h1_png_first_ok_block_is_first_block_is_named() {
+    let keys = [
+        "png-webp/png-exif-fatal-then-good",
+        "png-webp/png-two-exif-same-tag",
+    ];
+    let inject = |src: &Path| {
+        probe::inject_replace(
+            &staged_inventory(src),
+            ".position(|b| b.container().is_ok())",
+            &marked(".position(|_| true)"),
+        );
+    };
+    let all = harness_control_then_mutant("harness-h1", &keys, &inject);
+    let d = pair_diff(&all, keys[0]);
+    assert!(d.ours_only.is_empty());
+    assert!(
+        !d.theirs_only.is_empty(),
+        "the second block's entries are lost"
+    );
+    assert!(pair_diff(&all, keys[1]).is_empty());
+}
+
+// Mutant h2. Needle (tests/support/inventory.rs, `ours_png`):
+//   if png && item.origin().block != first_ok_block {
+// A WebP is counted by its FIRST block only (the PNG rule applied to the wrong
+// format, here block 0): a WebP with two good blocks loses the second block's
+// entries (theirs-only), because ExifTool lists every block.
+#[test]
+fn harness_mutant_h2_webp_counts_only_block_zero_is_named() {
+    let keys = [
+        "png-webp/webp-exif-two-same-tag",
+        "png-webp/png-exif-basic-le",
+    ];
+    let inject = |src: &Path| {
+        probe::inject_replace(
+            &staged_inventory(src),
+            "if png && item.origin().block != first_ok_block {",
+            &marked(
+                "if (png && item.origin().block != first_ok_block) || (a.kind() == ContainerKind::Webp && item.origin().block.is_some_and(|b| b != 0)) {",
+            ),
+        );
+    };
+    let all = harness_control_then_mutant("harness-h2", &keys, &inject);
+    let d = pair_diff(&all, keys[0]);
+    assert!(d.ours_only.is_empty());
+    assert_eq!(d.theirs_only, set(&[("IFD0", 0x010f, 1)]));
+    assert!(pair_diff(&all, keys[1]).is_empty());
+}
+
+// Mutant h3. Needle (tests/support/inventory.rs, `ours_png`):
+//   LibRegionKind::RawProfile => continue,
+// A raw-profile region is counted as a text tag: the text count is ours-only by
+// one on a file with one raw profile.
+#[test]
+fn harness_mutant_h3_raw_profile_counted_as_text_is_named() {
+    let key = "png-webp/png-raw-exif-text";
+    let inject = |src: &Path| {
+        probe::inject_replace(
+            &staged_inventory(src),
+            "LibRegionKind::RawProfile => continue,",
+            &marked("LibRegionKind::RawProfile => { inv.text_tags += 1; continue; }"),
+        );
+    };
+    let all = harness_control_then_mutant("harness-h3", &[key], &inject);
+    let d = pair_diff(&all, key);
+    assert_eq!((d.text_ours_only, d.text_theirs_only), (1, 0));
+    assert!(d.to_string().contains("ours only:   text tags x1"));
+}
+
+// Mutant h4. Needle (tests/support/inventory.rs, `PNG_DROPPED_NAMES`):
+//   "Palette",
+// `Palette` leaves the dropped list (the array keeps its length: the name is
+// renamed to one nothing prints): ExifTool's `[PNG] Palette` line of a `PLTE`
+// chunk is then counted as a text tag, so the text count is theirs-only by one.
+#[test]
+fn harness_mutant_h4_palette_removed_from_the_dropped_names_is_named() {
+    let key = "png-webp/png-extra-chunk-plte";
+    let inject = |src: &Path| {
+        probe::inject_replace(
+            &staged_inventory(src),
+            "    \"Palette\",\n    \"eXIf\",",
+            &marked("    \"Palette-renamed-by-the-red-proof\",\n    \"eXIf\","),
+        );
+    };
+    let all = harness_control_then_mutant("harness-h4", &[key], &inject);
+    let d = pair_diff(&all, key);
+    assert_eq!((d.text_ours_only, d.text_theirs_only), (0, 1));
+    assert!(d.to_string().contains("theirs only: text tags x1"));
 }

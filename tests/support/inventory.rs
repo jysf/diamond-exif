@@ -19,7 +19,7 @@
 
 #![allow(dead_code)]
 
-use exif_core::audit::{FileAudit, ItemKind, RegionKind as LibRegionKind};
+use exif_core::audit::{ContainerKind, FileAudit, ItemKind, RegionKind as LibRegionKind};
 use exif_core::tiff::IfdKind;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -43,6 +43,113 @@ pub const UNMODELLED_GROUPS: [&str; 2] = ["JFIF", "Photoshop"];
 /// MakerNote as one block and does not parse it, DEC-001). Named, never dropped
 /// silently (SPEC-019).
 pub const SHAPE_ONLY_GROUPS: [&str; 2] = ["AROT", "Canon"];
+
+/// ExifTool groups of a WebP that describe the file's structure and that the
+/// audit model has no item for, dropped by name whatever their ids (SPEC-036):
+/// `RIFF` (the VP8X/VP8/VP8L structure lines and the `-u` unknown chunks, ids
+/// `0x0000` to `0x000c` and `-`). `Trailer` is not here any more (fix round,
+/// H2): see [`TRAILER_GROUP`].
+pub const STRUCTURAL_GROUPS: [&str; 1] = ["RIFF"];
+
+/// What ExifTool makes of the bytes after a PNG's `IEND` (measured, ExifTool
+/// 13.55): its own lines (a `Warning`, the `ExifByteOrder` of an `eXIf`) and
+/// the tags the chunks would give before `IEND`, in this group instead of their
+/// own where ExifTool cannot read the contents. An `eXIf` after `IEND` lists its
+/// entries in `IFD0` and the like, and a valid XMP lists in `XMP-xmp` (both
+/// agree with the audit); an id-less text chunk, an invalid XMP and an `iCCP`
+/// that does not inflate print `Trailer:Comment`, `Trailer:TagY`,
+/// `Trailer:ProfileName` and `Trailer:ICC_Profile`. The id-less lines are
+/// counted in their own bucket ([`Inventory::trailer_text_tags`]).
+pub const TRAILER_GROUP: &str = "Trailer";
+
+/// The id-less `Trailer` lines that are ExifTool's own and not a chunk's tag,
+/// dropped by exact name.
+pub const TRAILER_STRUCTURAL_NAMES: [&str; 2] = ["Warning", "ExifByteOrder"];
+
+/// The id-less `PNG` (or `Trailer`) lines ExifTool prints for a text chunk it
+/// could not parse, which the audit reports as a `BadTextChunk` issue and no
+/// region: the third bucket ([`Inventory::bad_text_tags`]).
+pub const PNG_BAD_TEXT_NAMES: [&str; 3] = ["TextualData", "InternationalText", "CompressedText"];
+
+/// The prefix of the per-chunk structural groups of a PNG (`PNG-pHYs`,
+/// `PNG-cICP`), dropped by name like [`STRUCTURAL_GROUPS`]. Measured on the
+/// chunk grid of the fix round (HANDOFF-076, one chunk per file): only `pHYs`
+/// and `cICP` print in such a group. `cHRM`, `sCAL`, `sTER`, `vpAg`, `acTL`,
+/// `fcTL`, `mDCV` and `cLLI` print hex ids in group `PNG` (structural, dropped
+/// by the id rule), and the chunks behind [`PNG_DROPPED_NAMES`] print id-less
+/// in `PNG`.
+pub const PNG_CHUNK_GROUP_PREFIX: &str = "PNG-";
+
+/// The ExifTool group of a PNG's own tags: a line with a hex id is a structural
+/// `IHDR` field (dropped), a line with no id (`-`) is a text, `tIME` or similar
+/// tag (counted, [`Inventory::text_tags`]).
+pub const PNG_GROUP: &str = "PNG";
+
+/// Id-less `[PNG]` lines that are NOT text or `tIME` tags, dropped by exact
+/// name (SPEC-036, HANDOFF-074 decision 1 and HANDOFF-076 item 2; measured with
+/// ExifTool 13.55, one chunk per file): `iCCP` prints `ProfileName` and
+/// `ICC_Profile`, `PLTE` prints `Palette`, an unparseable `eXIf` prints `eXIf`
+/// (a `zxIf` chunk prints `zxIf`), XMP in a text chunk or a `tXMP` chunk prints
+/// `XMP`; and the chunks that are not text: `gAMA` `Gamma`, `sRGB`
+/// `SRGBRendering`, `bKGD` `BackgroundColor`, `tRNS` `Transparency`, `sBIT`
+/// `SignificantBits`, `oFFs` `ImageOffset`, `iDOT` (and `IDOT`)
+/// `AppleDataOffsets`, `pCAL` `PixelCalibration`, `hIST` `PaletteHistogram`,
+/// `sPLT` `SuggestedPalette`, `dSIG` `DigitalSignature`, `cpIp` `OLEInfo`,
+/// `gIFg` `GIFGraphicControlExtension`, `gIFx` `GIFApplicationExtension`,
+/// `fRAc` `FractalParameters`, `meTa` `MeTa`. Every other id-less `PNG` line is
+/// counted into [`Inventory::text_tags`] or, for [`PNG_BAD_TEXT_NAMES`], into
+/// [`Inventory::bad_text_tags`].
+pub const PNG_DROPPED_NAMES: [&str; 22] = [
+    "ProfileName",
+    "ICC_Profile",
+    "Palette",
+    "eXIf",
+    "XMP",
+    "Gamma",
+    "SRGBRendering",
+    "BackgroundColor",
+    "Transparency",
+    "SignificantBits",
+    "ImageOffset",
+    "AppleDataOffsets",
+    "PixelCalibration",
+    "PaletteHistogram",
+    "SuggestedPalette",
+    "DigitalSignature",
+    "OLEInfo",
+    "GIFGraphicControlExtension",
+    "GIFApplicationExtension",
+    "FractalParameters",
+    "MeTa",
+    "zxIf",
+];
+
+/// Prefix of the raw-profile tags (`RawProfileTypeFoo`, ...), dropped like
+/// [`PNG_DROPPED_NAMES`].
+pub const PNG_DROPPED_PREFIX: &str = "RawProfileType";
+
+/// Suffix of the raw-profile tags (`EXIF_Profile`, `XMP_Profile`, ...), dropped
+/// like [`PNG_DROPPED_NAMES`].
+pub const PNG_DROPPED_SUFFIX: &str = "_Profile";
+
+/// Whether an id-less `[PNG]` line of this name is a text or `tIME` tag (to be
+/// counted) rather than one of the dropped profile/palette lines.
+pub fn png_dashed_name_is_counted(name: &str) -> bool {
+    !(PNG_DROPPED_NAMES.contains(&name)
+        || name.starts_with(PNG_DROPPED_PREFIX)
+        || name.ends_with(PNG_DROPPED_SUFFIX))
+}
+
+/// The index of the first `eXIf` block of a PNG whose TIFF container parsed:
+/// the block ExifTool reads (it stops at the first valid one). `None` when no
+/// block parses or the bytes are not a readable PNG. The caller computes it
+/// from the bytes; the audit's items cannot tell which block parsed.
+pub fn png_first_ok_block(bytes: &[u8]) -> Option<usize> {
+    let meta = exif_core::png::read(bytes).ok()?;
+    meta.exif_blocks()
+        .iter()
+        .position(|b| b.container().is_ok())
+}
 
 /// Region kinds the audit reports that ExifTool has no reliable counterpart
 /// for (SPEC-019 class S: audit-only region kinds). On the existing inputs they
@@ -85,6 +192,19 @@ pub enum RegionKind {
 pub struct Inventory {
     pub tags: Multiset,
     pub regions: BTreeSet<RegionKind>,
+    /// A PNG's id-less tags (SPEC-036): ExifTool's `[PNG]` lines printed with
+    /// id `-` (text chunks, `tIME`, ...); ours, the audit's `Text` and `Time`
+    /// regions. Zero for every other format. Bucket (a) of three: the normal
+    /// text and `tIME` lines in group `PNG` (ours: `Text` and `Time` regions
+    /// not after `IEND`).
+    pub text_tags: usize,
+    /// Bucket (b): the id-less lines in group `Trailer` that are a chunk's tag
+    /// (ours: `Text` regions after `IEND`).
+    pub trailer_text_tags: usize,
+    /// Bucket (c): the lines ExifTool prints for a text chunk it could not
+    /// parse ([`PNG_BAD_TEXT_NAMES`]; ours: the `BadTextChunk` issues of the
+    /// chunks that gave no region, [`bad_text_chunks`]).
+    pub bad_text_tags: usize,
 }
 
 /// The ExifTool group name of a tag item, from the audit's [`IfdKind`]. `Chain`
@@ -107,8 +227,62 @@ pub fn group_of(kind: IfdKind, chain_position: usize) -> String {
 /// Our inventory of one audit. Tag items in [`DIRECTORY_VALUED`] are left out
 /// (Class H); `Chain` IFDs are numbered by their position among the `Chain`
 /// IFDs of the same Exif block.
+///
+/// A PNG needs [`ours_of`] (the block rule needs the bytes); calling this on a
+/// PNG panics rather than guess.
 pub fn ours(a: &FileAudit<'_>) -> Inventory {
+    assert!(
+        a.kind() != ContainerKind::Png,
+        "a PNG's inventory needs ours_of(bytes, audit) or ours_png(audit, first_ok_block)"
+    );
+    ours_png(a, None)
+}
+
+/// Our inventory of the audit of `bytes`: [`ours`] for every format, with a
+/// PNG's block rule computed from the bytes ([`png_first_ok_block`]).
+pub fn ours_of(bytes: &[u8], a: &FileAudit<'_>) -> Inventory {
+    if a.kind() == ContainerKind::Png {
+        let mut inv = ours_png(a, png_first_ok_block(bytes));
+        // The three text buckets (fix round, H2). `ours_png` counted every
+        // `Text` and `Time` item into bucket (a); the library's regions say
+        // which `Text` ones are after `IEND` (bucket b), and its issues give
+        // bucket (c).
+        if let Ok(meta) = exif_core::png::read(bytes) {
+            let after = meta
+                .regions()
+                .iter()
+                .filter(|r| matches!(r, exif_core::png::PngRegion::Text { .. }) && r.after_iend())
+                .count();
+            inv.text_tags = inv.text_tags.saturating_sub(after);
+            inv.trailer_text_tags = after;
+            inv.bad_text_tags = bad_text_chunks(&meta);
+        }
+        inv
+    } else {
+        ours(a)
+    }
+}
+
+/// How many `BadTextChunk` issues of a PNG belong to a chunk that gave no
+/// region: ExifTool prints one `TextualData`, `InternationalText` or
+/// `CompressedText` line for each (bucket c). A `BadTextChunk` on a chunk that
+/// DID give a region (an empty keyword, 80 bytes or more) is listed by ExifTool
+/// as an ordinary tag, so it is in bucket (a) and not here.
+pub fn bad_text_chunks(meta: &exif_core::png::PngMetadata<'_>) -> usize {
+    meta.png_issues()
+        .iter()
+        .filter(|i| matches!(i.error(), exif_core::Error::BadTextChunk { .. }))
+        .filter(|i| !meta.regions().iter().any(|r| r.offset() == i.offset()))
+        .count()
+}
+
+/// [`ours`] with the PNG block rule given: ExifTool lists only the first `eXIf`
+/// block that is a valid TIFF (even with `-a`) and stops, so only that block's
+/// tag items count (`None`: no block parsed, none counts). WebP and JPEG list
+/// every block (duplicates kept) and ignore `first_ok_block` (SPEC-036).
+pub fn ours_png(a: &FileAudit<'_>, first_ok_block: Option<usize>) -> Inventory {
     let mut inv = Inventory::default();
+    let png = a.kind() == ContainerKind::Png;
     // Per block (`None` for a bare TIFF): the container indices of the chain
     // IFDs seen so far, in order.
     let mut chains: BTreeMap<Option<usize>, Vec<usize>> = BTreeMap::new();
@@ -137,6 +311,9 @@ pub fn ours(a: &FileAudit<'_>) -> Inventory {
                 if DIRECTORY_VALUED.contains(&tag) {
                     continue;
                 }
+                if png && item.origin().block != first_ok_block {
+                    continue;
+                }
                 *inv.tags.entry((group_of(ifd, position), tag)).or_insert(0) += 1;
             }
             ItemKind::Region { kind, .. } => {
@@ -145,6 +322,17 @@ pub fn ours(a: &FileAudit<'_>) -> Inventory {
                 // `embedded_regions`), not as a region presence.
                 if CLASS_S_KINDS.contains(&kind) || kind == LibRegionKind::EmbeddedImage {
                     continue;
+                }
+                // A PNG text or `tIME` chunk is one id-less `[PNG]` line of
+                // ExifTool's; a raw profile is not counted (ExifTool decodes it
+                // into other groups or lists it under `[PNG]` with other names).
+                match kind {
+                    LibRegionKind::Text | LibRegionKind::Time => {
+                        inv.text_tags += 1;
+                        continue;
+                    }
+                    LibRegionKind::RawProfile => continue,
+                    _ => {}
                 }
                 let k = match kind {
                     LibRegionKind::Xmp | LibRegionKind::ExtendedXmp => RegionKind::Xmp,
@@ -287,6 +475,14 @@ pub enum GroupClass {
     /// A Multi-Picture group (`MPF0`, `MPImage<n>`): compared by
     /// [`mpimage_groups`], never as tags.
     MultiPicture,
+    /// A PNG or WebP structural group, dropped by name ([`STRUCTURAL_GROUPS`],
+    /// [`PNG_CHUNK_GROUP_PREFIX`]).
+    Structural,
+    /// The `PNG` group: hex-id lines are structural, id-less lines are counted.
+    Png,
+    /// The `Trailer` group ([`TRAILER_GROUP`]): its id-less lines are counted
+    /// in their own bucket.
+    Trailer,
 }
 
 /// Classify a group name, or `None` when it is none of the three.
@@ -296,6 +492,15 @@ pub fn classify_group(group: &str) -> Option<GroupClass> {
     }
     if group.starts_with("MPF") || group.starts_with("MPImage") {
         return Some(GroupClass::MultiPicture);
+    }
+    if group == PNG_GROUP {
+        return Some(GroupClass::Png);
+    }
+    if group == TRAILER_GROUP {
+        return Some(GroupClass::Trailer);
+    }
+    if STRUCTURAL_GROUPS.contains(&group) || group.starts_with(PNG_CHUNK_GROUP_PREFIX) {
+        return Some(GroupClass::Structural);
     }
     if group.starts_with("XMP") {
         return Some(GroupClass::Region(RegionKind::Xmp));
@@ -349,7 +554,30 @@ pub fn inventory_of(lines: &[Line]) -> Result<Inventory, ParseError> {
             Some(GroupClass::Region(kind)) => {
                 inv.regions.insert(kind);
             }
-            Some(GroupClass::Unmodelled | GroupClass::MultiPicture) => {}
+            Some(GroupClass::Png) => {
+                // Hex id: an `IHDR` field (structural). No id: counted unless
+                // its name is one of the dropped profile/palette names.
+                if l.id.is_none() {
+                    if PNG_BAD_TEXT_NAMES.contains(&l.name.as_str()) {
+                        inv.bad_text_tags += 1;
+                    } else if png_dashed_name_is_counted(&l.name) {
+                        inv.text_tags += 1;
+                    }
+                }
+            }
+            Some(GroupClass::Trailer) => {
+                // Its own lines (`Warning`, `ExifByteOrder`) are dropped; the
+                // chunk names dropped in `PNG` are dropped here; a bad text
+                // chunk goes to its bucket; the rest is a chunk's tag.
+                if l.id.is_none() && !TRAILER_STRUCTURAL_NAMES.contains(&l.name.as_str()) {
+                    if PNG_BAD_TEXT_NAMES.contains(&l.name.as_str()) {
+                        inv.bad_text_tags += 1;
+                    } else if png_dashed_name_is_counted(&l.name) {
+                        inv.trailer_text_tags += 1;
+                    }
+                }
+            }
+            Some(GroupClass::Unmodelled | GroupClass::MultiPicture | GroupClass::Structural) => {}
             None => {
                 return Err(ParseError::UnknownGroup {
                     group: l.group.clone(),
@@ -373,6 +601,16 @@ pub struct InventoryDiff {
     pub theirs_only: Multiset,
     pub regions_ours_only: BTreeSet<RegionKind>,
     pub regions_theirs_only: BTreeSet<RegionKind>,
+    /// How many more id-less PNG tags we count than ExifTool lists (SPEC-036).
+    pub text_ours_only: usize,
+    /// How many more id-less `[PNG]` lines ExifTool lists than we count.
+    pub text_theirs_only: usize,
+    /// The same two counts for bucket (b), the id-less `Trailer` lines.
+    pub trailer_ours_only: usize,
+    pub trailer_theirs_only: usize,
+    /// The same two counts for bucket (c), the unparseable text chunks.
+    pub bad_ours_only: usize,
+    pub bad_theirs_only: usize,
 }
 
 impl InventoryDiff {
@@ -381,6 +619,12 @@ impl InventoryDiff {
             && self.theirs_only.is_empty()
             && self.regions_ours_only.is_empty()
             && self.regions_theirs_only.is_empty()
+            && self.text_ours_only == 0
+            && self.text_theirs_only == 0
+            && self.trailer_ours_only == 0
+            && self.trailer_theirs_only == 0
+            && self.bad_ours_only == 0
+            && self.bad_theirs_only == 0
     }
 }
 
@@ -403,6 +647,16 @@ pub fn diff(ours: &Inventory, theirs: &Inventory) -> InventoryDiff {
         theirs_only: multiset_minus(&theirs.tags, &ours.tags),
         regions_ours_only: ours.regions.difference(&theirs.regions).copied().collect(),
         regions_theirs_only: theirs.regions.difference(&ours.regions).copied().collect(),
+        text_ours_only: ours.text_tags.saturating_sub(theirs.text_tags),
+        text_theirs_only: theirs.text_tags.saturating_sub(ours.text_tags),
+        trailer_ours_only: ours
+            .trailer_text_tags
+            .saturating_sub(theirs.trailer_text_tags),
+        trailer_theirs_only: theirs
+            .trailer_text_tags
+            .saturating_sub(ours.trailer_text_tags),
+        bad_ours_only: ours.bad_text_tags.saturating_sub(theirs.bad_text_tags),
+        bad_theirs_only: theirs.bad_text_tags.saturating_sub(ours.bad_text_tags),
     }
 }
 
@@ -431,6 +685,28 @@ impl fmt::Display for InventoryDiff {
         }
         for r in &self.regions_theirs_only {
             line(f, format!("theirs only: region {r:?}"))?;
+        }
+        if self.text_ours_only > 0 {
+            line(
+                f,
+                format!("ours only:   text tags x{}", self.text_ours_only),
+            )?;
+        }
+        if self.text_theirs_only > 0 {
+            line(
+                f,
+                format!("theirs only: text tags x{}", self.text_theirs_only),
+            )?;
+        }
+        for (n, what) in [
+            (self.trailer_ours_only, "ours only:   trailer text tags"),
+            (self.trailer_theirs_only, "theirs only: trailer text tags"),
+            (self.bad_ours_only, "ours only:   bad text chunks"),
+            (self.bad_theirs_only, "theirs only: bad text chunks"),
+        ] {
+            if n > 0 {
+                line(f, format!("{what} x{n}"))?;
+            }
         }
         Ok(())
     }
@@ -469,6 +745,9 @@ pub enum Class {
     /// region, ExifTool lists no group for it (not in the SPEC-013 design
     /// table; measured by the build on stub and minimal seed payloads).
     R,
+    /// A PNG or WebP shape (SPEC-036): the audit and ExifTool disagree on how a
+    /// chunk is read (text, profile, XMP, ICC, block rules).
+    P,
 }
 
 /// One pinned divergence: a fixture whose inventory differs from ExifTool's
@@ -484,14 +763,25 @@ pub struct Divergence {
     pub theirs_only: &'static [(&'static str, u16, usize)],
     pub regions_ours_only: &'static [RegionKind],
     pub regions_theirs_only: &'static [RegionKind],
+    /// How many more id-less `[PNG]` tags we count than ExifTool lists
+    /// (SPEC-036; zero for every entry that is not a PNG).
+    pub text_ours_only: usize,
+    /// How many more id-less `[PNG]` tags ExifTool lists than we count.
+    pub text_theirs_only: usize,
+    /// Bucket (b), the id-less `Trailer` lines: ours more, theirs more.
+    pub trailer_ours_only: usize,
+    pub trailer_theirs_only: usize,
+    /// Bucket (c), the unparseable text chunks: ours more, theirs more.
+    pub bad_ours_only: usize,
+    pub bad_theirs_only: usize,
     pub right_side: Side,
     /// The `guidance/questions.yaml` id that explains it.
     pub question: &'static str,
     /// What ExifTool 13.55 printed for the differing entries, in one line (the
     /// full listing is in the committed record of the input's corpus).
     pub measured: &'static str,
-    /// True iff ExifTool lists something we do not (`theirs_only` or
-    /// `regions_theirs_only` is non-empty). The hard invariant: such a file
+    /// True iff ExifTool lists something we do not (`theirs_only`,
+    /// `regions_theirs_only` or `text_theirs_only` is non-empty). The hard invariant: such a file
     /// must not be reported clean.
     pub ours_hides: bool,
 }
@@ -509,12 +799,22 @@ impl Divergence {
             theirs_only: set(self.theirs_only),
             regions_ours_only: self.regions_ours_only.iter().copied().collect(),
             regions_theirs_only: self.regions_theirs_only.iter().copied().collect(),
+            text_ours_only: self.text_ours_only,
+            text_theirs_only: self.text_theirs_only,
+            trailer_ours_only: self.trailer_ours_only,
+            trailer_theirs_only: self.trailer_theirs_only,
+            bad_ours_only: self.bad_ours_only,
+            bad_theirs_only: self.bad_theirs_only,
         }
     }
 
     /// Whether the flags are consistent with the pinned sets.
     pub fn hides_is_consistent(&self) -> bool {
-        self.ours_hides == (!self.theirs_only.is_empty() || !self.regions_theirs_only.is_empty())
+        self.ours_hides
+            == (!self.theirs_only.is_empty()
+                || !self.regions_theirs_only.is_empty()
+                || self.text_theirs_only > 0
+                || self.bad_theirs_only > 0)
     }
 }
 
@@ -620,6 +920,16 @@ pub fn probe_text(inv: &Inventory) -> String {
     for r in &inv.regions {
         s.push_str(&format!("region\t{r:?}\n"));
     }
+    // Only when non-zero, so the output for every older input is unchanged.
+    if inv.text_tags > 0 {
+        s.push_str(&format!("text\t{}\n", inv.text_tags));
+    }
+    if inv.trailer_text_tags > 0 {
+        s.push_str(&format!("trailer_text\t{}\n", inv.trailer_text_tags));
+    }
+    if inv.bad_text_tags > 0 {
+        s.push_str(&format!("bad_text\t{}\n", inv.bad_text_tags));
+    }
     s
 }
 
@@ -643,6 +953,15 @@ pub fn parse_probe_text(text: &str) -> Result<Inventory, String> {
                     other => return Err(format!("unknown region kind {other:?}")),
                 };
                 inv.regions.insert(kind);
+            }
+            ["text", n] => {
+                inv.text_tags = n.parse::<usize>().map_err(|e| format!("{line:?}: {e}"))?;
+            }
+            ["trailer_text", n] => {
+                inv.trailer_text_tags = n.parse::<usize>().map_err(|e| format!("{line:?}: {e}"))?;
+            }
+            ["bad_text", n] => {
+                inv.bad_text_tags = n.parse::<usize>().map_err(|e| format!("{line:?}: {e}"))?;
             }
             _ => return Err(format!("unparseable probe line {line:?}")),
         }
@@ -818,6 +1137,12 @@ const fn region_only(
         theirs_only: &[],
         regions_ours_only: regions,
         regions_theirs_only: &[],
+        text_ours_only: 0,
+        text_theirs_only: 0,
+        trailer_ours_only: 0,
+        trailer_theirs_only: 0,
+        bad_ours_only: 0,
+        bad_theirs_only: 0,
         right_side: Side::Ours,
         question: Q_REGIONS,
         ours_hides: false,
@@ -842,10 +1167,84 @@ const fn entries(
         theirs_only,
         regions_ours_only: &[],
         regions_theirs_only: &[],
+        text_ours_only: 0,
+        text_theirs_only: 0,
+        trailer_ours_only: 0,
+        trailer_theirs_only: 0,
+        bad_ours_only: 0,
+        bad_theirs_only: 0,
         right_side,
         question,
         // Derived, never typed: ExifTool lists something we do not.
         ours_hides: !theirs_only.is_empty(),
+        measured,
+    }
+}
+
+/// The exact difference of a PNG or WebP input (SPEC-036), every set given;
+/// `ours_hides` is derived like the other constructors'.
+#[allow(clippy::too_many_arguments)]
+const fn shape(
+    fixture: &'static str,
+    ours_only: &'static [(&'static str, u16, usize)],
+    theirs_only: &'static [(&'static str, u16, usize)],
+    regions_ours_only: &'static [RegionKind],
+    regions_theirs_only: &'static [RegionKind],
+    text: (usize, usize),
+    right_side: Side,
+    question: &'static str,
+    measured: &'static str,
+) -> Divergence {
+    Divergence {
+        fixture,
+        class: Class::P,
+        ours_only,
+        theirs_only,
+        regions_ours_only,
+        regions_theirs_only,
+        text_ours_only: text.0,
+        text_theirs_only: text.1,
+        trailer_ours_only: 0,
+        trailer_theirs_only: 0,
+        bad_ours_only: 0,
+        bad_theirs_only: 0,
+        right_side,
+        question,
+        ours_hides: !theirs_only.is_empty() || !regions_theirs_only.is_empty() || text.1 > 0,
+        measured,
+    }
+}
+
+/// A PNG divergence in the Trailer bucket (b) and the unparseable-chunk bucket
+/// (c), and optionally regions only we list; everything else empty. The
+/// `hides` flag is derived from the ExifTool-more count of bucket (c) only.
+const fn shape_buckets(
+    fixture: &'static str,
+    regions_ours_only: &'static [RegionKind],
+    trailer: (usize, usize),
+    bad: (usize, usize),
+    right_side: Side,
+    question: &'static str,
+    measured: &'static str,
+) -> Divergence {
+    Divergence {
+        fixture,
+        class: Class::P,
+        ours_only: &[],
+        theirs_only: &[],
+        regions_ours_only,
+        regions_theirs_only: &[],
+        text_ours_only: 0,
+        text_theirs_only: 0,
+        trailer_ours_only: trailer.0,
+        trailer_theirs_only: trailer.1,
+        bad_ours_only: bad.0,
+        bad_theirs_only: bad.1,
+        right_side,
+        question,
+        // A `Trailer` line can be the contents of a region we located (an
+        // invalid XMP's `TagY`), so bucket (b) alone is not a hidden entry.
+        ours_hides: bad.1 > 0,
         measured,
     }
 }
@@ -1148,6 +1547,696 @@ pub const KNOWN_DIVERGENCES: &[Divergence] = &[
         "seed-jpeg_segments/xmp-and-extended-xmp",
         &[RegionKind::Xmp],
         "ExifTool lists no XMP group for the minimal XMP payloads",
+    ),
+    // SPEC-036: the png-webp corpus. Every row is a measured difference of the
+    // audit from ExifTool 13.55 on a PNG or a WebP (Class P); the listings are in
+    // `tests/oracle-fixtures/exiftool-inventory/png-webp.txt`.
+    shape(
+        "png-webp/png-xmp-itxt-flag-2",
+        &[],
+        &[],
+        &[RegionKind::Xmp],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "png-xmp-flag-2-located-not-read",
+        "ExifTool prints [PNG] XMP (Error inflating) and no XMP group; the audit locates an Xmp region",
+    ),
+    shape(
+        "png-webp/png-iccp-bad-header",
+        &[],
+        &[],
+        &[RegionKind::Icc],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "png-iccp-located-no-exiftool-group",
+        "ExifTool prints ProfileName and ICC_Profile in group PNG (Error inflating iCCP, or Bad length ICC_Profile) and no ICC group; the audit locates an Icc region",
+    ),
+    shape(
+        "png-webp/png-raw-exif-text",
+        &[],
+        &[("ExifIFD", 0x829d, 1), ("ExifIFD", 0x8827, 1), ("ExifIFD", 0x9003, 1), ("ExifIFD", 0x9204, 1), ("IFD0", 0x0100, 1), ("IFD0", 0x0101, 1), ("IFD0", 0x010f, 1), ("IFD0", 0x0110, 1), ("IFD0", 0x0112, 1), ("IFD0", 0x011a, 1), ("IFD0", 0x0131, 1), ("IFD0", 0x0132, 1), ("IFD0", 0x013b, 1), ("IFD0", 0x8298, 1)],
+        &[],
+        &[],
+        (0, 0),
+        Side::Theirs,
+        "png-raw-profile-not-decoded",
+        "ExifTool decodes the raw EXIF profile into IFD0, ExifIFD and GPS entries; the audit lists a RawProfile region only",
+    ),
+    shape(
+        "png-webp/png-raw-exif-ztxt",
+        &[],
+        &[("ExifIFD", 0x829d, 1), ("ExifIFD", 0x8827, 1), ("ExifIFD", 0x9003, 1), ("ExifIFD", 0x9204, 1), ("IFD0", 0x0100, 1), ("IFD0", 0x0101, 1), ("IFD0", 0x010f, 1), ("IFD0", 0x0110, 1), ("IFD0", 0x0112, 1), ("IFD0", 0x011a, 1), ("IFD0", 0x0131, 1), ("IFD0", 0x0132, 1), ("IFD0", 0x013b, 1), ("IFD0", 0x8298, 1)],
+        &[],
+        &[],
+        (0, 0),
+        Side::Theirs,
+        "png-raw-profile-not-decoded",
+        "ExifTool decodes the raw EXIF profile into IFD0, ExifIFD and GPS entries; the audit lists a RawProfile region only",
+    ),
+    shape(
+        "png-webp/png-raw-exif-itxt",
+        &[],
+        &[("ExifIFD", 0x829d, 1), ("ExifIFD", 0x8827, 1), ("ExifIFD", 0x9003, 1), ("ExifIFD", 0x9204, 1), ("IFD0", 0x0100, 1), ("IFD0", 0x0101, 1), ("IFD0", 0x010f, 1), ("IFD0", 0x0110, 1), ("IFD0", 0x0112, 1), ("IFD0", 0x011a, 1), ("IFD0", 0x0131, 1), ("IFD0", 0x0132, 1), ("IFD0", 0x013b, 1), ("IFD0", 0x8298, 1)],
+        &[],
+        &[],
+        (0, 0),
+        Side::Theirs,
+        "png-raw-profile-not-decoded",
+        "ExifTool decodes the raw EXIF profile into IFD0, ExifIFD and GPS entries; the audit lists a RawProfile region only",
+    ),
+    shape(
+        "png-webp/png-raw-xmp-text",
+        &[],
+        &[],
+        &[],
+        &[RegionKind::Xmp],
+        (0, 0),
+        Side::Theirs,
+        "png-raw-profile-not-decoded",
+        "ExifTool decodes the raw XMP profile into an XMP group; the audit lists a RawProfile region only",
+    ),
+    shape(
+        "png-webp/png-raw-xmp-ztxt",
+        &[],
+        &[],
+        &[],
+        &[RegionKind::Xmp],
+        (0, 0),
+        Side::Theirs,
+        "png-raw-profile-not-decoded",
+        "ExifTool decodes the raw XMP profile into an XMP group; the audit lists a RawProfile region only",
+    ),
+    shape(
+        "png-webp/png-raw-xmp-itxt",
+        &[],
+        &[],
+        &[],
+        &[RegionKind::Xmp],
+        (0, 0),
+        Side::Theirs,
+        "png-raw-profile-not-decoded",
+        "ExifTool decodes the raw XMP profile into an XMP group; the audit lists a RawProfile region only",
+    ),
+    shape(
+        "png-webp/png-exif-and-raw-exif",
+        &[],
+        &[("IFD0", 0x010f, 1)],
+        &[],
+        &[],
+        (0, 0),
+        Side::Theirs,
+        "png-raw-profile-not-decoded",
+        "ExifTool decodes the raw EXIF profile as well as the eXIf block and lists IFD0 Make once more; the audit lists a RawProfile region only",
+    ),
+    shape(
+        "png-webp/webp-xmp-empty",
+        &[],
+        &[],
+        &[RegionKind::Xmp],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "webp-xmp-content-not-parsed",
+        "ExifTool lists no XMP group for the XMP chunk (empty, garbage or an unparsable packet); the audit locates an Xmp region",
+    ),
+    shape(
+        "png-webp/webp-xmp-nul-id-empty",
+        &[],
+        &[],
+        &[RegionKind::Xmp],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "webp-xmp-content-not-parsed",
+        "ExifTool lists no XMP group for the XMP chunk (empty, garbage or an unparsable packet); the audit locates an Xmp region",
+    ),
+    shape(
+        "png-webp/webp-xmp-nul-id-1-bytes",
+        &[],
+        &[],
+        &[RegionKind::Xmp],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "webp-xmp-content-not-parsed",
+        "ExifTool lists no XMP group for the XMP chunk (empty, garbage or an unparsable packet); the audit locates an Xmp region",
+    ),
+    shape(
+        "png-webp/webp-xmp-nul-id-2-bytes",
+        &[],
+        &[],
+        &[RegionKind::Xmp],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "webp-xmp-content-not-parsed",
+        "ExifTool lists no XMP group for the XMP chunk (empty, garbage or an unparsable packet); the audit locates an Xmp region",
+    ),
+    shape(
+        "png-webp/webp-xmp-nul-id-3-bytes",
+        &[],
+        &[],
+        &[RegionKind::Xmp],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "webp-xmp-content-not-parsed",
+        "ExifTool lists no XMP group for the XMP chunk (empty, garbage or an unparsable packet); the audit locates an Xmp region",
+    ),
+    shape(
+        "png-webp/webp-xmp-nul-id-4-bytes",
+        &[],
+        &[],
+        &[RegionKind::Xmp],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "webp-xmp-content-not-parsed",
+        "ExifTool lists no XMP group for the XMP chunk (empty, garbage or an unparsable packet); the audit locates an Xmp region",
+    ),
+    shape(
+        "png-webp/webp-xmp-nul-id-5-bytes",
+        &[],
+        &[],
+        &[RegionKind::Xmp],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "webp-xmp-content-not-parsed",
+        "ExifTool lists no XMP group for the XMP chunk (empty, garbage or an unparsable packet); the audit locates an Xmp region",
+    ),
+    shape(
+        "png-webp/webp-xmp-nul-id-6-bytes",
+        &[],
+        &[],
+        &[RegionKind::Xmp],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "webp-xmp-content-not-parsed",
+        "ExifTool lists no XMP group for the XMP chunk (empty, garbage or an unparsable packet); the audit locates an Xmp region",
+    ),
+    shape(
+        "png-webp/webp-xmp-nul-id-7-bytes",
+        &[],
+        &[],
+        &[RegionKind::Xmp],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "webp-xmp-content-not-parsed",
+        "ExifTool lists no XMP group for the XMP chunk (empty, garbage or an unparsable packet); the audit locates an Xmp region",
+    ),
+    shape(
+        "png-webp/webp-xmp-garbage",
+        &[],
+        &[],
+        &[RegionKind::Xmp],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "webp-xmp-content-not-parsed",
+        "ExifTool lists no XMP group for the XMP chunk (empty, garbage or an unparsable packet); the audit locates an Xmp region",
+    ),
+    shape(
+        "png-webp/webp-icc-garbage",
+        &[],
+        &[],
+        &[RegionKind::Icc],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "webp-iccp-profile-not-validated",
+        "ExifTool lists no ICC group for the ICCP chunk (Bad length ICC_Profile or no profile data); the audit locates an Icc region",
+    ),
+    shape(
+        "png-webp/webp-icc-stub-132",
+        &[],
+        &[],
+        &[RegionKind::Icc],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "webp-iccp-profile-not-validated",
+        "ExifTool lists no ICC group for the ICCP chunk (Bad length ICC_Profile or no profile data); the audit locates an Icc region",
+    ),
+    shape(
+        "png-webp/webp-icc-empty",
+        &[],
+        &[],
+        &[RegionKind::Icc],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "webp-iccp-profile-not-validated",
+        "ExifTool lists no ICC group for the ICCP chunk (Bad length ICC_Profile or no profile data); the audit locates an Icc region",
+    ),
+    shape(
+        "png-webp/webp-icc-header-only",
+        &[],
+        &[],
+        &[RegionKind::Icc],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "webp-iccp-profile-not-validated",
+        "ExifTool lists no ICC group for the ICCP chunk (Bad length ICC_Profile or no profile data); the audit locates an Icc region",
+    ),
+    shape(
+        "png-webp/webp-icc-zero-tags",
+        &[],
+        &[],
+        &[RegionKind::Icc],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "webp-iccp-profile-not-validated",
+        "ExifTool lists no ICC group for the ICCP chunk (Bad length ICC_Profile or no profile data); the audit locates an Icc region",
+    ),
+    shape(
+        "png-webp/webp-exif-16-then-gps",
+        &[],
+        &[("GPS", 0x0001, 1), ("GPS", 0x0002, 1), ("GPS", 0x0003, 1), ("GPS", 0x0004, 1)],
+        &[],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "webp-exif-block-cap",
+        "ExifTool lists the GPS entries of the seventeenth EXIF block; the audit lists sixteen blocks",
+    ),
+    shape(
+        "png-webp/webp-null-chunk-before-exif",
+        &[("IFD0", 0x010f, 1), ("IFD0", 0x0110, 1)],
+        &[],
+        &[],
+        &[],
+        (0, 0),
+        Side::Ours,
+        "webp-null-chunk-not-a-stop",
+        "ExifTool stops at the NULL chunk and lists no IFD0 entry; the audit walks past it and lists Make and Model",
+    ),
+    shape(
+        "png-webp/webp-header-rifx",
+        &[],
+        &[("IFD0", 0x010f, 1)],
+        &[],
+        &[],
+        (0, 0),
+        Side::Theirs,
+        "webp-riff-other-forms-read-by-exiftool",
+        "ExifTool reads the EXIF chunk of this RIFF form (RIFX, WAVE or AVI) and lists IFD0 Make; the audit does not take it for a WebP",
+    ),
+    shape(
+        "png-webp/webp-header-wave",
+        &[],
+        &[("IFD0", 0x010f, 1)],
+        &[],
+        &[],
+        (0, 0),
+        Side::Theirs,
+        "webp-riff-other-forms-read-by-exiftool",
+        "ExifTool reads the EXIF chunk of this RIFF form (RIFX, WAVE or AVI) and lists IFD0 Make; the audit does not take it for a WebP",
+    ),
+    shape(
+        "png-webp/webp-header-avi",
+        &[],
+        &[("IFD0", 0x010f, 1)],
+        &[],
+        &[],
+        (0, 0),
+        Side::Theirs,
+        "webp-riff-other-forms-read-by-exiftool",
+        "ExifTool reads the EXIF chunk of this RIFF form (RIFX, WAVE or AVI) and lists IFD0 Make; the audit does not take it for a WebP",
+    ),
+    shape(
+        "png-webp/png-shape-iccp-and-plte",
+        &[],
+        &[],
+        &[RegionKind::Icc],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "png-iccp-located-no-exiftool-group",
+        "ExifTool prints ProfileName and ICC_Profile in group PNG (Error inflating iCCP, or Bad length ICC_Profile) and no ICC group; the audit locates an Icc region",
+    ),
+    shape_buckets(
+        "png-webp/png-shape-bad-crc-texts-1100",
+        &[],
+        (0, 0),
+        (0, 1100),
+        Side::Theirs,
+        "png-bad-text-chunk-not-listed",
+        "ExifTool prints a TextualData, InternationalText or CompressedText tag for every text chunk it cannot parse, and keeps going past a chunk with a bad CRC; the audit walk halts at the first bad CRC (DEC-017), so it sees none of these chunks and issues no BadTextChunk for them",
+    ),
+    shape(
+        "png-webp/png-shape-meta-iccp",
+        &[],
+        &[],
+        &[RegionKind::Icc],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "png-iccp-located-no-exiftool-group",
+        "ExifTool prints ProfileName and ICC_Profile in group PNG (Error inflating iCCP, or Bad length ICC_Profile) and no ICC group; the audit locates an Icc region",
+    ),
+    shape(
+        "png-webp/png-shape-meta-iccp-empty-name",
+        &[],
+        &[],
+        &[RegionKind::Icc],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "png-iccp-located-no-exiftool-group",
+        "ExifTool prints ProfileName and ICC_Profile in group PNG (Error inflating iCCP, or Bad length ICC_Profile) and no ICC group; the audit locates an Icc region",
+    ),
+    shape_buckets(
+        "png-webp/png-shape-meta-trailer-chunks",
+        &[RegionKind::Xmp, RegionKind::Icc],
+        (0, 1),
+        (0, 0),
+        Side::Neither,
+        "png-after-iend-in-trailer",
+        "after IEND the contents are not valid (an XMP whose body is <y/>, an iCCP that does not inflate), so ExifTool prints them as Trailer:TagY, Trailer:ProfileName and Trailer:ICC_Profile (no XMP or ICC group) beside the Trailer:Comment; the audit lists the Xmp and Icc regions it located (DEC-020) and the Text, so ExifTool has one more id-less Trailer line (the TagY) than the audit has Text regions after IEND",
+    ),
+    shape_buckets(
+        "png-webp/png-shape-meta-halted-after-text",
+        &[],
+        (0, 0),
+        (0, 1),
+        Side::Theirs,
+        "png-bad-text-chunk-not-listed",
+        "ExifTool prints a TextualData tag for the text chunk after the chunk that halts the audit walk; the audit walk has halted by then (DEC-017), so it sees no such chunk and issues no BadTextChunk for it",
+    ),
+    shape(
+        "png-webp/png-shape-meta-ztxt-xmp",
+        &[],
+        &[],
+        &[RegionKind::Xmp],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "png-xmp-content-not-parsed",
+        "ExifTool prints no XMP group for the XML:com.adobe.xmp chunk (empty, invalid, an empty xmpmeta or a zTXt that does not inflate) and, where an iCCP is present, only ProfileName and ICC_Profile in group PNG; the audit locates an Xmp region (and the Icc region where there is an iCCP)",
+    ),
+    shape(
+        "png-webp/png-extra-kw-xmp-plus-badtext",
+        &[],
+        &[],
+        &[],
+        &[],
+        (1, 0),
+        Side::Neither,
+        "png-text-keyword-collides-with-chunk-tag-name",
+        "a text chunk whose keyword is XMP prints [PNG] XMP, the name the by-name classification drops, beside a text chunk with no separator that both sides count in bucket (c): the collision shows on its own now, it no longer cancels against the TextualData",
+    ),
+    shape(
+        "png-webp/png-extra-kw-xmp",
+        &[],
+        &[],
+        &[],
+        &[],
+        (1, 0),
+        Side::Neither,
+        "png-text-keyword-collides-with-chunk-tag-name",
+        "a text chunk whose keyword is XMP prints [PNG] XMP, the same name the by-name classification drops (a chunk tag or a raw profile), so the harness does not count ExifTool's line while the audit lists a Text region",
+    ),
+    shape(
+        "png-webp/png-extra-kw-palette",
+        &[],
+        &[],
+        &[],
+        &[],
+        (1, 0),
+        Side::Neither,
+        "png-text-keyword-collides-with-chunk-tag-name",
+        "a text chunk whose keyword is Palette prints [PNG] Palette, the same name the by-name classification drops (a chunk tag or a raw profile), so the harness does not count ExifTool's line while the audit lists a Text region",
+    ),
+    shape(
+        "png-webp/png-extra-kw-profilename",
+        &[],
+        &[],
+        &[],
+        &[],
+        (1, 0),
+        Side::Neither,
+        "png-text-keyword-collides-with-chunk-tag-name",
+        "a text chunk whose keyword is ProfileName prints [PNG] ProfileName, the same name the by-name classification drops (a chunk tag or a raw profile), so the harness does not count ExifTool's line while the audit lists a Text region",
+    ),
+    shape(
+        "png-webp/png-extra-kw-icc-profile",
+        &[],
+        &[],
+        &[],
+        &[],
+        (1, 0),
+        Side::Neither,
+        "png-text-keyword-collides-with-chunk-tag-name",
+        "a text chunk whose keyword is ICC_Profile prints [PNG] ICC_Profile, the same name the by-name classification drops (a chunk tag or a raw profile), so the harness does not count ExifTool's line while the audit lists a Text region",
+    ),
+    shape(
+        "png-webp/png-extra-kw-my-profile",
+        &[],
+        &[],
+        &[],
+        &[],
+        (1, 0),
+        Side::Neither,
+        "png-text-keyword-collides-with-chunk-tag-name",
+        "a text chunk whose keyword is My_Profile prints [PNG] My_Profile, the same name the by-name classification drops (a chunk tag or a raw profile), so the harness does not count ExifTool's line while the audit lists a Text region",
+    ),
+    shape(
+        "png-webp/png-extra-kw-exif-profile",
+        &[],
+        &[],
+        &[],
+        &[],
+        (1, 0),
+        Side::Neither,
+        "png-text-keyword-collides-with-chunk-tag-name",
+        "a text chunk whose keyword is EXIF_Profile prints [PNG] EXIF_Profile, the same name the by-name classification drops (a chunk tag or a raw profile), so the harness does not count ExifTool's line while the audit lists a Text region",
+    ),
+    shape(
+        "png-webp/png-extra-kw-rawprofiletypex",
+        &[],
+        &[],
+        &[],
+        &[],
+        (1, 0),
+        Side::Neither,
+        "png-text-keyword-collides-with-chunk-tag-name",
+        "a text chunk whose keyword is RawProfileTypeX prints [PNG] RawProfileTypeX, the same name the by-name classification drops (a chunk tag or a raw profile), so the harness does not count ExifTool's line while the audit lists a Text region",
+    ),
+    shape(
+        "png-webp/png-extra-kw-raw-mixed-case",
+        &[],
+        &[],
+        &[],
+        &[],
+        (1, 0),
+        Side::Neither,
+        "png-text-keyword-collides-with-chunk-tag-name",
+        "a text chunk whose keyword is Raw Profile Type exif prints [PNG] RawProfileTypeExif, the same name the by-name classification drops (a chunk tag or a raw profile), so the harness does not count ExifTool's line while the audit lists a Text region",
+    ),
+    shape(
+        "png-webp/png-extra-kw-gamma",
+        &[],
+        &[],
+        &[],
+        &[],
+        (1, 0),
+        Side::Neither,
+        "png-text-keyword-collides-with-chunk-tag-name",
+        "a text chunk whose keyword is Gamma prints [PNG] Gamma, the same name the by-name classification drops (a chunk tag or a raw profile), so the harness does not count ExifTool's line while the audit lists a Text region",
+    ),
+    shape(
+        "png-webp/png-extra-raw-exif-gps-text",
+        &[],
+        &[("ExifIFD", 0x829d, 1), ("ExifIFD", 0x8827, 1), ("ExifIFD", 0x9003, 1), ("ExifIFD", 0x9204, 1), ("GPS", 0x0001, 1), ("GPS", 0x0002, 1), ("GPS", 0x0003, 1), ("GPS", 0x0004, 1), ("IFD0", 0x0100, 1), ("IFD0", 0x0101, 1), ("IFD0", 0x010f, 1), ("IFD0", 0x0110, 1), ("IFD0", 0x0112, 1), ("IFD0", 0x011a, 1), ("IFD0", 0x0131, 1), ("IFD0", 0x0132, 1), ("IFD0", 0x013b, 1), ("IFD0", 0x8298, 1)],
+        &[],
+        &[],
+        (0, 0),
+        Side::Theirs,
+        "png-raw-profile-not-decoded",
+        "ExifTool decodes the whole raw EXIF profile, GPS entries included, into IFD0, ExifIFD and GPS; the audit lists a RawProfile region only",
+    ),
+    shape(
+        "png-webp/png-extra-raw-lower-exif-gps-text",
+        &[],
+        &[("ExifIFD", 0x829d, 1), ("ExifIFD", 0x8827, 1), ("ExifIFD", 0x9003, 1), ("ExifIFD", 0x9204, 1), ("GPS", 0x0001, 1), ("GPS", 0x0002, 1), ("GPS", 0x0003, 1), ("GPS", 0x0004, 1), ("IFD0", 0x0100, 1), ("IFD0", 0x0101, 1), ("IFD0", 0x010f, 1), ("IFD0", 0x0110, 1), ("IFD0", 0x0112, 1), ("IFD0", 0x011a, 1), ("IFD0", 0x0131, 1), ("IFD0", 0x0132, 1), ("IFD0", 0x013b, 1), ("IFD0", 0x8298, 1)],
+        &[],
+        &[],
+        (0, 0),
+        Side::Theirs,
+        "png-raw-profile-not-decoded",
+        "ExifTool decodes the whole raw EXIF profile, GPS entries included, into IFD0, ExifIFD and GPS; the audit lists a RawProfile region only",
+    ),
+    shape(
+        "png-webp/png-extra-raw-lower-exif-gps-ztxt",
+        &[],
+        &[("ExifIFD", 0x829d, 1), ("ExifIFD", 0x8827, 1), ("ExifIFD", 0x9003, 1), ("ExifIFD", 0x9204, 1), ("GPS", 0x0001, 1), ("GPS", 0x0002, 1), ("GPS", 0x0003, 1), ("GPS", 0x0004, 1), ("IFD0", 0x0100, 1), ("IFD0", 0x0101, 1), ("IFD0", 0x010f, 1), ("IFD0", 0x0110, 1), ("IFD0", 0x0112, 1), ("IFD0", 0x011a, 1), ("IFD0", 0x0131, 1), ("IFD0", 0x0132, 1), ("IFD0", 0x013b, 1), ("IFD0", 0x8298, 1)],
+        &[],
+        &[],
+        (0, 0),
+        Side::Theirs,
+        "png-raw-profile-not-decoded",
+        "ExifTool decodes the whole raw EXIF profile, GPS entries included, into IFD0, ExifIFD and GPS; the audit lists a RawProfile region only",
+    ),
+    shape(
+        "png-webp/png-extra-raw-lower-exif-gps-itxt",
+        &[],
+        &[("ExifIFD", 0x829d, 1), ("ExifIFD", 0x8827, 1), ("ExifIFD", 0x9003, 1), ("ExifIFD", 0x9204, 1), ("GPS", 0x0001, 1), ("GPS", 0x0002, 1), ("GPS", 0x0003, 1), ("GPS", 0x0004, 1), ("IFD0", 0x0100, 1), ("IFD0", 0x0101, 1), ("IFD0", 0x010f, 1), ("IFD0", 0x0110, 1), ("IFD0", 0x0112, 1), ("IFD0", 0x011a, 1), ("IFD0", 0x0131, 1), ("IFD0", 0x0132, 1), ("IFD0", 0x013b, 1), ("IFD0", 0x8298, 1)],
+        &[],
+        &[],
+        (0, 0),
+        Side::Theirs,
+        "png-raw-profile-not-decoded",
+        "ExifTool decodes the whole raw EXIF profile, GPS entries included, into IFD0, ExifIFD and GPS; the audit lists a RawProfile region only",
+    ),
+    shape(
+        "png-webp/png-extra-raw-lower-app1-gps-text",
+        &[],
+        &[("ExifIFD", 0x829d, 1), ("ExifIFD", 0x8827, 1), ("ExifIFD", 0x9003, 1), ("ExifIFD", 0x9204, 1), ("GPS", 0x0001, 1), ("GPS", 0x0002, 1), ("GPS", 0x0003, 1), ("GPS", 0x0004, 1), ("IFD0", 0x0100, 1), ("IFD0", 0x0101, 1), ("IFD0", 0x010f, 1), ("IFD0", 0x0110, 1), ("IFD0", 0x0112, 1), ("IFD0", 0x011a, 1), ("IFD0", 0x0131, 1), ("IFD0", 0x0132, 1), ("IFD0", 0x013b, 1), ("IFD0", 0x8298, 1)],
+        &[],
+        &[],
+        (0, 0),
+        Side::Theirs,
+        "png-raw-profile-not-decoded",
+        "ExifTool decodes the whole raw EXIF profile, GPS entries included, into IFD0, ExifIFD and GPS; the audit lists a RawProfile region only",
+    ),
+    shape(
+        "png-webp/png-extra-raw-exif-gps-ztxt",
+        &[],
+        &[("ExifIFD", 0x829d, 1), ("ExifIFD", 0x8827, 1), ("ExifIFD", 0x9003, 1), ("ExifIFD", 0x9204, 1), ("GPS", 0x0001, 1), ("GPS", 0x0002, 1), ("GPS", 0x0003, 1), ("GPS", 0x0004, 1), ("IFD0", 0x0100, 1), ("IFD0", 0x0101, 1), ("IFD0", 0x010f, 1), ("IFD0", 0x0110, 1), ("IFD0", 0x0112, 1), ("IFD0", 0x011a, 1), ("IFD0", 0x0131, 1), ("IFD0", 0x0132, 1), ("IFD0", 0x013b, 1), ("IFD0", 0x8298, 1)],
+        &[],
+        &[],
+        (0, 0),
+        Side::Theirs,
+        "png-raw-profile-not-decoded",
+        "ExifTool decodes the whole raw EXIF profile, GPS entries included, into IFD0, ExifIFD and GPS; the audit lists a RawProfile region only",
+    ),
+    shape(
+        "png-webp/png-extra-raw-exif-gps-itxt",
+        &[],
+        &[("ExifIFD", 0x829d, 1), ("ExifIFD", 0x8827, 1), ("ExifIFD", 0x9003, 1), ("ExifIFD", 0x9204, 1), ("GPS", 0x0001, 1), ("GPS", 0x0002, 1), ("GPS", 0x0003, 1), ("GPS", 0x0004, 1), ("IFD0", 0x0100, 1), ("IFD0", 0x0101, 1), ("IFD0", 0x010f, 1), ("IFD0", 0x0110, 1), ("IFD0", 0x0112, 1), ("IFD0", 0x011a, 1), ("IFD0", 0x0131, 1), ("IFD0", 0x0132, 1), ("IFD0", 0x013b, 1), ("IFD0", 0x8298, 1)],
+        &[],
+        &[],
+        (0, 0),
+        Side::Theirs,
+        "png-raw-profile-not-decoded",
+        "ExifTool decodes the whole raw EXIF profile, GPS entries included, into IFD0, ExifIFD and GPS; the audit lists a RawProfile region only",
+    ),
+    shape(
+        "png-webp/png-shape-meta-itxt-flag-2",
+        &[],
+        &[],
+        &[RegionKind::Xmp],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "png-xmp-flag-2-located-not-read",
+        "ExifTool prints [PNG] XMP (Error inflating) and no XMP group; the audit locates an Xmp region",
+    ),
+    shape(
+        "png-webp/png-shape-meta-iccp-name-80",
+        &[],
+        &[],
+        &[RegionKind::Icc],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "png-iccp-located-no-exiftool-group",
+        "ExifTool prints ProfileName and ICC_Profile in group PNG (Error inflating iCCP, or Bad length ICC_Profile) and no ICC group; the audit locates an Icc region",
+    ),
+    shape(
+        "png-webp/webp-shape-meta-xmp",
+        &[],
+        &[],
+        &[RegionKind::Xmp],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "webp-xmp-content-not-parsed",
+        "ExifTool lists no XMP group for the XMP chunk (empty, garbage or an unparsable packet); the audit locates an Xmp region",
+    ),
+    shape(
+        "png-webp/webp-shape-meta-iccp",
+        &[],
+        &[],
+        &[RegionKind::Icc],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "webp-iccp-profile-not-validated",
+        "ExifTool lists no ICC group for the ICCP chunk (Bad length ICC_Profile or no profile data); the audit locates an Icc region",
+    ),
+    shape(
+        "png-webp/webp-shape-meta-all-three",
+        &[],
+        &[],
+        &[RegionKind::Icc],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "webp-iccp-profile-not-validated",
+        "ExifTool lists no ICC group for the ICCP chunk (Bad length ICC_Profile or no profile data); the audit locates an Icc region",
+    ),
+    shape(
+        "png-webp/webp-shape-meta-flags-all-wrong",
+        &[],
+        &[],
+        &[RegionKind::Icc],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "webp-iccp-profile-not-validated",
+        "ExifTool lists no ICC group for the ICCP chunk (Bad length ICC_Profile or no profile data); the audit locates an Icc region",
+    ),
+    shape(
+        "png-webp/audit-audit-png-empty-regions",
+        &[],
+        &[],
+        &[RegionKind::Xmp, RegionKind::Icc],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "png-xmp-content-not-parsed",
+        "ExifTool prints no XMP group for the XML:com.adobe.xmp chunk (empty, invalid, an empty xmpmeta or a zTXt that does not inflate) and, where an iCCP is present, only ProfileName and ICC_Profile in group PNG; the audit locates an Xmp region (and the Icc region where there is an iCCP)",
+    ),
+    shape(
+        "png-webp/audit-audit-png-two-exif-regions",
+        &[],
+        &[],
+        &[RegionKind::Xmp, RegionKind::Icc],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "png-xmp-content-not-parsed",
+        "ExifTool prints no XMP group for the XML:com.adobe.xmp chunk (empty, invalid, an empty xmpmeta or a zTXt that does not inflate) and, where an iCCP is present, only ProfileName and ICC_Profile in group PNG; the audit locates an Xmp region (and the Icc region where there is an iCCP)",
+    ),
+    shape(
+        "png-webp/audit-audit-webp-empty-regions",
+        &[],
+        &[],
+        &[RegionKind::Xmp, RegionKind::Icc],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "webp-xmp-content-not-parsed",
+        "ExifTool lists no XMP and no ICC group for the regions; the audit locates both",
+    ),
+    shape(
+        "png-webp/audit-audit-webp-exif-xmp-icc",
+        &[],
+        &[],
+        &[RegionKind::Xmp, RegionKind::Icc],
+        &[],
+        (0, 0),
+        Side::Neither,
+        "webp-xmp-content-not-parsed",
+        "ExifTool lists no XMP and no ICC group for the regions; the audit locates both",
     ),
 ];
 

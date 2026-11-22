@@ -314,6 +314,38 @@ fn png_raw_profile_is_an_unreadable_block_never_clean() {
     assert_eq!(audit(&two).health().failed_blocks, 2);
 }
 
+/// SPEC-036 verify H1: ExifTool 13.55 decodes the all-lower-case keyword
+/// `raw profile type exif` like the usual spelling, so it is a raw profile for
+/// the audit too (never clean). Any other case mix is plain text for both.
+#[test]
+fn a_lower_case_raw_profile_keyword_is_unreadable_and_other_cases_are_text() {
+    use exif_core::report::{status_of, FileResult, Status};
+    let body: &[u8] = b"\nexif\n        26\n4578696600004d4d002a00000008\n";
+    let raw = [
+        png_with(&[p::text(b"raw profile type exif", body)]),
+        png_with(&[p::ztxt(b"raw profile type exif", body)]),
+        png_with(&[p::itxt(b"raw profile type exif", 1, b"", b"", body)]),
+        png_with(&[p::text(b"raw profile type APP1", body)]),
+    ];
+    for (i, bytes) in raw.iter().enumerate() {
+        let a = audit(bytes);
+        assert!(!a.health().clean, "case {i}");
+        assert_eq!(a.health().failed_blocks, 1, "case {i}");
+        let r = FileResult::Audited(a);
+        assert_eq!(status_of(&r), Status::Unreadable, "case {i}");
+    }
+    for key in [
+        &b"RAW PROFILE TYPE EXIF"[..],
+        b"Raw Profile Type exif",
+        b"raw Profile type exif",
+    ] {
+        let bytes = png_with(&[p::text(key, body)]);
+        let a = audit(&bytes);
+        assert!(a.health().clean, "{key:?}");
+        assert_eq!(a.health().failed_blocks, 0, "{key:?}");
+    }
+}
+
 #[test]
 fn png_trailer_and_after_idat_origins() {
     // Before IDAT, after IDAT, and bytes after IEND.

@@ -16,7 +16,10 @@
 
 #![allow(dead_code)]
 
-use crate::{audit_tags, oracle_jpeg, oracle_tiff, real_shapes};
+use crate::{
+    audit_tags, oracle_jpeg, oracle_png, oracle_tiff, oracle_webp, png_shapes, real_shapes,
+    webp_shapes,
+};
 use std::path::{Path, PathBuf};
 
 /// The corpora, in canonical-name order.
@@ -31,7 +34,13 @@ pub const CORPORA: [&str; 5] = [
 /// Corpora added after SPEC-013. They are NOT in [`CORPORA`], so the 178
 /// existing results, their records and their counts cannot move; they have
 /// their own records and their own tests (SPEC-019).
-pub const NEW_CORPORA: [&str; 1] = ["real-shapes"];
+///
+/// `png-webp` (SPEC-036): every PNG and WebP oracle fixture, shape and committed
+/// seed (see [`png_webp_inputs`]), with the extension rule of [`Input::ext`].
+pub const NEW_CORPORA: [&str; 2] = ["real-shapes", "png-webp"];
+
+/// The name of the PNG/WebP corpus.
+pub const PNG_WEBP: &str = "png-webp";
 
 /// The prefix of the SPEC-019 seeds. They are byte copies of the `real-shapes`
 /// fixtures, which carry the record, so the three seed corpora skip them (their
@@ -73,7 +82,21 @@ impl Input {
     /// The extension of the temporary file ExifTool is run on: `jpg` for
     /// anything that starts `FF D8`, `tif` otherwise. The same rule is used by
     /// the recorder and by the live tests.
+    ///
+    /// The `png-webp` corpus (SPEC-036) uses `png` for bytes that start with the
+    /// PNG signature, `webp` for bytes that start `RIFF`, and otherwise by the
+    /// input's name (`webp` if it contains `webp`, else `png`): a corrupted
+    /// signature is still a file of the format it was made from.
     pub fn ext(&self) -> &'static str {
+        if self.corpus == PNG_WEBP {
+            if self.bytes.starts_with(b"\x89PNG") {
+                return "png";
+            }
+            if self.bytes.starts_with(b"RIFF") || self.name.contains("webp") {
+                return "webp";
+            }
+            return "png";
+        }
         if self.bytes.starts_with(&[0xFF, 0xD8]) {
             "jpg"
         } else {
@@ -136,6 +159,305 @@ fn read_seeds(root: &Path, corpus: &'static str, dir: &str) -> Vec<Input> {
         .collect()
 }
 
+/// Whether the `seed-audit` corpus left this `audit` seed out (SPEC-032): a PNG
+/// or WebP, except `audit-png-magic`. The `png-webp` corpus takes exactly these.
+fn audit_seed_is_png_or_webp(name: &str, bytes: &[u8]) -> bool {
+    if name == "audit-png-magic" {
+        return false;
+    }
+    if name.starts_with("png-") || name.starts_with("webp-") {
+        return true;
+    }
+    let png = bytes.starts_with(b"\x89PNG\r\n\x1a\n");
+    let webp = bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP";
+    png || webp
+}
+
+fn dir_files(root: &Path, dir: &str) -> Vec<(String, Vec<u8>)> {
+    let base = root.join("fuzz/seeds").join(dir);
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(&base)
+        .unwrap_or_else(|e| panic!("read {}: {e}", base.display()))
+        .map(|e| e.expect("dir entry").path())
+        .collect();
+    paths.sort();
+    paths
+        .into_iter()
+        .map(|p| {
+            let name = p
+                .file_name()
+                .expect("file name")
+                .to_string_lossy()
+                .into_owned();
+            let bytes = std::fs::read(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
+            (name, bytes)
+        })
+        .collect()
+}
+
+/// The raw-profile keyword of the extras below (ImageMagick's spelling).
+const RAW_EXIF_KEYWORD: &[u8] = b"Raw profile type exif";
+
+/// The text keywords of the collision inputs (name, keyword): each prints the
+/// same tag name as a chunk tag the by-name classification drops. The mixed
+/// raw-prefix one is what ExifTool prints for `Raw Profile Type exif`.
+pub const COLLISION_KEYWORDS: [(&str, &[u8]); 10] = [
+    ("xmp", b"XMP"),
+    ("palette", b"Palette"),
+    ("profilename", b"ProfileName"),
+    ("icc-profile", b"ICC_Profile"),
+    ("my-profile", b"My_Profile"),
+    ("exif-profile", b"EXIF_Profile"),
+    ("rawprofiletypex", b"RawProfileTypeX"),
+    ("raw-mixed-case", b"Raw Profile Type exif"),
+    ("gamma", b"Gamma"),
+    ("exif-like", b"eXIf"),
+];
+
+/// Hostile shapes the oracle fixtures, shapes and seeds do not hold (SPEC-036
+/// Part B, the variant grid): a `tIME` chunk of every length 0 to 12 (the valid
+/// one is 7), and a raw-profile EXIF with GPS entries in a `tEXt`, a `zTXt` and
+/// an `iTXt` chunk. They belong to this corpus only, so no existing record,
+/// fixture list or count of another oracle moves.
+pub fn png_webp_extras() -> Vec<(String, Vec<u8>)> {
+    let mut out = Vec::new();
+    let time: [u8; 12] = [0x07, 0xE8, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    for len in 0..=12usize {
+        // Longer than the 12 bytes of the prefix: pad with zeros.
+        let mut data = time[..len.min(12)].to_vec();
+        data.resize(len, 0);
+        out.push((
+            format!("png-extra-time-len-{len}"),
+            oracle_png::png(&[oracle_png::chunk(b"tIME", &data)], &[], &[]),
+        ));
+    }
+    let gps = oracle_tiff::fixtures()
+        .into_iter()
+        .find(|(n, _)| *n == "exif-gps-full-le")
+        .map(|(_, b)| b)
+        .expect("the exif-gps-full-le TIFF fixture");
+    let data = [&b"Exif\0\0"[..], &gps].concat();
+    let body = oracle_png::raw_profile_body("exif", &data);
+    out.push((
+        "png-extra-raw-exif-gps-text".to_string(),
+        oracle_png::png(&[oracle_png::text(RAW_EXIF_KEYWORD, &body)], &[], &[]),
+    ));
+    out.push((
+        "png-extra-raw-exif-gps-ztxt".to_string(),
+        oracle_png::png(&[oracle_png::ztxt(RAW_EXIF_KEYWORD, &body)], &[], &[]),
+    ));
+    out.push((
+        "png-extra-raw-exif-gps-itxt".to_string(),
+        oracle_png::png(&[oracle_png::itxt(RAW_EXIF_KEYWORD, 1, &body)], &[], &[]),
+    ));
+    // SPEC-036 fix round (H1): the keyword spellings ExifTool 13.55 decodes
+    // (`Raw profile type` and all-lower-case `raw profile type`, any text
+    // chunk) and one it does not (all caps), each with GPS.
+    let lower: &[u8] = b"raw profile type exif";
+    out.push((
+        "png-extra-raw-lower-exif-gps-text".to_string(),
+        oracle_png::png(&[oracle_png::text(lower, &body)], &[], &[]),
+    ));
+    out.push((
+        "png-extra-raw-lower-exif-gps-ztxt".to_string(),
+        oracle_png::png(&[oracle_png::ztxt(lower, &body)], &[], &[]),
+    ));
+    out.push((
+        "png-extra-raw-lower-exif-gps-itxt".to_string(),
+        oracle_png::png(&[oracle_png::itxt(lower, 1, &body)], &[], &[]),
+    ));
+    let app1_body = oracle_png::raw_profile_body("APP1", &data);
+    out.push((
+        "png-extra-raw-lower-app1-gps-text".to_string(),
+        oracle_png::png(
+            &[oracle_png::text(b"raw profile type APP1", &app1_body)],
+            &[],
+            &[],
+        ),
+    ));
+    out.push((
+        "png-extra-raw-allcaps-exif-gps-text".to_string(),
+        oracle_png::png(
+            &[oracle_png::text(b"RAW PROFILE TYPE EXIF", &body)],
+            &[],
+            &[],
+        ),
+    ));
+    // SPEC-036 fix round (M1): one chunk per input for every standard PNG chunk
+    // ExifTool 13.55 prints id-less in group `PNG` (the names dropped in
+    // `PNG_DROPPED_NAMES`) and for the ones it prints with hex ids or in a
+    // `PNG-<chunk>` group, so the green tests exercise each.
+    let be32 = |v: u32| v.to_be_bytes().to_vec();
+    let chunk_inputs: Vec<(&str, [u8; 4], Vec<u8>)> = vec![
+        ("gama", *b"gAMA", be32(45455)),
+        ("srgb", *b"sRGB", vec![0]),
+        ("bkgd", *b"bKGD", vec![0, 0x80]),
+        ("trns", *b"tRNS", vec![0, 0x80]),
+        ("sbit", *b"sBIT", vec![8]),
+        ("offs", *b"oFFs", [be32(1), be32(2), vec![0]].concat()),
+        (
+            "idot",
+            *b"iDOT",
+            [2u32, 0, 0, 1, 1, 40, 0]
+                .iter()
+                .flat_map(|v| be32(*v))
+                .collect(),
+        ),
+        (
+            "pcal",
+            *b"pCAL",
+            [
+                b"cal\0".to_vec(),
+                be32(0),
+                be32(100),
+                vec![0, 1],
+                b"unit\0".to_vec(),
+            ]
+            .concat(),
+        ),
+        (
+            "hist",
+            *b"hIST",
+            [1u16, 2, 3, 4, 5]
+                .iter()
+                .flat_map(|v| v.to_be_bytes())
+                .collect(),
+        ),
+        (
+            "splt",
+            *b"sPLT",
+            [b"pal\0".to_vec(), vec![8, 1, 2, 3, 4, 0, 5]].concat(),
+        ),
+        ("dsig", *b"dSIG", vec![0; 4]),
+        ("cpip", *b"cpIp", vec![b'x']),
+        ("gifg", *b"gIFg", vec![0, 0, 0, 10]),
+        ("gifx", *b"gIFx", b"NETSCAPE2.0".to_vec()),
+        ("frac", *b"fRAc", vec![0; 30]),
+        ("meta", *b"meTa", vec![b'x']),
+        ("zxif", *b"zxIf", vec![b'x']),
+        ("txmp", *b"tXMP", vec![b'x']),
+        (
+            "chrm",
+            *b"cHRM",
+            [31270u32, 32900, 64000, 33000, 30000, 60000, 15000, 6000]
+                .iter()
+                .flat_map(|v| be32(*v))
+                .collect(),
+        ),
+        (
+            "scal",
+            *b"sCAL",
+            [vec![1], b"1.0\0".to_vec(), b"2.0".to_vec()].concat(),
+        ),
+        ("ster", *b"sTER", vec![0]),
+        ("vpag", *b"vpAg", [be32(10), be32(20), vec![1]].concat()),
+        ("actl", *b"acTL", [be32(1), be32(0)].concat()),
+        (
+            "fctl",
+            *b"fcTL",
+            [
+                be32(0),
+                be32(1),
+                be32(1),
+                be32(0),
+                be32(0),
+                vec![0, 1, 0, 1, 0, 0],
+            ]
+            .concat(),
+        ),
+        ("phys", *b"pHYs", [be32(2835), be32(2835), vec![1]].concat()),
+        ("cicp", *b"cICP", vec![1, 13, 0, 1]),
+        ("mdcv", *b"mDCV", vec![0; 24]),
+        ("clli", *b"cLLI", [be32(1000), be32(400)].concat()),
+        ("time", *b"tIME", vec![0x07, 0xE8, 1, 2, 3, 4, 5]),
+        ("plte", *b"PLTE", (1u8..=15).collect()),
+    ];
+    for (name, kind, data) in chunk_inputs {
+        out.push((
+            format!("png-extra-chunk-{name}"),
+            oracle_png::png(&[oracle_png::chunk(&kind, &data)], &[], &[]),
+        ));
+    }
+    // SPEC-036 fix round (H2): the three verify inputs where opposite
+    // differences used to cancel in one net text count.
+    let late = oracle_png::text(b"Comment", b"late");
+    out.push((
+        "png-extra-cancel-after-iend-text-plus-badtext".to_string(),
+        oracle_png::png(&[oracle_png::chunk(b"tEXt", b"nosep")], &[], &late),
+    ));
+    out.push((
+        "png-extra-cancel-gama-plus-after-iend-text".to_string(),
+        oracle_png::png(&[oracle_png::chunk(b"gAMA", &be32(45455))], &[], &late),
+    ));
+    out.push((
+        "png-extra-kw-xmp-plus-badtext".to_string(),
+        oracle_png::png(
+            &[
+                oracle_png::text(b"XMP", b"hello"),
+                oracle_png::chunk(b"tEXt", b"nosep2"),
+            ],
+            &[],
+            &[],
+        ),
+    ));
+    // SPEC-036 fix round (M2): a text keyword that prints exactly like a name
+    // the by-name classification drops (`png-text-keyword-collides-with-chunk-
+    // tag-name`).
+    for (name, keyword) in COLLISION_KEYWORDS {
+        out.push((
+            format!("png-extra-kw-{name}"),
+            oracle_png::png(&[oracle_png::text(keyword, b"v")], &[], &[]),
+        ));
+    }
+    out
+}
+
+/// The `png-webp` inputs (SPEC-036), in this order: the PNG oracle fixtures and
+/// the `png-text-keywords` table; the WebP oracle fixtures; the PNG then the
+/// WebP shapes; the committed `png_chunks` then `webp_riff` seeds; the PNG and
+/// WebP seeds of `audit` that the old corpora leave out. Names: the fixtures
+/// keep theirs, the rest are prefixed by their source so no two differ only by
+/// directory.
+pub fn png_webp_inputs(root: &Path) -> Vec<Input> {
+    let mk = |name: String, bytes: Vec<u8>| Input {
+        corpus: PNG_WEBP,
+        name,
+        bytes,
+    };
+    let mut out = Vec::new();
+    for (name, bytes) in oracle_png::fixtures() {
+        out.push(mk(name, bytes));
+    }
+    out.push(mk(
+        oracle_png::TEXT_KEYWORDS_NAME.to_string(),
+        oracle_png::text_keywords_png(),
+    ));
+    for (name, bytes) in oracle_webp::fixtures() {
+        out.push(mk(name, bytes));
+    }
+    for (name, bytes) in png_shapes::seeds() {
+        out.push(mk(format!("png-shape-{name}"), bytes));
+    }
+    for (name, bytes) in webp_shapes::seeds() {
+        out.push(mk(format!("webp-shape-{name}"), bytes));
+    }
+    for (name, bytes) in dir_files(root, "png_chunks") {
+        out.push(mk(format!("png_chunks-{name}"), bytes));
+    }
+    for (name, bytes) in dir_files(root, "webp_riff") {
+        out.push(mk(format!("webp_riff-{name}"), bytes));
+    }
+    for (name, bytes) in dir_files(root, "audit") {
+        if audit_seed_is_png_or_webp(&name, &bytes) {
+            out.push(mk(format!("audit-{name}"), bytes));
+        }
+    }
+    // Last, so the order of every input above is unchanged.
+    for (name, bytes) in png_webp_extras() {
+        out.push(mk(name, bytes));
+    }
+    out
+}
+
 /// The inputs of one corpus, in a fixed order.
 pub fn inputs(root: &Path, corpus: &str) -> Vec<Input> {
     match corpus {
@@ -190,6 +512,7 @@ pub fn inputs(root: &Path, corpus: &str) -> Vec<Input> {
                 bytes,
             })
             .collect(),
+        "png-webp" => png_webp_inputs(root),
         other => panic!("unknown corpus {other}"),
     }
 }

@@ -193,7 +193,10 @@ mod png_metadata_invariants {
                             after_idat,
                             after_iend,
                         )
-                    } else if keyword.len() >= 17 && &keyword[..17] == b"Raw profile type " {
+                    } else if keyword.len() >= 17
+                        && (&keyword[..17] == b"Raw profile type "
+                            || &keyword[..17] == b"raw profile type ")
+                    {
                         (
                             2,
                             off,
