@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: verifier             # implementer | verifier
   created_at: 2026-11-22
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-032
@@ -46,18 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                # completed | blocked | rejected
+  agent: claude-opus-5-5           # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
-  verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
+  verdict: punch-list              # verify handoffs: approved | punch-list | rejected
+  basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
-  branch: null
+  branch: claude/spec-032-verify
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-22         # YYYY-MM-DD
+  notes: "tokens left null by instruction: the orchestrator records the harness subagent_tokens figure"
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -165,38 +165,97 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `claude/spec-032-verify` (from `claude/spec-032-audit-b` at `217a5fa`; no PR, by instruction)
+- **Completed at:** 2026-11-22
+- **All acceptance criteria met?** no: the last criterion (`just lint` green) fails on the pinned 1.90.0 toolchain (H1). The others are met and exercised by tests; the variant grid found privacy gaps outside the criteria (H2, M1).
+- **For `verify`:** ⚠ PUNCH LIST (reviewed at `217a5fa`)
+
+#### Gates (RUSTUP_TOOLCHAIN=1.90.0, ~/.cargo/bin first)
+
+| Gate | Result |
+|---|---|
+| `just lint` | **RED**: clippy 0.1.90 `nonminimal_bool` at `fuzz/shared/audit_invariants.rs:967` (`!(png_or_webp && len == 0) && !found`), reached through `tests/fuzz_layout.rs` and `tests/report_render.rs`. Green on rustup stable (clippy 0.1.98, what CI runs), so CI would pass and the local gate does not. |
+| `just test` | green (no failures) |
+| `just mutation-oracle` | green |
+| `just validate`, `just cost-audit`, `just forbid-unsafe` | green |
+| `just oracle-record` twice | both exit 0, `git status` clean after each |
+| `just fuzz-smoke audit` / `audit_render` (60 s) | clean: 135497 runs (227 seeds), 37816 runs (29 seeds) |
+| `git diff main -- src/png src/webp` | empty |
+| `decisions/INDEX.md`, `fuzz/Cargo.lock` | not in the branch's diff (the fuzz build dirtied `fuzz/Cargo.lock`; reverted, not committed) |
+
+#### Punch list
+
+- **H1 `just lint` red on 1.90.0.** One-line fix (`if !(found || png_or_webp && len == 0)` or split the condition). The handback said every gate was green, so it was likely run with a newer clippy.
+- **H2 ImageMagick raw-profile Exif with GPS: `ok`, clean, exit 0.** For `zTXt`/`tEXt` `Raw profile type exif` holding GPS (alone, or beside a GPS-free `eXIf`), ExifTool prints `GPS:GPSLatitude`/`GPSLatitudeRef` and `IFD0:Make`. The audit reports status `ok`, `health.clean=true`, one `other_segment [medium]` finding, and exits 0 with the default `--fail-on high`, even with `--strict`. DEC-018 says SPEC-032 "reports a compressed or raw-profile region as metadata the audit could not read". The SPEC-031 verify note carried into the spec, and question `png-raw-profile-not-decoded`, say to flag a RawProfile beside an `eXIf`. Neither was done. The replay's `DIFFERENCES` has only the raw-XMP rows: the committed raw-exif fixtures carry no GPS, so the replay never exercised this case. Fix options (architect's call): count a RawProfile as an issue so the file is not clean or `ok`, or raise its severity, or flag the eXIf+RawProfile pair. At least record the GPS case as a divergence.
+- **M1 `tIME` of length other than 7 is dropped.** ExifTool 13.55 prints `PNG:ModifyDate` for `tIME` chunks of 0 bytes (`0000:00:00 00:00:00`), 6 bytes (`2020:01:02 03:04:00`) and 8 bytes (`2020:01:02 03:04:05`). The audit has no item and no finding for them and reports clean/`ok`. The 7-byte rule ("only the specified form is a time") is not in DEC-020, was not measured, and has no question. The mutant that drops the length check is caught only by the fuzz harness, which re-states the same rule, never against ExifTool.
+- **M2 Known issue confirmed: `Preview::strippable()` is true for every kind except PNG and WebP.** That covers `Unsupported(Gif|Heic|BigTiff|Empty|Unknown)` and unreadable files. CLI JSON for a GIF, a HEIC, a BigTIFF or an empty file under `--policy all-pii` prints `"strippable":true`. It should be `matches!(kind, Tiff | Jpeg)`. Effects:
+  - The committed golden `tests/golden/report-full-house.json` pins `"strippable":true` for the unsupported GIF entry (`photos/screenshot.png`) and must be re-recorded.
+  - The fuzz harness hard-codes the same rule (`strippable_kind` in `fuzz/shared/audit_invariants.rs`: `kind != "Png" && kind != "Webp"`; `render_invariants.rs` uses it), so it must change in the same commit.
+  - The same predicate is duplicated in `src/report/mod.rs` (`Summary`). Summary reliability is unaffected today, because an unsupported or unreadable audit is never `clean`. Text and CSV are unaffected too: an unsupported file has no findings, and the text falls through to "preview not reliable".
+  - Consider one shared `strippable(kind)` helper instead of three copies.
+- **M3 Empty-region rule is WebP-measured but applied to PNG, where ExifTool does print something.** The PNG cases with length-0 regions: an empty-data `iCCP` named `Profile` (ExifTool prints `PNG:ProfileName` and `PNG:ICC_Profile` of 0 bytes; the replay's own ICC rule counts `PNG:ProfileName` as ICC present), an empty `iTXt` XMP (ExifTool prints `PNG:XMP` of 0 bytes), and `tEXt Author` with an empty value (ExifTool prints `PNG:Author` empty). In all three the audit has an item, no finding, and reports clean. Little personal data is at stake, but DEC-020 item 3 ("ExifTool treats it as absent") is false for PNG. Record it as a divergence or narrow the rule.
+- **L1 Keyword table vs ExifTool's PNG keyword names.** `create-date` prints `PNG:CreateDate` and `modify-date` prints `PNG:ModDate` (named tags, not auto-names: compare `date:create`, which prints `PNG:Datecreate`); `Artist` prints `PNG:Artist`. The audit calls them `free_text` (medium) where they are a timestamp or authorship. They are still findings, so nothing is missed. Candidates for the one-row table.
+- **L2 README overclaims.** "a GPS, XMP or ICC finding exactly when ExifTool prints the matching tag" omits "except the recorded differences" (17 of them).
+- **L3 The 17-block test is weaker than its name.** Every `EXIF` chunk after the first already raises `ExtraExif`, so a 2-block WebP is equally not clean. `webp_seventeen_exif_blocks_with_gps_in_the_last_is_not_clean` therefore passes whatever the cap handling does. The outcome (not clean, unreliable) is right. Also, `issues` exits 0 without `--strict`, so a 17-block WebP whose only GPS is in the 17th exits 0 while ExifTool prints GPS. That is a recorded divergence (`webp-exif-block-cap`), but worth a README line.
+- **L4 Cosmetic.** The golden's unsupported entry is still labelled `photos/screenshot.png` but holds a GIF (`container: gif`).
+
+#### Criteria check (each exercised, not just present)
+
+Kind dispatch and unreadable (`kind_dispatch_and_clean_minimal_files`, `hostile_prefixes_never_panic_and_are_never_clean`, `garbage_after_the_signature_does_not_panic`). Per-block inventory (`png_two_exif_blocks_are_both_inventoried_with_indexes`, `webp_two_exif_blocks_are_both_inventoried`). 17 blocks (see L3). Region matrix, empty regions and after-IDAT/IEND origins (`png_regions_match_the_category_matrix`, `png_empty_region_has_an_item_and_no_finding`, `png_trailer_and_after_idat_origins`, `webp_regions_and_empty_regions`). Keyword rule measured, pinned row by row and replayed against the committed `png-text-keywords` record, with a perturbation red-proof. Preview for every preset (`png_and_webp_previews_keep_everything_for_every_policy`). Strip refusal for every preset with the new kinds; `Custom` is covered because `strip` refuses on sniff before it reads the policy. CLI exit codes (four new `tests/cli.rs` tests). Category-presence replay, live test and perturbation red-proof. Fuzz seeds come from `examples/fuzz_seeds.rs` and are pinned byte for byte by `tests/fuzz_layout.rs`. The harness re-derivation is independent of `audit()`: it uses the readers' outputs with its own chunk-index map, its own after-image rule and its own typed-again keyword rule, plus 15 new plants. It shares the strippable rule's mistake (M2).
+
+#### Strip refusal and renderers (item 3)
+
+Ten PNG/WebP files (GPS Exif, XMP, ICC, tIME, text, raw profile, trailer), each under all five presets in text, JSON and CSV: `"removed":0` and `"kept_unread":0` everywhere, JSON disposition `kept` (70 rows), CSV `not_strippable` (70 rows), and text "not strippable ... nothing would be removed" on every preview. No output claims a removal.
+
+#### JSON / CSV compatibility (item 5)
+
+Key-by-key comparison of `report-full-house.json` (main) against both new goldens: the only key added is `preview.strippable`, last in `preview`; no key is removed or reordered. `schema_version` stays 2. The CSV header is byte-identical. New enum values appear (`region` `text`, `raw_profile`, `time`; `container` `png`, `webp`; CSV disposition `not_strippable`), which is additive.
+
+#### Mutation (item 7), scratch copy, 1.90.0, restored after each
+
+The baseline passed. Each mutant was red:
+
+- m1, PNG block index +1: 8 tests (`png_two_exif_blocks...`, `png_with_gps...`, harness, render goldens).
+- m2, empty region gets a finding: 8 tests, including the replay and the live presence test.
+- m3, Copyright row dropped: 9 tests, including the unit row table, the keyword replay and the live keyword test.
+- m4, WebP-layer issues ignored: 7 tests, including both 17-block tests.
+- m5, PNG trailer not inventoried: 8 tests.
+- m6, WebP strippable: 7 tests.
+- m7, tIME of any length: 4 tests, harness only (see M1).
+
+#### Variant grid (item 2): 94 files outside the builders' fixtures, `exif-audit --json --policy all-pii --inventory` vs `exiftool -a -G1 -s -n`
+
+Every case where the audit is ok/clean but ExifTool shows more is listed above (H2, M1, M3). Every case where the audit claims more than ExifTool is a recorded decision or divergence:
+
+- two `eXIf` with GPS only in the second: the audit lists it (DEC-020, all copies) and is not clean;
+- `webp-iccp` with an unvalidated stub: `webp-iccp-profile-not-validated`;
+- PNG trailer garbage: `other_segment`, per DEC-020.
+
+Everything else agreed. That includes the measured keyword rule for tEXt, iTXt and zTXt across Author/author/AUTHOR/aUTHOR/Copyright/copyright/Creation Time/creation time/Software/warning (`creation time` → FreeText is the recorded `png-creation-time-keyword-case`). Also agreeing: compressed iTXt and zTXt with each standard keyword; XMP in iTXt, compressed iTXt, tEXt and zTXt (iTXt XMP with lang `en` → free_text, which ExifTool prints as `PNG:XMLcomadobexmp`); eXIf before IDAT, after IDAT and after IEND; text after IEND; the WebP simple, VP8X, Exif-prefix, no-flag, before-image, animated, trailing-bytes, trailing-EXIF, `XMP ` / `XMP\0` and empty-region shapes; and 16 blocks with GPS last (GPS listed).
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null (left for the orchestrator to record from the harness `subagent_tokens` figure, by instruction)
+- **Estimated USD:** null
+- **Duration (minutes):** not measured
+- **Source of the number:** harness report, recorded by the orchestrator
 
 ### Drift and new artifacts
 
 - **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
+  - none
 - **Deviations from spec:**
-  - [list]
+  - none by the verifier. The builder's deviations (CSV `not_strippable` cell, `Summary` reliability rule, `unreadable` vs `issues` for a failed WebP Exif block) are consistent with DEC-010 and DEC-020.
 - **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - H1 to M3 above for the punch-list round. L1 (keyword rows) could go to SPEC-033. Raw-profile decoding stays with question `png-raw-profile-not-decoded`.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — The spec's "Carried from SPEC-030/031 verify" notes (raw profile "could not read", flag eXIf+RawProfile) are not acceptance criteria and DEC-020 does not take them up, so it was unclear whether their absence is a defect or a decision; I treated it as a defect because DEC-018 assigns it to SPEC-032 by name.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — The toolchain brief's "confirm `clippy --version` reports 0.1.90" belongs in the build handoff: CI's stable clippy and the pinned 1.90 clippy disagree on `nonminimal_bool`.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Use case-distinct scratch file names from the start (macOS's case-insensitive filesystem merged `Author`/`author`/`AUTHOR` on the first grid run).
