@@ -78,20 +78,6 @@ mod png_metadata_invariants {
         })
     }
 
-    /// Length of a keyword or profile name at the start of `body`: the index
-    /// of the first NUL, which must exist among the first 80 bytes and not be
-    /// the first byte.
-    fn name_len(body: &[u8]) -> Option<usize> {
-        let mut i = 0;
-        while i < body.len() && i < 80 {
-            if body[i] == 0 {
-                return if i == 0 { None } else { Some(i) };
-            }
-            i += 1;
-        }
-        None
-    }
-
     fn find_nul(d: &[u8], from: usize, to: usize) -> Option<usize> {
         (from..to).find(|&i| d[i] == 0)
     }
@@ -149,12 +135,17 @@ mod png_metadata_invariants {
                     let ty = c.ty;
                     let bad = Error::BadTextChunk { at: off };
                     // The keyword runs to the first NUL however long; only no NUL
-                    // or an empty keyword leaves nothing to locate.
-                    let Some(k) = find_nul(d, s, e).map(|i| i - s).filter(|&k| k > 0) else {
+                    // leaves nothing to locate. An empty keyword (ExifTool shows
+                    // the value as `Tag`) or one of 80 bytes and more is located
+                    // with the issue.
+                    let Some(k) = find_nul(d, s, e).map(|i| i - s) else {
                         self.record(bad, off);
                         return;
                     };
-                    let mut malformed = k > 79;
+                    let mut malformed = k == 0 || k > 79;
+                    // An iTXt language tag that is not empty (measured, ExifTool
+                    // 13.55): the XMP keyword is then plain text, not XMP.
+                    let mut tagged = false;
                     let kw = (s, s + k);
                     let mut p = s + k + 1;
                     let (compressed, vstart) = match &ty {
@@ -183,6 +174,7 @@ mod png_metadata_invariants {
                                 self.record(bad, off);
                                 return;
                             };
+                            tagged = a > p;
                             (flag, b + 1)
                         }
                     };
@@ -190,7 +182,7 @@ mod png_metadata_invariants {
                         self.record(bad, off);
                     }
                     let keyword = &d[kw.0..kw.1];
-                    let region = if keyword == b"XML:com.adobe.xmp" {
+                    let region = if keyword == b"XML:com.adobe.xmp" && !tagged {
                         (
                             0,
                             off,
@@ -228,7 +220,11 @@ mod png_metadata_invariants {
                 }
                 b"iCCP" => {
                     let bad = Error::BadIccpChunk { at: off };
-                    let Some(k) = name_len(&d[s..e]) else {
+                    // The name runs to the first NUL however long (measured,
+                    // ExifTool 13.55); no NUL or no method byte leaves nothing to
+                    // locate, an empty name or one of 80 bytes and more is
+                    // located with the issue.
+                    let Some(k) = find_nul(d, s, e).map(|i| i - s) else {
                         self.record(bad, off);
                         return;
                     };
@@ -236,6 +232,9 @@ mod png_metadata_invariants {
                     if m >= e {
                         self.record(bad, off);
                         return;
+                    }
+                    if k == 0 || k > 79 {
+                        self.record(bad, off);
                     }
                     self.add_region((
                         1,

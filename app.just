@@ -128,7 +128,7 @@ oracle-record:
 # loudly without it. The probe builds with the cargo that runs the tests (the
 # `CARGO` variable), in a temp directory, offline.
 mutation-oracle:
-    cargo test --test mutation_oracle
+    cargo test --test mutation_oracle --test png_mutation_oracle
 
 # ── Lint-policy gates (cloned from irradiance, SPEC-001/SPEC-011/SPEC-006 there) ──
 

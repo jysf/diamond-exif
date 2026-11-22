@@ -148,7 +148,7 @@ fn xmp_routes_for_itxt_and_legacy_text() {
     let k = b"XML:com.adobe.xmp";
     let d = wrap(&[
         itxt(k, 0, b"", b"", b"<a/>"),
-        itxt(k, 1, b"en", b"tr", &[0x78, 1, 2]),
+        itxt(k, 1, b"", b"tr", &[0x78, 1, 2]),
         text(k, b"<c/>"),
     ]);
     let m = read(&d).expect("reads");
@@ -292,11 +292,10 @@ fn ordinary_text_chunks_are_text() {
 
 #[test]
 fn bad_text_chunks_are_issues_without_regions() {
-    // Nothing to locate: no NUL, an empty keyword, a truncated header.
+    // Nothing to locate: no NUL, a truncated header.
     let cases: Vec<(&str, Vec<u8>)> = vec![
         ("no NUL", chunk(b"tEXt", b"Comment")),
         ("empty chunk", chunk(b"tEXt", b"")),
-        ("empty keyword", chunk(b"tEXt", b"\0v")),
         ("zTXt no method", chunk(b"zTXt", b"Title\0")),
         ("iTXt no flag", chunk(b"iTXt", b"Title\0")),
         ("iTXt no method", chunk(b"iTXt", b"Title\0\0")),
@@ -321,6 +320,64 @@ fn bad_text_chunks_are_issues_without_regions() {
     kw79.extend_from_slice(b"\0x");
     let d = wrap(&[chunk(b"tEXt", &kw79)]);
     assert!(read(&d).expect("reads").is_clean());
+}
+
+#[test]
+fn empty_keyword_is_an_issue_with_a_text_region() {
+    // ExifTool 13.55 shows the value of each of these as a tag named `Tag`.
+    // The region is not inflated, so any bytes stand for the zlib stream.
+    let z = b"\x78\x01stream".to_vec();
+    let cases: Vec<(&str, Vec<u8>, bool, Vec<u8>)> = vec![
+        (
+            "tEXt",
+            chunk(b"tEXt", b"\0John Doe"),
+            false,
+            b"John Doe".to_vec(),
+        ),
+        (
+            "zTXt",
+            chunk(b"zTXt", &[&b"\0\0"[..], &z].concat()),
+            true,
+            z.clone(),
+        ),
+        (
+            "iTXt",
+            chunk(b"iTXt", b"\0\0\0\0\0secret value"),
+            false,
+            b"secret value".to_vec(),
+        ),
+        (
+            "iTXt compressed",
+            chunk(b"iTXt", &[&b"\0\x01\0\0\0"[..], &z].concat()),
+            true,
+            z.clone(),
+        ),
+        (
+            "iTXt language-tagged",
+            chunk(b"iTXt", b"\0\0\0en\0tr\0secret value"),
+            false,
+            b"secret value".to_vec(),
+        ),
+    ];
+    for (name, c, want_compressed, want_data) in cases {
+        let d = wrap(&[c]);
+        assert_eq!(
+            errors(&d),
+            [Error::BadTextChunk { at: FIRST }],
+            "{name}: issues"
+        );
+        let m = read(&d).expect("reads");
+        assert_eq!(m.regions().len(), 1, "{name}: regions");
+        assert!(
+            matches!(
+                m.regions()[0],
+                PngRegion::Text { keyword: [], compressed, data, offset, .. }
+                    if compressed == want_compressed && data == &want_data[..] && offset == FIRST
+            ),
+            "{name}: {:?}",
+            m.regions()[0]
+        );
+    }
 }
 
 #[test]
@@ -392,10 +449,10 @@ fn iccp_located_and_bad_headers_are_issues() {
         .collect();
     assert_eq!(got, [(&b"sRGB"[..], 0, &[0x78, 1, 2][..]), (b"p", 7, b"")]);
 
+    // No NUL, or no method byte: nothing to locate (ExifTool reads no ICC either).
     let kw80 = [b'a'; 80];
     for c in [
         chunk(b"iCCP", b""),
-        chunk(b"iCCP", b"\0\0abc"),
         chunk(b"iCCP", b"sRGB"),
         chunk(b"iCCP", b"sRGB\0"),
         chunk(b"iCCP", &kw80),
@@ -404,6 +461,77 @@ fn iccp_located_and_bad_headers_are_issues() {
         let m = read(&d).expect("reads");
         assert!(m.regions().is_empty());
         assert_eq!(errors(&d), [Error::BadIccpChunk { at: FIRST }]);
+    }
+}
+
+/// Measured (ExifTool 13.55): an empty profile name, and names of 80, 81 and 200
+/// bytes, are read as ICC. They are located, with one `BadIccpChunk` issue; a
+/// name of 79 bytes is located with none.
+#[test]
+fn iccp_names_of_any_length_are_located() {
+    for (len, bad) in [
+        (0usize, true),
+        (1, false),
+        (79, false),
+        (80, true),
+        (81, true),
+        (200, true),
+    ] {
+        let name = vec![b'N'; len];
+        let d = wrap(&[iccp(&name, 0, &[9, 8])]);
+        let m = read(&d).expect("reads");
+        match m.regions() {
+            [PngRegion::Icc {
+                name: n,
+                method,
+                data,
+                ..
+            }] => {
+                assert_eq!((*n, *method, *data), (&name[..], 0, &[9u8, 8][..]), "{len}");
+            }
+            other => panic!("{len}: {other:?}"),
+        }
+        let want: Vec<Error> = if bad {
+            vec![Error::BadIccpChunk { at: FIRST }]
+        } else {
+            vec![]
+        };
+        assert_eq!(errors(&d), want, "{len}");
+    }
+}
+
+/// Measured (ExifTool 13.55, flags 0 and 1): an `iTXt` with the XMP keyword and a
+/// NON-empty language tag is not XMP (a plain text tag); the translated keyword
+/// does not matter.
+#[test]
+fn itxt_xmp_keyword_with_a_language_tag_is_text() {
+    let k = b"XML:com.adobe.xmp";
+    for flag in [0u8, 1] {
+        for lang in [&b"en-US"[..], b"x", b"EN"] {
+            for tr in [&b""[..], b"XMP Daten"] {
+                let d = wrap(&[itxt(k, flag, lang, tr, b"<a/>")]);
+                let m = read(&d).expect("reads");
+                match m.regions() {
+                    [PngRegion::Text {
+                        keyword,
+                        compressed,
+                        data,
+                        ..
+                    }] => {
+                        assert_eq!(
+                            (*keyword, *compressed, *data),
+                            (&k[..], flag == 1, &b"<a/>"[..])
+                        );
+                    }
+                    other => panic!("{flag} {lang:?} {tr:?}: {other:?}"),
+                }
+                assert!(m.is_clean());
+            }
+        }
+        // Empty language tag: XMP, whatever the translated keyword.
+        let d = wrap(&[itxt(k, flag, b"", b"XMP Daten", b"<a/>")]);
+        let m = read(&d).expect("reads");
+        assert!(matches!(m.regions(), [PngRegion::Xmp { .. }]));
     }
 }
 

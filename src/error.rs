@@ -289,8 +289,10 @@ pub enum Error {
     },
 
     /// A `tEXt`, `zTXt` or `iTXt` chunk whose keyword or header is malformed:
-    /// no NUL within the first 80 bytes, an empty keyword, a truncated header,
-    /// or an `iTXt` compression flag other than 0 or 1. No region is located.
+    /// no NUL, an empty keyword, a keyword of 80 bytes or more, a truncated
+    /// header, or an `iTXt` compression flag other than 0 or 1. A region is
+    /// located for an empty or long keyword and for a bad flag; none for no
+    /// NUL or a truncated header.
     BadTextChunk {
         /// Input offset of the chunk's length field.
         at: usize,

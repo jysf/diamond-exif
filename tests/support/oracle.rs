@@ -10,6 +10,7 @@
 #![allow(dead_code)]
 
 use exif_core::jpeg::{JpegMetadata, Region};
+use exif_core::png::{PngMetadata, PngRegion};
 use exif_core::tiff::{Container, IfdKind};
 
 /// How a selector's value is rendered and compared.
@@ -312,6 +313,15 @@ pub struct Divergence {
     pub question_id: &'static str,
 }
 
+/// The command line of a hand-built PNG fixture's ExifTool run (SPEC-031), `<file>`
+/// standing for the temporary file; the PNG divergences below were measured with it.
+const PNG_COMMAND: &str = "exiftool -T -n -s3 -IFD0:ImageWidth -IFD0:ImageHeight -IFD0:Make \
+     -IFD0:Model -IFD0:Orientation -IFD0:XResolution -IFD0:Software -IFD0:ModifyDate -IFD0:Artist \
+     -IFD0:Copyright -ExifIFD:FNumber -ExifIFD:ISO -ExifIFD:DateTimeOriginal \
+     -ExifIFD:ExposureCompensation -ExifIFD:ExposureTime -ExifIFD:ExposureProgram \
+     -ExifIFD:FocalLength -ExifIFD:ExifImageWidth -Composite:GPSLatitude -Composite:GPSLongitude \
+     -XMP-xmp:CreatorTool -PNG:ProfileName -ICC-header:ProfileFileSignature <file>";
+
 /// Divergences measured so far (SPEC-005, ExifTool 13.55, macOS).
 pub const KNOWN_DIVERGENCES: &[Divergence] = &[
     Divergence {
@@ -445,6 +455,96 @@ pub const KNOWN_DIVERGENCES: &[Divergence] = &[
                  Photoshop segment is a region; this is a presence difference, not a decode.",
         question_id: "iptc-photoshop-resources-across-app13-segments",
     },
+    Divergence {
+        fixture: "png-raw-exif-text",
+        selector: EXIF_UNREAD,
+        command: PNG_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool decodes the ImageMagick raw profile (hex text, zlib first for zTXt and compressed iTXt) and prints all 14 Exif values of the TIFF inside it: 4000 3000 DiamondCam 'Model One' 6 72 'oracle-fixtures 1.0' 2024:05:06 07:08:09 'A. Photographer' '(c) nobody' 2.8 400 2024:05:06 07:08:08 -0.3333333333; exif-core locates a RawProfile region and reads no Exif value (every Exif selector is '-' on our side).",
+        right_side: "neither is wrong: the profile is a de-facto ImageMagick convention, not the PNG specification (which has eXIf); ExifTool reads more, exif-core stays no-inflate and no-hex-decode by DEC-018 and only locates the chunk.",
+        question_id: "png-raw-profile-not-decoded",
+    },
+    Divergence {
+        fixture: "png-raw-exif-ztxt",
+        selector: EXIF_UNREAD,
+        command: PNG_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool decodes the ImageMagick raw profile (hex text, zlib first for zTXt and compressed iTXt) and prints all 14 Exif values of the TIFF inside it: 4000 3000 DiamondCam 'Model One' 6 72 'oracle-fixtures 1.0' 2024:05:06 07:08:09 'A. Photographer' '(c) nobody' 2.8 400 2024:05:06 07:08:08 -0.3333333333; exif-core locates a RawProfile region and reads no Exif value (every Exif selector is '-' on our side).",
+        right_side: "neither is wrong: the profile is a de-facto ImageMagick convention, not the PNG specification (which has eXIf); ExifTool reads more, exif-core stays no-inflate and no-hex-decode by DEC-018 and only locates the chunk.",
+        question_id: "png-raw-profile-not-decoded",
+    },
+    Divergence {
+        fixture: "png-raw-exif-itxt",
+        selector: EXIF_UNREAD,
+        command: PNG_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool decodes the ImageMagick raw profile (hex text, zlib first for zTXt and compressed iTXt) and prints all 14 Exif values of the TIFF inside it: 4000 3000 DiamondCam 'Model One' 6 72 'oracle-fixtures 1.0' 2024:05:06 07:08:09 'A. Photographer' '(c) nobody' 2.8 400 2024:05:06 07:08:08 -0.3333333333; exif-core locates a RawProfile region and reads no Exif value (every Exif selector is '-' on our side).",
+        right_side: "neither is wrong: the profile is a de-facto ImageMagick convention, not the PNG specification (which has eXIf); ExifTool reads more, exif-core stays no-inflate and no-hex-decode by DEC-018 and only locates the chunk.",
+        question_id: "png-raw-profile-not-decoded",
+    },
+    Divergence {
+        fixture: "png-raw-xmp-text",
+        selector: "XMP-xmp:CreatorTool",
+        command: PNG_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool decodes the raw profile and prints XMP-xmp:CreatorTool = DiamondTool; exif-core locates a RawProfile region and no readable XMP, so its presence reads absent.",
+        right_side: "neither is wrong: the profile is a de-facto ImageMagick convention, not the PNG specification (which has eXIf); ExifTool reads more, exif-core stays no-inflate and no-hex-decode by DEC-018 and only locates the chunk.",
+        question_id: "png-raw-profile-not-decoded",
+    },
+    Divergence {
+        fixture: "png-raw-xmp-ztxt",
+        selector: "XMP-xmp:CreatorTool",
+        command: PNG_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool decodes the raw profile and prints XMP-xmp:CreatorTool = DiamondTool; exif-core locates a RawProfile region and no readable XMP, so its presence reads absent.",
+        right_side: "neither is wrong: the profile is a de-facto ImageMagick convention, not the PNG specification (which has eXIf); ExifTool reads more, exif-core stays no-inflate and no-hex-decode by DEC-018 and only locates the chunk.",
+        question_id: "png-raw-profile-not-decoded",
+    },
+    Divergence {
+        fixture: "png-raw-xmp-itxt",
+        selector: "XMP-xmp:CreatorTool",
+        command: PNG_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool decodes the raw profile and prints XMP-xmp:CreatorTool = DiamondTool; exif-core locates a RawProfile region and no readable XMP, so its presence reads absent.",
+        right_side: "neither is wrong: the profile is a de-facto ImageMagick convention, not the PNG specification (which has eXIf); ExifTool reads more, exif-core stays no-inflate and no-hex-decode by DEC-018 and only locates the chunk.",
+        question_id: "png-raw-profile-not-decoded",
+    },
+    Divergence {
+        fixture: "png-exif-and-raw-exif",
+        selector: "IFD0:Make",
+        command: PNG_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool reads both the eXIf chunk (Make AlphaCam, Model OnlyInA) and the raw-profile Exif (Make RawCam) and prints the later: Make = RawCam, Model = OnlyInA; exif-core reads the eXIf only: Make = AlphaCam, Model = OnlyInA.",
+        right_side: "exif-core for the specification (eXIf is the one defined Exif chunk, DEC-006/DEC-018 first block is primary); the raw profile is a convention, and the merge rule between the two is ExifTool's choice. Consequence: ExifTool merges both chunks and the later (raw) value wins, so an audit or strip that trusts the eXIf chunk alone can miss values a reader shows, including tags that exist only in the raw profile (such as GPS).",
+        question_id: "png-raw-profile-not-decoded",
+    },
+    Divergence {
+        fixture: "png-xmp-itxt-compressed",
+        selector: "XMP-xmp:CreatorTool",
+        command: PNG_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool inflates the zlib stream (a stored-deflate stream written by the harness) and prints XMP-xmp:CreatorTool = DiamondTool; exif-core locates an Xmp region with compressed = true and does not inflate, so its readable-XMP presence reads absent. The chunk IS located (asserted by xmp_keyword_rules_agree).",
+        right_side: "neither is wrong: the PNG specification allows compressed XMP (iTXt flag 1, zTXt); ExifTool reads more, exif-core stays no-inflate by DEC-018 and locates the chunk without reading its content.",
+        question_id: "png-compressed-xmp-not-inflated",
+    },
+    Divergence {
+        fixture: "png-iccp-bad-header",
+        selector: "ICC-header:ProfileFileSignature",
+        command: PNG_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool prints PNG:ProfileName = diamond but no ICC-header tags: the inflated profile (20 zero bytes) is not an ICC header; exif-core locates an Icc region without inflating or validating it, so its selector reads present.",
+        right_side: "neither is wrong; exif-core stays no-inflate by DEC-018 and an Icc region means an iCCP chunk with a name and a method byte, not a valid profile.",
+        question_id: "png-iccp-profile-not-validated",
+    },
+    Divergence {
+        fixture: "png-xmp-ztxt",
+        selector: "XMP-xmp:CreatorTool",
+        command: PNG_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool inflates the zlib stream (a stored-deflate stream written by the harness) and prints XMP-xmp:CreatorTool = DiamondTool; exif-core locates an Xmp region with compressed = true and does not inflate, so its readable-XMP presence reads absent. The chunk IS located (asserted by xmp_keyword_rules_agree).",
+        right_side: "neither is wrong: the PNG specification allows compressed XMP (iTXt flag 1, zTXt); ExifTool reads more, exif-core stays no-inflate by DEC-018 and locates the chunk without reading its content.",
+        question_id: "png-compressed-xmp-not-inflated",
+    },
 ];
 
 /// For a fixture covered by an [`EXIF_ANY`] divergence: the committed record of
@@ -558,6 +658,16 @@ pub enum RegionKind {
     Xmp,
     /// Any `Region::Iptc`.
     Iptc,
+    /// PNG (SPEC-031): an `XML:com.adobe.xmp` chunk whose text we can READ,
+    /// that is not compressed (a compressed one is located, never inflated).
+    PngXmpReadable,
+    /// PNG (SPEC-031): any located `iCCP` chunk WITH a profile name.
+    PngIcc,
+    /// PNG (SPEC-031 verify, round 2): any located `iCCP` chunk, named or not.
+    /// ExifTool prints `ICC-header:ProfileFileSignature` when it can read the
+    /// profile, whatever the name; we only locate, so a chunk whose profile is
+    /// not a valid ICC header is a recorded divergence.
+    PngIccRead,
 }
 
 /// `XMP-xmp:CreatorTool` <-> a located XMP packet, `IPTC:ObjectName` <-> a
@@ -721,6 +831,220 @@ pub fn compare_jpeg_pinned(
     {
         let exercised = cmp.explained.iter().any(|m| {
             d.selector == m.selector || (d.selector == EXIF_ANY && is_exif_selector(m.selector))
+        });
+        if !exercised {
+            cmp.stale.push(format!(
+                "{} {}: the divergence ({}) is no longer present",
+                d.fixture, d.selector, d.question_id
+            ));
+        }
+    }
+    cmp
+}
+
+// ── PNG (SPEC-031) ──────────────────────────────────────────────────────────
+
+/// Our reading of every selector from a PNG, modelled on what ExifTool 13.55
+/// was measured to do with several `eXIf` chunks (`png-two-exif-same-tag`,
+/// `-reversed`, `-disjoint-tags`, `png-exif-good-then-fatal`, `-fatal-then-good`):
+/// it reads the FIRST `eXIf` that is a TIFF and ignores every later one (it warns
+/// "IFD0 pointer references previous IFD0 directory"), whereas for a JPEG the
+/// tags of all the blocks merge and the later one wins. A block that is not a TIFF
+/// ("Invalid eXIf chunk") is skipped, in either order. So each selector reads from
+/// the first block whose container parsed; `None` if there is none.
+///
+/// This equals the library's own "first block is primary" policy (DEC-006,
+/// DEC-018) whenever the first block parses, so no model beyond that is needed.
+pub fn read_ours_png(meta: &PngMetadata<'_>, selectors: &[Selector]) -> Vec<Option<String>> {
+    let first = meta.exif_blocks().iter().find_map(|b| b.container().ok());
+    selectors
+        .iter()
+        .map(|s| first.and_then(|c| read_one(c, s)))
+        .collect()
+}
+
+/// `XMP-xmp:CreatorTool` <-> XMP carrying `xmp:CreatorTool` (every XMP fixture
+/// holds that tag): ours is present when an XMP text chunk we can READ
+/// (uncompressed) is located, so a located-but-compressed one is a recorded
+/// divergence (DEC-018). `PNG:ProfileName` <-> a located `iCCP` chunk WITH a
+/// name: ExifTool prints the profile name for any `iCCP` chunk that has one,
+/// valid profile or not (measured: `png-iccp-valid`, `png-iccp-bad-header`,
+/// names of 1, 79, 80, 81 and 200 bytes), and none for an empty name although it
+/// still reads the ICC (`png-iccp-name-empty`): that is what the
+/// `ICC-header:ProfileFileSignature` selector pins, present for every `iCCP` that
+/// carries a valid profile and absent for one that does not (`png-iccp-bad-header`). The located bytes themselves are
+/// checked against the builders' by `png_oracle`
+/// (`located_region_bytes_equal_what_the_builders_wrote`); no ICC content is
+/// compared with ExifTool.
+pub const PNG_REGION_SELECTORS: &[RegionSelector] = &[
+    RegionSelector {
+        exiftool: "XMP-xmp:CreatorTool",
+        kind: RegionKind::PngXmpReadable,
+    },
+    RegionSelector {
+        exiftool: "PNG:ProfileName",
+        kind: RegionKind::PngIcc,
+    },
+    RegionSelector {
+        exiftool: "ICC-header:ProfileFileSignature",
+        kind: RegionKind::PngIccRead,
+    },
+];
+
+/// The ExifTool selector strings of [`SELECTORS`] then [`PNG_REGION_SELECTORS`]:
+/// the command line of a hand-built PNG fixture.
+pub fn png_names() -> Vec<&'static str> {
+    let mut v = names(SELECTORS);
+    v.extend(PNG_REGION_SELECTORS.iter().map(|r| r.exiftool));
+    v
+}
+
+/// Our PNG region presence, one entry per [`PNG_REGION_SELECTORS`].
+pub fn read_png_regions(meta: &PngMetadata<'_>) -> Vec<Option<String>> {
+    PNG_REGION_SELECTORS
+        .iter()
+        .map(|r| {
+            let found = meta.regions().iter().any(|region| match (r.kind, region) {
+                (RegionKind::PngXmpReadable, PngRegion::Xmp { compressed, .. }) => !*compressed,
+                (RegionKind::PngIcc, PngRegion::Icc { name, .. }) => !name.is_empty(),
+                (RegionKind::PngIccRead, PngRegion::Icc { .. }) => true,
+                _ => false,
+            });
+            found.then(|| PRESENT.to_string())
+        })
+        .collect()
+}
+
+/// Our whole PNG reading: the Exif selectors (the model above), then the region
+/// presence.
+pub fn read_png_all(meta: &PngMetadata<'_>) -> Vec<Option<String>> {
+    let mut v = read_ours_png(meta, SELECTORS);
+    v.extend(read_png_regions(meta));
+    v
+}
+
+/// [`diff_jpeg`] with the PNG region selectors: value comparison for the Exif
+/// selectors, presence for the two region selectors. Nothing is filtered.
+pub fn diff_png(ours: &[Option<String>], theirs: &[Option<String>]) -> Vec<Mismatch> {
+    let n = SELECTORS.len();
+    assert_eq!(ours.len(), n + PNG_REGION_SELECTORS.len(), "ours length");
+    assert_eq!(
+        theirs.len(),
+        n + PNG_REGION_SELECTORS.len(),
+        "theirs length"
+    );
+    let mut out = diff(
+        ours.get(..n).unwrap_or_default(),
+        theirs.get(..n).unwrap_or_default(),
+        SELECTORS,
+    );
+    let (o, t) = (
+        ours.get(n..).unwrap_or_default(),
+        presence(theirs.get(n..).unwrap_or_default()),
+    );
+    for ((r, a), b) in PNG_REGION_SELECTORS.iter().zip(o).zip(&t) {
+        if a != b {
+            out.push(Mismatch {
+                selector: r.exiftool,
+                ours: a.clone(),
+                theirs: b.clone(),
+            });
+        }
+    }
+    out
+}
+
+/// The `selector` of a [`Divergence`] that covers every Exif value selector for
+/// which ExifTool prints a value and we print none: "ExifTool decodes a raw
+/// profile (hex, zlib) that we only locate" (DEC-018) is one finding, not twenty.
+/// The other direction, and a differing value, are never covered.
+pub const EXIF_UNREAD: &str = "exif:unread";
+
+/// For a fixture covered by an [`EXIF_UNREAD`] divergence: the committed record of
+/// the SAME TIFF in a place both tools read. ExifTool's own fields for the
+/// fixture must equal that record's, so the wildcard cannot hide a changed
+/// ExifTool reading.
+pub const PNG_PINS: &[(&str, &str)] = &[
+    ("png-raw-exif-text", "png-exif-basic-le"),
+    ("png-raw-exif-ztxt", "png-exif-basic-le"),
+    ("png-raw-exif-itxt", "png-exif-basic-le"),
+];
+
+/// The record name that pins `fixture`, if it has an [`EXIF_UNREAD`] divergence.
+pub fn png_pin_record(fixture: &str) -> Option<&'static str> {
+    PNG_PINS
+        .iter()
+        .find(|(f, _)| *f == fixture)
+        .map(|(_, r)| *r)
+}
+
+/// ExifTool's warnings for a PNG as recorded: only the lines that start
+/// `Warning: ` or `Error: `. ExifTool 13.55 also prints Perl diagnostics for two
+/// malformed `zTXt`/`iCCP` shapes (`Use of uninitialized value ... at
+/// /opt/homebrew/...`); those name the host's install path, so they are not
+/// recorded (stdout is unaffected).
+/// Applied to the output of `tools::warning_lines` (this file is also compiled
+/// into the probe crate, which has no `tools` module).
+pub fn png_warning_lines(lines: Vec<String>) -> Vec<String> {
+    lines
+        .into_iter()
+        .filter(|l| l.starts_with("Warning: ") || l.starts_with("Error: "))
+        .collect()
+}
+
+/// The PNG divergence matching `(fixture, selector)`: an exact selector entry,
+/// or an [`EXIF_UNREAD`] entry for an Exif selector.
+fn known_png_divergence(fixture: &str, selector: &str) -> Option<&'static Divergence> {
+    KNOWN_DIVERGENCES.iter().find(|d| {
+        d.fixture == fixture
+            && (d.selector == selector || (d.selector == EXIF_UNREAD && is_exif_selector(selector)))
+    })
+}
+
+/// [`diff_png`] plus the known-divergence accounting for fixture `name`, in both
+/// directions as [`compare_jpeg_pinned`] does. An [`EXIF_UNREAD`] entry covers
+/// only "ours reads nothing, ExifTool reads a value", and needs `pin` (ExifTool's
+/// fields of the record named by [`png_pin_record`]): ExifTool's Exif fields for
+/// the fixture must equal it.
+pub fn compare_png(
+    name: &str,
+    ours: &[Option<String>],
+    theirs: &[Option<String>],
+    pin: Option<&[Option<String>]>,
+) -> JpegComparison {
+    let found = diff_png(ours, theirs);
+    let mut cmp = JpegComparison::default();
+    for m in &found {
+        match known_png_divergence(name, m.selector) {
+            Some(d) if d.selector == EXIF_UNREAD && !(m.ours.is_none() && m.theirs.is_some()) => {
+                cmp.unexplained.push(m.clone());
+            }
+            Some(_) => cmp.explained.push(m.clone()),
+            None => cmp.unexplained.push(m.clone()),
+        }
+    }
+    if KNOWN_DIVERGENCES
+        .iter()
+        .any(|d| d.fixture == name && d.selector == EXIF_UNREAD)
+    {
+        let n = SELECTORS.len();
+        match (pin, theirs.get(..n)) {
+            (Some(p), Some(t)) if p.len() >= n => {
+                let p = p.get(..n).unwrap_or_default();
+                cmp.unexplained.extend(diff(p, t, SELECTORS));
+            }
+            _ => cmp.stale.push(format!(
+                "{name}: an unread-wildcard ({EXIF_UNREAD}) divergence needs the pinned reading of {:?}",
+                png_pin_record(name)
+            )),
+        }
+    }
+    for d in KNOWN_DIVERGENCES
+        .iter()
+        .filter(|d| d.fixture == name && d.selector != "*")
+    {
+        let exercised = cmp.explained.iter().any(|m| {
+            d.selector == m.selector || (d.selector == EXIF_UNREAD && is_exif_selector(m.selector))
         });
         if !exercised {
             cmp.stale.push(format!(

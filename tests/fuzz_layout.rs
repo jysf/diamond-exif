@@ -6628,7 +6628,7 @@ include!("../fuzz/shared/png_chunk_invariants.rs");
 include!("../fuzz/shared/png_metadata_invariants.rs");
 
 /// The committed `png_chunks` seed names, pinned.
-const PNG_SEEDS: [&str; 68] = [
+const PNG_SEEDS: [&str; 72] = [
     "bad-chunk-type",
     "bad-crc-idat",
     "bad-crc-ihdr",
@@ -6662,11 +6662,14 @@ const PNG_SEEDS: [&str; 68] = [
     "meta-halted-after-text",
     "meta-iccp",
     "meta-iccp-empty-name",
+    "meta-iccp-name-80",
     "meta-iccp-no-method",
     "meta-itxt-bad-flag",
+    "meta-itxt-empty-keyword",
     "meta-itxt-flag-2",
     "meta-itxt-lang",
     "meta-itxt-truncated",
+    "meta-itxt-xmp-lang",
     "meta-long-keyword",
     "meta-raw-exif-text",
     "meta-raw-lowercase",
@@ -6684,6 +6687,7 @@ const PNG_SEEDS: [&str; 68] = [
     "meta-xmp-keyword-case",
     "meta-xmp-text",
     "meta-xmp-wrong-keyword",
+    "meta-ztxt-empty-keyword",
     "meta-ztxt-no-method",
     "meta-ztxt-xmp",
     "minimal",

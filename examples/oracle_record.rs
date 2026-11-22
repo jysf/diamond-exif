@@ -16,6 +16,12 @@
 //! `oracle-records` re-records and diffs them, and the TIFF records must not
 //! move).
 //!
+//! SPEC-031 adds the PNG records: `png-<fixture>.txt` for every
+//! `oracle_png::fixtures()` entry (the 20 Exif selectors and the two PNG region
+//! selectors) and `png-seed-<seed>.txt` for every committed `png_chunks` seed
+//! (the 20 Exif selectors). Like the JPEG records they carry `# stderr:` lines,
+//! restricted to ExifTool's `Warning:`/`Error:` lines.
+//!
 //! SPEC-013 adds the inventory records, one per corpus, in
 //! `tests/oracle-fixtures/exiftool-inventory/`: `exiftool -a -u -G1 -H -s` over
 //! every input of the hand-built fixtures, the DEC-008 one-entry TIFFs and the
@@ -39,6 +45,8 @@ mod inventory_corpus;
 mod oracle;
 #[path = "../tests/support/oracle_jpeg.rs"]
 mod oracle_jpeg;
+#[path = "../tests/support/oracle_png.rs"]
+mod oracle_png;
 #[path = "../tests/support/oracle_tiff.rs"]
 mod oracle_tiff;
 #[path = "../tests/support/real_shapes.rs"]
@@ -165,6 +173,8 @@ fn main() {
         out_dir.display()
     );
 
+    record_png(&root, &out_dir, &version);
+
     // SPEC-012: the names ExifTool gives the DEC-008 tag ids (one record, one
     // line per named tag). Run on tiny valid one-entry TIFFs, each alone under
     // the time limit.
@@ -204,6 +214,90 @@ fn main() {
     record_inventory(&root, &version);
     record_strip(&root, &version);
     record_strip_tiff(&root, &version);
+}
+
+/// SPEC-031: the PNG records. Every shape was probed alone under a wall-clock
+/// limit before it joined the list (none failed to return, see the SPEC-031
+/// handback); `run_exiftool_full` keeps the tool time limit on every run.
+fn record_png(root: &std::path::Path, out_dir: &std::path::Path, version: &str) {
+    let mut written = 0usize;
+    for (name, bytes) in oracle_png::fixtures() {
+        let names = oracle::png_names();
+        let source = format!("fixture {name}");
+        let text = if let Some(d) = oracle::not_run_divergence(&name) {
+            println!("oracle-record: NOT RUN on {name}: {}", d.question_id);
+            tools::record_text_jpeg_not_run(&names, version, &source, &oracle::not_run_outcome(d))
+        } else {
+            let path = tools::temp_file_with_ext(&name, "png", &bytes).expect("write temp fixture");
+            let run = tools::run_exiftool_full(&path, &names);
+            let _ = fs::remove_file(&path);
+            let (stdout, stderr) = run.expect("run exiftool");
+            let warnings = oracle::png_warning_lines(tools::warning_lines(&stderr, &path));
+            tools::record_text_jpeg(&names, version, &source, &warnings, &stdout)
+        };
+        fs::write(out_dir.join(format!("{name}.txt")), text).expect("write record");
+        written += 1;
+    }
+    let seed_dir = root.join("fuzz/seeds/png_chunks");
+    let mut seeds: Vec<PathBuf> = fs::read_dir(&seed_dir)
+        .expect("read png seeds")
+        .map(|e| e.expect("dir entry").path())
+        .collect();
+    seeds.sort();
+    for path in seeds {
+        let name = path
+            .file_name()
+            .expect("name")
+            .to_string_lossy()
+            .into_owned();
+        let record = format!("png-seed-{name}");
+        let names = oracle::names(oracle::SELECTORS);
+        let source = format!("seed png_chunks/{name}");
+        let text = if let Some(d) = oracle::not_run_divergence(&record) {
+            println!("oracle-record: NOT RUN on {record}: {}", d.question_id);
+            tools::record_text_jpeg_not_run(&names, version, &source, &oracle::not_run_outcome(d))
+        } else {
+            // The seed is read from the committed file itself, not a copy.
+            let (stdout, stderr) = tools::run_exiftool_full(&path, &names).expect("run exiftool");
+            let warnings = oracle::png_warning_lines(tools::warning_lines(&stderr, &path));
+            tools::record_text_jpeg(&names, version, &source, &warnings, &stdout)
+        };
+        fs::write(out_dir.join(format!("{record}.txt")), text).expect("write record");
+        written += 1;
+    }
+    println!("oracle-record: wrote {written} PNG records");
+
+    // The warning record: ExifTool's own Warning and Error lines per fixture of
+    // the table (`-a -G1 -s -n -Warning -Error`), one `## name` section each. The
+    // stdout carries no path (only the tag values).
+    let fixtures = oracle_png::fixtures();
+    let mut text = format!(
+        "# command: exiftool -a -G1 -s -n -Warning -Error <file>\n# exiftool-version: {version}\n\
+         # source: fixtures {}\n",
+        oracle_png::WARNING_FIXTURES.len()
+    );
+    for name in oracle_png::WARNING_FIXTURES {
+        let bytes = &fixtures
+            .iter()
+            .find(|(n, _)| n == name)
+            .unwrap_or_else(|| panic!("no PNG fixture {name}"))
+            .1;
+        let path = tools::temp_file_with_ext(name, "png", bytes).expect("write temp fixture");
+        let args: Vec<String> = ["-a", "-G1", "-s", "-n", "-Warning", "-Error"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let run = tools::run_tool("exiftool", &args, &path);
+        let _ = fs::remove_file(&path);
+        let out = run.expect("run exiftool");
+        text.push_str(&format!("## {name}\n"));
+        for line in String::from_utf8_lossy(&out.stdout).lines() {
+            text.push_str(line.trim_end());
+            text.push('\n');
+        }
+    }
+    fs::write(out_dir.join(oracle_png::WARNINGS_RECORD), text).expect("write warnings record");
+    println!("oracle-record: wrote the PNG warnings record");
 }
 
 /// SPEC-022: the same for the TIFF and DNG fixtures, into

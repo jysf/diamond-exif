@@ -4,12 +4,12 @@
 # implementer lives in handoffs/HANDOFF-*.md, not in the spec itself.
 
 task:
-  id: SPEC-031
+  id: SPEC-034
   type: story                      # epic | story | task | bug | chore
   cycle: frame                     # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
-  complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
+  complexity: S                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
   complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
@@ -43,7 +43,7 @@ references:
 # Blocking dependencies: specs that must SHIP before this one can start.
 # Distinct from references.related_specs (informational). Feeds the ready-set
 # (`just ready`) and safe fan-out. Optional; [] = no blockers.
-depends_on: [SPEC-029, SPEC-030]
+depends_on: [SPEC-031]
 
 # Fan-out lease — who/what holds this spec now (`just claim` / `just unclaim`).
 # Advisory; null = free. The hard lock for parallel agents is the worktree/branch.
@@ -75,20 +75,15 @@ cost:
     session_count: 0
 ---
 
-# SPEC-031: PNG and WebP read parity against ExifTool, comparator red-proofs and mutated-copy red-proofs
-
-> **OUTLINE — `cycle: frame`.** This spec exists so its ID is stable and
-> siblings can declare `depends_on: [SPEC-031]`. Capture **scope** (Context /
-> Goal / Non-Goals) and **dependencies** only — the *approach* is designed
-> just-in-time when this moves to `design`. Do not pre-design it here.
+# SPEC-034: WebP read parity against ExifTool: comparator, red-proofs, SPEC-030 carried gaps
 
 ## Context
 
-Fourth spec of STAGE-008. STAGE-001 and STAGE-002 established ExifTool as the oracle with replay records and red-proofs; both new readers need the same evidence before the audit relies on them.
+Sixth spec of STAGE-008, split from the original parity spec at the SPEC-031 design. SPEC-031 builds the PNG parity apparatus (independent fixtures, records, replay and live tests, divergences, mutated-copy red-proofs); this spec applies it to WebP (DEC-019, `src/webp/`). It also closes the test and seed gaps the SPEC-030 verify found.
 
 ## Goal
 
-Show ExifTool agreement on PNG and WebP fixtures (`-T -n -s3`, never linked), including hostile shapes probed under the time limit first, with the comparator red-proofed by replay-and-perturb and format-shaped mutated-copy red-proofs (control first); report every divergence, silence none.
+Show ExifTool 13.55 agrees with `webp::read` on WebP fixtures and `webp_riff` seeds (20 Exif selectors, XMP and ICC presence), every difference a pinned divergence, with replay-and-perturb and mutated-copy red-proofs; and add the SPEC-030 carried tests and seeds.
 
 ## Inputs
 
@@ -129,11 +124,16 @@ job in **build** is to make these pass.
 
 ## Non-Goals
 
-- New reader behaviour unless parity exposes a bug, which is then fixed in this spec with a regression test
-- Audit inventory parity: SPEC-032
-- Fuzz targets (already shipped with the walkers)
+- PNG parity (SPEC-031); audit wiring (SPEC-032); changes to the JPEG, TIFF or PNG oracles beyond additive entries
 
 ## Notes for the Implementer
+
+Carried from the SPEC-030 verify (2026-11-21):
+
+- Add a unit test and a seed for the first-`VP8X` rule: `RIFF` + `VP8X`(0x00) + `VP8X`(0x08) + `VP8L` + `EXIF` must give `vp8x().flags() == 0` and one `ChunkFlagMismatch{EXIF, false}` (a mutant making the last `VP8X` win survives every current test). Add a `vp8x-nine-bytes` seed (a `BadVp8x` threshold of 9 is otherwise killed only by unit tests). Pin `MAX_WEBP_CHUNKS`, `MAX_WEBP_ISSUES` as literals. Run the model on all 35 walk seeds, not only the 16 `meta-` seeds.
+- Parity shapes to add: zero-length `XMP `, zero-length `XMP\0`, two `VP8X`, a short `VP8X` followed by a full one.
+
+Design this spec after SPEC-031 ships, so it mirrors the real apparatus.
 
 Gotchas, style preferences, reuse opportunities. Keep short — the full
 context graph lives in the handoff file.
@@ -173,8 +173,3 @@ context graph lives in the handoff file.
    (## Context is the before, ## Goal is the after): confirm the prediction,
    don't reconstruct it from memory.
    — <answer | none>
-
-## Carried from SPEC-030 verify (2026-11-21)
-
-- Add a unit test and a seed for the first-`VP8X` rule: `RIFF` + `VP8X`(0x00) + `VP8X`(0x08) + `VP8L` + `EXIF` must give `vp8x().flags() == 0` and one `ChunkFlagMismatch{EXIF, false}` (a mutant making the last `VP8X` win survives every current test). Add a `vp8x-nine-bytes` seed (a `BadVp8x` threshold of 9 is otherwise killed only by unit tests). Pin `MAX_WEBP_CHUNKS`, `MAX_WEBP_ISSUES` as literals. Run the model on all 35 walk seeds, not only the 16 `meta-` seeds.
-- Parity shapes to add: zero-length `XMP `, zero-length `XMP\0`, two `VP8X`, a short `VP8X` followed by a full one.
