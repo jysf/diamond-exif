@@ -208,6 +208,14 @@ fn existing_records_and_seeds_are_byte_identical() {
         "audit-dng-identity-le",
         "audit-dng-identity-be",
         "audit-page-identity-le",
+        // SPEC-032: the PNG and WebP shapes. (The `png-*` and `webp-*` copies of
+        // the two walker seed sets are filtered out above and pinned by
+        // `tests/fuzz_layout.rs`.)
+        "audit-png-text-time-trailer",
+        "audit-png-two-exif-regions",
+        "audit-png-empty-regions",
+        "audit-webp-exif-xmp-icc",
+        "audit-webp-empty-regions",
     ];
     new_audit.extend(shape_refs.iter().copied());
     check_dir("fuzz/seeds/audit", &OLD_AUDIT_SEEDS, &new_audit);

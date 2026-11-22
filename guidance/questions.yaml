@@ -1406,7 +1406,7 @@ questions:
       monorail-000's PROJ-002 has not started.
 
   - id: png-raw-profile-not-decoded
-    question: "ExifTool 13.55 decodes ImageMagick raw profiles (Exif and XMP in hex text chunks, compressed or not) and exif-core only locates them (DEC-018): should a later spec decode them, or is locating enough?"
+    question: "ExifTool 13.55 decodes ImageMagick raw profiles (Exif and XMP in hex text chunks, compressed or not) and exif-core only locates them (DEC-018); the audit reports each non-empty one as an unreadable block (status unreadable, never clean, exit 3, DEC-020 clause 5) beside its other_segment finding: should a later spec decode them, or is locating and refusing to call the file clean enough?"
     priority: low
     status: open
     raised_by: claude-sonnet-5-5
@@ -1438,6 +1438,13 @@ questions:
       RawProfile region beside an eXIf. Empty regions are reported as located (for example a
       zero-length tEXt XMP: ExifTool says "Invalid XMP", we report a 0-byte readable Xmp
       region): consumers must not count an empty region as metadata present.
+      SPEC-032 FIX ROUND (DEC-020 clause 5): a non-empty RawProfile region is now a failed
+      block, so the file is never clean and its status is `unreadable` (exit 3). Measured
+      (ExifTool 13.55, tEXt and zTXt `Raw profile type exif` holding an Exif with a GPS IFD,
+      alone and beside a GPS-free eXIf): ExifTool prints GPS:GPSLatitudeRef, GPS:GPSLatitude,
+      Composite:GPSLatitude and IFD0:Make; the audit has no Gps finding, and says unreadable.
+      That difference is explained by the status, and is asserted live by
+      `a_raw_profile_with_gps_is_decoded_by_exiftool_and_unreadable_to_the_audit`.
 
   - id: png-compressed-xmp-not-inflated
     question: "ExifTool 13.55 inflates compressed XMP text chunks (iTXt flag 1, zTXt) and exif-core only locates them (DEC-018): is locating enough for the audit and the stripper?"
@@ -1585,3 +1592,44 @@ questions:
       as for webp-iccp-profile-not-validated. Measured on webp-exif-make-short-later (EXIF with
       Make AlphaCam, then EXIF with Make as a SHORT 7): ExifTool prints 7; the harness reads
       AlphaCam because read_one returns none for a SHORT Make. Pinned in KNOWN_DIVERGENCES.
+
+  - id: png-xmp-flag-2-located-not-read
+    question: "The audit reports an Xmp finding for a PNG iTXt chunk with the XMP keyword and a compression flag of 2 (an invalid flag), where ExifTool 13.55 reports \"Error inflating\" and prints no XMP: is located-not-valid the intended side for the audit?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-22
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-032). Command: the png record command (exiftool -T -n -s3 ...
+      -XMP-xmp:CreatorTool ... <file>). Measured on png-xmp-itxt-flag-2 (keyword
+      XML:com.adobe.xmp, iTXt flag 2, text field a packet): ExifTool prints no
+      XMP-xmp:CreatorTool (it tries to inflate and fails: "Error inflating
+      XML:com.adobe.xmp"); exif-core locates an Xmp region (compressed = true, DEC-018) and
+      the audit reports an Xmp finding. Right side: neither is wrong; the audit LOCATES,
+      ExifTool VALIDATES (DEC-020: a located region may be unreadable to ExifTool, the
+      reports say "located", never "valid"). The audit errs toward reporting more. Pinned in
+      tests/audit_png_webp_oracle.rs (DIFFERENCES).
+
+  - id: png-creation-time-keyword-case
+    question: "ExifTool 13.55 prints the tag CreationTime for the PNG keywords \"creation time\" and \"Creation time\" as well as \"Creation Time\"; the audit's measured rule (first letter upper-cased, then exact) calls only \"Creation Time\" and \"creation Time\" a timestamp: is the audit's table the intended side?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-22
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-032). Command: exiftool -a -G1 -s -n <file> on png-text-keywords (one
+      tEXt chunk per keyword, value v:<keyword>), the [PNG] group kept in
+      tests/oracle-fixtures/exiftool/png-text-keywords.txt. Measured: the keywords
+      "Creation Time", "creation Time", "creation time" and "Creation time" all print as
+      PNG:CreationTime. The SPEC-032 part A measurement (without -n, with -d) showed that only
+      the first two are treated as the standard date tag (reformatted by -d); the other two
+      print the same name but are an auto-named tag whose value is left alone. The audit
+      table (text_keyword_category) follows that rule, so "creation time" and "Creation time"
+      are FreeText (medium), not Timestamps (low). Right side: neither is wrong; the audit
+      errs toward the higher severity, never the lower. Pinned in
+      tests/audit_png_webp_oracle.rs (KEYWORD_DIVERGENCES). The other keywords agree by name:
+      Author and Copyright (also author, copyright) are Authorship, Software and software
+      are Software, AUTHOR, aUTHOR, COPYRIGHT and SOFTWARE print as their own names and stay
+      FreeText, every other keyword is FreeText.

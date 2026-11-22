@@ -1405,7 +1405,7 @@ fn audit_seed(name: &str) -> Vec<u8> {
     fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
-const AUDIT_NEW_SEEDS: [&str; 12] = [
+const AUDIT_NEW_SEEDS: [&str; 17] = [
     "audit-png-magic",
     "audit-bigtiff-magic",
     "audit-empty-marker",
@@ -1420,6 +1420,13 @@ const AUDIT_NEW_SEEDS: [&str; 12] = [
     "audit-dng-identity-le",
     "audit-dng-identity-be",
     "audit-page-identity-le",
+    // SPEC-032: PNG and WebP shapes (every region kind, the keyword rule, the
+    // empty-region rule, the trailer).
+    "audit-png-text-time-trailer",
+    "audit-png-two-exif-regions",
+    "audit-png-empty-regions",
+    "audit-webp-exif-xmp-icc",
+    "audit-webp-empty-regions",
 ];
 
 #[test]
@@ -1447,6 +1454,20 @@ fn audit_seeds_are_committed_and_have_the_shapes_they_claim() {
     }
     // SPEC-019: the shape seeds, written as they are.
     want.extend(SHAPE_SEEDS.iter().map(|n| format!("shape-{n}")));
+    // SPEC-032: every `png_chunks` and `webp_riff` seed, copied under a prefix.
+    for (dir, prefix) in [("png_chunks", "png"), ("webp_riff", "webp")] {
+        let seeds = root().join("fuzz/seeds").join(dir);
+        for e in fs::read_dir(&seeds).unwrap_or_else(|e| panic!("{}: {e}", seeds.display())) {
+            let n = e.expect("entry").file_name().to_string_lossy().into_owned();
+            let old = fs::read(seeds.join(&n)).expect("old seed");
+            assert_eq!(
+                audit_seed(&format!("{prefix}-{n}")),
+                old,
+                "{prefix}-{n} is a copy"
+            );
+            want.push(format!("{prefix}-{n}"));
+        }
+    }
     want.sort();
     assert_eq!(
         names, want,
@@ -1463,11 +1484,67 @@ fn audit_seeds_are_committed_and_have_the_shapes_they_claim() {
 
     // Each new shape reaches what its name promises.
     let kind = |b: &[u8]| format!("{:?}", audit(b).kind());
-    assert_eq!(kind(&audit_seed("audit-png-magic")), "Unsupported(Png)");
+    assert_eq!(kind(&audit_seed("audit-png-magic")), "Png");
     assert_eq!(
         kind(&audit_seed("audit-bigtiff-magic")),
         "Unsupported(BigTiff)"
     );
+    // SPEC-032: the PNG and WebP shapes reach what their names promise.
+    {
+        let a = audit_seed("audit-png-text-time-trailer");
+        let au = audit(&a);
+        assert_eq!(kind(&a), "Png");
+        let regions: Vec<String> = au
+            .items()
+            .iter()
+            .filter_map(|i| match i.kind() {
+                exif_core::audit::ItemKind::Region { kind, .. } => Some(format!("{kind:?}")),
+                _ => None,
+            })
+            .collect();
+        for k in ["Text", "Time", "Trailer"] {
+            assert!(regions.iter().any(|r| r == k), "{k} in {regions:?}");
+        }
+        // Author, author, Copyright, Creation Time, Software: the keyword rule's
+        // positive side; AUTHOR, Title, Comment stay free text.
+        let cats = |c: Category| au.findings().iter().filter(|f| f.category == c).count();
+        assert_eq!(cats(Category::Authorship), 3);
+        assert_eq!(cats(Category::Software), 1);
+        // One `tIME` is the 7-byte form, the other is short; both are times
+        // (ExifTool prints `PNG:ModifyDate` for a `tIME` of any length).
+        assert_eq!(cats(Category::Timestamps), 3, "Creation Time and two tIME");
+        let two = audit_seed("audit-png-two-exif-regions");
+        let au = audit(&two);
+        assert_eq!(kind(&two), "Png");
+        assert!(au.findings_in(Category::Gps).count() >= 2);
+        for c in [Category::Xmp, Category::Icc, Category::OtherSegment] {
+            assert!(au.findings_in(c).next().is_some(), "{c:?}");
+        }
+        let e = audit_seed("audit-png-empty-regions");
+        let au = audit(&e);
+        let empties = au
+            .items()
+            .iter()
+            .filter(|i| matches!(i.kind(), exif_core::audit::ItemKind::Region { len: 0, .. }))
+            .count();
+        assert_eq!(empties, 3, "an empty Author, XMP and ICC region");
+        assert_eq!(
+            au.findings().len(),
+            4,
+            "the Title text and the three empty PNG regions (ExifTool prints a tag for each)"
+        );
+        let w = audit_seed("audit-webp-exif-xmp-icc");
+        let au = audit(&w);
+        assert_eq!(kind(&w), "Webp");
+        for c in [Category::Gps, Category::Xmp, Category::Icc] {
+            assert!(au.findings_in(c).next().is_some(), "{c:?}");
+        }
+        let e = audit_seed("audit-webp-empty-regions");
+        let au = audit(&e);
+        assert_eq!(kind(&e), "Webp");
+        assert_eq!(au.items().len(), 2);
+        assert!(au.findings().is_empty());
+    }
     let empty = audit_seed("audit-empty-marker");
     assert!(empty.is_empty(), "a zero-byte seed (libFuzzer accepts it)");
     assert_eq!(kind(&empty), "Unsupported(Empty)");
@@ -1571,8 +1648,8 @@ fn audit_harness_holds_on_every_seed_and_degenerate_inputs() {
     }
     assert_eq!(
         seen,
-        81 + 17,
-        "32 TIFF + 37 JPEG + 12 new + 17 SPEC-019 shapes"
+        86 + 17 + 72 + 53,
+        "32 TIFF + 37 JPEG + 17 new + 17 SPEC-019 shapes + 72 PNG + 53 WebP"
     );
     for data in audit_degenerate_inputs() {
         audit_invariants::check(&data);
@@ -1932,8 +2009,232 @@ fn new_region_plants() -> Vec<Plant> {
     ]
 }
 
+/// SPEC-032 plants: the PNG and WebP derivations of the audit model, each
+/// rejected by its own guard alone.
+fn png_webp_plants() -> Vec<Plant> {
+    const TEXT: &str = "audit-png-text-time-trailer";
+    const TWO: &str = "audit-png-two-exif-regions";
+    const EMPTY: &str = "audit-png-empty-regions";
+    const WEBP: &str = "audit-webp-exif-xmp-icc";
+    const WEBP_EMPTY: &str = "audit-webp-empty-regions";
+    fn region_item(f: &Facts, name: &str) -> usize {
+        f.items
+            .iter()
+            .position(|i| matches!(&i.what, What::Region { kind, .. } if kind == name))
+            .unwrap_or_else(|| panic!("a {name} region item"))
+    }
+    vec![
+        Plant {
+            name: "a PNG called a WebP",
+            input: TEXT,
+            guard: "kind",
+            apply: |f| f.kind = "Webp".into(),
+        },
+        Plant {
+            name: "a tIME item left out of the inventory",
+            input: TEXT,
+            guard: "inventory",
+            apply: |f| {
+                let i = region_item(f, "Time");
+                f.items.remove(i);
+            },
+        },
+        Plant {
+            name: "a PNG trailer item moved before the image data",
+            input: TEXT,
+            guard: "inventory",
+            apply: |f| {
+                let i = region_item(f, "Trailer");
+                f.items[i].after_scan = false;
+            },
+        },
+        Plant {
+            name: "a lower-case author keyword not read as the author",
+            input: TEXT,
+            guard: "findings",
+            apply: |f| {
+                let i = finding_of(f, "Authorship");
+                f.findings[i].category = "FreeText".into();
+            },
+        },
+        Plant {
+            name: "an upper-case AUTHOR keyword read as the author",
+            input: TEXT,
+            guard: "findings",
+            apply: |f| {
+                let i = f
+                    .findings
+                    .iter()
+                    .rposition(|x| {
+                        x.category == "FreeText"
+                            && matches!(&x.at.what, What::Region { kind, .. } if kind == "Text")
+                    })
+                    .expect("a free-text keyword finding");
+                f.findings[i].category = "Authorship".into();
+            },
+        },
+        Plant {
+            name: "a tIME finding categorised as free text",
+            input: TEXT,
+            guard: "category_shape",
+            apply: |f| {
+                let i = f
+                    .findings
+                    .iter()
+                    .position(|x| matches!(&x.at.what, What::Region { kind, .. } if kind == "Time"))
+                    .expect("a Time finding");
+                f.findings[i].category = "FreeText".into();
+            },
+        },
+        Plant {
+            name: "a raw profile categorised as XMP",
+            input: TWO,
+            guard: "category_shape",
+            apply: |f| {
+                let i = f
+                    .findings
+                    .iter()
+                    .position(
+                        |x| matches!(&x.at.what, What::Region { kind, .. } if kind == "RawProfile"),
+                    )
+                    .expect("a RawProfile finding");
+                f.findings[i].category = "Xmp".into();
+            },
+        },
+        Plant {
+            name: "an empty WebP region with a finding",
+            input: WEBP_EMPTY,
+            guard: "category_shape",
+            apply: |f| {
+                let i = f
+                    .items
+                    .iter()
+                    .position(|x| matches!(&x.what, What::Region { len: 0, .. }))
+                    .expect("an empty region item");
+                f.findings.push(FindingF {
+                    category: "FreeText".into(),
+                    item: Some(i),
+                    at: f.items[i].clone(),
+                    thumb: None,
+                    embedded: None,
+                });
+            },
+        },
+        Plant {
+            name: "an empty PNG region without a finding",
+            input: EMPTY,
+            guard: "category_shape",
+            apply: |f| {
+                let i = f
+                    .items
+                    .iter()
+                    .position(|x| matches!(&x.what, What::Region { len: 0, .. }))
+                    .expect("an empty region item");
+                let n = f.findings.len();
+                f.findings.retain(|x| x.item != Some(i));
+                assert!(
+                    f.findings.len() < n,
+                    "premise: the empty region has a finding"
+                );
+            },
+        },
+        Plant {
+            name: "a short tIME item left out of the inventory",
+            input: TEXT,
+            guard: "inventory",
+            apply: |f| {
+                let i = f
+                    .items
+                    .iter()
+                    .position(|x| {
+                        matches!(&x.what, What::Region { kind, len, .. } if kind == "Time" && *len != 7)
+                    })
+                    .expect("a short tIME item");
+                f.items.remove(i);
+            },
+        },
+        Plant {
+            name: "a raw profile not counted as a failed block",
+            input: TWO,
+            guard: "health",
+            apply: |f| f.health.failed_blocks = 0,
+        },
+        Plant {
+            name: "a PNG with a raw profile reported clean",
+            input: TWO,
+            guard: "health",
+            apply: |f| {
+                f.health.failed_blocks = 0;
+                f.health.jpeg_issues = 0;
+                f.health.exif_issues = 0;
+                f.health.clean = true;
+            },
+        },
+        Plant {
+            name: "a non-empty WebP region without a finding",
+            input: WEBP,
+            guard: "category_shape",
+            apply: |f| {
+                let i = finding_of(f, "Xmp");
+                f.findings.remove(i);
+            },
+        },
+        Plant {
+            name: "a second PNG Exif block's GPS entry forgotten",
+            input: TWO,
+            guard: "gps_iff",
+            apply: |f| {
+                let n = f.findings.len();
+                f.findings.retain(|x| x.category != "Gps");
+                assert!(f.findings.len() < n, "premise: GPS findings");
+            },
+        },
+        Plant {
+            name: "a PNG Exif thumbnail flag disagreeing with the bytes",
+            input: TWO,
+            guard: "thumbnail",
+            apply: |f| {
+                let i = thumb_finding(f);
+                let t = f.findings[i].thumb.as_mut().expect("range");
+                t.ffd8 = !t.ffd8;
+            },
+        },
+        Plant {
+            name: "a WebP Exif thumbnail range outside the blob",
+            input: WEBP,
+            guard: "thumbnail",
+            apply: |f| {
+                let i = thumb_finding(f);
+                f.findings[i].thumb = Some(ThumbF {
+                    range: Some((u32::MAX - 1, 8)),
+                    ffd8: false,
+                });
+            },
+        },
+        Plant {
+            name: "a PNG with a second Exif block reported clean",
+            input: TWO,
+            guard: "health",
+            apply: |f| f.health.clean = true,
+        },
+        Plant {
+            name: "a PNG container issue forgotten",
+            input: TWO,
+            guard: "health",
+            apply: |f| f.health.jpeg_issues = 0,
+        },
+        Plant {
+            name: "a PNG reported with a severity below its GPS finding",
+            input: TWO,
+            guard: "max_severity",
+            apply: |f| f.max = Some("Low".into()),
+        },
+    ]
+}
+
 fn plants() -> Vec<Plant> {
-    let mut all = new_region_plants();
+    let mut all = png_webp_plants();
+    all.extend(new_region_plants());
     all.extend(plants_before_spec_019());
     all
 }
@@ -1957,13 +2258,13 @@ fn plants_before_spec_019() -> Vec<Plant> {
         // unsupported => nothing, never clean.
         Plant {
             name: "an unsupported file reported clean",
-            input: "audit-png-magic",
+            input: "audit-bigtiff-magic",
             guard: "unsupported",
             apply: |f| f.health.clean = true,
         },
         Plant {
             name: "an unsupported file with an item",
-            input: "audit-png-magic",
+            input: "audit-bigtiff-magic",
             guard: "unsupported",
             apply: |f| f.items.push(dummy_item()),
         },
@@ -2435,7 +2736,7 @@ fn tiff_harness_entry_budget_invariants_hold_on_every_seed() {
             seen += 1;
         }
     }
-    assert_eq!(seen, 32 + 81 + 17);
+    assert_eq!(seen, 32 + 86 + 17 + 72 + 53);
     // The degenerate inputs too, and the generated big inventory.
     for data in audit_degenerate_inputs() {
         entry_budget_invariants::check_input(&data);
@@ -2909,7 +3210,7 @@ fn preview_guards_hold_on_every_seed_and_degenerate_inputs() {
             inputs.push((path.display().to_string(), data));
         }
     }
-    assert_eq!(inputs.len(), 32 + 37 + 81 + 17 + 17);
+    assert_eq!(inputs.len(), 32 + 37 + 86 + 17 + 17 + 72 + 53);
     for (i, d) in audit_degenerate_inputs().into_iter().enumerate() {
         inputs.push((format!("degenerate {i}"), d));
     }
@@ -2959,7 +3260,33 @@ fn disp_at(p: &PreviewInput, case: usize, what: &str) -> usize {
 
 fn preview_plants() -> Vec<PreviewPlant> {
     const RICH: &str = "audit-exif-gps-and-thumbnail";
+    // SPEC-032 (DEC-020): a PNG is audited, never strippable.
+    const PNG: &str = "audit-png-two-exif-regions";
     vec![
+        PreviewPlant {
+            name: "a PNG preview reported reliable",
+            input: PNG,
+            guard: "preview_residual_and_reliable",
+            apply: |p| p.cases[0].got.reliable = true,
+        },
+        PreviewPlant {
+            name: "a PNG preview reported strippable",
+            input: PNG,
+            guard: "preview_residual_and_reliable",
+            apply: |p| p.cases[2].got.strippable = true,
+        },
+        PreviewPlant {
+            name: "a PNG finding removed by a preset",
+            input: PNG,
+            guard: "preview_dispositions",
+            apply: |p| p.cases[3].got.dispositions[0] = "removed".into(),
+        },
+        PreviewPlant {
+            name: "a PNG preset that removes something",
+            input: PNG,
+            guard: "preview_nesting",
+            apply: |p| p.cases[4].got.removed = 1,
+        },
         // preview_shape
         PreviewPlant {
             name: "a disposition is missing",
@@ -3079,7 +3406,7 @@ fn preview_plants() -> Vec<PreviewPlant> {
         },
         PreviewPlant {
             name: "an unsupported file is reported reliable",
-            input: "audit-png-magic",
+            input: "audit-bigtiff-magic",
             guard: "preview_residual_and_reliable",
             apply: |p| p.cases[0].got.reliable = true,
         },
@@ -3194,7 +3521,7 @@ fn render_ctx(seed: &str) -> Ctx {
 
 const SEMICOLON: &str = "render-label-semicolon-formula";
 
-const AUDIT_RENDER_SEEDS: [&str; 26] = [
+const AUDIT_RENDER_SEEDS: [&str; 29] = [
     "render-ascii-payload-300-bytes",
     "render-empty-file",
     "render-full-house-jpeg-all-pii-inventory-values",
@@ -3202,6 +3529,7 @@ const AUDIT_RENDER_SEEDS: [&str; 26] = [
     "render-full-house-jpeg-everything-inventory",
     "render-full-house-jpeg-no-policy",
     "render-full-house-tiff-gps-values",
+    "render-gif-all-pii-values",
     "render-label-255-bytes",
     "render-label-control-characters",
     "render-label-cr-lf",
@@ -3213,6 +3541,7 @@ const AUDIT_RENDER_SEEDS: [&str; 26] = [
     "render-label-quotes-comma",
     "render-label-right-to-left-override",
     "render-label-semicolon-formula",
+    "render-png-all-pii-inventory-values",
     "render-png-signature-values",
     "render-shape-mpo-all-pii-inventory-values",
     "render-shape-mpo-custom-failure",
@@ -3221,12 +3550,18 @@ const AUDIT_RENDER_SEEDS: [&str; 26] = [
     "render-shape-split-app13-all-inventory-values",
     "render-shape-split-app13-gps",
     "render-shape-trailer-no-policy-inventory",
+    "render-webp-gps-inventory-values",
 ];
 
 const HOUSE_ALL_PII: &str = "render-full-house-jpeg-all-pii-inventory-values";
 const HOUSE_EVERYTHING: &str = "render-full-house-jpeg-everything-inventory";
 const LONG_ASCII: &str = "render-ascii-payload-300-bytes";
 const PNG_VALUES: &str = "render-png-signature-values";
+/// An unsupported file with a policy and values (the plants that need a file
+/// that is not read at all).
+const GIF_VALUES: &str = "render-gif-all-pii-values";
+/// The PNG with inventory: audited, never reliable, not strippable.
+const PNG_INVENTORY: &str = "render-png-all-pii-inventory-values";
 
 #[test]
 fn audit_render_target_is_declared_and_runs_in_ci() {
@@ -3319,9 +3654,16 @@ fn audit_render_seeds_are_committed_and_have_the_shapes_they_claim() {
     let long = render_ctx(LONG_ASCII);
     assert!(long.values && long.payloads.iter().flatten().any(|p| p.len() == 65));
     assert!(long.json.contains("\"truncated\":true"));
-    // A PNG signature, and an empty file.
+    // A PNG (GPS Exif, keywords, XMP, `tIME`, trailer: audited, not
+    // strippable), a WebP, a GIF that stays unsupported, and an empty file.
     let png = render_ctx(PNG_VALUES);
-    assert_eq!(format!("{:?}", audit(&png.file).kind()), "Unsupported(Png)");
+    assert_eq!(format!("{:?}", audit(&png.file).kind()), "Png");
+    assert!(png.json.contains("\"strippable\":false"));
+    assert!(png.text.contains("not strippable"));
+    let webp = render_ctx("render-webp-gps-inventory-values");
+    assert_eq!(format!("{:?}", audit(&webp.file).kind()), "Webp");
+    let gif = render_ctx("render-gif-all-pii-values");
+    assert_eq!(format!("{:?}", audit(&gif.file).kind()), "Unsupported(Gif)");
     let empty = by("empty-file");
     assert!(empty.file.is_empty());
     assert_eq!(
@@ -3506,6 +3848,34 @@ fn render_plants() -> Vec<RenderPlant> {
 
 fn fact_render_plants() -> Vec<RenderPlant> {
     vec![
+        // SPEC-032 (DEC-020): a PNG is audited, not strippable, never reliable.
+        RenderPlant {
+            name: "a PNG preview reported strippable (JSON)",
+            input: PNG_INVENTORY,
+            guard: "json_facts",
+            apply: |c| rep(&mut c.json, "\"strippable\":false", "\"strippable\":true"),
+        },
+        RenderPlant {
+            name: "a PNG preview reported reliable (JSON)",
+            input: PNG_INVENTORY,
+            guard: "json_facts",
+            apply: |c| rep(&mut c.json, "\"reliable\":false", "\"reliable\":true"),
+        },
+        RenderPlant {
+            name: "a PNG finding shown as an ordinary kept disposition (CSV)",
+            input: PNG_INVENTORY,
+            guard: "csv_rows",
+            apply: |c| rep(&mut c.csv, ",not_strippable,", ",kept,"),
+        },
+        RenderPlant {
+            name: "a PNG counted as a reliable file",
+            input: PNG_INVENTORY,
+            guard: "summary_facts",
+            apply: |c| {
+                c.summary.reliable = 1;
+                c.summary.unreliable = 0;
+            },
+        },
         // json_wellformed
         RenderPlant {
             name: "a trailing comma in the files array",
@@ -3622,7 +3992,7 @@ fn fact_render_plants() -> Vec<RenderPlant> {
         },
         RenderPlant {
             name: "an unsupported file reported ok",
-            input: PNG_VALUES,
+            input: GIF_VALUES,
             guard: "json_facts",
             apply: |c| {
                 rep(
@@ -3694,7 +4064,7 @@ fn fact_render_plants() -> Vec<RenderPlant> {
         },
         RenderPlant {
             name: "residual findings printed for an unreliable preview",
-            input: PNG_VALUES,
+            input: GIF_VALUES,
             guard: "json_facts",
             apply: |c| {
                 rep(
@@ -3940,7 +4310,7 @@ fn fact_render_plants() -> Vec<RenderPlant> {
         },
         RenderPlant {
             name: "the phrase no personal data",
-            input: PNG_VALUES,
+            input: GIF_VALUES,
             guard: "text_safe",
             apply: |c| c.text.push_str("  No Personal Data\n"),
         },
@@ -4071,19 +4441,19 @@ fn fact_render_plants() -> Vec<RenderPlant> {
         },
         RenderPlant {
             name: "an unreliable file's residuals are counted",
-            input: PNG_VALUES,
+            input: GIF_VALUES,
             guard: "summary_facts",
             apply: |c| c.summary.residual = Some(3),
         },
         RenderPlant {
             name: "a zero residual over no reliable file (summary)",
-            input: PNG_VALUES,
+            input: GIF_VALUES,
             guard: "summary_facts",
             apply: |c| c.summary.residual = Some(0),
         },
         RenderPlant {
             name: "a zero residual over no reliable file (JSON summary)",
-            input: PNG_VALUES,
+            input: GIF_VALUES,
             guard: "summary_facts",
             apply: |c| {
                 rep(
@@ -4113,7 +4483,7 @@ fn fact_render_plants() -> Vec<RenderPlant> {
         },
         RenderPlant {
             name: "unsupported is counted as zero",
-            input: PNG_VALUES,
+            input: GIF_VALUES,
             guard: "summary_facts",
             apply: |c| {
                 rep(

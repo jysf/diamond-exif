@@ -23,9 +23,12 @@
 
 #[allow(dead_code)]
 mod audit_invariants {
-    use exif_core::audit::{audit, FileAudit, ItemKind};
+    use exif_core::audit::{audit, ContainerKind, FileAudit, ItemKind, Sniffed};
     use exif_core::jpeg::{self, Region, SegmentKind};
+    use exif_core::png::{self, PngRegion};
     use exif_core::tiff::Container;
+    use exif_core::webp::{self, WebpRegion};
+    use std::collections::HashMap;
 
     /// The documented cap on items and, separately, on findings.
     pub const CAP: usize = 65_536;
@@ -214,7 +217,7 @@ mod audit_invariants {
 
     pub fn kind_label(d: &[u8]) -> String {
         match magic(d) {
-            m @ ("Jpeg" | "Tiff") => m.to_string(),
+            m @ ("Jpeg" | "Tiff" | "Png" | "Webp") => m.to_string(),
             m => format!("Unsupported({m})"),
         }
     }
@@ -484,6 +487,204 @@ mod audit_invariants {
             .collect()
     }
 
+    /// A region the expected audit lists after the Exif blocks: where it starts
+    /// in the input (the inventory order), what it is, and its category
+    /// (`None`: an item and no finding).
+    struct Located {
+        offset: usize,
+        at: ItemF,
+        category: Option<&'static str>,
+    }
+
+    /// The PNG text keyword rule, typed again from DEC-020 and MEASURED against
+    /// ExifTool 13.55: the keyword is compared exactly, and again after its
+    /// first letter is upper-cased. The two date keywords are spelled lower case
+    /// in ExifTool's table, so the second comparison cannot reach them: only
+    /// the exact spelling does (`create-date`, `modify-date`; measured).
+    fn png_keyword_category(keyword: &[u8]) -> &'static str {
+        if keyword == b"create-date" || keyword == b"modify-date" {
+            return "Timestamps";
+        }
+        let mut k = keyword.to_vec();
+        if let Some(first) = k.first_mut() {
+            *first = first.to_ascii_uppercase();
+        }
+        match k.as_slice() {
+            b"Author" | b"Artist" | b"Copyright" => "Authorship",
+            b"Creation Time" => "Timestamps",
+            b"Software" => "Software",
+            _ => "FreeText",
+        }
+    }
+
+    /// Items for the located regions, in input-offset order (ties keep the
+    /// order they were found in). A WebP region of length 0 is an item with no
+    /// finding; a PNG region of length 0 keeps its finding (DEC-020 clause 3,
+    /// measured: ExifTool prints a tag for each empty PNG region).
+    fn push_located(acc: &mut Acc, mut located: Vec<Located>, drop_empty: bool) {
+        located.sort_by_key(|l| l.offset);
+        for l in located {
+            let len_zero = matches!(&l.at.what, What::Region { len: 0, .. });
+            let category = if len_zero && drop_empty {
+                None
+            } else {
+                l.category
+            };
+            acc.push(l.at, category, None);
+        }
+    }
+
+    /// The expected audit of a PNG, from the chunk list and the metadata
+    /// reader's blocks and regions. Returns the TIFF-layer issue count.
+    fn derive_png(
+        acc: &mut Acc,
+        meta: &png::PngMetadata<'_>,
+        data_len: usize,
+        failed: &mut usize,
+    ) -> usize {
+        let chunks = meta.png().chunks();
+        // Chunk index by input offset: a chunk after `IEND` is not in the list.
+        let index_of: HashMap<usize, usize> = chunks
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (c.offset(), i))
+            .collect();
+        tick(chunks.len());
+        let first_idat = chunks.iter().position(|c| &c.chunk_type() == b"IDAT");
+        let segment_of = |offset: usize| index_of.get(&offset).copied().unwrap_or(chunks.len());
+        // After the image data: after the first IDAT, or not in the list (after
+        // IEND).
+        let after =
+            |segment: usize| segment >= chunks.len() || first_idat.is_some_and(|p| segment > p);
+        let mut exif_issues = 0usize;
+        for (b, block) in meta.exif_blocks().iter().enumerate() {
+            match block.container() {
+                Err(_) => *failed += 1,
+                Ok(c) => {
+                    exif_issues += c.issues().len();
+                    let segment = segment_of(block.offset());
+                    walk_container(acc, c, block.tiff(), Some(b), Some(segment), after(segment));
+                }
+            }
+        }
+        let mut located: Vec<Located> = Vec::new();
+        let region_at = |kind: &str, segment: usize, len: usize, scan: bool| ItemF {
+            block: None,
+            segment: Some(segment),
+            after_scan: scan,
+            what: What::Region {
+                kind: kind.to_string(),
+                segment,
+                len,
+            },
+        };
+        for r in meta.regions() {
+            tick(1);
+            // DEC-020 clause 5, typed again: a non-empty raw profile may hold
+            // Exif the audit cannot read, so it is a failed block.
+            if matches!(r, PngRegion::RawProfile { .. }) && !r.data().is_empty() {
+                *failed += 1;
+            }
+            let (name, category) = match r {
+                PngRegion::Xmp { .. } => ("Xmp", "Xmp"),
+                PngRegion::Icc { .. } => ("Icc", "Icc"),
+                PngRegion::RawProfile { .. } => ("RawProfile", "OtherSegment"),
+                PngRegion::Text { keyword, .. } => ("Text", png_keyword_category(keyword)),
+                _ => panic!("a PngRegion variant the harness does not know"),
+            };
+            let segment = segment_of(r.offset());
+            located.push(Located {
+                offset: r.offset(),
+                at: region_at(name, segment, r.data().len(), after(segment)),
+                category: Some(category),
+            });
+        }
+        // A `tIME` chunk of ANY length is a time (ExifTool 13.55 prints
+        // `PNG:ModifyDate` for every length 0 to 12, measured).
+        for (i, c) in chunks.iter().enumerate() {
+            tick(1);
+            if &c.chunk_type() == b"tIME" {
+                located.push(Located {
+                    offset: c.offset(),
+                    at: region_at("Time", i, c.data().len(), after(i)),
+                    category: Some("Timestamps"),
+                });
+            }
+        }
+        // The bytes after `IEND`.
+        let trailer = meta.png().trailer();
+        if !trailer.is_empty() {
+            located.push(Located {
+                offset: data_len - trailer.len(),
+                at: region_at("Trailer", chunks.len(), trailer.len(), true),
+                category: Some("OtherSegment"),
+            });
+        }
+        push_located(acc, located, false);
+        exif_issues
+    }
+
+    /// The expected audit of a WebP. Returns the TIFF-layer issue count.
+    fn derive_webp(acc: &mut Acc, meta: &webp::WebpMetadata<'_>, failed: &mut usize) -> usize {
+        let chunks = meta.webp().chunks();
+        let index_of: HashMap<usize, usize> = chunks
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (c.offset(), i))
+            .collect();
+        tick(chunks.len());
+        // The first chunk that carries pixels, by its four-character code.
+        let first_image = chunks
+            .iter()
+            .position(|c| matches!(&c.fourcc(), b"VP8 " | b"VP8L" | b"ANMF"))
+            .unwrap_or(chunks.len());
+        let segment_of = |offset: usize| index_of.get(&offset).copied().unwrap_or(chunks.len());
+        let mut exif_issues = 0usize;
+        for (b, block) in meta.exif_blocks().iter().enumerate() {
+            match block.container() {
+                Err(_) => *failed += 1,
+                Ok(c) => {
+                    exif_issues += c.issues().len();
+                    let segment = segment_of(block.offset());
+                    walk_container(
+                        acc,
+                        c,
+                        block.tiff(),
+                        Some(b),
+                        Some(segment),
+                        segment > first_image,
+                    );
+                }
+            }
+        }
+        let mut located: Vec<Located> = Vec::new();
+        for r in meta.regions() {
+            tick(1);
+            let (name, category) = match r {
+                WebpRegion::Xmp { .. } => ("Xmp", "Xmp"),
+                WebpRegion::Icc { .. } => ("Icc", "Icc"),
+                _ => panic!("a WebpRegion variant the harness does not know"),
+            };
+            let segment = segment_of(r.offset());
+            located.push(Located {
+                offset: r.offset(),
+                at: ItemF {
+                    block: None,
+                    segment: Some(segment),
+                    after_scan: segment > first_image,
+                    what: What::Region {
+                        kind: name.to_string(),
+                        segment,
+                        len: r.data().len(),
+                    },
+                },
+                category: Some(category),
+            });
+        }
+        push_located(acc, located, true);
+        exif_issues
+    }
+
     /// The expected audit of `data`, from scratch.
     pub fn rederive(data: &[u8]) -> Facts {
         let kind = kind_label(data);
@@ -564,9 +765,23 @@ mod audit_invariants {
                     }
                 }
             },
+            "Png" => match png::read(data) {
+                Err(_) => failed = 1,
+                Ok(meta) => {
+                    jpeg_issues = meta.png_issues().len();
+                    exif_issues = derive_png(&mut acc, &meta, data.len(), &mut failed);
+                }
+            },
+            "Webp" => match webp::read(data) {
+                Err(_) => failed = 1,
+                Ok(meta) => {
+                    jpeg_issues = meta.webp_issues().len();
+                    exif_issues = derive_webp(&mut acc, &meta, &mut failed);
+                }
+            },
             _ => {}
         }
-        let supported = kind == "Tiff" || kind == "Jpeg";
+        let supported = matches!(kind.as_str(), "Tiff" | "Jpeg" | "Png" | "Webp");
         let clean =
             supported && jpeg_issues == 0 && exif_issues == 0 && failed == 0 && !acc.truncated;
         Facts {
@@ -637,7 +852,12 @@ mod audit_invariants {
         if got.health.clean && unsupported {
             return Err("clean but unsupported".into());
         }
-        if got.health.clean && !(got.kind == "Tiff" || got.kind == "Jpeg") {
+        if got.health.clean
+            && !(got.kind == "Tiff"
+                || got.kind == "Jpeg"
+                || got.kind == "Png"
+                || got.kind == "Webp")
+        {
             return Err(format!("clean for kind {:?}", got.kind));
         }
         Ok(())
@@ -698,7 +918,16 @@ mod audit_invariants {
                         "Jumbf" => "Jumbf",
                         "EmbeddedImage" => "EmbeddedImage",
                         "Comment" => "FreeText",
-                        "OtherApp" | "Trailer" => "OtherSegment",
+                        "OtherApp" | "Trailer" | "RawProfile" => "OtherSegment",
+                        "Time" => "Timestamps",
+                        // A text chunk is categorised by its keyword: any of
+                        // these four, never a block category.
+                        "Text" => match f.category.as_str() {
+                            "FreeText" | "Authorship" | "Timestamps" | "Software" => {
+                                f.category.as_str()
+                            }
+                            _ => "FreeText",
+                        },
                         other => return Err(format!("finding {n}: unknown region kind {other}")),
                     };
                     if f.category != want {
@@ -742,10 +971,19 @@ mod audit_invariants {
         }
         for (i, item) in got.items.iter().enumerate() {
             tick(1);
-            if matches!(item.what, What::Region { .. })
-                && !has_finding.get(i).copied().unwrap_or(false)
-            {
-                return Err(format!("region item {i} has no finding"));
+            if let What::Region { len, .. } = item.what {
+                let found = has_finding.get(i).copied().unwrap_or(false);
+                // DEC-020 clause 3: a length-0 WebP region is inventoried and
+                // has no finding (ExifTool shows nothing for it); a length-0
+                // PNG region keeps its finding (ExifTool prints a tag for each,
+                // measured); every other region has exactly one.
+                let no_finding_expected = got.kind == "Webp" && len == 0;
+                if no_finding_expected && found {
+                    return Err(format!("an empty region item {i} has a finding"));
+                }
+                if !no_finding_expected && !found {
+                    return Err(format!("region item {i} has no finding"));
+                }
             }
         }
         Ok(())
@@ -779,12 +1017,29 @@ mod audit_invariants {
     /// the JPEG read once) for a JPEG.
     fn blob_for<'a>(
         data: &'a [u8],
-        meta: Option<&jpeg::JpegMetadata<'a>>,
+        blobs: Option<&Vec<&'a [u8]>>,
         block: Option<usize>,
     ) -> Option<&'a [u8]> {
         match block {
             None => Some(data),
-            Some(b) => meta?.exif_blocks().get(b).map(|x| x.tiff()),
+            Some(b) => blobs?.get(b).copied(),
+        }
+    }
+
+    /// The TIFF blob of every Exif block of a JPEG, a PNG or a WebP, from the
+    /// format's own reader.
+    fn exif_blobs<'a>(kind: &str, data: &'a [u8]) -> Option<Vec<&'a [u8]>> {
+        match kind {
+            "Jpeg" => jpeg::read(data)
+                .ok()
+                .map(|m| m.exif_blocks().iter().map(|x| x.tiff()).collect()),
+            "Png" => png::read(data)
+                .ok()
+                .map(|m| m.exif_blocks().iter().map(|x| x.tiff()).collect()),
+            "Webp" => webp::read(data)
+                .ok()
+                .map(|m| m.exif_blocks().iter().map(|x| x.tiff()).collect()),
+            _ => None,
         }
     }
 
@@ -798,7 +1053,7 @@ mod audit_invariants {
         });
         let meta = if needs_jpeg {
             tick(data.len());
-            jpeg::read(data).ok()
+            exif_blobs(&got.kind, data)
         } else {
             None
         };
@@ -913,7 +1168,7 @@ mod audit_invariants {
         }
         // `clean` iff readable, no issue of any layer, no failed block, no
         // truncation; restated from `got` alone so it cannot ride on `want`.
-        let supported = got.kind == "Tiff" || got.kind == "Jpeg";
+        let supported = matches!(got.kind.as_str(), "Tiff" | "Jpeg" | "Png" | "Webp");
         let clean = supported
             && got.health.jpeg_issues == 0
             && got.health.exif_issues == 0
@@ -1109,6 +1364,28 @@ mod audit_invariants {
         pub residual: usize,
         pub residual_sev: Option<String>,
         pub reliable: bool,
+        /// Whether the writer can strip the container (DEC-020).
+        pub strippable: bool,
+    }
+
+    /// Whether the writer can strip a container of this kind (DEC-020 clause
+    /// 6). The harness holds the kind as a label, so it maps the label back to
+    /// a `ContainerKind` and asks the ONE definition, `ContainerKind::strippable`
+    /// (true for JPEG and TIFF only); it keeps no copy of the rule.
+    pub fn strippable_kind(kind: &str) -> bool {
+        let k = match kind {
+            "Tiff" => ContainerKind::Tiff,
+            "Jpeg" => ContainerKind::Jpeg,
+            "Png" => ContainerKind::Png,
+            "Webp" => ContainerKind::Webp,
+            _ => ContainerKind::Unsupported(Sniffed::Unknown),
+        };
+        k.strippable()
+    }
+
+    /// `Preview::reliable`, re-derived: strippable, clean and not truncated.
+    pub fn reliable_of(f: &Facts) -> bool {
+        strippable_kind(&f.kind) && f.health.clean && !f.health.truncated
     }
 
     /// One policy applied to the audit: what the library said (`got`) and what
@@ -1127,6 +1404,7 @@ mod audit_invariants {
         pub findings: Vec<String>,
         pub clean: bool,
         pub truncated: bool,
+        pub strippable: bool,
         pub cases: Vec<CaseF>,
     }
 
@@ -1144,6 +1422,7 @@ mod audit_invariants {
             residual: p.residual_findings(),
             residual_sev: p.residual_severity().map(|s| format!("{s:?}")),
             reliable: p.reliable(),
+            strippable: p.strippable(),
         }
     }
 
@@ -1153,9 +1432,10 @@ mod audit_invariants {
         let mut dispositions = Vec::new();
         let (mut r, mut k, mut u) = (0usize, 0usize, 0usize);
         let mut sev: Option<&'static str> = None;
+        let strippable = strippable_kind(&f.kind);
         for fi in &f.findings {
             let c = fi.category.as_str();
-            let d = if removed.contains(&c) {
+            let d = if strippable && removed.contains(&c) {
                 r += 1;
                 "removed"
             } else {
@@ -1163,7 +1443,10 @@ mod audit_invariants {
                 if sev.is_none_or(|m| rank(m) < rank(s)) {
                     sev = Some(s);
                 }
-                if H_BLOCKS.contains(&c) && h_may_hold(c).iter().any(|x| removed.contains(x)) {
+                if strippable
+                    && H_BLOCKS.contains(&c)
+                    && h_may_hold(c).iter().any(|x| removed.contains(x))
+                {
                     u += 1;
                     "kept_unread"
                 } else {
@@ -1174,7 +1457,7 @@ mod audit_invariants {
             dispositions.push(d.to_string());
         }
         let residual_sev = if f.health.truncated {
-            if H_ALL.iter().all(|n| removed.contains(n)) {
+            if strippable && H_ALL.iter().all(|n| removed.contains(n)) {
                 None
             } else {
                 f.max.clone()
@@ -1189,7 +1472,8 @@ mod audit_invariants {
             kept_unread: u,
             residual: k + u,
             residual_sev,
-            reliable: f.health.clean && !f.health.truncated,
+            reliable: reliable_of(f),
+            strippable,
         }
     }
 
@@ -1234,6 +1518,7 @@ mod audit_invariants {
             findings: f.findings.iter().map(|x| x.category.clone()).collect(),
             clean: f.health.clean,
             truncated: f.health.truncated,
+            strippable: strippable_kind(&f.kind),
             cases,
         }
     }
@@ -1339,6 +1624,23 @@ mod audit_invariants {
                 ));
             }
         }
+        // DEC-020: the writer refuses this container, so no preset removes
+        // anything and every finding stays.
+        if !inp.strippable {
+            for c in presets {
+                tick(1);
+                if c.got.removed != 0 || c.got.residual != inp.findings.len() {
+                    return Err(format!(
+                        "{}: a container the writer refuses removed {} and left {} of {}",
+                        c.label,
+                        c.got.removed,
+                        c.got.residual,
+                        inp.findings.len()
+                    ));
+                }
+            }
+            return Ok(());
+        }
         if let Some(last) = presets.last() {
             tick(1);
             if last.got.residual != 0 || last.got.residual_sev.is_some() {
@@ -1362,11 +1664,17 @@ mod audit_invariants {
                     c.label, c.got.residual_sev, c.want.residual_sev
                 ));
             }
-            let reliable = inp.clean && !inp.truncated;
+            let reliable = inp.strippable && inp.clean && !inp.truncated;
             if c.got.reliable != reliable {
                 return Err(format!(
-                    "{}: reliable is {}, clean && !truncated is {reliable}",
+                    "{}: reliable is {}, strippable && clean && !truncated is {reliable}",
                     c.label, c.got.reliable
+                ));
+            }
+            if c.got.strippable != inp.strippable || c.want.strippable != inp.strippable {
+                return Err(format!(
+                    "{}: strippable is {} (want {}), the kind says {}",
+                    c.label, c.got.strippable, c.want.strippable, inp.strippable
                 ));
             }
             // Without truncation the severity is the maximum over the

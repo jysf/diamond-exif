@@ -738,6 +738,69 @@ pub const WARNING_FIXTURES: &[&str] = &[
 /// The record of those warnings: this file name, in the PNG record directory.
 pub const WARNINGS_RECORD: &str = "png-warnings.txt";
 
+/// The one table of the `png-text-keywords` fixture (SPEC-032): one `tEXt` chunk
+/// per keyword, whose value is `v:` and the keyword, so the record maps each
+/// keyword to the tag name ExifTool printed for it. Both sides of the case
+/// grid are here: the standard spellings, the first-letter-lower-case ones
+/// ExifTool maps to the standard tags, and the ones it does not (`AUTHOR`,
+/// `aUTHOR`, ...).
+pub const TEXT_KEYWORDS: &[&str] = &[
+    "Title",
+    "Author",
+    "author",
+    "AUTHOR",
+    "aUTHOR",
+    "Description",
+    "Copyright",
+    "copyright",
+    "COPYRIGHT",
+    "Creation Time",
+    "creation time",
+    "Creation time",
+    "creation Time",
+    "Software",
+    "software",
+    "SOFTWARE",
+    "Disclaimer",
+    "Warning",
+    "warning",
+    "Source",
+    "Comment",
+    "Unknown Keyword",
+    // SPEC-032 fix round (L1): the three keywords ExifTool names `Artist`,
+    // `CreateDate` and `ModDate`, with the case grid around each.
+    "Artist",
+    "artist",
+    "ARTIST",
+    "aRTIST",
+    "create-date",
+    "Create-date",
+    "CREATE-DATE",
+    "modify-date",
+    "Modify-date",
+    "MODIFY-DATE",
+];
+
+/// The fixture's name; its record is [`TEXT_KEYWORDS_RECORD`].
+pub const TEXT_KEYWORDS_NAME: &str = "png-text-keywords";
+
+/// `exiftool -a -G1 -s -n` over the fixture, the `[PNG]` group only.
+pub const TEXT_KEYWORDS_RECORD: &str = "png-text-keywords.txt";
+
+/// The value written under a keyword: what the record maps back from.
+pub fn text_keyword_value(keyword: &str) -> Vec<u8> {
+    format!("v:{keyword}").into_bytes()
+}
+
+/// A PNG with one `tEXt` chunk per [`TEXT_KEYWORDS`] entry, in table order.
+pub fn text_keywords_png() -> Vec<u8> {
+    let chunks: Vec<Vec<u8>> = TEXT_KEYWORDS
+        .iter()
+        .map(|k| text(k.as_bytes(), &text_keyword_value(k)))
+        .collect();
+    png(&chunks, &[], &[])
+}
+
 /// The name of the TIFF fixture a wrapped fixture was built from.
 pub fn unwrapped_name(png_name: &str) -> Option<&str> {
     png_name.strip_prefix("png-")

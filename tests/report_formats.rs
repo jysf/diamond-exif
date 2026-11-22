@@ -26,7 +26,9 @@ use exif_core::report::{
 use exif_core::{StripPolicy, StripSpec};
 use render_check::{parse_csv, parse_json, J};
 
-const PNG: [u8; 10] = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0];
+/// An unsupported container (a GIF header). It was a PNG signature until PNG was
+/// audited (SPEC-032, DEC-020); the constant name is historical.
+const PNG: [u8; 10] = [b'G', b'I', b'F', b'8', b'9', b'a', 0, 0, 0, 0];
 
 /// The full-house JPEG, an unsupported PNG and a failed file.
 fn three<'a>(jpeg: &'a [u8], label: &'a [u8]) -> Vec<FileEntry<'a>> {
@@ -237,6 +239,8 @@ fn json_has_the_pinned_key_order_at_every_level() {
             "reliable",
             "residual_findings",
             "residual_severity",
+            // Additive (DEC-020): last, so every earlier key keeps its place.
+            "strippable",
         ],
         "preview",
     );
@@ -597,7 +601,7 @@ fn csv_quotes_comma_quote_cr_lf_and_doubles_quotes_end_to_end() {
         result: FileResult::Audited(audit(&PNG)),
     }];
     let text = render_csv(&files, &RenderOptions::default());
-    assert!(text.contains("\"a,b.jpg\",unsupported,png"), "{text}");
+    assert!(text.contains("\"a,b.jpg\",unsupported,gif"), "{text}");
     let hostile = vec![FileEntry {
         label: b"q\"q,\r\nz",
         result: FileResult::Audited(audit(&PNG)),
@@ -715,7 +719,7 @@ fn csv_has_a_row_for_every_file_without_findings() {
         assert_eq!(rows.len(), 1 + 4, "one row per file, none is absent");
         let by_label = |l: &str| rows.iter().find(|r| r[0] == l).unwrap().clone();
         let png = by_label("png");
-        assert_eq!((png[1].as_str(), png[2].as_str()), ("unsupported", "png"));
+        assert_eq!((png[1].as_str(), png[2].as_str()), ("unsupported", "gif"));
         let clean = by_label("clean-empty.jpg");
         assert_eq!((clean[1].as_str(), clean[2].as_str()), ("ok", "jpeg"));
         let failed = by_label("gone");

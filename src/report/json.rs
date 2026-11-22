@@ -213,6 +213,10 @@ fn preview_json(out: &mut String, p: &Preview) {
             .flatten()
             .map(|s| s.name()),
     );
+    // Additive (DEC-020): false for a PNG or a WebP, which the writer refuses.
+    // Last, so every earlier key keeps its place.
+    out.push_str(",\"strippable\":");
+    boolean(out, p.strippable());
     out.push('}');
 }
 

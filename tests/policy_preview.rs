@@ -449,7 +449,8 @@ fn nesting_holds_on_every_committed_seed_for_every_preset() {
     let (seeds, seen) = all_seeds();
     // The same counts audit_model.rs asserts (32 TIFF, 37 JPEG, 81 audit),
     // plus the 17 SPEC-019 `shape-*` seeds in each of the last two.
-    assert_eq!(seen, [32, 37 + 17, 81 + 17]);
+    // SPEC-032 adds the 72 PNG and 53 WebP copies and five new audit shapes.
+    assert_eq!(seen, [32, 37 + 17, 86 + 17 + 72 + 53]);
     let mut with_findings = 0usize;
     for (name, data) in &seeds {
         let a = audit(data);
@@ -468,8 +469,15 @@ fn nesting_holds_on_every_committed_seed_for_every_preset() {
             );
         }
         let last = previews.last().expect("five presets");
-        assert_eq!(last.residual_findings(), 0, "{name}");
-        assert_eq!(last.residual_severity(), None, "{name}");
+        if last.strippable() {
+            assert_eq!(last.residual_findings(), 0, "{name}");
+            assert_eq!(last.residual_severity(), None, "{name}");
+        } else {
+            // DEC-020: a PNG or a WebP is audited but the writer refuses it, so
+            // no preset removes anything.
+            assert_eq!(last.residual_findings(), a.findings().len(), "{name}");
+            assert!(previews.iter().all(|p| p.counts().removed == 0), "{name}");
+        }
         if !a.findings().is_empty() {
             with_findings += 1;
         }

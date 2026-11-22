@@ -1,0 +1,42 @@
+# command: exiftool -a -G1 -s -n <file> (the [PNG] group only)
+# exiftool-version: 13.55
+# source: fixture png-text-keywords
+[PNG]           ImageWidth                      : 1
+[PNG]           ImageHeight                     : 1
+[PNG]           BitDepth                        : 8
+[PNG]           ColorType                       : 0
+[PNG]           Compression                     : 0
+[PNG]           Filter                          : 0
+[PNG]           Interlace                       : 0
+[PNG]           Title                           : v:Title
+[PNG]           Author                          : v:Author
+[PNG]           Author                          : v:author
+[PNG]           AUTHOR                          : v:AUTHOR
+[PNG]           AUTHOR                          : v:aUTHOR
+[PNG]           Description                     : v:Description
+[PNG]           Copyright                       : v:Copyright
+[PNG]           Copyright                       : v:copyright
+[PNG]           COPYRIGHT                       : v:COPYRIGHT
+[PNG]           CreationTime                    : v:Creation Time
+[PNG]           CreationTime                    : v:creation time
+[PNG]           CreationTime                    : v:Creation time
+[PNG]           CreationTime                    : v:creation Time
+[PNG]           Software                        : v:Software
+[PNG]           Software                        : v:software
+[PNG]           SOFTWARE                        : v:SOFTWARE
+[PNG]           Disclaimer                      : v:Disclaimer
+[PNG]           PNGWarning                      : v:Warning
+[PNG]           PNGWarning                      : v:warning
+[PNG]           Source                          : v:Source
+[PNG]           Comment                         : v:Comment
+[PNG]           UnknownKeyword                  : v:Unknown Keyword
+[PNG]           Artist                          : v:Artist
+[PNG]           Artist                          : v:artist
+[PNG]           ARTIST                          : v:ARTIST
+[PNG]           ARTIST                          : v:aRTIST
+[PNG]           CreateDate                      : v:create-date
+[PNG]           Create-date                     : v:Create-date
+[PNG]           CREATE-DATE                     : v:CREATE-DATE
+[PNG]           ModDate                         : v:modify-date
+[PNG]           Modify-date                     : v:Modify-date
+[PNG]           MODIFY-DATE                     : v:MODIFY-DATE

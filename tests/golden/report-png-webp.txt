@@ -1,0 +1,56 @@
+file: photos/shot.png
+  status: ok
+  container: png
+  health: jpeg_issues=0 exif_issues=0 failed_blocks=0 inventory_truncated=false
+  max severity: high
+  6 findings
+    - gps [high] tag 0x0001 ifd=gps#1 type=2 count=2 block=0 segment=1 value="N": kept (not strippable)
+    - authorship [medium] region text len=9 block=- segment=2: kept (not strippable)
+    - free_text [medium] region text len=7 block=- segment=3: kept (not strippable)
+    - xmp [medium] region xmp len=12 block=- segment=4: kept (not strippable)
+    - timestamps [low] region time len=7 block=- segment=5: kept (not strippable)
+    - other_segment [medium] region trailer len=7 block=- segment=8 after_scan: kept (not strippable)
+  preview (all_pii): not strippable: the writer refuses this container, so nothing would be removed; every finding is kept
+  inventory: 7 items
+    - tag 0x8825 ifd=ifd0#0 type=4 count=1 block=0 segment=1 value="\x00\x00\x00\x1a"
+    - tag 0x0001 ifd=gps#1 type=2 count=2 block=0 segment=1 category=gps value="N"
+    - region text len=9 block=- segment=2 category=authorship
+    - region text len=7 block=- segment=3 category=free_text
+    - region xmp len=12 block=- segment=4 category=xmp
+    - region time len=7 block=- segment=5 category=timestamps
+    - region trailer len=7 block=- segment=8 after_scan category=other_segment
+
+file: photos/shot.webp
+  status: ok
+  container: webp
+  health: jpeg_issues=0 exif_issues=0 failed_blocks=0 inventory_truncated=false
+  max severity: high
+  3 findings
+    - gps [high] tag 0x0001 ifd=gps#1 type=2 count=2 block=0 segment=2 after_scan value="N": kept (not strippable)
+    - xmp [medium] region xmp len=12 block=- segment=3 after_scan: kept (not strippable)
+    - icc [low] region icc len=11 block=- segment=4 after_scan: kept (not strippable)
+  preview (all_pii): not strippable: the writer refuses this container, so nothing would be removed; every finding is kept
+  inventory: 4 items
+    - tag 0x8825 ifd=ifd0#0 type=4 count=1 block=0 segment=2 after_scan value="\x00\x00\x00\x1a"
+    - tag 0x0001 ifd=gps#1 type=2 count=2 block=0 segment=2 after_scan category=gps value="N"
+    - region xmp len=12 block=- segment=3 after_scan category=xmp
+    - region icc len=11 block=- segment=4 after_scan category=icc
+
+summary
+  files: 2
+  ok: 2
+  issues: 0
+  unreadable: 0
+  unsupported: 0
+  failed: 0
+  findings: 9
+  max severity: high
+  category gps: 2
+  category authorship: 1
+  category free_text: 1
+  category xmp: 2
+  category timestamps: 1
+  category icc: 1
+  category other_segment: 1
+  reliable files: 0, unreliable files: 2
+  policy all_pii: residual not available: no file was read reliably
