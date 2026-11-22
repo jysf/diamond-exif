@@ -58,7 +58,7 @@ handback:
   pr: null
   completed_at: 2026-11-22         # YYYY-MM-DD
   notes: "tokens_total left null by instruction: the orchestrator records the harness figure. Verify of claude/spec-036-part-b at 1df62be; punch list H1, H2, M1 to M3."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-22
 ---
 
 # HANDOFF-075: <Task Title — same as the spec's title>

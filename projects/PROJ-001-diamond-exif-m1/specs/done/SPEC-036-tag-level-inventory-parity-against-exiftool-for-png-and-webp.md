@@ -6,7 +6,7 @@
 task:
   id: SPEC-036
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -89,10 +89,31 @@ cost:
       duration_minutes: null
       recorded_at: 2026-11-22
       notes: "Part B done: 56 png-webp divergences pinned (Class P), replay/live/red-proof tests, 5 new questions; tokens_total left null by instruction, the orchestrator measures it."
+    - cycle: verify
+      handoff: HANDOFF-075
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 218377
+      estimated_usd: 1.44
+      duration_minutes: null
+      recorded_at: 2026-11-22
+      notes: "tokens_total left null by instruction: the orchestrator records the harness figure. Verify of claude/spec-036-part-b at 1df62be; punch list H1, H2, M1 to M3."
+    - cycle: build
+      handoff: HANDOFF-076
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 314205
+      estimated_usd: 2.07
+      duration_minutes: null
+      recorded_at: 2026-11-22
+      notes: "transcribed from HANDOFF-076 by handback-sync"
   totals:
-    tokens_total: 466607
-    estimated_usd: 3.07
-    session_count: 2
+    tokens_total: 999189
+    estimated_usd: 6.58
+    session_count: 4
+shipped_at: 2026-11-22
 ---
 
 # SPEC-036: Tag-level inventory parity against ExifTool for PNG and WebP (carried from STAGE-008)
@@ -163,34 +184,15 @@ A third inventory corpus, `png-webp`, run through the existing comparator extend
 
 ## Reflection
 
-*Appended during **ship**. Three questions, short answers.*
-
 1. **What would I do differently next time?**
-   — <answer>
+   — Put a corpus of ordinary real-world chunks (gAMA, sRGB, iDOT, bKGD...) and keyword collisions in the DESIGN measurements: the design assumed id-less `PNG` lines were text and `tIME`, the part A measurement corrected that, and the verify still found ten more non-text names and a library bug because the corpus held no such chunks. Also tell builders "case-insensitive" only after measuring: I briefed case-insensitive, the fixer measured two exact spellings and was right.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — DEC-018 got "Clarifications from the SPEC-036 verify" (raw-profile keyword is exactly two spellings). Signal `design-must-measure-hostile-edges-not-only-the-happy-keys` is now N=4 (this spec's H1 and M1); `subagent-token-self-report-counts-cache-reads` did not recur (the handoffs told agents to leave tokens null). A builder that "waits on background work" again re-notified; I stopped it at part B. The fix round (which changed `src/png`) got no second cold verify; I read the `src` diff and re-ran lint and three test binaries.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — No. The inventory oracle's by-name classification of id-less `PNG` lines is a documented limit (`png-text-keyword-collides-with-chunk-tag-name`); unknown or reserved chunk names that ExifTool prints as their own tag name cannot be dropped by name.
 
-4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
-   the defect-escape distribution is greppable across specs:
-   `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
-   `none` (clean first try).
-   — <one word>
-   *(Runtime/operational defects — the escape-prone class — only exist once the
-   artifact meets its real host. `escaped` here is a signal to strengthen the
-   §12 behavioral pre-flight for that surface.)*
+4. **Where was the worst defect caught?** — verify (a lowercase raw-profile chunk with GPS read as clean: a library bug hidden behind a pin with a wrong cause).
 
-5. **What can a user do now that they couldn't before?** — one sentence,
-   before → after; quote the confirming number if one exists, name the outcome
-   if not. Write `none` if this spec has no user-visible outcome — that is a
-   real, greppable result, not a blank. This is the line a downstream work-log's
-   `impact` field is transcribed from, and both halves are already written above
-   (## Context is the before, ## Goal is the after): confirm the prediction,
-   don't reconstruct it from memory.
-   — <answer | none>
+5. **What can a user do now that they couldn't before?** — none directly; the audit's PNG and WebP inventory is now checked tag by tag against ExifTool on 364 distinct inputs (63 pinned differences, each with a measured cause), and a lowercase `raw profile type exif` PNG is no longer read as clean.
