@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: verifier             # implementer | verifier
   created_at: 2026-11-21
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                  # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-031
@@ -46,18 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                # completed | blocked | rejected
+  agent: claude-opus-5-5           # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
-  verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
+  verdict: punch-list              # verify handoffs: approved | punch-list | rejected
+  basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: null
-  branch: null
+  duration_minutes: 45
+  branch: claude/spec-031-verify2
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-21         # YYYY-MM-DD
+  notes: "tokens_total is null: a sub-agent cannot read its own transcript token counts; the orchestrator replaces it with the harness figure. About 45 tool calls."  # if unusual; double-quote it — an unquoted " #" starts a YAML comment
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -119,38 +119,132 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `claude/spec-031-verify2`, cut from `claude/spec-031-png-parity` at `32b9125` (contains `29df025`). No PR, since this is a verify.
+- **Completed at:** 2026-11-21
+- **All acceptance criteria met?** The three round-1 Mediums are fixed and measured, and every gate is green. One more shape that is not in the fixture list disagrees with ExifTool on located metadata: a text chunk with an empty keyword. That disagreement is in the direction where we see less. Six Lows.
+- **For `verify`:** ⚠ PUNCH LIST (1 Medium, 6 Low; no High).
+
+#### Findings
+
+**Medium**
+
+- **M1. A text chunk with an empty keyword: ExifTool shows its value, and we locate nothing.** `src/png/metadata.rs:375-377` (`if end == 0 { return None; }`). The rule comes from DEC-018:56 ("an empty keyword ... BadTextChunk with no region (nothing to locate)"). `tests/png_metadata.rs:299` and the fuzz model (`fuzz/shared/png_metadata_invariants.rs:139`, `.filter(|&k| k > 0)`) pin it. Nobody measured this rule against ExifTool. Failing inputs, measured with ExifTool 13.55 `-a -G1 -s`:
+  - `tEXt` with data `\0John Doe` gives `[PNG] Tag : John Doe`.
+  - `zTXt` with data `\0\0` plus zlib(`secret value`) gives `[PNG] Tag : secret value` (inflated).
+  - `iTXt` with data `\0\0\0\0\0secret value` gives `[PNG] Tag : secret value`.
+
+  In all three cases `png::read` records `BadTextChunk` and no region. This is readable text that a reader displays, so an audit misses it and a strip driven by regions leaves it. It is the same class as round 1's M1: a malformed but locatable chunk. Fix it the way the long keyword was fixed: locate it as `Text` with an empty keyword and the issue, and update DEC-018:56, the model and `png_metadata.rs:299`. Or pin it as a divergence with a question. Add fixture `png-text-empty-keyword` and the `zTXt`/`iTXt` variants.
+
+**Low**
+
+- **L1. Chunks we cannot parse are still exposed by ExifTool as raw binary.** This covers text with no NUL, `zTXt` with no method byte, an `iTXt` header truncated after the flag or at the language tag or translated keyword, and `iCCP` with no method byte or only a NUL. In each case ExifTool prints the whole chunk as `PNG:TextualData`, `CompressedText`, `InternationalText` or `ICC_Profile` (Binary data N bytes), and we locate nothing. Two inputs show it:
+  - `iTXt` `Author\0\0\0en\0John Doe secret` (no NUL after the translated keyword) gives `PNG:InternationalText (Binary data 27 bytes)`.
+  - `iCCP` `diamond\0` (no method byte) gives `PNG:ProfileName = diamond` plus `ICC_Profile` of 8 bytes. Ours has no region, so the comparator's own `PNG:ProfileName` selector would disagree. This shape is not a fixture or a divergence.
+
+  The value is opaque (it needs `-b`), so this is Low. A strip that relies on regions still keeps these bytes. Round 1 wrote "language tag and no NUL (both nothing)", which holds for the selector set only.
+- **L2. One DEC-018 clarification sentence is not exact.** `decisions/DEC-018-...md:101` says ExifTool "prints a name for those" (no NUL, or no method byte). With a true no-NUL `iCCP` (`diamondABCDEFG`), ExifTool prints NO name, only `PNG:ICC_Profile (Binary data 14 bytes)`. The name appears only in the no-method case. The code is right; the sentence is wrong.
+- **L3. No record pins that ExifTool reads the ICC when the name is empty.** `png-iccp-name-empty` records `-` for `PNG:ProfileName`, and no selector records the ICC header. I measured `ICC-header:ProfileFileSignature = acsp`. If a later ExifTool stopped reading it, nothing would turn red. Round 1's optional `ICC-header:ProfileFileSignature` selector would close this.
+- **L4. The fuzz seeds do not exercise two of the new rules.** These planted library faults leave `tests/fuzz_layout.rs` green:
+  - f3: restore the 80-byte search limit for the `iCCP` name, `src/png/metadata.rs:526`.
+  - f4: key `tagged` on the translated keyword instead of the language tag, `:413`.
+
+  `png_oracle` and `png_metadata` catch both. The model's own rules are correct (f1 and f2 below turn it red). Seeds with an 80-byte `iCCP` name and with a language-tagged `iTXt` XMP would close the gap.
+- **L5. Warnings only: we raise no issue in four cases where ExifTool warns.**
+  - `iCCP` method 1: "Unknown compression method 1 for iCCP".
+  - XMP in `iTXt` with flag 1 and method 1, or in `zTXt` with method 1: "Unknown compression method 1 for XML:com.adobe.xmp".
+  - An empty XMP packet (`<?xpacket begin...?><?xpacket end="w"?>` in `tEXt`): "[minor] Empty XMP". Here we also report a readable `Xmp` region while ExifTool has no CreatorTool (round 1's L3 rule).
+  - An `eXIf` whose IFD0 offset is 4: ExifTool shows `PNG:eXIf` as binary.
+
+  All of these locate the same thing on both sides.
+- **L6. Mutant v6 survives every PNG test.** v6 sets the `Xmp` region `offset` to `offset + 1` (`src/png/metadata.rs:493`). `png_oracle`, `png_metadata` and `png_walk` stay green; only the fuzz model in `tests/fuzz_layout.rs` catches it (3 failures, all within `just test`). It is not a gap in the suite. `located_region_bytes_equal_what_the_builders_wrote` compares kind, compression, name and data, but not the offset.
+
+Note, not a finding: when `Raw profile type exif` sits in an `iTXt` with a language tag, ExifTool does NOT decode it (`PNG:RawProfileTypeExif` binary). We route it to `RawProfile` either way. That is harmless today because nothing is decoded, but any decoding in SPEC-032 should apply the language-tag rule.
+
+#### Focus-area results
+
+1. **The three Mediums are fixed.** I measured these with ExifTool 13.55 on bytes from the `oracle_png` builders, through a scratch example on an rsync copy.
+   - **M1 (`iCCP` name).** Names of 0, 1, 79, 80, 81 and 200 bytes all give ExifTool the ICC header (`acsp`, `mntr`). Every one prints `ProfileName` except the empty name. Ours locates `Icc` for all six, with `BadIccpChunk` for 0, 80, 81 and 200. That agrees.
+     - NUL without a method byte: ExifTool shows the name plus 8 bytes of binary, and we locate nothing (L1).
+     - True no NUL: ExifTool shows 14 bytes of binary and no name (L2).
+     - Method byte 1: both locate it; ExifTool warns and we do not (L5).
+   - **M2 (`iTXt` language tag).** I measured 13 variants, and all agree on routing. `Xmp` with CreatorTool:
+     - flag 0 or 1 with an empty tag and translated keyword `XMP Daten`
+     - flag 0 with both empty (control)
+
+     `Text` with ExifTool's `PNG:XMLcomadobexmp`:
+     - tags `x` (flag 0 and 1), `EN`, `" "` (a single space)
+     - `en-US` with translated keyword `XMP` (flag 0 and 1)
+     - flag 2 with `en`
+     - `en\0\0` and an empty body
+
+     The tag runs to the end of the chunk with no NUL (`en`, and `en\0`): ExifTool shows only `InternationalText` binary, and we record `BadTextChunk` with no region (L1).
+   - **M3 (region bytes).** My mutants were applied by line on the scratch copy.
+
+     | Mutant | `png_oracle` | `png_metadata` | `png_walk` |
+     |---|---|---|---|
+     | v1 XMP data shifted by 1 (`:495`) | **red** (located_region_bytes) | red | green |
+     | v2 ICC data = whole chunk (`:544`) | **red** | red | green |
+     | v3 translated-keyword NUL not skipped (`:407`) | **red** | red | green |
+     | v4 raw-profile data shifted by 1 (`:504`) | **red** | red | green |
+     | v5 `Text` data shifted by 1 (`:513`) | **red** | red | green |
+     | v6 `Xmp` offset + 1 (`:493`) | green | green | green; full suite **red** (`fuzz_layout`, L6) |
+     | v7 `tagged` needs 2 bytes of tag (`:413`) | green | red | green |
+     | v8 `iCCP` name of 79 is bad (`:536`) | green | red | green |
+     | v9 empty `iCCP` name raises no issue (`:536`) | **red** (warning table) | red | green |
+     | v10 `Text` offset + 1 (`:510`) | green | red | green |
+
+     Every mutant turns some test red. v1 to v5 are caught by the new test. v6 survives the PNG tests only (L6). v7, v8 and v10 are caught by unit tests, which is expected for a 1-byte tag (no `x` fixture), an issue-only fault and an offset.
+2. **Unmeasured shapes: I probed 27 shapes beyond the fixture list.** These agree on located metadata:
+   - `iTXt` XMP with flag 1 and method 1 (both compressed or binary XMP).
+   - `iTXt` keywords of 79 and 80 bytes with a language tag (both `Text`, with `BadTextChunk` at 80).
+   - `tEXt` XMP with an empty packet (both locate it; L5).
+   - `zTXt` XMP with method 1.
+   - `eXIf` `MM` with zero entries (no values on either side).
+   - `eXIf` with IFD0 at offset 4: alone, then with a good block before and after. Values agree in all three (`GoodCam` from the good block).
+   - Raw-profile exif with a declared length too large and too small (ExifTool decodes with "wrong size"; we locate `RawProfile`).
+   - Raw profiles of type `icc`, `iptc` and `APP1`. ExifTool decodes the ICC, `IPTC:ObjectName` and `IFD0:Make`; we locate `RawProfile` and do not decode, which is the `png-raw-profile-not-decoded` class.
+   - `Raw profile type XMP` and `EXIF` in upper case (ExifTool does not decode them; we locate them).
+   - Two `iCCP` chunks.
+   - `iCCP` after IDAT.
+   - An empty-named `iCCP` followed by a named one.
+   - Two XMP chunks.
+   - A tagged XMP chunk followed by a plain one.
+   - `eXIf` plus a raw profile with tags found only in the raw profile.
+
+   These disagree: an empty keyword in `tEXt`, `zTXt` and `iTXt` (M1), and the parse-failure chunks (L1).
+3. **The fuzz model** still derives everything from raw bytes: its own framing, keyword, `iTXt` header and name parsing. It takes only the walk outcome from the library and compares field by field in both directions. I planted library faults:
+   - f1, the `tagged` check removed: **red** (`png_harness_holds_on_every_seed_prefix_and_flip`, `png_metadata_seeds_are_pinned...`).
+   - f2, the empty-name `iCCP` issue removed: **red**.
+   - f3, the old 80-byte name limit: green (L4).
+   - f4, `tagged` keyed on the translated keyword: green (L4).
+
+   `cargo +nightly fuzz run png_chunks ... -max_total_time=20` ran 695,770 runs in 21 s with no crash (cov 1160, exit 0). `cargo run --example fuzz_seeds` leaves `git status` empty. `git diff 937b15f..HEAD -- fuzz/seeds` is empty, so every seed is byte-identical, including `meta-iccp-empty-name` and `meta-xmp-itxt-compressed`.
+4. **DEC-018 and the divergence text.** The `iTXt` clarification states exactly what the code does. The `iCCP` clarification matches the code, but one sentence about ExifTool is inexact (L2). The `png-exif-and-raw-exif` right side (`tests/support/oracle.rs:518`) and `png-raw-profile-not-decoded` (`guidance/questions.yaml:1422-1429`) now state the privacy consequence plainly. I confirmed the "tags only in the raw profile" claim: with `eXIf` Make `AlphaCam` and a raw profile holding Make `RawCam`, Software and Artist `Jane Doe`, ExifTool lists `IFD0:Make` twice plus the raw-only Software and Artist.
+5. **Collateral.** Since `937b15f`, the only file changed under `src/` is `src/png/metadata.rs`. Among the existing records only `png-warnings.txt` changed, and 9 records were added: `png-exif-xmp-iccp`, `png-iccp-name-79/80/empty`, `png-text-no-nul`, `png-xmp-itxt-lang`, `-lang-compressed`, `-lang-translated` and `-translated`. `just oracle-record` run twice leaves `git status` empty.
+6. **Gates.** I ran them with `RUSTUP_TOOLCHAIN=1.90.0`, `~/.cargo/bin` first and `DIAMOND_EXIF_REQUIRE_ORACLE=1`. All exited 0: `just lint`, `just test` (no failures), `just mutation-oracle` (39 passed, 1 ignored), `just validate` (34 artifacts), `just cost-audit` and `just forbid-unsafe`.
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null. A sub-agent cannot read its own transcript token counts; the orchestrator replaces this with the harness figure.
+- **Estimated USD:** null
+- **Duration (minutes):** about 45
+- **Source of the number:** harness report (to be filled in by the orchestrator)
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
-- **Deviations from spec:**
-  - [list]
+- **New decisions emitted:** none
+- **Deviations from spec:** none. This was review only. The probes and mutants ran on an rsync copy in the scratchpad, never on the branch, and `src/png/metadata.rs` on the branch is unchanged.
 - **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - Decide M1 (locate an empty-keyword text chunk, or record a divergence) and add `png-text-empty-keyword` fixtures.
+  - Decide whether chunks we cannot parse (L1) should be located as opaque regions so the strip removes them (SPEC-032 or strip).
+  - Fuzz seeds for an 80-byte `iCCP` name and a language-tagged `iTXt` XMP (L4).
+  - An ICC-header presence selector (L3).
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
-
+   Nothing material. The probe list was useful. Each class of "nothing to locate" rule in DEC-018 still needed its own ExifTool check.
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
-
+   DEC-018's "nothing to locate" cases (empty keyword, no NUL, truncated header) were never measured. ExifTool exposes every one of them, as a readable tag or as binary.
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   I would probe every "None" branch of the parser against ExifTool first, because that is where both rounds found their Mediums.
