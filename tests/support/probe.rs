@@ -210,7 +210,9 @@ fn repo_root() -> PathBuf {
 
 /// The generated probe binary. A file that starts `FF D8` is a JPEG: it is read
 /// with `exif_core::jpeg::read` and `oracle::read_jpeg_all` (the Exif selectors,
-/// then the two region presences). Anything else is parsed with
+/// then the two region presences). A file that starts `89 50 4E 47` is a PNG
+/// (SPEC-031): `exif_core::png::read` and `oracle::read_png_all`, 22 fields too.
+/// Anything else is parsed with
 /// `exif_core::tiff::Container` and `oracle::read_ours` over `oracle::SELECTORS`.
 /// Either way the answer is one tab-separated line, `-` for `None`. A value
 /// that would break the line (backslash, tab, newline, CR) or collide with the
@@ -269,6 +271,15 @@ fn main() {
     let ours = if data.starts_with(&[0xFF, 0xD8]) {
         match exif_core::jpeg::read(&data) {
             Ok(meta) => oracle::read_jpeg_all(&meta),
+            Err(e) => {
+                eprintln!("PARSE-ERROR {e:?}");
+                std::process::exit(3);
+            }
+        }
+    } else if data.starts_with(&[0x89, b'P', b'N', b'G']) {
+        // SPEC-031: a PNG is read with `png::read` and the PNG model.
+        match exif_core::png::read(&data) {
+            Ok(meta) => oracle::read_png_all(&meta),
             Err(e) => {
                 eprintln!("PARSE-ERROR {e:?}");
                 std::process::exit(3);

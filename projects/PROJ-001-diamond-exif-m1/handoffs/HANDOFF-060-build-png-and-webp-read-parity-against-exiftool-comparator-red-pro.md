@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-21
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-031
@@ -46,18 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                # completed | blocked | rejected
+  agent: claude-sonnet-5-5                    # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
+  basis: estimate                  # transcript | agent-result | slash-cost | api-usage | estimate
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
-  branch: null
+  branch: claude/spec-031-png-parity
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-21         # YYYY-MM-DD
+  notes: "tokens_total is null: a sub-agent cannot read its own transcript token counts; the orchestrator replaces it with the harness figure. About 75 tool calls."  # if unusual; double-quote it — an unquoted " #" starts a YAML comment
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -124,43 +124,65 @@ If you cannot complete the task:
 
 ## Handback
 
-*Filled in by the receiving agent. The orchestrator does not reconstruct any of
-this — it transcribes it. The reflection questions are part of completion.*
-
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `claude/spec-031-png-parity` (two commits on top of a04413d); no PR, not pushed.
+- **Completed at:** 2026-11-21
+- **All acceptance criteria met?** yes, all eleven (ticked in the spec).
+- **What was built:** `tests/support/oracle_png.rs` (independent builders, CRC-32, Adler-32, stored-deflate zlib; 12 wrapped TIFFs + 37 shapes = 49 fixtures), `tests/png_oracle.rs` (22 tests), `tests/png_mutation_oracle.rs` (7 library mutants p1-p7, 2 byte mutations, controls, leak test, skip test), PNG section of `tests/support/oracle.rs` (`read_ours_png`, `PNG_REGION_SELECTORS`, `compare_png`, `EXIF_UNREAD`, `PNG_PINS`, `png_warning_lines`, 9 `KNOWN_DIVERGENCES`), PNG branch of the probe, `record_png` in the recorder, 117 records + `png-warnings.txt`.
+- **No change to `src/`.** No reader bug was exposed.
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null (not measurable from inside the session; orchestrator to replace with the harness figure)
+- **Estimated USD:** null
+- **Duration (minutes):** not measured
+- **Source of the number:** none available
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
+- **New decisions emitted:** none.
 - **Deviations from spec:**
-  - [list]
-- **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - The XMP selector means READABLE XMP (an uncompressed `XML:com.adobe.xmp` text we can read), not located XMP. Defined by location, compressed XMP would agree with ExifTool and the spec's "compressed XMP is a divergence" would have no entry. Location is asserted separately in `xmp_keyword_rules_agree`. The ICC selector is by location (`PNG:ProfileName`, which ExifTool prints for any `iCCP`, valid or not; `ICC-header:*` is `-` for a bad header).
+  - Extra record `png-warnings.txt` (second ExifTool run `-a -G1 -s -n -Warning -Error` on 20 fixtures): a `-T -s3` run prints warnings to stderr only when no requested tag is found, so the per-fixture records cannot carry ExifTool's warnings for the shapes the warning table needs.
+  - Recorded stderr is restricted to `Warning:`/`Error:` lines (`oracle::png_warning_lines`): ExifTool prints Perl diagnostics with the host's Homebrew path for `meta-iccp-no-method` and `meta-ztxt-no-method`.
+  - The mutation red-proofs are a separate file (allowed). `app.just` `mutation-oracle` now runs both files. Three existing record-set checks (`jpeg_oracle`, `budget_oracle`, `inventory_oracle`) were widened to ignore `png-*` names (one `.filter` each); no existing record changed.
+- **Follow-up work identified:** none new beyond SPEC-034 (WebP) which reuses this apparatus; `png-warnings.txt` is a record shape SPEC-034 may want too.
+
+### Divergences found (every one is in `guidance/questions.yaml`)
+
+1. `png-raw-profile-not-decoded`: ExifTool 13.55 decodes `Raw profile type exif` and `xmp` (tEXt, zTXt, iTXt): all 14 Exif values and `XMP-xmp:CreatorTool`; we locate only (DEC-018). Entries: `png-raw-exif-text|ztxt|itxt` (wildcard `exif:unread`, ExifTool side pinned to the bare-TIFF record), `png-raw-xmp-text|ztxt|itxt`, and `png-exif-and-raw-exif` (IFD0:Make: ExifTool merges and the raw profile wins, RawCam; we read the eXIf, AlphaCam).
+2. `png-compressed-xmp-not-inflated`: `png-xmp-itxt-compressed`, `png-xmp-ztxt`: ExifTool inflates, we locate (`compressed = true`).
+3. No non-terminating shape: all 49 fixtures and all 68 `png_chunks` seeds returned in under 2 s under an 8 s alarm (probe run before recording). So no `"*"` entry, no not-run record.
+
+### Measured facts worth the orchestrator's attention
+
+- **Several `eXIf`: ExifTool uses the FIRST block that is a TIFF and ignores later ones** (warning "IFD0 pointer references previous IFD0 directory"); tags are NOT merged. This is the opposite of the JPEG rule (merge, later wins). It equals the library's own `PngMetadata::exif()` (first block that parsed), so no harness model beyond that was needed; `several_eXIf_model_is_measured_and_pinned` pins it with five fixtures and shows the JPEG rule would be named wrong. Not a divergence. A fatal block is skipped in either order ("Invalid eXIf chunk").
+- ExifTool ignores the `eXIf` CRC (`png-exif-bad-crc` reads normally, silent); we report `BadChunkCrc` but read too. It also reads an `eXIf` after `IEND`, before `IHDR`, and with the `Exif\0\0` prefix (warns "Improper Exif00 header"), all agreeing with us.
+- Wrapping any of the 12 TIFF fixtures in an `eXIf` chunk changes none of ExifTool's 20 values and none of ours (container independence, live and recorded).
+- Every wrapped fixture and every other shape agreed first time: no unexplained mismatch on the 68 seeds.
+
+### Choices where the spec is silent
+
+- `png-keyword-79` added beside `png-keyword-80` (the boundary); `png-xmp-itxt-flag-2`, `png-xmp-after-idat`, `png-truncated-between-ihdr-and-idat`, `png-exif-good-then-fatal`/`-fatal-then-good` added from measurement.
+- Seeds are compared on the 20 Exif selectors only (as for JPEG); regions only on fixtures.
+- The raw-profile body is built ImageMagick-style (`\nexif\n<len>\n<hex>`, with an `Exif\0\0` prefix on the data); one layout only.
+- Mutants chosen: p1 TIFF offset +1, p2 first block not primary (`insert(0, ..)`), p3 `Exif\0\0` prefix not skipped, p4 trailer scan disabled, p5 XMP keyword routing broken, p6 `iCCP` not located, p7 `iTXt` compression flag ignored (makes a recorded divergence disappear: reported as `stale`, plus the invalid flag-2 shape named); byte mutations b1 GPS pointer inside the `eXIf` payload (CRC recomputed with the oracle's own CRC-32), b2 truncation after the `eXIf` chunk (typed outcome) and inside it (named, live-checked).
+
+### Gate results
+
+`cargo fmt --check`, `cargo clippy --all-targets -D warnings` (via `just lint`), `cargo test` (all binaries, includes `png_oracle` 37 incl. support tests), `just mutation-oracle` (58 + 39 passed), `just validate`, `just cost-audit`, `just forbid-unsafe`: green. `just oracle-record` run three times: no diff after the first (new files only; no existing record changed). Live runs were against the installed ExifTool 13.55 and passed; skip-is-loud and `DIAMOND_EXIF_REQUIRE_ORACLE=1` tested in both files. Not run: fuzz smoke, `lint-red-proof` scripts (nothing in `src/` or fuzz changed).
+
+### Surprising
+
+- ExifTool prints `Raw profile` Exif as a normal `IFD0` group, indistinguishable from eXIf, and `PNG:ProfileName` for an `iCCP` whose ICC header is garbage (`Bad length ICC_Profile` warning but the name is still read).
+- `-T -n -s3` on an unknown signature still prints a `-\t-` line on stdout (so no special case in `parse_fields`).
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
-
+   The "region presence" wording for compressed XMP: by location there is no divergence, so I had to define the selector as readable XMP to honour the pinned-divergence criterion; worth a sentence in the spec.
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
-
+   Three existing record-directory checks (`jpeg_oracle`, `budget_oracle`, `inventory_oracle`) enumerate the whole directory and break when a new record family arrives; SPEC-034 will hit the same.
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   Write the shared `Divergence` wildcard (`exif:unread`) first; run the whole `cargo test` earlier, since the directory-enumeration failures only showed at the end.
