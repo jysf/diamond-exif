@@ -1,6 +1,6 @@
 # command: exiftool -a -G1 -s -n -Warning -Error <file>
 # exiftool-version: 13.55
-# source: fixtures 23
+# source: fixtures 30
 ## webp-exif-prefix
 [ExifTool]      Warning                         : [minor] Improper EXIF header
 ## webp-tail-12-bytes
@@ -38,3 +38,15 @@
 ## webp-exif-basic
 ## webp-xmp-basic
 ## webp-icc-valid-flag-set
+## webp-null-chunk-before-exif
+[ExifTool]      Warning                         : Encountered empty null chunk. Processing aborted
+## webp-null-chunk-tail
+[ExifTool]      Warning                         : Encountered empty null chunk. Processing aborted
+## webp-stray-pad-then-xmp
+## webp-header-20-exif-size-0
+## webp-xmp-utf8-bom
+[ExifTool]      Warning                         : Superfluous BOM at start of XMP
+## webp-xmp-utf16le
+[ExifTool]      Warning                         : XMP is double UTF-encoded
+## webp-exif-tiff-8-bytes
+[ExifTool]      Warning                         : Bad IFD0 directory

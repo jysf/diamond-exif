@@ -1,5 +1,8 @@
 //! ExifTool read-parity oracle for WebP (SPEC-034).
 //!
+//! Seeds are compared on the 20 Exif selectors only (as for PNG), never on XMP
+//! or ICC presence; the hand-built fixtures carry all 22 selectors.
+//!
 //! The same shape as `tests/png_oracle.rs`: live tests run the installed
 //! ExifTool (`-T -n -s3`) over the hand-built WebP fixtures (a variant grid, see
 //! `tests/support/oracle_webp.rs`) and the committed `webp_riff` seeds and
@@ -297,6 +300,21 @@ fn webp_fixtures_are_deterministic_and_uniquely_named() {
         "webp-header-avi",
         "webp-junk-first",
         "webp-animated-three-anmf",
+        "webp-exif-full-one-two",
+        "webp-exif-full-two-one",
+        "webp-exif-blocks-16",
+        "webp-exif-16-then-gps",
+        "webp-exif-make-short-later",
+        "webp-xmp-two-distinct",
+        "webp-xmp-three",
+        "webp-icc-three",
+        "webp-null-chunk-before-exif",
+        "webp-null-chunk-tail",
+        "webp-stray-pad-then-xmp",
+        "webp-header-20-exif-size-0",
+        "webp-xmp-utf8-bom",
+        "webp-xmp-utf16le",
+        "webp-exif-tiff-8-bytes",
     ] {
         assert!(names.contains(&shape), "missing fixture {shape}");
     }
@@ -738,23 +756,78 @@ fn live_webp_skip_is_loud_and_required_mode_fails() {
 /// is Make AlphaCam + Model OnlyInA, B is Make BravoCam). That is the JPEG rule
 /// and NOT the PNG one. The library's own `exif()` is the first block, so the
 /// model is the harness's, as for JPEG.
+/// H1 of the SPEC-034 verify: with several `EXIF` chunks ExifTool's winner is
+/// PER SELECTOR. Two full blocks that differ in every selector, both orders:
+/// the first block wins four selectors and the last wins sixteen.
 #[test]
-fn several_exif_model_is_measured_and_pinned() {
+fn several_exif_model_is_per_selector_and_pinned() {
+    // Equal as text, or as numbers to 1e-9 (ExifTool prints a GPS value with 15
+    // digits, we with 17; the oracle's own comparator does the same).
+    let same = |a: &Option<String>, b: &Option<String>| match (a, b) {
+        (Some(x), Some(y)) => {
+            x == y
+                || matches!((x.parse::<f64>(), y.parse::<f64>()),
+                    (Ok(p), Ok(q)) if (p - q).abs() < 1e-9)
+        }
+        (None, None) => true,
+        _ => false,
+    };
+    let one = ours_fixture(&oracle_webp::file(
+        0x08,
+        &[oracle_webp::chunk(b"EXIF", &oracle_webp::tiff_full(1))],
+    ));
+    let two = ours_fixture(&oracle_webp::file(
+        0x08,
+        &[oracle_webp::chunk(b"EXIF", &oracle_webp::tiff_full(2))],
+    ));
+    let names = oracle::names(SELECTORS);
+    let mut first_wins: Vec<&str> = Vec::new();
+    for (i, sel) in names.iter().enumerate() {
+        let (v1, v2) = (&one[i], &two[i]);
+        assert!(
+            v1.is_some() && v2.is_some() && v1 != v2,
+            "{sel}: the two blocks must each read and differ ({v1:?} {v2:?})"
+        );
+        for (name, first, last) in [
+            ("webp-exif-full-one-two", v1, v2),
+            ("webp-exif-full-two-one", v2, v1),
+        ] {
+            let theirs = theirs_fixture(name);
+            let ours = ours_fixture(&fixture(name));
+            // ExifTool's value is the first block's or the last block's.
+            let t = &theirs[i];
+            assert!(
+                same(t, first) || same(t, last),
+                "{name} {sel}: ExifTool printed {t:?}, neither {first:?} nor {last:?}"
+            );
+            assert!(same(&ours[i], &theirs[i]), "{name} {sel}: ours against ExifTool");
+        }
+        // The winner is the same in both orders (first or last, never mixed).
+        let a = &theirs_fixture("webp-exif-full-one-two")[i];
+        let b = &theirs_fixture("webp-exif-full-two-one")[i];
+        if same(a, v1) && same(b, v2) {
+            first_wins.push(sel);
+        } else {
+            assert!(same(a, v2) && same(b, v1), "{sel}: ExifTool is not first or last");
+        }
+    }
+    assert_eq!(first_wins, oracle::WEBP_FIRST_BLOCK_WINS, "first-wins set");
+    assert_eq!(first_wins.len(), 4);
+    assert_clean("webp-exif-full-one-two");
+    assert_clean("webp-exif-full-two-one");
+
+    // The smaller shapes the first model was built from still hold.
     let make = index_of("IFD0:Make");
     let model = index_of("IFD0:Model");
     for (name, want_make, want_model) in [
-        // A then B: B's Make wins, A's Model survives (merged).
         ("webp-exif-two-same-tag", "BravoCam", Some("OnlyInA")),
-        // B then A: A's Make wins.
         (
             "webp-exif-two-same-tag-reversed",
             "AlphaCam",
             Some("OnlyInA"),
         ),
-        // A block that is not a TIFF is ignored, in either order.
         ("webp-exif-bad-then-good", "AlphaCam", Some("OnlyInA")),
         ("webp-exif-good-then-bad", "AlphaCam", Some("OnlyInA")),
-        // A prefixed later block merges like any other.
         ("webp-exif-good-then-prefixed", "BravoCam", Some("OnlyInA")),
     ] {
         let theirs = theirs_fixture(name);
@@ -765,15 +838,72 @@ fn several_exif_model_is_measured_and_pinned() {
         assert_eq!(ours[model].as_deref(), want_model, "{name}: our Model");
         assert_clean(name);
     }
-    // The PNG model (first block only) would be wrong here, so the two models
-    // are not interchangeable: the library's `exif()` reads A's Make for the
-    // first fixture.
+    // The library's `exif()` is the first block only: not interchangeable.
     let bytes = fixture("webp-exif-two-same-tag");
     let meta = webp::read(&bytes).expect("a WebP");
     let first = meta.exif().expect("primary exif");
     let first_make = oracle::read_one(first, &SELECTORS[make]);
     assert_eq!(first_make.as_deref(), Some("AlphaCam"));
     assert_eq!(meta.exif_blocks().len(), 2);
+}
+
+/// M1 of the verify: the cap of 16 blocks. At the cap both read the 16th block;
+/// past it ExifTool reads the 17th and we drop it (pinned as
+/// `webp-exif-block-cap`).
+#[test]
+fn exif_block_cap_is_measured_against_exiftool() {
+    let make = index_of("IFD0:Make");
+    let lat = index_of("Composite:GPSLatitude");
+    let lon = index_of("Composite:GPSLongitude");
+    assert_clean("webp-exif-blocks-16");
+    let t = theirs_fixture("webp-exif-blocks-16");
+    assert_eq!(t[make].as_deref(), Some("Block15"));
+    let meta_bytes = fixture("webp-exif-blocks-16");
+    let meta = webp::read(&meta_bytes).expect("a WebP");
+    assert_eq!(meta.exif_blocks().len(), 16);
+
+    let bytes = fixture("webp-exif-16-then-gps");
+    let meta = webp::read(&bytes).expect("a WebP");
+    assert_eq!(meta.exif_blocks().len(), 16, "the 17th block is dropped");
+    let ours = ours_fixture(&bytes);
+    let theirs = theirs_fixture("webp-exif-16-then-gps");
+    assert!(theirs[lat].is_some() && theirs[lon].is_some(), "ExifTool reads the 17th");
+    assert!(ours[lat].is_none() && ours[lon].is_none(), "we drop it");
+    assert_clean("webp-exif-16-then-gps");
+}
+
+/// M3 of the verify: ExifTool stops at an empty null chunk, we read on.
+#[test]
+fn empty_null_chunk_stops_exiftool_and_not_us() {
+    let make = index_of("IFD0:Make");
+    let before = theirs_fixture("webp-null-chunk-before-exif");
+    assert!(before[make].is_none(), "ExifTool aborts before the EXIF");
+    assert_eq!(
+        ours_fixture(&fixture("webp-null-chunk-before-exif"))[make].as_deref(),
+        Some("AlphaCam")
+    );
+    assert_clean("webp-null-chunk-before-exif");
+    // After the EXIF the abort costs nothing: both read it.
+    assert_eq!(
+        theirs_fixture("webp-null-chunk-tail")[make].as_deref(),
+        Some("AlphaCam")
+    );
+    assert_clean("webp-null-chunk-tail");
+}
+
+/// L1 of the verify: a later block holding Make as a SHORT.
+#[test]
+fn later_block_with_a_short_make_is_a_pinned_model_limit() {
+    let make = index_of("IFD0:Make");
+    assert_eq!(
+        theirs_fixture("webp-exif-make-short-later")[make].as_deref(),
+        Some("7")
+    );
+    assert_eq!(
+        ours_fixture(&fixture("webp-exif-make-short-later"))[make].as_deref(),
+        Some("AlphaCam")
+    );
+    assert_clean("webp-exif-make-short-later");
 }
 
 #[test]
@@ -1130,6 +1260,41 @@ const WARNING_TABLE: &[(&str, &str, &str, &[&str])] = &[
     ("webp-exif-basic", "", "ok", &[]),
     ("webp-xmp-basic", "", "", &[]),
     ("webp-icc-valid-flag-set", "", "", &[]),
+    // SPEC-034 verify punch list (L2, M3): ExifTool stops at an empty null chunk
+    // (before the EXIF it prints nothing, divergence `webp-null-chunk-not-a-stop`;
+    // after it the warning costs nothing); we have no WebP-layer issue for it.
+    (
+        "webp-null-chunk-before-exif",
+        "",
+        "ok",
+        &["Encountered empty null chunk"],
+    ),
+    (
+        "webp-null-chunk-tail",
+        "",
+        "ok",
+        &["Encountered empty null chunk"],
+    ),
+    // A stray byte after an even EXIF: ExifTool is silent, we say Truncated; both
+    // lose the XMP behind it.
+    ("webp-stray-pad-then-xmp", "Truncated", "ok", &[]),
+    // RIFF + an empty EXIF and nothing else: ExifTool is silent.
+    ("webp-header-20-exif-size-0", "MetadataWithoutVp8x", "fatal", &[]),
+    // ExifTool warns about the packet's encoding; we only locate it.
+    (
+        "webp-xmp-utf8-bom",
+        "",
+        "",
+        &["Superfluous BOM at start of XMP"],
+    ),
+    (
+        "webp-xmp-utf16le",
+        "",
+        "",
+        &["XMP is double UTF-encoded"],
+    ),
+    // An 8-byte TIFF (header, no IFD): both sides call it bad.
+    ("webp-exif-tiff-8-bytes", "", "fatal", &["Bad IFD0 directory"]),
 ];
 
 /// The committed warning record: `## name` sections of ExifTool's
@@ -1319,4 +1484,62 @@ fn located_region_bytes_equal_what_the_builders_wrote() {
     let block = &meta.exif_blocks()[0];
     assert_eq!(block.tiff(), &oracle_webp::tiff_a()[..]);
     assert_eq!(block.tiff_at(), block.offset() + 8 + 6);
+}
+
+/// The regions we locate in `bytes`, as the oracle table states them: the code
+/// is read from the input at the reported offset.
+fn located_regions(bytes: &[u8]) -> Vec<oracle_webp::Expect> {
+    let Ok(meta) = webp::read(bytes) else {
+        return Vec::new();
+    };
+    meta.regions()
+        .iter()
+        .map(|r| {
+            let (offset, data) = match *r {
+                WebpRegion::Xmp { offset, data } | WebpRegion::Icc { offset, data } => {
+                    (offset, data)
+                }
+                other => panic!("an unexpected region kind {other:?}"),
+            };
+            let code: [u8; 4] = bytes[offset..offset + 4].try_into().expect("4 bytes");
+            oracle_webp::Expect {
+                code,
+                offset,
+                bytes: data.to_vec(),
+            }
+        })
+        .collect()
+}
+
+/// M2 of the verify: the located regions (count, order, kind, offset, bytes,
+/// empty ones included) equal the table written by the builders, for every
+/// fixture. A fixture with an `XMP `, `XMP\0` or `ICCP` chunk code that is not
+/// in the table fails; so does a table row for a fixture that does not exist.
+#[test]
+fn located_regions_equal_the_independent_table_for_every_region_fixture() {
+    let table = oracle_webp::expected_regions();
+    let mut checked = 0usize;
+    for (name, bytes) in oracle_webp::fixtures() {
+        let want = table.iter().find(|(n, _)| *n == name).map(|(_, e)| e);
+        if want.is_none() {
+            assert!(
+                !oracle_webp::has_region_chunk_code(&bytes),
+                "{name} has an XMP or ICCP chunk code and is not in expected_regions()"
+            );
+        }
+        let want = want.cloned().unwrap_or_default();
+        assert_eq!(located_regions(&bytes), want, "{name}: located regions");
+        checked += want.len();
+    }
+    for (n, _) in &table {
+        assert!(
+            oracle_webp::fixtures().iter().any(|(f, _)| f == n),
+            "{n} is not a fixture"
+        );
+    }
+    assert!(checked >= 40, "only {checked} regions checked");
+    // The several-region fixtures are distinguishable by content.
+    let distinct = located_regions(&fixture("webp-xmp-two-distinct"));
+    assert_eq!(distinct.len(), 2);
+    assert_ne!(distinct[0].bytes, distinct[1].bytes);
 }

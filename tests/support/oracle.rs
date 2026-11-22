@@ -556,6 +556,51 @@ pub const KNOWN_DIVERGENCES: &[Divergence] = &[
         question_id: "png-compressed-xmp-not-inflated",
     },
     Divergence {
+        fixture: "webp-exif-16-then-gps",
+        selector: "Composite:GPSLatitude",
+        command: WEBP_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool reads the 17th EXIF chunk (the first 16 are the same TIFF with no GPS, the 17th holds GPS only) and prints the GPS value; exif-core keeps at most 16 EXIF blocks (MAX_WEBP_EXIF_BLOCKS), drops the 17th, and reads no GPS.",
+        right_side: "neither: the cap is a bounded-work policy of ours (DEC-019), not a format rule. The audit must report blocks past the cap, because 16 decoy blocks can hide GPS.",
+        question_id: "webp-exif-block-cap",
+    },
+    Divergence {
+        fixture: "webp-exif-16-then-gps",
+        selector: "Composite:GPSLongitude",
+        command: WEBP_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool reads the 17th EXIF chunk (the first 16 are the same TIFF with no GPS, the 17th holds GPS only) and prints the GPS value; exif-core keeps at most 16 EXIF blocks (MAX_WEBP_EXIF_BLOCKS), drops the 17th, and reads no GPS.",
+        right_side: "neither: the cap is a bounded-work policy of ours (DEC-019), not a format rule. The audit must report blocks past the cap, because 16 decoy blocks can hide GPS.",
+        question_id: "webp-exif-block-cap",
+    },
+    Divergence {
+        fixture: "webp-null-chunk-before-exif",
+        selector: "IFD0:Make",
+        command: WEBP_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool warns Encountered empty null chunk. Processing aborted at an 8-byte all-zero chunk before the EXIF chunk and prints no Make or Model; exif-core treats the null chunk as an unknown empty chunk, walks on and reads the EXIF.",
+        right_side: "neither is wrong: ExifTool stops at a null chunk, exif-core reads on (the over-read is the safe side for an audit, DEC-019 unchanged); the null chunk is recorded in the warning table.",
+        question_id: "webp-null-chunk-not-a-stop",
+    },
+    Divergence {
+        fixture: "webp-null-chunk-before-exif",
+        selector: "IFD0:Model",
+        command: WEBP_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool warns Encountered empty null chunk. Processing aborted at an 8-byte all-zero chunk before the EXIF chunk and prints no Make or Model; exif-core treats the null chunk as an unknown empty chunk, walks on and reads the EXIF.",
+        right_side: "neither is wrong: ExifTool stops at a null chunk, exif-core reads on (the over-read is the safe side for an audit, DEC-019 unchanged); the null chunk is recorded in the warning table.",
+        question_id: "webp-null-chunk-not-a-stop",
+    },
+    Divergence {
+        fixture: "webp-exif-make-short-later",
+        selector: "IFD0:Make",
+        command: WEBP_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool prints 7 for IFD0:Make when the later EXIF block stores Make as a SHORT (type 3) 7 and the earlier block holds the ASCII AlphaCam; the harness model cannot read a SHORT as text, skips that block and reads AlphaCam.",
+        right_side: "ExifTool: the later block's tag wins whatever its type. The library exposes the typed entry; only the harness text selector cannot render it (webp-exif-nonascii-make).",
+        question_id: "webp-exif-nonascii-make",
+    },
+    Divergence {
         fixture: "webp-icc-garbage",
         selector: "ICC-header:ProfileFileSignature",
         command: WEBP_COMMAND,
@@ -1207,13 +1252,32 @@ pub fn compare_png(
 
 // ── WebP (SPEC-034) ─────────────────────────────────────────────────────────
 
+/// The Exif selectors for which ExifTool 13.55 keeps the FIRST `EXIF` block's
+/// value when a WebP has several, not the last. Measured per selector (SPEC-034
+/// verify H1) on `webp-exif-full-one-two` and `webp-exif-full-two-one`, two
+/// full blocks that differ in every one of the 20 selectors: these four keep
+/// the first block's value in both orders, the other 16 take the later block's.
+/// `tests/webp_oracle.rs::several_exif_model_is_per_selector_and_pinned`
+/// reads all 20 in both orders and fails if this list is wrong.
+pub const WEBP_FIRST_BLOCK_WINS: &[&str] = &[
+    "IFD0:ImageWidth",
+    "IFD0:ImageHeight",
+    "IFD0:Orientation",
+    "IFD0:XResolution",
+];
+
 /// Our reading of every selector from a WebP, modelled on what ExifTool 13.55
-/// was measured to do with several `EXIF` chunks (`webp-two-exif-same-tag`,
-/// `-reversed`, `webp-exif-bad-then-good`, `-good-then-bad`): the tags of the
-/// blocks MERGE and the LATER block wins per tag, a block that is not a TIFF is
-/// ignored. That is the JPEG rule ([`read_ours_jpeg`]) and NOT the PNG one
-/// ([`read_ours_png`]: first block only). Each selector reads from the last
-/// block, in file order, whose container parsed and that has the tag.
+/// was measured to do with several `EXIF` chunks: the tags of the blocks MERGE,
+/// a block that is not a TIFF is ignored, and the winner is PER SELECTOR: the
+/// FIRST block that has the tag for the four selectors in
+/// [`WEBP_FIRST_BLOCK_WINS`], the LAST block that has it for the other 16.
+/// This is neither the JPEG model ([`read_ours_jpeg`]: later wins, unmeasured
+/// per selector) nor the PNG one ([`read_ours_png`]: first block only).
+///
+/// A known limit (L1): a block whose value for a selector is of a type
+/// `read_one` cannot read (Make stored as SHORT) is skipped, so the earlier
+/// block's value is read, while ExifTool prints the later block's value
+/// (`webp-exif-make-short-later`, pinned as `webp-exif-nonascii-make`).
 ///
 /// This is the harness's model, not a library feature: the library keeps "the
 /// first block is primary" (DEC-019).
@@ -1221,10 +1285,15 @@ pub fn read_ours_webp(meta: &WebpMetadata<'_>, selectors: &[Selector]) -> Vec<Op
     selectors
         .iter()
         .map(|s| {
-            meta.exif_blocks()
+            let mut read = meta
+                .exif_blocks()
                 .iter()
-                .rev()
-                .find_map(|b| b.container().ok().and_then(|c| read_one(c, s)))
+                .filter_map(|b| b.container().ok().and_then(|c| read_one(c, s)));
+            if WEBP_FIRST_BLOCK_WINS.contains(&s.exiftool) {
+                read.next()
+            } else {
+                read.last()
+            }
         })
         .collect()
 }

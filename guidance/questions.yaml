@@ -1527,3 +1527,50 @@ questions:
       Right side: exif-core, for a WebP reader: these are not WebP files. A caller that wants
       WAV or AVI metadata needs another reader. Recorded, not silenced.
       Pinned in KNOWN_DIVERGENCES.
+
+  - id: webp-exif-block-cap
+    question: "ExifTool 13.55 reads every EXIF chunk of a WebP; exif-core keeps at most 16 (MAX_WEBP_EXIF_BLOCKS) and drops the rest: is the cap policy right, and must the audit report blocks past it?"
+    priority: medium
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-21
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-034 verify M1). Command as for webp-iccp-profile-not-validated. Measured
+      on webp-exif-16-then-gps (16 EXIF chunks holding the same TIFF with no GPS, then a 17th
+      holding only GPS): ExifTool prints Composite:GPSLatitude 37.4252083333333 and
+      GPSLongitude 122.096916666667; we read the first 16 and print no GPS. Control:
+      webp-exif-blocks-16 (exactly the cap, 16 distinct Makes): both read Block15, no divergence.
+      Right side: neither; the cap is OUR bounded-work policy, not a format rule. The privacy
+      consequence is real: 16 decoy blocks hide GPS from a reader that stops at the cap while
+      ExifTool shows it, so SPEC-032's audit must report that blocks past the cap exist
+      (never conclude "no GPS" from the first 16). Pinned in KNOWN_DIVERGENCES.
+
+  - id: webp-null-chunk-not-a-stop
+    question: "ExifTool 13.55 stops processing a WebP at an empty chunk whose code is four NUL bytes; exif-core treats it as an unknown chunk and reads on: is over-reading the intended side?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-21
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-034 verify M3). Command as for webp-iccp-profile-not-validated. Measured
+      on webp-null-chunk-before-exif (8 zero bytes before the EXIF chunk, RIFF size exact):
+      ExifTool warns "Encountered empty null chunk. Processing aborted" and prints no Make or
+      Model; exif-core reads AlphaCam / OnlyInA with no issue. Control webp-null-chunk-tail
+      (the 8 zero bytes after the EXIF): both read the EXIF. Right side: neither is wrong;
+      exif-core over-reads, the safe side for an audit (DEC-019 unchanged). Pinned in
+      KNOWN_DIVERGENCES and in the warning table.
+
+  - id: webp-exif-nonascii-make
+    question: "When a later EXIF block stores Make as a SHORT, ExifTool prints that value and the harness text model reads the earlier block's ASCII Make: is a typed-entry rendering needed?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-21
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-034 verify L1), a limit of the harness model, not of the library. Command
+      as for webp-iccp-profile-not-validated. Measured on webp-exif-make-short-later (EXIF with
+      Make AlphaCam, then EXIF with Make as a SHORT 7): ExifTool prints 7; the harness reads
+      AlphaCam because read_one returns none for a SHORT Make. Pinned in KNOWN_DIVERGENCES.
