@@ -6,19 +6,19 @@
 task:
   id: SPEC-034
   type: story                      # epic | story | task | bug | chore
-  cycle: verify  # frame | design | build | verify | ship
+  cycle: build  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
   complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: punch-list  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
                                    #   rejects anything" stops being a hunch and becomes a number.
-  verify_rounds: []                # every verify outcome, oldest first, appended by
+  verify_rounds: [punch-list]  # every verify outcome, oldest first, appended by
                                    #   `just advance-cycle` each time the spec leaves verify.
                                    #   verify_verdict keeps only the LAST one, so a spec sent
                                    #   back and then approved read as "approved": irradiance's
@@ -79,10 +79,20 @@ cost:
       duration_minutes: null
       recorded_at: 2026-11-21
       notes: "tokens_total is null: the implementer cannot read its own transcript token counts; the orchestrator replaces it with the harness figure. About 75 tool calls used. Not pushed, no PR."
+    - cycle: verify
+      handoff: HANDOFF-065
+      agent: claude-opus-5-5
+      interface: other
+      basis: estimate
+      tokens_total: 216520
+      estimated_usd: 1.43
+      duration_minutes: 60
+      recorded_at: 2026-11-21
+      notes: "tokens_total is null: the verifier cannot read its own transcript token counts; the orchestrator replaces it with the harness figure. About 45 tool calls. Review only; nothing pushed."
   totals:
-    tokens_total: 299389
-    estimated_usd: 1.98
-    session_count: 1
+    tokens_total: 515909
+    estimated_usd: 3.41
+    session_count: 2
 ---
 
 # SPEC-034: WebP read parity against ExifTool: comparator, red-proofs, SPEC-030 carried gaps
