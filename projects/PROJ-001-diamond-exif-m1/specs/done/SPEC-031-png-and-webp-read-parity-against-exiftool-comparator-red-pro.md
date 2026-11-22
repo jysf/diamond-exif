@@ -6,19 +6,19 @@
 task:
   id: SPEC-031
   type: story                      # epic | story | task | bug | chore
-  cycle: verify  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
   complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: approved  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
                                    #   rejects anything" stops being a hunch and becomes a number.
-  verify_rounds: []                # every verify outcome, oldest first, appended by
+  verify_rounds: [approved]  # every verify outcome, oldest first, appended by
                                    #   `just advance-cycle` each time the spec leaves verify.
                                    #   verify_verdict keeps only the LAST one, so a spec sent
                                    #   back and then approved read as "approved": irradiance's
@@ -113,6 +113,7 @@ cost:
     tokens_total: 1290160
     estimated_usd: 8.51
     session_count: 4
+shipped_at: 2026-11-21
 ---
 
 # SPEC-031: PNG read parity against ExifTool: comparator, records, red-proofs
@@ -182,22 +183,19 @@ Written first. The build is mostly tests, so "failing first" means the comparato
 *Appended during **ship**. Three questions, short answers.*
 
 1. **What would I do differently next time?**
-   — <answer>
+   — Require the oracle fixture list to be generated from a variant grid (every header field of every chunk type, empty / 1 / 79 / 80 / long, each compression flag) instead of hand-picked shapes: round 1 and round 2 each found a located-metadata disagreement in a shape outside the list (iCCP names, iTXt language tags, empty keywords), three fix rounds in all. Also never resume a builder for a follow-up: a fresh agent with a narrow handoff cost 168,851 tokens against 424,039 for the resumed one, which also looped re-delivering its hand-back.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — DEC-018 gained two clarification sections (iCCP names, iTXt language tags, empty keyword, unparseable chunks). Process: orchestrator lesson, resume costs a full history re-read; prefer fresh narrow handoffs for follow-ups. The last fix round (empty keyword) was accepted by the orchestrator without a third cold verify (same rule as already verified twice, re-measured against ExifTool, gates green): say so when reading the verdict.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — No new spec. SPEC-032 must treat any BadTextChunk or BadIccpChunk issue as metadata present that we could not read, and a RawProfile region beside an eXIf as a possible override of it (carried as notes). Decoding compressed or raw-profile data remains a later decision.
 
 4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
    the defect-escape distribution is greppable across specs:
    `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
    `none` (clean first try).
-   — <one word>
+   — verify
    *(Runtime/operational defects — the escape-prone class — only exist once the
    artifact meets its real host. `escaped` here is a signal to strengthen the
    §12 behavioral pre-flight for that surface.)*

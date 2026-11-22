@@ -178,3 +178,9 @@ context graph lives in the handoff file.
 
 - A zero-length `Xmp` or `Icc` region (WebP) must not count as XMP or ICC present: ExifTool shows nothing for it (DEC-019 clarification).
 - PNG `Xmp`/`Icc`/`RawProfile` regions that are compressed, and PNG raw-profile text, are metadata the audit could not read (DEC-018); report them as such.
+
+## Carried from SPEC-031 verify (2026-11-21)
+
+- Any `BadTextChunk` or `BadIccpChunk` (PNG) issue means metadata is present that we could not read (ExifTool exposes such chunks as raw data or a name): report it as unreadable metadata, not as clean.
+- A PNG `RawProfile` region beside an `eXIf` may override it (ExifTool merges both and the later raw value wins, including raw-only tags such as GPS): flag the pair.
+- A PNG `Icc` region with an empty name is a real profile (ExifTool reads it); `Xmp` is only an `iTXt`/`tEXt`/`zTXt` XMP-keyword chunk with an empty language tag.
