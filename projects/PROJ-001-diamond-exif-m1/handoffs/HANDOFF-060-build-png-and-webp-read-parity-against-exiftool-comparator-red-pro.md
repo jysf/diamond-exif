@@ -50,9 +50,9 @@ handback:
   agent: claude-sonnet-5-5                    # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: estimate                  # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  basis: agent-result                  # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 330309              # harness subagent_tokens
+  estimated_usd: 2.18              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
   branch: claude/spec-031-png-parity
   pr: null
