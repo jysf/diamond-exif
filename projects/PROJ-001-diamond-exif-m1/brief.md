@@ -74,17 +74,17 @@ The design and porting brief are complete and carry named failure modes. The fir
 
 - [x] STAGE-001 (shipped 2026-11-05) — M1a foundation: scaffold, gates, DEC-001..005, strict TIFF skeleton port, tolerant walk, multi-IFD walk, decoders, oracle discipline, mutated-copy red-proofs, CI
 - [x] STAGE-002 (shipped on 2026-11-05) — M1b JPEG container read parity: segment walker + `jpeg_segments` fuzz, Exif and located regions, ExifTool parity and JPEG red-proofs
-- [ ] STAGE-008 (proposed) — PNG and WebP readers (M1b rest): chunk and RIFF walkers, metadata regions, `png_chunks` and `webp_riff` fuzz targets, ExifTool read parity, audit wiring; 5 specs framed (SPEC-028 to SPEC-032); writers stay in M1d
+- [x] STAGE-008 (shipped on 2026-11-22) — PNG and WebP readers (M1b rest): chunk and RIFF walkers, metadata regions, `png_chunks` and `webp_riff` fuzz targets, ExifTool read parity, audit wiring (DEC-017 to DEC-020); 7 specs, inventory parity (SPEC-036) carried to STAGE-010
 - [x] STAGE-003 (shipped on 2026-11-06) — `exif-audit` CLI: audit model, inventory parity, strip-policy preview, renderers + fuzz, the incremental report builder, the binary
 - [x] STAGE-004 (shipped on 2026-11-10) — M1c JPEG and TIFF writer: audit coverage of writer-relevant structures, segment-level strip, in-place IFD strip, TIFF/DNG strip (SPIKE-001 is the evidence); 4 specs, 4,921,119 tokens, 32.47 USD
 - [x] STAGE-005 (shipped on 2026-11-19) — DEC-008 audit gaps: DNG identity tag categories and a container-aware TIFF page rule; 1 spec, 561,674 tokens, 3.71 USD
 - [x] STAGE-006 (shipped on 2026-11-21) — First public alpha: `exif-audit` v0.1.0-alpha.1, a public GitHub pre-release with binaries for Linux x86_64, macOS arm64 and macOS Intel; 1 spec, 1,186,445 tokens, 7.83 USD
 - [ ] STAGE-007 (proposed) — Relocatable Exif block for another TIFF writer (requested by monorail-000; consumer decision monorail-000/DEC-075): Exif, GPS and Interop IFDs rebuilt at a caller-given base, MakerNote left out, ExifTool parity, optional presets; DEC-014, DEC-015; 3 specs framed
 - [ ] (not yet defined) — exif-core crates.io pre-release once STAGE-007 ships and SPEC-025 and SPEC-026 are verified, before M1f, for monorail-000 to pin exactly (monorail-000/DEC-077 item 2); a release spec with the DEC-006 pre-flight
-- [ ] (not yet defined) — M1d: PNG and WebP writers, `set` operations, MakerNote rules
+- [ ] STAGE-010 (proposed) — M1d PNG and WebP strip: tag-level inventory parity (SPEC-036), PNG strip (SPEC-037), WebP strip (SPEC-038), ExifTool write parity and audit switch-over (SPEC-039); `set` operations and MakerNote rules stay out
 - [ ] (not yet defined) — M1e/M1f: HEIC read, IPTC/ICC passthrough, 24 h fuzz gate, publish
 
-**Count:** 6 shipped / 0 active / 5 pending
+**Count:** 7 shipped / 0 active / 5 pending
 
 ## Dependencies
 
