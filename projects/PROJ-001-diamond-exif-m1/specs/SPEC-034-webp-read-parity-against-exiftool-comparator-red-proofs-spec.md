@@ -6,7 +6,7 @@
 task:
   id: SPEC-034
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: verify  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -68,11 +68,21 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: 400000
-  sessions: []
+  sessions:
+    - cycle: build
+      handoff: HANDOFF-064
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: estimate
+      tokens_total: 299389
+      estimated_usd: 1.98
+      duration_minutes: null
+      recorded_at: 2026-11-21
+      notes: "tokens_total is null: the implementer cannot read its own transcript token counts; the orchestrator replaces it with the harness figure. About 75 tool calls used. Not pushed, no PR."
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 299389
+    estimated_usd: 1.98
+    session_count: 1
 ---
 
 # SPEC-034: WebP read parity against ExifTool: comparator, red-proofs, SPEC-030 carried gaps

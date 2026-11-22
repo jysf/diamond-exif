@@ -51,15 +51,15 @@ handback:
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
   basis: estimate                  # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  tokens_total: 299389              # harness subagent_tokens
+  estimated_usd: 1.98
   duration_minutes: null
   branch: claude/spec-034-webp-parity
   pr: null
   completed_at: 2026-11-21         # YYYY-MM-DD
   notes: "tokens_total is null: the implementer cannot read its own transcript token counts; the orchestrator replaces it with the harness figure. About 75 tool calls used. Not pushed, no PR."
   # notes (original comment): if unusual; double-quote it — an unquoted " #" starts a YAML comment
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-21
 ---
 
 # HANDOFF-064: Build SPEC-034 WebP read parity against ExifTool
