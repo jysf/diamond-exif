@@ -483,3 +483,40 @@ fn every_prefix_and_byte_flip_is_panic_free() {
         let _ = name;
     }
 }
+
+// ── SPEC-034 carried gaps ───────────────────────────────────────────────────
+
+/// A mutant making the LAST `VP8X` win survives the older tests: here the
+/// first header has flags 0 and the second (misplaced) has the EXIF flag.
+#[test]
+fn first_vp8x_wins_flags_and_one_flag_mismatch() {
+    let d = riff(&[vp8x(0, 1, 1), vp8x(FLAG_EXIF, 1, 1), vp8l(), exif()]);
+    let w = Webp::parse(&d).expect("two vp8x");
+    assert_eq!(w.vp8x().expect("info").flags(), 0);
+    let mismatches: Vec<Error> = errors(&w)
+        .into_iter()
+        .filter(|e| matches!(e, Error::ChunkFlagMismatch { .. }))
+        .collect();
+    assert_eq!(
+        mismatches,
+        vec![Error::ChunkFlagMismatch {
+            flag: "EXIF",
+            declared: false
+        }]
+    );
+    // The flag mismatch is reported at the FIRST VP8X (offset 12).
+    let at: Vec<usize> = w
+        .issues()
+        .iter()
+        .filter(|i| matches!(i.error(), Error::ChunkFlagMismatch { .. }))
+        .map(|i| i.offset())
+        .collect();
+    assert_eq!(at, vec![12]);
+}
+
+/// The two walk limits are API: pinned as literals, not as the constants.
+#[test]
+fn limits_are_pinned_literals() {
+    assert_eq!(MAX_WEBP_CHUNKS, 65_536);
+    assert_eq!(MAX_WEBP_ISSUES, 1024);
+}
