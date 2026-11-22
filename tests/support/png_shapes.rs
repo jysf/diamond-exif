@@ -340,6 +340,25 @@ pub fn meta_seeds() -> Vec<(&'static str, Vec<u8>)> {
             "meta-itxt-flag-2",
             wrap(vec![chunk(b"iTXt", &itxt_xmp_flag_2())]),
         ),
+        // SPEC-031 verify, round 2: an iCCP name of 80 bytes, an XMP iTXt with a
+        // language tag (plain text, not XMP), and the empty keyword in zTXt and
+        // iTXt (the tEXt one is `meta-text-empty-keyword`).
+        (
+            "meta-iccp-name-80",
+            wrap(vec![iccp(&[b'N'; 80], 0, &[0x78, 1, 2])]),
+        ),
+        (
+            "meta-itxt-xmp-lang",
+            wrap(vec![itxt(b"XML:com.adobe.xmp", 0, b"en-US", b"", b"<x/>")]),
+        ),
+        (
+            "meta-ztxt-empty-keyword",
+            wrap(vec![ztxt(b"", &[0x78, 1, 2])]),
+        ),
+        (
+            "meta-itxt-empty-keyword",
+            wrap(vec![itxt(b"", 0, b"", b"", b"value")]),
+        ),
     ]
 }
 

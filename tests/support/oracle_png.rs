@@ -505,6 +505,17 @@ fn shapes() -> Vec<(&'static str, Vec<u8>)> {
         ),
         // A text chunk with no NUL: nothing to locate, one BadTextChunk issue.
         ("png-text-no-nul", clean(&[chunk(b"tEXt", b"nonulhere")])),
+        // An empty keyword (SPEC-031 verify, round 2): ExifTool shows the value as
+        // a tag named `Tag`, in all three chunk types.
+        ("png-text-empty-keyword", clean(&[text(b"", b"John Doe")])),
+        (
+            "png-text-empty-keyword-ztxt",
+            clean(&[ztxt(b"", b"secret value")]),
+        ),
+        (
+            "png-text-empty-keyword-itxt",
+            clean(&[itxt(b"", 0, b"secret value")]),
+        ),
         // An eXIf, an XMP chunk and an iCCP together (a second region matters).
         (
             "png-exif-xmp-iccp",
@@ -528,6 +539,21 @@ pub struct Expect {
     pub compressed: bool,
     pub name: Vec<u8>,
     pub data: Vec<u8>,
+    /// Where the chunk starts in the file, from the builders' chunk lengths.
+    pub offset: usize,
+}
+
+impl Expect {
+    /// The same region, at `offset` instead of the first chunk position.
+    fn at(mut self, offset: usize) -> Self {
+        self.offset = offset;
+        self
+    }
+}
+
+/// The offset of the first chunk after `IHDR`: the signature and the `IHDR` chunk.
+fn first_chunk_offset() -> usize {
+    SIGNATURE.len() + ihdr().len()
 }
 
 fn ex(kind: &'static str, compressed: bool, name: &[u8], data: Vec<u8>) -> Expect {
@@ -536,6 +562,7 @@ fn ex(kind: &'static str, compressed: bool, name: &[u8], data: Vec<u8>) -> Expec
         compressed,
         name: name.to_vec(),
         data,
+        offset: first_chunk_offset(),
     }
 }
 
@@ -551,6 +578,13 @@ pub fn expected_regions() -> Vec<(&'static str, Vec<Expect>)> {
         "exif",
         &[&b"Exif\0\0"[..], &tiff_of(&[(t::T_MAKE, "RawCam")])].concat(),
     );
+    // The leading `eXIf` chunks' lengths, for the regions that follow them.
+    let exif_len = exif_chunk(&basic()).len();
+    let mixed_exif_len = exif_chunk(&tiff_of(&[
+        (t::T_MAKE, "AlphaCam"),
+        (t::T_MODEL, "OnlyInA"),
+    ]))
+    .len();
     let xmp_r = |c: bool, d: &[u8]| ex("xmp", c, b"", d.to_vec());
     let icc = |n: &[u8]| ex("icc", true, n, prof.clone());
     vec![
@@ -559,7 +593,10 @@ pub fn expected_regions() -> Vec<(&'static str, Vec<Expect>)> {
         ("png-xmp-text", vec![xmp_r(false, &xmp)]),
         ("png-xmp-ztxt", vec![xmp_r(true, &xz)]),
         ("png-xmp-itxt-flag-2", vec![xmp_r(true, &xmp)]),
-        ("png-xmp-after-idat", vec![xmp_r(false, &xmp)]),
+        (
+            "png-xmp-after-idat",
+            vec![xmp_r(false, &xmp).at(first_chunk_offset() + idat().len())],
+        ),
         (
             "png-xmp-other-keyword",
             vec![ex("text", false, b"Comment", xmp.clone())],
@@ -591,7 +628,11 @@ pub fn expected_regions() -> Vec<(&'static str, Vec<Expect>)> {
         ("png-iccp-name-empty", vec![icc(b"")]),
         (
             "png-exif-xmp-iccp",
-            vec![xmp_r(false, &xmp), icc(b"diamond")],
+            vec![
+                xmp_r(false, &xmp).at(first_chunk_offset() + exif_len),
+                icc(b"diamond")
+                    .at(first_chunk_offset() + exif_len + itxt(XMP_KEYWORD, 0, &xmp).len()),
+            ],
         ),
         (
             "png-raw-exif-text",
@@ -619,7 +660,19 @@ pub fn expected_regions() -> Vec<(&'static str, Vec<Expect>)> {
         ),
         (
             "png-exif-and-raw-exif",
-            vec![ex("raw", false, b"exif", raw_mixed)],
+            vec![ex("raw", false, b"exif", raw_mixed).at(first_chunk_offset() + mixed_exif_len)],
+        ),
+        (
+            "png-text-empty-keyword",
+            vec![ex("text", false, b"", b"John Doe".to_vec())],
+        ),
+        (
+            "png-text-empty-keyword-ztxt",
+            vec![ex("text", true, b"", zlib_stored(b"secret value"))],
+        ),
+        (
+            "png-text-empty-keyword-itxt",
+            vec![ex("text", false, b"", b"secret value".to_vec())],
         ),
         (
             "png-keyword-79",
@@ -674,6 +727,7 @@ pub const WARNING_FIXTURES: &[&str] = &[
     "png-keyword-80",
     "png-keyword-79",
     "png-text-no-nul",
+    "png-text-empty-keyword",
     "png-iccp-name-80",
     "png-iccp-name-empty",
     "png-exif-basic-le",

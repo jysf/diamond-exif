@@ -292,11 +292,10 @@ fn ordinary_text_chunks_are_text() {
 
 #[test]
 fn bad_text_chunks_are_issues_without_regions() {
-    // Nothing to locate: no NUL, an empty keyword, a truncated header.
+    // Nothing to locate: no NUL, a truncated header.
     let cases: Vec<(&str, Vec<u8>)> = vec![
         ("no NUL", chunk(b"tEXt", b"Comment")),
         ("empty chunk", chunk(b"tEXt", b"")),
-        ("empty keyword", chunk(b"tEXt", b"\0v")),
         ("zTXt no method", chunk(b"zTXt", b"Title\0")),
         ("iTXt no flag", chunk(b"iTXt", b"Title\0")),
         ("iTXt no method", chunk(b"iTXt", b"Title\0\0")),
@@ -321,6 +320,64 @@ fn bad_text_chunks_are_issues_without_regions() {
     kw79.extend_from_slice(b"\0x");
     let d = wrap(&[chunk(b"tEXt", &kw79)]);
     assert!(read(&d).expect("reads").is_clean());
+}
+
+#[test]
+fn empty_keyword_is_an_issue_with_a_text_region() {
+    // ExifTool 13.55 shows the value of each of these as a tag named `Tag`.
+    // The region is not inflated, so any bytes stand for the zlib stream.
+    let z = b"\x78\x01stream".to_vec();
+    let cases: Vec<(&str, Vec<u8>, bool, Vec<u8>)> = vec![
+        (
+            "tEXt",
+            chunk(b"tEXt", b"\0John Doe"),
+            false,
+            b"John Doe".to_vec(),
+        ),
+        (
+            "zTXt",
+            chunk(b"zTXt", &[&b"\0\0"[..], &z].concat()),
+            true,
+            z.clone(),
+        ),
+        (
+            "iTXt",
+            chunk(b"iTXt", b"\0\0\0\0\0secret value"),
+            false,
+            b"secret value".to_vec(),
+        ),
+        (
+            "iTXt compressed",
+            chunk(b"iTXt", &[&b"\0\x01\0\0\0"[..], &z].concat()),
+            true,
+            z.clone(),
+        ),
+        (
+            "iTXt language-tagged",
+            chunk(b"iTXt", b"\0\0\0en\0tr\0secret value"),
+            false,
+            b"secret value".to_vec(),
+        ),
+    ];
+    for (name, c, want_compressed, want_data) in cases {
+        let d = wrap(&[c]);
+        assert_eq!(
+            errors(&d),
+            [Error::BadTextChunk { at: FIRST }],
+            "{name}: issues"
+        );
+        let m = read(&d).expect("reads");
+        assert_eq!(m.regions().len(), 1, "{name}: regions");
+        assert!(
+            matches!(
+                m.regions()[0],
+                PngRegion::Text { keyword: [], compressed, data, offset, .. }
+                    if compressed == want_compressed && data == &want_data[..] && offset == FIRST
+            ),
+            "{name}: {:?}",
+            m.regions()[0]
+        );
+    }
 }
 
 #[test]

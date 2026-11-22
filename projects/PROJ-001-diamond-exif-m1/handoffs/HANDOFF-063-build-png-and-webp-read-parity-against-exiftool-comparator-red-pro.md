@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-21
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-031
@@ -46,19 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
-                                   #   to_agent above is a prediction from tier_map
-  verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  status: completed
+  agent: claude-sonnet-5-5
+  verdict: null
+  basis: estimate
+  tokens_total: null
+  estimated_usd: null
   duration_minutes: null
-  branch: null
+  branch: claude/spec-031-fixes
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  completed_at: 2026-11-21
+  notes: "Token count not exposed to this subagent; the orchestrator replaces it with the harness figure. About 55 tool calls."
+  synced_at: null
 ---
 
 # HANDOFF-063: Build SPEC-031 follow-up 2: empty text keyword and verify-2 Lows
@@ -122,10 +121,12 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `claude/spec-031-fixes` (from `claude/spec-031-png-parity`), no PR.
+- **Completed at:** 2026-11-21
+- **All acceptance criteria met?** yes. Measured with ExifTool 13.55: an empty keyword in `tEXt` (`\0John Doe`), `zTXt`, `iTXt` (flag 0, flag 1 compressed, and language-tagged `en`/`tr`) is shown as a tag named `Tag` with the value. A `tEXt` with no NUL, an empty `tEXt`, an `iTXt` cut after the flags or after the language tag, and a `zTXt` with no method byte are all exposed as raw binary (`TextualData`, `InternationalText`, `CompressedText`): clear-cut, but I did not widen the rule (L1: documented only). ICC: `ICC-header:ProfileFileSignature` is printed for valid profiles of any name length, an 80-byte name and an empty name included; NOT printed for a bad-header profile (20 zero bytes), nor for a no-NUL or no-method-byte `iCCP`.
+- **What changed:** reader (`src/png/metadata.rs`): an empty keyword is located as `Text` and records `BadTextChunk`; docs in `src/error.rs`. Tests, fuzz model (both directions), fixtures `png-text-empty-keyword{,-ztxt,-itxt}`, `Expect.offset` (L6), a located-bytes test for offsets, a third PNG selector `ICC-header:ProfileFileSignature` (L3) with one new pinned divergence (`png-iccp-bad-header`, question `png-iccp-profile-not-validated` added to `guidance/questions.yaml`, which the divergence rules require), the L5 sentence on the warning table, DEC-018 edits (L2, L1, empty keyword). Records regenerated (every PNG record gains one column; three new fixtures and four new seed records).
+- **Seeds:** four added (`meta-iccp-name-80`, `meta-itxt-xmp-lang`, `meta-ztxt-empty-keyword`, `meta-itxt-empty-keyword`; the empty-keyword `tEXt` already existed as `meta-text-empty-keyword`); all 68 older seeds are byte-identical. Only `meta-text-empty-keyword` changed parse result (now one `Text` region plus the `BadTextChunk` issue, was the issue only). No other existing seed changed result.
+- **Gates:** `just lint`, `just lint-fuzz`, `just test`, `just mutation-oracle`, `just validate`, `just cost-audit`, `just forbid-unsafe` pass; `just oracle-record` run twice, second run no diff; `just fuzz-smoke png_chunks` 60 s clean (about 1.87M runs). `fuzz/Cargo.lock` restored.
 
 ### Cost self-report
 
@@ -133,27 +134,24 @@ Mirror what you put in the `handback:` front-matter, and say where the number
 came from. **This is the number that lands in the spec** — the orchestrator
 transcribes it via `just handback-sync`, it does not estimate it.
 
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null (not exposed to this subagent)
+- **Estimated USD:** null
+- **Duration (minutes):** not measured
+- **Source of the number:** none available
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
-- **Deviations from spec:**
-  - [list]
-- **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+- **New decisions emitted:** none (DEC-018 clarified).
+- **Deviations from spec:** a `guidance/questions.yaml` entry was added (not in the handoff) because every pinned divergence must have one; two extra seeds (`zTXt`, `iTXt` empty keyword) instead of a second empty-keyword `tEXt`, which already existed.
+- **Follow-up work identified:** none.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — That the ICC-header selector must be pinned as a divergence for the bad-header fixture, and that an empty-keyword `tEXt` seed already existed.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — The rule that each divergence needs a `questions.yaml` entry.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Probe the ICC selector on all `iCCP` fixtures before writing code, as I finally did.

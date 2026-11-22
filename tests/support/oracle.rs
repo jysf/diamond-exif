@@ -320,7 +320,7 @@ const PNG_COMMAND: &str = "exiftool -T -n -s3 -IFD0:ImageWidth -IFD0:ImageHeight
      -IFD0:Copyright -ExifIFD:FNumber -ExifIFD:ISO -ExifIFD:DateTimeOriginal \
      -ExifIFD:ExposureCompensation -ExifIFD:ExposureTime -ExifIFD:ExposureProgram \
      -ExifIFD:FocalLength -ExifIFD:ExifImageWidth -Composite:GPSLatitude -Composite:GPSLongitude \
-     -XMP-xmp:CreatorTool -PNG:ProfileName <file>";
+     -XMP-xmp:CreatorTool -PNG:ProfileName -ICC-header:ProfileFileSignature <file>";
 
 /// Divergences measured so far (SPEC-005, ExifTool 13.55, macOS).
 pub const KNOWN_DIVERGENCES: &[Divergence] = &[
@@ -528,6 +528,15 @@ pub const KNOWN_DIVERGENCES: &[Divergence] = &[
         question_id: "png-compressed-xmp-not-inflated",
     },
     Divergence {
+        fixture: "png-iccp-bad-header",
+        selector: "ICC-header:ProfileFileSignature",
+        command: PNG_COMMAND,
+        exiftool_version: "13.55",
+        measured_stdout: "ExifTool prints PNG:ProfileName = diamond but no ICC-header tags: the inflated profile (20 zero bytes) is not an ICC header; exif-core locates an Icc region without inflating or validating it, so its selector reads present.",
+        right_side: "neither is wrong; exif-core stays no-inflate by DEC-018 and an Icc region means an iCCP chunk with a name and a method byte, not a valid profile.",
+        question_id: "png-iccp-profile-not-validated",
+    },
+    Divergence {
         fixture: "png-xmp-ztxt",
         selector: "XMP-xmp:CreatorTool",
         command: PNG_COMMAND,
@@ -652,8 +661,13 @@ pub enum RegionKind {
     /// PNG (SPEC-031): an `XML:com.adobe.xmp` chunk whose text we can READ,
     /// that is not compressed (a compressed one is located, never inflated).
     PngXmpReadable,
-    /// PNG (SPEC-031): any located `iCCP` chunk.
+    /// PNG (SPEC-031): any located `iCCP` chunk WITH a profile name.
     PngIcc,
+    /// PNG (SPEC-031 verify, round 2): any located `iCCP` chunk, named or not.
+    /// ExifTool prints `ICC-header:ProfileFileSignature` when it can read the
+    /// profile, whatever the name; we only locate, so a chunk whose profile is
+    /// not a valid ICC header is a recorded divergence.
+    PngIccRead,
 }
 
 /// `XMP-xmp:CreatorTool` <-> a located XMP packet, `IPTC:ObjectName` <-> a
@@ -856,7 +870,9 @@ pub fn read_ours_png(meta: &PngMetadata<'_>, selectors: &[Selector]) -> Vec<Opti
 /// name: ExifTool prints the profile name for any `iCCP` chunk that has one,
 /// valid profile or not (measured: `png-iccp-valid`, `png-iccp-bad-header`,
 /// names of 1, 79, 80, 81 and 200 bytes), and none for an empty name although it
-/// still reads the ICC (`png-iccp-name-empty`). The located bytes themselves are
+/// still reads the ICC (`png-iccp-name-empty`): that is what the
+/// `ICC-header:ProfileFileSignature` selector pins, present for every `iCCP` that
+/// carries a valid profile and absent for one that does not (`png-iccp-bad-header`). The located bytes themselves are
 /// checked against the builders' by `png_oracle`
 /// (`located_region_bytes_equal_what_the_builders_wrote`); no ICC content is
 /// compared with ExifTool.
@@ -868,6 +884,10 @@ pub const PNG_REGION_SELECTORS: &[RegionSelector] = &[
     RegionSelector {
         exiftool: "PNG:ProfileName",
         kind: RegionKind::PngIcc,
+    },
+    RegionSelector {
+        exiftool: "ICC-header:ProfileFileSignature",
+        kind: RegionKind::PngIccRead,
     },
 ];
 
@@ -887,6 +907,7 @@ pub fn read_png_regions(meta: &PngMetadata<'_>) -> Vec<Option<String>> {
             let found = meta.regions().iter().any(|region| match (r.kind, region) {
                 (RegionKind::PngXmpReadable, PngRegion::Xmp { compressed, .. }) => !*compressed,
                 (RegionKind::PngIcc, PngRegion::Icc { name, .. }) => !name.is_empty(),
+                (RegionKind::PngIccRead, PngRegion::Icc { .. }) => true,
                 _ => false,
             });
             found.then(|| PRESENT.to_string())

@@ -204,7 +204,7 @@ fn png_fixtures_are_deterministic_and_uniquely_named() {
     names.sort_unstable();
     names.dedup();
     assert_eq!(names.len(), count, "fixture names must be unique");
-    assert_eq!(count, 12 + 46, "12 wrapped TIFFs and 46 shapes");
+    assert_eq!(count, 12 + 49, "12 wrapped TIFFs and 49 shapes");
     for (tiff, _) in oracle_tiff::fixtures() {
         assert!(
             !names.contains(&tiff),
@@ -256,6 +256,9 @@ fn png_fixtures_are_deterministic_and_uniquely_named() {
         "png-xmp-itxt-lang-translated",
         "png-exif-xmp-iccp",
         "png-text-no-nul",
+        "png-text-empty-keyword",
+        "png-text-empty-keyword-ztxt",
+        "png-text-empty-keyword-itxt",
     ] {
         assert!(names.contains(&shape), "missing fixture {shape}");
     }
@@ -342,8 +345,8 @@ fn replay_png_records_are_clean_on_an_unmodified_reading() {
         }
         seeds += 1;
     }
-    assert_eq!(fixtures, 58);
-    assert_eq!(seeds, 68);
+    assert_eq!(fixtures, 61);
+    assert_eq!(seeds, 72);
 }
 
 #[test]
@@ -913,7 +916,6 @@ fn region_presence_xmp_and_icc_agree_with_exiftool() {
         ("png-xmp-text", xmp),
         ("png-xmp-after-idat", xmp),
         ("png-iccp-valid", icc),
-        ("png-iccp-bad-header", icc),
     ] {
         let theirs = theirs_fixture(name);
         let ours = ours_fixture(&fixture(name));
@@ -1132,6 +1134,12 @@ fn exif_after_idat_and_after_iend_agree() {
 /// from the committed `png-warnings.txt` (a second run of the tool,
 /// `-a -G1 -s -n -Warning -Error`, because a `-T -s3` run prints warnings to
 /// stderr only when no requested tag was found).
+///
+/// Not listed, because we raise no issue for them while ExifTool only warns
+/// (SPEC-031 verify, round 2, L5): an unknown compression method byte of 1 for an
+/// `iCCP` or for `XML:com.adobe.xmp` in an `iTXt` or `zTXt`, an empty XMP packet
+/// ("[minor] Empty XMP"), and an `eXIf` whose IFD0 offset is 4. Both sides still
+/// locate the chunk, so the comparison is unaffected.
 type WarningRow = (
     &'static str,
     &'static str,
@@ -1214,6 +1222,7 @@ const WARNING_TABLE: &[WarningRow] = &[
     ("png-keyword-80", "BadTextChunk", "", &[]),
     ("png-keyword-79", "", "", &[]),
     ("png-text-no-nul", "BadTextChunk", "", &[]),
+    ("png-text-empty-keyword", "BadTextChunk", "", &[]),
     ("png-iccp-name-80", "BadIccpChunk", "", &[]),
     ("png-iccp-name-empty", "BadIccpChunk", "", &[]),
     // Clean on both sides.
@@ -1308,7 +1317,7 @@ fn every_known_divergence_has_a_question_entry() {
             d.fixture
         );
     }
-    assert_eq!(png_entries.len(), 9);
+    assert_eq!(png_entries.len(), 10);
 }
 
 #[test]
@@ -1402,6 +1411,7 @@ fn located(bytes: &[u8]) -> Vec<oracle_png::Expect> {
                 compressed,
                 name: Vec::new(),
                 data: data.to_vec(),
+                offset: r.offset(),
             },
             PngRegion::Icc {
                 name, method, data, ..
@@ -1413,6 +1423,7 @@ fn located(bytes: &[u8]) -> Vec<oracle_png::Expect> {
                     compressed: true,
                     name: name.to_vec(),
                     data: data.to_vec(),
+                    offset: r.offset(),
                 }
             }
             PngRegion::RawProfile {
@@ -1425,6 +1436,7 @@ fn located(bytes: &[u8]) -> Vec<oracle_png::Expect> {
                 compressed,
                 name: profile.to_vec(),
                 data: data.to_vec(),
+                offset: r.offset(),
             },
             PngRegion::Text {
                 keyword,
@@ -1436,6 +1448,7 @@ fn located(bytes: &[u8]) -> Vec<oracle_png::Expect> {
                 compressed,
                 name: keyword.to_vec(),
                 data: data.to_vec(),
+                offset: r.offset(),
             },
             _ => panic!("an unknown region kind"),
         })
@@ -1488,6 +1501,24 @@ fn iccp_names_and_itxt_language_tags_agree_with_exiftool() {
         assert_eq!(ours[icc].is_some(), has_name, "{name}: ours");
         // The chunk is located in every case.
         assert_eq!(located(&fixture(name)).len(), 1, "{name}");
+    }
+    // L3: ExifTool reads the ICC (prints an ICC-header tag) for every name length,
+    // an empty name included, so a record pins that; a profile that is not an ICC
+    // header is the one recorded difference (we do not validate it).
+    let sig = index_of("ICC-header:ProfileFileSignature");
+    for (name, theirs_reads) in [
+        ("png-iccp-valid", true),
+        ("png-iccp-name-79", true),
+        ("png-iccp-name-80", true),
+        ("png-iccp-name-empty", true),
+        ("png-iccp-bad-header", false),
+        ("png-xmp-itxt", false),
+    ] {
+        let theirs = theirs_fixture(name);
+        let ours = ours_fixture(&fixture(name));
+        assert_eq!(theirs[sig].is_some(), theirs_reads, "{name}: ExifTool");
+        let located_icc = name.starts_with("png-iccp");
+        assert_eq!(ours[sig].is_some(), located_icc, "{name}: ours");
     }
     for (name, is_xmp) in [
         ("png-xmp-itxt", true),

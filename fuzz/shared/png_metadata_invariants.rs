@@ -135,12 +135,14 @@ mod png_metadata_invariants {
                     let ty = c.ty;
                     let bad = Error::BadTextChunk { at: off };
                     // The keyword runs to the first NUL however long; only no NUL
-                    // or an empty keyword leaves nothing to locate.
-                    let Some(k) = find_nul(d, s, e).map(|i| i - s).filter(|&k| k > 0) else {
+                    // leaves nothing to locate. An empty keyword (ExifTool shows
+                    // the value as `Tag`) or one of 80 bytes and more is located
+                    // with the issue.
+                    let Some(k) = find_nul(d, s, e).map(|i| i - s) else {
                         self.record(bad, off);
                         return;
                     };
-                    let mut malformed = k > 79;
+                    let mut malformed = k == 0 || k > 79;
                     // An iTXt language tag that is not empty (measured, ExifTool
                     // 13.55): the XMP keyword is then plain text, not XMP.
                     let mut tagged = false;

@@ -1449,3 +1449,22 @@ questions:
       selector is defined as READABLE XMP (uncompressed), not located XMP; defined by location
       the compressed shapes would agree and this divergence would not exist (a choice made
       where SPEC-031 is silent, see the handback).
+
+  - id: png-iccp-profile-not-validated
+    question: "ExifTool 13.55 prints ICC-header tags only for an iCCP profile it can read; exif-core locates every iCCP with a method byte and never inflates or validates the profile (DEC-018): is locating enough?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-21
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-031 verify, round 2, L3). Command as for png-raw-profile-not-decoded.
+      Measured on png-iccp-bad-header (name "diamond", method 0, a zlib stream of 20 zero
+      bytes, which is no ICC header): ExifTool prints PNG:ProfileName = diamond and no
+      ICC-header:ProfileFileSignature; exif-core locates an Icc region, so the selector reads
+      present on our side. Controls: png-iccp-valid, png-iccp-name-79, -80 (both sides
+      present) and png-iccp-name-empty (ProfileName absent, ProfileFileSignature present on
+      both sides, which is what the selector pins).
+      Right side: neither is wrong; DEC-018 keeps the library free of inflate, so an Icc
+      region means "an iCCP chunk with a name and a method byte", not "a valid profile".
+      Pinned in KNOWN_DIVERGENCES.

@@ -184,7 +184,8 @@ pub enum PngRegion<'a> {
     Text {
         /// Input offset of the chunk.
         offset: usize,
-        /// The keyword, 1 to 79 bytes.
+        /// The keyword: 1 to 79 bytes, or any other length with a
+        /// [`Error::BadTextChunk`] issue (an empty keyword, or 80 bytes or more).
         keyword: &'a [u8],
         /// `zTXt`, or `iTXt` with its compression flag set.
         compressed: bool,
@@ -356,8 +357,8 @@ struct TextParts<'a> {
     keyword: &'a [u8],
     compressed: bool,
     value: &'a [u8],
-    /// The chunk is malformed but still locatable (DEC-018): a keyword of 80
-    /// bytes or more, or an `iTXt` flag other than 0 or 1.
+    /// The chunk is malformed but still locatable (DEC-018): an empty keyword, a
+    /// keyword of 80 bytes or more, or an `iTXt` flag other than 0 or 1.
     bad: bool,
     /// An `iTXt` whose language tag is not empty. Measured (ExifTool 13.55,
     /// both compression flags, tags `en-US`, `x`, `EN`): such a chunk with the
@@ -368,14 +369,14 @@ struct TextParts<'a> {
 }
 
 /// The header of a `tEXt`, `zTXt` or `iTXt` chunk. `None` when there is nothing
-/// to locate: no NUL, an empty keyword, or a truncated header. A keyword of 80
+/// to locate: no NUL or a truncated header. An empty keyword, a keyword of 80
 /// bytes or more, or an `iTXt` flag above 1, is located with `bad` set.
 fn text_parts(kind: ChunkKind, data: &[u8]) -> Option<TextParts<'_>> {
     let end = data.iter().position(|&b| b == 0)?;
-    if end == 0 {
-        return None;
-    }
-    let mut bad = end > MAX_KEYWORD;
+    // An empty keyword is read by ExifTool 13.55 as a tag named `Tag` (all three
+    // chunk types, compressed or not), so it is located and flagged like a
+    // keyword of 80 bytes or more.
+    let mut bad = end == 0 || end > MAX_KEYWORD;
     let keyword = data.get(..end)?;
     let rest = data.get(end.checked_add(1)?..)?;
     match kind {

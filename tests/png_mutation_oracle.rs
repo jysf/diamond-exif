@@ -387,13 +387,17 @@ fn mutant_iccp_not_located_is_named() {
     };
     let fixtures = ["png-iccp-valid", "png-iccp-bad-header", "png-xmp-itxt"];
     let got = control_then_mutant("png-p6-iccp", &fixtures, &inject);
-    for f in ["png-iccp-valid", "png-iccp-bad-header"] {
-        assert_reads_nothing(&got, f);
-        assert_eq!(
-            named(&cmp_for(&got, f).unexplained),
-            vec!["PNG:ProfileName"]
-        );
-    }
+    // Both selectors go for the valid profile. For the bad header ExifTool prints
+    // no ICC-header tag, so only the name selector goes, and the recorded
+    // divergence on the ICC-header selector turns stale (we no longer locate).
+    assert_reads_nothing(&got, "png-iccp-valid");
+    assert_eq!(
+        named(&cmp_for(&got, "png-iccp-valid").unexplained),
+        vec!["ICC-header:ProfileFileSignature", "PNG:ProfileName"]
+    );
+    let bad = cmp_for(&got, "png-iccp-bad-header");
+    assert_eq!(named(&bad.unexplained), vec!["PNG:ProfileName"]);
+    assert_eq!(bad.stale.len(), 1, "{:?}", bad.stale);
     assert!(cmp_for(&got, "png-xmp-itxt").is_clean());
 }
 
