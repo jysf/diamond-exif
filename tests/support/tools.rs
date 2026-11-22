@@ -245,7 +245,34 @@ pub fn warning_lines(stderr: &str, path: &Path) -> Vec<String> {
         .map(|l| l.trim_end_matches('\r'))
         .filter(|l| !l.trim().is_empty())
         .map(|l| l.replace(path_text.as_ref(), FILE_PLACEHOLDER))
+        .map(|l| strip_perl_lib_dir(&l))
         .collect()
+}
+
+/// The placeholder that replaces the directory ExifTool's Perl modules live in.
+pub const EXIFTOOL_LIB_PLACEHOLDER: &str = "<exiftool-lib>";
+
+/// A Perl warning names the module that raised it by its full path
+/// (`... at /opt/homebrew/.../lib/perl5/Image/ExifTool/PNG.pm line 1294.`), and
+/// that directory differs between a Homebrew install and the CI tarball, so a
+/// record would only reproduce on the machine that made it. Everything between
+/// ` at ` and `Image/ExifTool/` becomes [`EXIFTOOL_LIB_PLACEHOLDER`]; a line
+/// without that shape is returned unchanged (found by the CI run of SPEC-036).
+pub fn strip_perl_lib_dir(line: &str) -> String {
+    const MARK: &str = "Image/ExifTool/";
+    let Some(mark_at) = line.find(MARK) else {
+        return line.to_string();
+    };
+    let Some(at_start) = line.get(..mark_at).and_then(|head| head.rfind(" at ")) else {
+        return line.to_string();
+    };
+    let dir_start = at_start + " at ".len();
+    format!(
+        "{}{}/{}",
+        &line[..dir_start],
+        EXIFTOOL_LIB_PLACEHOLDER,
+        &line[mark_at..]
+    )
 }
 
 /// A JPEG record (SPEC-011): the same header as [`record_text`], then one
@@ -394,6 +421,23 @@ pub fn temp_file_with_ext(name: &str, ext: &str, bytes: &[u8]) -> std::io::Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_perl_warning_does_not_carry_the_install_directory() {
+        let mac = "substr outside of string at /opt/homebrew/Cellar/exiftool/13.55_1/libexec/lib/perl5/Image/ExifTool/PNG.pm line 1296.";
+        let ci = "substr outside of string at /home/runner/work/x/Image-ExifTool-13.55/lib/Image/ExifTool/PNG.pm line 1296.";
+        let want = "substr outside of string at <exiftool-lib>/Image/ExifTool/PNG.pm line 1296.";
+        assert_eq!(strip_perl_lib_dir(mac), want);
+        assert_eq!(strip_perl_lib_dir(ci), want);
+        // Other lines are untouched.
+        for line in [
+            "Warning: Bad PNG chunk",
+            "no marker at all",
+            "Image/ExifTool/PNG.pm at the start",
+        ] {
+            assert_eq!(strip_perl_lib_dir(line), line);
+        }
+    }
 
     #[test]
     fn parse_fields_maps_dash_to_none_and_keeps_order() {

@@ -3701,8 +3701,8 @@ PNG	0x000b	Filter
 PNG	0x000c	Interlace
 PNG	-	InternationalText
 ## png-shape-meta-ztxt-no-method
-# stderr: Use of uninitialized value in addition (+) at /opt/homebrew/Cellar/exiftool/13.55_1/libexec/lib/perl5/Image/ExifTool/PNG.pm line 1294.
-# stderr: substr outside of string at /opt/homebrew/Cellar/exiftool/13.55_1/libexec/lib/perl5/Image/ExifTool/PNG.pm line 1296.
+# stderr: Use of uninitialized value in addition (+) at <exiftool-lib>/Image/ExifTool/PNG.pm line 1294.
+# stderr: substr outside of string at <exiftool-lib>/Image/ExifTool/PNG.pm line 1296.
 PNG	0x0000	ImageWidth
 PNG	0x0004	ImageHeight
 PNG	0x0008	BitDepth
@@ -3731,8 +3731,8 @@ PNG	0x000b	Filter
 PNG	0x000c	Interlace
 PNG	-	ICC_Profile
 ## png-shape-meta-iccp-no-method
-# stderr: Use of uninitialized value in addition (+) at /opt/homebrew/Cellar/exiftool/13.55_1/libexec/lib/perl5/Image/ExifTool/PNG.pm line 1294.
-# stderr: substr outside of string at /opt/homebrew/Cellar/exiftool/13.55_1/libexec/lib/perl5/Image/ExifTool/PNG.pm line 1296.
+# stderr: Use of uninitialized value in addition (+) at <exiftool-lib>/Image/ExifTool/PNG.pm line 1294.
+# stderr: substr outside of string at <exiftool-lib>/Image/ExifTool/PNG.pm line 1296.
 PNG	0x0000	ImageWidth
 PNG	0x0004	ImageHeight
 PNG	0x0008	BitDepth
@@ -8825,8 +8825,8 @@ PNG	0x000c	Interlace
 PNG	-	ProfileName
 PNG	-	ICC_Profile
 ## png_chunks-meta-iccp-no-method
-# stderr: Use of uninitialized value in addition (+) at /opt/homebrew/Cellar/exiftool/13.55_1/libexec/lib/perl5/Image/ExifTool/PNG.pm line 1294.
-# stderr: substr outside of string at /opt/homebrew/Cellar/exiftool/13.55_1/libexec/lib/perl5/Image/ExifTool/PNG.pm line 1296.
+# stderr: Use of uninitialized value in addition (+) at <exiftool-lib>/Image/ExifTool/PNG.pm line 1294.
+# stderr: substr outside of string at <exiftool-lib>/Image/ExifTool/PNG.pm line 1296.
 PNG	0x0000	ImageWidth
 PNG	0x0004	ImageHeight
 PNG	0x0008	BitDepth
@@ -9061,8 +9061,8 @@ PNG	0x000b	Filter
 PNG	0x000c	Interlace
 PNG	-	Tag
 ## png_chunks-meta-ztxt-no-method
-# stderr: Use of uninitialized value in addition (+) at /opt/homebrew/Cellar/exiftool/13.55_1/libexec/lib/perl5/Image/ExifTool/PNG.pm line 1294.
-# stderr: substr outside of string at /opt/homebrew/Cellar/exiftool/13.55_1/libexec/lib/perl5/Image/ExifTool/PNG.pm line 1296.
+# stderr: Use of uninitialized value in addition (+) at <exiftool-lib>/Image/ExifTool/PNG.pm line 1294.
+# stderr: substr outside of string at <exiftool-lib>/Image/ExifTool/PNG.pm line 1296.
 PNG	0x0000	ImageWidth
 PNG	0x0004	ImageHeight
 PNG	0x0008	BitDepth
@@ -14179,8 +14179,8 @@ PNG	0x000c	Interlace
 PNG	-	ProfileName
 PNG	-	ICC_Profile
 ## audit-png-meta-iccp-no-method
-# stderr: Use of uninitialized value in addition (+) at /opt/homebrew/Cellar/exiftool/13.55_1/libexec/lib/perl5/Image/ExifTool/PNG.pm line 1294.
-# stderr: substr outside of string at /opt/homebrew/Cellar/exiftool/13.55_1/libexec/lib/perl5/Image/ExifTool/PNG.pm line 1296.
+# stderr: Use of uninitialized value in addition (+) at <exiftool-lib>/Image/ExifTool/PNG.pm line 1294.
+# stderr: substr outside of string at <exiftool-lib>/Image/ExifTool/PNG.pm line 1296.
 PNG	0x0000	ImageWidth
 PNG	0x0004	ImageHeight
 PNG	0x0008	BitDepth
@@ -14415,8 +14415,8 @@ PNG	0x000b	Filter
 PNG	0x000c	Interlace
 PNG	-	Tag
 ## audit-png-meta-ztxt-no-method
-# stderr: Use of uninitialized value in addition (+) at /opt/homebrew/Cellar/exiftool/13.55_1/libexec/lib/perl5/Image/ExifTool/PNG.pm line 1294.
-# stderr: substr outside of string at /opt/homebrew/Cellar/exiftool/13.55_1/libexec/lib/perl5/Image/ExifTool/PNG.pm line 1296.
+# stderr: Use of uninitialized value in addition (+) at <exiftool-lib>/Image/ExifTool/PNG.pm line 1294.
+# stderr: substr outside of string at <exiftool-lib>/Image/ExifTool/PNG.pm line 1296.
 PNG	0x0000	ImageWidth
 PNG	0x0004	ImageHeight
 PNG	0x0008	BitDepth
