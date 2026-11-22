@@ -181,6 +181,9 @@ fn existing_records_and_seeds_are_byte_identical() {
             "entry-budget-exact.txt",
             "entry-budget-over.txt",
             "overlapping-subifds.txt",
+            // SPEC-035: the two full-block several-Exif JPEG records.
+            "jpeg-exif-full-one-two.txt",
+            "jpeg-exif-full-two-one.txt",
         ],
     );
     let new_tiff = [

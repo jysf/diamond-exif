@@ -91,9 +91,10 @@ STAGE-002 set the container pattern and STAGE-003 to STAGE-006 built the audit C
 - [x] SPEC-030 (shipped on 2026-11-21) — [M] WebP RIFF walker and metadata regions: RIFF size rules, `VP8X` flags, EXIF, XMP, ICCP, pad bytes, animation chunks passed over, `webp_riff` fuzz target (DEC for the RIFF walk)
 - [x] SPEC-031 (shipped on 2026-11-21) — [L] PNG read parity against ExifTool: fixtures and records, comparator, warning table, replay-and-perturb and mutated-copy red-proofs
 - [x] SPEC-034 (shipped on 2026-11-22) — [L] WebP read parity against ExifTool (applies the SPEC-031 apparatus) and the SPEC-030 carried test and seed gaps
+- [x] SPEC-035 (shipped on 2026-11-22) — [S] JPEG oracle: per-selector several-Exif-block model, measured (follow-up to SPEC-034 verify H1; test harness only)
 - [ ] SPEC-032 (frame) — [M] Audit wiring: sniff to audit for both formats, category rows, preview and fail-closed refusal in the writer, renderers, README, CHANGELOG
 
-**Count:** 5 shipped / 1 active / 0 pending
+**Count:** 6 shipped / 1 active / 0 pending
 
 ## Design Notes
 

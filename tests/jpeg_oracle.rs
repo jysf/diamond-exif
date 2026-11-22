@@ -10,7 +10,8 @@
 //!
 //! What is compared: the 20 Exif value selectors of `oracle::SELECTORS`, read
 //! through the harness's model of ExifTool's several-Exif rule
-//! (`oracle::read_ours_jpeg`: union of tags, the later block wins), plus the
+//! (`oracle::read_ours_jpeg`: union of tags, per selector the first or the last
+//! block that has the tag, SPEC-035), plus the
 //! presence of an XMP packet and an IPTC resource on the hand-built fixtures.
 //! Every measured difference is a `KNOWN_DIVERGENCES` entry, and the tests
 //! require each one to be PRESENT, so the list cannot rot.
@@ -217,7 +218,7 @@ fn jpeg_fixtures_are_deterministic_and_uniquely_named() {
     names.sort_unstable();
     names.dedup();
     assert_eq!(names.len(), count, "fixture names must be unique");
-    assert_eq!(count, 12 + 30, "12 wrapped TIFFs and 30 shapes");
+    assert_eq!(count, 12 + 32, "12 wrapped TIFFs and 32 shapes");
     // Record files are keyed by name: no collision with a TIFF fixture, a TIFF
     // seed, or the `jpeg-seed-` records.
     for (tiff, _) in oracle_tiff::fixtures() {
@@ -240,6 +241,8 @@ fn jpeg_fixtures_are_deterministic_and_uniquely_named() {
         "jpeg-two-exif-same-tag-reversed",
         "jpeg-two-exif-disjoint-tags",
         "jpeg-seventeen-exif-last-differs",
+        "jpeg-exif-full-one-two",
+        "jpeg-exif-full-two-one",
         "jpeg-exif-after-scan",
         "jpeg-exif-after-eoi",
         "jpeg-exif-last-segment-at-eof",
@@ -342,7 +345,7 @@ fn replay_jpeg_records_are_clean_on_an_unmodified_reading() {
         }
         seeds += 1;
     }
-    assert_eq!(fixtures, 42);
+    assert_eq!(fixtures, 44);
     assert_eq!(seeds, 37);
 }
 
@@ -493,7 +496,7 @@ fn tiff_records_are_byte_identical_to_the_committed_set() {
                 .starts_with("jpeg-")
         })
         .count();
-    assert_eq!(jpeg_records, 42 + 37);
+    assert_eq!(jpeg_records, 44 + 37);
 }
 
 /// Replay-and-perturb on JPEG records: for every field our reading has, change
@@ -693,6 +696,108 @@ fn multi_exif_is_compared_against_the_union_with_the_later_block_winning() {
         &theirs_fixture("jpeg-two-exif-same-tag"),
     );
     assert_eq!(named(&cmp.unexplained), vec!["IFD0:Make"]);
+}
+
+fn assert_clean(name: &str) {
+    let cmp = compare(name, &ours_fixture(&fixture(name)), &theirs_fixture(name));
+    assert!(
+        cmp.is_clean(),
+        "{name}: unexplained [{}] stale {:?}",
+        describe(&cmp.unexplained),
+        cmp.stale
+    );
+}
+
+/// SPEC-035: the several-Exif-block winner is PER SELECTOR. Two full blocks that
+/// differ in every selector, both orders: the first block wins four selectors
+/// and the last wins sixteen (the same split as WebP, measured, not assumed).
+#[test]
+fn several_exif_model_is_per_selector_and_pinned() {
+    // Equal as text, or as numbers to 1e-9 (ExifTool prints a GPS value with 15
+    // digits, we with 17; the oracle's own comparator does the same).
+    let same = |a: &Option<String>, b: &Option<String>| match (a, b) {
+        (Some(x), Some(y)) => {
+            x == y
+                || matches!((x.parse::<f64>(), y.parse::<f64>()),
+                    (Ok(p), Ok(q)) if (p - q).abs() < 1e-9)
+        }
+        (None, None) => true,
+        _ => false,
+    };
+    let single = |v: u16| {
+        ours_fixture(&oracle_jpeg::clean_for_tests(&[oracle_jpeg::exif_app1(
+            &oracle_tiff::tiff_full(v),
+        )]))
+    };
+    let (one, two) = (single(1), single(2));
+    let names = oracle::jpeg_names();
+    let mut first_wins: Vec<&str> = Vec::new();
+    for (i, sel) in names.iter().take(SELECTORS.len()).enumerate() {
+        let (v1, v2) = (&one[i], &two[i]);
+        assert!(
+            v1.is_some() && v2.is_some() && v1 != v2,
+            "{sel}: the two blocks must each read and differ ({v1:?} {v2:?})"
+        );
+        for (name, first, last) in [
+            ("jpeg-exif-full-one-two", v1, v2),
+            ("jpeg-exif-full-two-one", v2, v1),
+        ] {
+            let theirs = theirs_fixture(name);
+            let ours = ours_fixture(&fixture(name));
+            // ExifTool's value is the first block's or the last block's.
+            let t = &theirs[i];
+            assert!(
+                same(t, first) || same(t, last),
+                "{name} {sel}: ExifTool printed {t:?}, neither {first:?} nor {last:?}"
+            );
+            assert!(
+                same(&ours[i], &theirs[i]),
+                "{name} {sel}: ours against ExifTool"
+            );
+        }
+        // The winner is the same in both orders (first or last, never mixed).
+        let a = &theirs_fixture("jpeg-exif-full-one-two")[i];
+        let b = &theirs_fixture("jpeg-exif-full-two-one")[i];
+        if same(a, v1) && same(b, v2) {
+            first_wins.push(sel);
+        } else {
+            assert!(
+                same(a, v2) && same(b, v1),
+                "{sel}: ExifTool is not first or last"
+            );
+        }
+    }
+    assert_eq!(first_wins, oracle::JPEG_FIRST_BLOCK_WINS, "first-wins set");
+    assert_eq!(first_wins.len(), 4);
+    assert_clean("jpeg-exif-full-one-two");
+    assert_clean("jpeg-exif-full-two-one");
+}
+
+/// SPEC-035 red-proof, in process: the OLD model (the later block wins all 20)
+/// differs from the committed ExifTool records on exactly the first-wins
+/// selectors, in both orders.
+#[test]
+fn jpeg_per_selector_model_red_proof() {
+    for name in ["jpeg-exif-full-one-two", "jpeg-exif-full-two-one"] {
+        let bytes = fixture(name);
+        let meta = jpeg::read(&bytes).expect("a JPEG");
+        assert_eq!(meta.exif_blocks().len(), 2, "{name}");
+        let theirs = theirs_fixture(name);
+        let mut differs: Vec<&str> = Vec::new();
+        for (i, s) in SELECTORS.iter().enumerate() {
+            let later = meta
+                .exif_blocks()
+                .iter()
+                .rev()
+                .find_map(|b| b.container().ok().and_then(|c| oracle::read_one(c, s)));
+            let mut v = ours_fixture(&bytes);
+            v[i] = later;
+            if !compare(name, &v, &theirs).unexplained.is_empty() {
+                differs.push(s.exiftool);
+            }
+        }
+        assert_eq!(differs, oracle::JPEG_FIRST_BLOCK_WINS, "{name}");
+    }
 }
 
 #[test]
@@ -954,6 +1059,8 @@ const WARNING_TABLE: &[WarningRow] = &[
         "ok*16",
         None,
     ),
+    ("jpeg-exif-full-one-two", "ExtraExif", "ok*2", None),
+    ("jpeg-exif-full-two-one", "ExtraExif", "ok*2", None),
     // Two Exif segments are `[minor] File contains multi-segment EXIF` to
     // `exiftool -Warning`; the `-T` command line prints nothing here.
     ("jpeg-exif-good-then-fatal", "ExtraExif", "ok,fatal", None),

@@ -927,6 +927,8 @@ const JPEG_MUTANT_FIXTURES: &[&str] = &[
     "jpeg-two-exif-disjoint-tags",
     "jpeg-exif-after-scan",
     "jpeg-seventeen-exif-last-differs",
+    "jpeg-exif-full-one-two",
+    "jpeg-exif-full-two-one",
     "jpeg-exif-in-app2",
     "jpeg-iptc",
     "jpeg-iptc-without-0404",
@@ -1065,6 +1067,35 @@ fn jpeg_mutant_last_block_primary_is_named() {
     assert_eq!(c.unexplained[0].theirs.as_deref(), Some("AlphaCam"));
     assert!(cmp_for(&got, "jpeg-two-exif-disjoint-tags").is_clean());
     assert!(cmp_for(&got, "jpeg-exif-basic-le").is_clean());
+}
+
+// Mutant m3b (SPEC-035). The HARNESS model is reverted to "the later block wins
+// all 20 selectors": in the staged probe's copy of `oracle.rs` (never the real
+// one) the per-selector test `if JPEG_FIRST_BLOCK_WINS.contains(&s.exiftool) {`
+// is made false. Control first (clean on both full fixtures), then the mutant
+// must differ from the committed ExifTool records on exactly the first-wins
+// selectors, in both orders: that is what `several_exif_model_is_per_selector_and_pinned`
+// (tests/jpeg_oracle.rs) asserts is clean, so it would fail on this model.
+#[test]
+fn jpeg_mutant_later_block_wins_all_twenty_is_named() {
+    let inject = |src: &Path| {
+        probe::inject_replace(
+            &src.join("bin/probe/oracle.rs"),
+            "if JPEG_FIRST_BLOCK_WINS.contains(&s.exiftool) {",
+            &marked("if false {"),
+        );
+    };
+    let fixtures = ["jpeg-exif-full-one-two", "jpeg-exif-full-two-one"];
+    let got = jpeg_control_then_mutant("jpeg-m3b-later-wins-all", &fixtures, &inject);
+    for f in fixtures {
+        let c = cmp_for(&got, f);
+        assert_eq!(
+            named(&c.unexplained),
+            sorted(oracle::JPEG_FIRST_BLOCK_WINS.to_vec()),
+            "{f}: {}",
+            describe(&c.unexplained)
+        );
+    }
 }
 
 // Mutant m4. Needle (src/jpeg/metadata.rs, `extract`): `SegmentKind::Exif => {`.
@@ -1668,13 +1699,13 @@ fn inventory_probe_control_run_is_clean_before_every_mutant() {
     // returns on (its answer is not recorded, so there is nothing to compare).
     let all = inventory_corpus::all_inputs(&root());
     let distinct = inventory_corpus::distinct(&all);
-    assert_eq!(distinct.len(), 183);
+    assert_eq!(distinct.len(), 185);
     let keys: Vec<String> = distinct
         .iter()
         .filter(|d| !inventory_corpus::is_not_run(d))
         .map(|d| d.canonical.key())
         .collect();
-    assert_eq!(keys.len(), 182);
+    assert_eq!(keys.len(), 184);
     let refs: Vec<&str> = keys.iter().map(String::as_str).collect();
     assert_inventory_control("inventory-all", &refs);
     // The mutants' inputs are among them.

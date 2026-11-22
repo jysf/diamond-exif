@@ -810,13 +810,38 @@ pub fn perturb(norm: Norm, v: &str) -> String {
 
 // ── JPEG (SPEC-011) ─────────────────────────────────────────────────────────
 
+/// The Exif selectors for which ExifTool 13.55 keeps the FIRST Exif APP1's
+/// value when a JPEG has several, not the last. Measured per selector (SPEC-035)
+/// on `jpeg-exif-full-one-two` and `jpeg-exif-full-two-one`, two full blocks that
+/// differ in every one of the 20 selectors: these four keep the first block's
+/// value in both orders, the other 16 take the later block's. The same four as
+/// WebP ([`WEBP_FIRST_BLOCK_WINS`]).
+/// `tests/jpeg_oracle.rs::several_exif_model_is_per_selector_and_pinned` reads
+/// all 20 in both orders and fails if this list is wrong.
+pub const JPEG_FIRST_BLOCK_WINS: &[&str] = &[
+    "IFD0:ImageWidth",
+    "IFD0:ImageHeight",
+    "IFD0:Orientation",
+    "IFD0:XResolution",
+];
+
 /// Our reading of every selector from a JPEG, modelled on what ExifTool 13.55
 /// was measured to do with several Exif segments: the UNION of the tags of the
-/// blocks, and where two blocks carry the same tag the LATER block's value wins
-/// (`jpeg-two-exif-same-tag` and `-reversed`, `jpeg-seventeen-exif-last-differs`).
-/// So each selector reads from the last Exif block, in file order, whose
-/// container parsed and that has the tag; `None` if no block does. For a file
-/// with at most one Exif block this equals [`read_ours`] of that block.
+/// blocks, a block whose container did not parse is ignored, and the winner is
+/// PER SELECTOR (SPEC-035): the FIRST block that has the tag for the four
+/// selectors in [`JPEG_FIRST_BLOCK_WINS`], the LAST block that has it for the
+/// other 16 (`jpeg-two-exif-same-tag`, `-reversed`,
+/// `jpeg-seventeen-exif-last-differs` and the two `jpeg-exif-full-*` records).
+/// For a file with at most one Exif block this equals [`read_ours`] of that
+/// block.
+///
+/// The Make-as-SHORT limit (L1) of the WebP model holds for JPEG too (SPEC-035
+/// verify, measured): a block whose value for a selector is of a type
+/// `read_one` cannot read is skipped, so another block's value is read where
+/// ExifTool prints this block's. Last-wins side: Make as SHORT in the later
+/// block, ExifTool prints it, we read the earlier Make. First-wins side:
+/// Orientation as ASCII in the first block, ExifTool prints it, we read the
+/// later block's. No committed fixture has such a block.
 ///
 /// This is the harness's model, deliberately not a library feature: the library
 /// keeps "the first block is primary, the rest cost `ExtraExif`" (DEC-006) and
@@ -825,10 +850,15 @@ pub fn read_ours_jpeg(meta: &JpegMetadata<'_>, selectors: &[Selector]) -> Vec<Op
     selectors
         .iter()
         .map(|s| {
-            meta.exif_blocks()
+            let mut read = meta
+                .exif_blocks()
                 .iter()
-                .rev()
-                .find_map(|b| b.container().ok().and_then(|c| read_one(c, s)))
+                .filter_map(|b| b.container().ok().and_then(|c| read_one(c, s)));
+            if JPEG_FIRST_BLOCK_WINS.contains(&s.exiftool) {
+                read.next()
+            } else {
+                read.next_back()
+            }
         })
         .collect()
 }
@@ -1271,8 +1301,7 @@ pub const WEBP_FIRST_BLOCK_WINS: &[&str] = &[
 /// a block that is not a TIFF is ignored, and the winner is PER SELECTOR: the
 /// FIRST block that has the tag for the four selectors in
 /// [`WEBP_FIRST_BLOCK_WINS`], the LAST block that has it for the other 16.
-/// This is neither the JPEG model ([`read_ours_jpeg`]: later wins, unmeasured
-/// per selector) nor the PNG one ([`read_ours_png`]: first block only).
+/// This is neither the JPEG model ([`read_ours_jpeg`]: per selector, SPEC-035) nor the PNG one ([`read_ours_png`]: first block only).
 ///
 /// A known limit (L1): a block whose value for a selector is of a type
 /// `read_one` cannot read (Make stored as SHORT) is skipped, so the earlier
