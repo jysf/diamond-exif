@@ -51,8 +51,8 @@ handback:
                                    #   to_agent above is a prediction from tier_map
   verdict: punch-list              # verify handoffs: approved | punch-list | rejected
   basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  tokens_total: 250609               # REAL combined count — what cost-audit reads
+  estimated_usd: 1.65              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
   branch: claude/spec-032-verify
   pr: null
@@ -235,7 +235,7 @@ Everything else agreed. That includes the measured keyword rule for tEXt, iTXt a
 
 ### Cost self-report
 
-- **Tokens (total):** null (left for the orchestrator to record from the harness `subagent_tokens` figure, by instruction)
+- **Tokens (total):** 250609 (harness subagent_tokens)
 - **Estimated USD:** null
 - **Duration (minutes):** not measured
 - **Source of the number:** harness report, recorded by the orchestrator
