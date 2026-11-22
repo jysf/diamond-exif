@@ -58,7 +58,7 @@ handback:
   pr: null
   completed_at: 2026-11-21         # YYYY-MM-DD
   notes: "tokens_total is null: a sub-agent cannot read its own transcript token counts; the orchestrator replaces it with the harness figure. About 45 tool calls."  # if unusual; double-quote it — an unquoted " #" starts a YAML comment
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-21
 ---
 
 # HANDOFF-061: Verify SPEC-031 PNG read parity against ExifTool
