@@ -6,7 +6,7 @@
 task:
   id: SPEC-031
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: verify  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -68,11 +68,21 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: null
-  sessions: []
+  sessions:
+    - cycle: build
+      handoff: HANDOFF-060
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 330309
+      estimated_usd: 2.18
+      duration_minutes: null
+      recorded_at: 2026-11-21
+      notes: "tokens_total is null: a sub-agent cannot read its own transcript token counts; the orchestrator replaces it with the harness figure. About 75 tool calls."
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 330309
+    estimated_usd: 2.18
+    session_count: 1
 ---
 
 # SPEC-031: PNG read parity against ExifTool: comparator, records, red-proofs
