@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-21
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-034
@@ -46,18 +46,19 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                # completed | blocked | rejected
+  agent: claude-sonnet-5-5         # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
+  basis: estimate                  # transcript | agent-result | slash-cost | api-usage | estimate
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
-  branch: null
+  branch: claude/spec-034-webp-parity
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-21         # YYYY-MM-DD
+  notes: "tokens_total is null: the implementer cannot read its own transcript token counts; the orchestrator replaces it with the harness figure. About 75 tool calls used. Not pushed, no PR."
+  # notes (original comment): if unusual; double-quote it — an unquoted " #" starts a YAML comment
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -110,30 +111,49 @@ Fill the `handback:` front matter AND the `## Handback` section; set `handoff.st
 
 ### Execution notes
 
-- **Branch / PR:**
-- **Completed at:**
-- **All acceptance criteria met?**
+- **Branch / PR:** `claude/spec-034-webp-parity` (from `claude/spec-034-design`); three commits: carried gaps, parity apparatus, red-proofs. No push, no PR.
+- **Completed at:** 2026-11-21
+- **All acceptance criteria met?** Yes, with the items below. `just fuzz-smoke webp_riff` ran clean (see Deviations 6).
+
+Fixtures: 98 (12 wrapped TIFFs plus 86 shapes from one table in `tests/support/oracle_webp.rs`), 53 seeds, records `webp-*.txt` plus `webp-warnings.txt`. Tests: 39 in `tests/webp_oracle.rs`, 8 library mutants, 2 byte mutations, control and marker guard in `tests/webp_mutation_oracle.rs`. Carried gaps (a) to (d) done in `tests/webp_walk.rs` (`first_vp8x_wins_flags_and_one_flag_mismatch`, `limits_are_pinned_literals`), seeds `vp8x-first-wins` and `vp8x-nine-bytes` (51 to 53; walk seeds 35 to 37; pins updated in `tests/fuzz_layout.rs`) and `webp_model_runs_on_every_walk_seed`.
+
+Divergences (all pinned in `KNOWN_DIVERGENCES`, each with a `guidance/questions.yaml` entry, each required to still exist):
+- `webp-iccp-profile-not-validated`: webp-icc-garbage, -stub-132, -header-only, -zero-tags (ICC selector; neither is wrong).
+- `webp-xmp-content-not-parsed`: webp-xmp-garbage and webp-xmp-nul-id-1-bytes to -7-bytes (XMP selector; neither is wrong).
+- `webp-riff-other-forms-read-by-exiftool`: webp-header-wave, webp-header-rifx, and webp-header-avi (a THIRD one beyond the spec: ExifTool reads `RIFF....AVI ` + `EXIF` too and prints Make; we are right, not a WebP).
+No other fixture or seed differs (every fixture and all 53 seeds were diffed; the two "agrees" claims that matter: padding and `VP8X` shapes agree entirely).
+
+Reader bugs: none found, `src/` unchanged.
+
+Gates: `just lint` green; `just test` green (no failure line); `just mutation-oracle` green (58 + 39 + 40 tests); `just validate` green; `just cost-audit` green; `just forbid-unsafe` green; `just oracle-record` run repeatedly with no diff in tracked records (also by `git status` after two runs).
 
 ### Cost self-report
 
-- **Tokens (total):**
-- **Estimated USD:**
-- **Duration (minutes):**
-- **Source of the number:**
+- **Tokens (total):** null (not measurable from inside the session)
+- **Estimated USD:** null
+- **Duration (minutes):** null
+- **Source of the number:** estimate; the orchestrator replaces it with the harness figure. About 75 tool calls.
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
+- **New decisions emitted:** none.
 - **Deviations from spec:**
-- **Follow-up work identified:**
+  1. Spec measured "trailing junk of 12 bytes" as warning "Error reading RIFF file (corrupted?)". The record says ExifTool is SILENT for 12 trailing bytes (`webp-tail-12-bytes`) and warns only for 3 bytes, a length past EOF and a partial header. The warning table pins the measured behaviour.
+  2. Spec said the 12-byte header and 11-byte header give "no output"; measured, ExifTool prints an all-dash line (and Error "File format error" for 11 bytes), which the record parser accepts.
+  3. Chunk-code case variants are named `webp-exif-kind-capital-e`, `-lower`, `-last-letter-lower` (macOS is case-insensitive: `Exif` and `exif` collided as record file names).
+  4. Seeds are recorded and compared on the 20 Exif selectors only (regions are not compared on seeds), as the PNG seeds are; ExifTool runs on a `.webp` copy of each seed (the committed seed files have no extension), and the recorder does the same.
+  5. The tests were red for the right reason only partly: I ran the recorder before the first test run (to see the records), so the "no records" red was demonstrated afterwards by removing one record (`cannot read ... webp-exif-basic.txt`), not seen first.
+  6. `just fuzz-smoke webp_riff` ran clean: 2,113,087 runs in 61 s, no crash (`fuzz/Cargo.lock` restored with git).
+  7. No wildcard divergence (`EXIF_UNREAD`-style) was needed: the three divergence classes are exact per-selector entries.
+- **Follow-up work identified:** SPEC-032 (audit wiring) should say "located" for Icc and Xmp regions; the AVI divergence suggests the audit may meet RIFF AVI/WAV inputs that ExifTool reads.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   —
+   — The spec's measured claims (12-byte tail warning, "no output" for short headers) differed from the records; saying "re-measure, never trust" up front was right.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   —
+   — Case-insensitive filesystems: fixture names that differ only by case collide as record files.
 
 3. **Is there a follow-up spec I should write now?**
-   —
+   — Optional: a RIFF-form (WAV/AVI) decision, since ExifTool reads other RIFF forms; otherwise SPEC-032.
