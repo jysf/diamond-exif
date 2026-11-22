@@ -51,8 +51,8 @@ handback:
                                    #   to_agent above is a prediction from tier_map
   verdict: punch-list              # verify handoffs: approved | punch-list | rejected
   basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  tokens_total: 184662              # harness subagent_tokens
+  estimated_usd: 1.22              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: 40
   branch: claude/spec-031-verify
   pr: null
