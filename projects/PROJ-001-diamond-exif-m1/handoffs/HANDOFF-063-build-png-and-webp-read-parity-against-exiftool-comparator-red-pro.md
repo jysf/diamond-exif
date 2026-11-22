@@ -50,14 +50,14 @@ handback:
   agent: claude-sonnet-5-5
   verdict: null
   basis: estimate
-  tokens_total: null
-  estimated_usd: null
+  tokens_total: 168851              # harness subagent_tokens
+  estimated_usd: 1.11
   duration_minutes: null
   branch: claude/spec-031-fixes
   pr: null
   completed_at: 2026-11-21
   notes: "Token count not exposed to this subagent; the orchestrator replaces it with the harness figure. About 55 tool calls."
-  synced_at: null
+  synced_at: 2026-11-21
 ---
 
 # HANDOFF-063: Build SPEC-031 follow-up 2: empty text keyword and verify-2 Lows

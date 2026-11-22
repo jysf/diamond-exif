@@ -89,10 +89,30 @@ cost:
       duration_minutes: 40
       recorded_at: 2026-11-21
       notes: "tokens_total is null: a sub-agent cannot read its own transcript token counts; the orchestrator replaces it with the harness figure. About 45 tool calls."
+    - cycle: verify
+      handoff: HANDOFF-062
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 182299
+      estimated_usd: 1.20
+      duration_minutes: 45
+      recorded_at: 2026-11-21
+      notes: "tokens_total is null: a sub-agent cannot read its own transcript token counts; the orchestrator replaces it with the harness figure. About 45 tool calls."
+    - cycle: build
+      handoff: HANDOFF-063
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: estimate
+      tokens_total: 168851
+      estimated_usd: 1.11
+      duration_minutes: null
+      recorded_at: 2026-11-21
+      notes: "Token count not exposed to this subagent; the orchestrator replaces it with the harness figure. About 55 tool calls."
   totals:
-    tokens_total: 514971
-    estimated_usd: 3.40
-    session_count: 2
+    tokens_total: 1290160
+    estimated_usd: 8.51
+    session_count: 4
 ---
 
 # SPEC-031: PNG read parity against ExifTool: comparator, records, red-proofs
