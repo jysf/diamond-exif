@@ -112,7 +112,7 @@ pins `[Unreleased]` empty).
    and one mutated-copy proof that reverting to all-later-wins fails the new
    test (control first, a `RED-PROOF INJECTION` marker, needle found exactly
    once, marker must not leak). Follow `tests/webp_mutation_oracle.rs` and
-   `tests/jpeg_mutation_oracle.rs` (or the JPEG equivalent that exists) for the
+   `tests/mutation_oracle.rs` (the JPEG one) for the
    pattern; extend the existing file, do not invent a new apparatus.
 5. **Docs.** Correct the "later wins" statements in `guidance/questions.yaml`
    (`exiftool-several-exif-segments` and `several-exif-segments`) to the
