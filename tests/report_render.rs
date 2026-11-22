@@ -42,14 +42,14 @@ fn root() -> PathBuf {
 #[test]
 fn golden_text_json_csv_match_byte_for_byte() {
     let jpeg = report_inputs::full_house_jpeg();
-    let png = *b"GIF89a\x01\x00\x01\x00"; // unsupported; was a PNG signature before SPEC-032
+    let png = *b"GIF89a\x01\x00\x01\x00"; // unsupported GIF; was a PNG signature before SPEC-032
     let files = vec![
         FileEntry {
             label: b"photos/full-house.jpg",
             result: FileResult::Audited(audit(&jpeg)),
         },
         FileEntry {
-            label: b"photos/screenshot.png",
+            label: b"photos/screenshot.gif",
             result: FileResult::Audited(audit(&png)),
         },
         FileEntry {
@@ -87,14 +87,14 @@ fn golden_text_json_csv_match_byte_for_byte() {
 #[test]
 fn golden_files_are_unchanged_and_the_builder_reproduces_them() {
     let jpeg = report_inputs::full_house_jpeg();
-    let png = *b"GIF89a\x01\x00\x01\x00"; // unsupported; was a PNG signature before SPEC-032
+    let png = *b"GIF89a\x01\x00\x01\x00"; // unsupported GIF; was a PNG signature before SPEC-032
     let files = vec![
         FileEntry {
             label: b"photos/full-house.jpg",
             result: FileResult::Audited(audit(&jpeg)),
         },
         FileEntry {
-            label: b"photos/screenshot.png",
+            label: b"photos/screenshot.gif",
             result: FileResult::Audited(audit(&png)),
         },
         FileEntry {

@@ -138,7 +138,11 @@ fn png_regions_match_the_category_matrix() {
     // Chunk indexes: IHDR 0, then the six chunks 1..=6.
     let segs: Vec<usize> = region_items(&a).iter().map(|r| r.1).collect();
     assert_eq!(segs, vec![1, 2, 3, 4, 5, 6]);
-    assert!(a.health().clean, "all regions located, no issue");
+    // All regions located, no walk issue: the only reason this file is not
+    // clean is the raw profile (DEC-020 clause 5), counted as a failed block.
+    assert_eq!(a.health().jpeg_issues + a.health().exif_issues, 0);
+    assert_eq!(a.health().failed_blocks, 1);
+    assert!(!a.health().clean, "a raw profile is never clean");
     // Each finding points at its item.
     for f in a.findings() {
         assert_eq!(f.item.map(|i| a.items()[i]), Some(f.at));
@@ -151,6 +155,12 @@ fn png_text_keyword_rule_applies_through_the_audit() {
         p::text(b"author", b"x"),
         p::text(b"AUTHOR", b"x"),
         p::text(b"Copyright", b"x"),
+        p::text(b"Artist", b"x"),
+        p::ztxt(b"artist", b"zz"),
+        p::text(b"create-date", b"x"),
+        p::itxt(b"modify-date", 0, b"", b"", b"x"),
+        p::text(b"Create-date", b"x"),
+        p::text(b"ARTIST", b"x"),
         p::text(b"creation Time", b"x"),
         p::text(b"creation time", b"x"),
         p::text(b"Software", b"x"),
@@ -165,6 +175,14 @@ fn png_text_keyword_rule_applies_through_the_audit() {
             Category::Authorship,
             Category::FreeText,
             Category::Authorship,
+            // Artist, artist: Authorship; create-date, modify-date: Timestamps;
+            // Create-date, ARTIST: their own tags in ExifTool, free text here.
+            Category::Authorship,
+            Category::Authorship,
+            Category::Timestamps,
+            Category::Timestamps,
+            Category::FreeText,
+            Category::FreeText,
             Category::Timestamps,
             Category::FreeText,
             Category::Software,
@@ -175,17 +193,125 @@ fn png_text_keyword_rule_applies_through_the_audit() {
 }
 
 #[test]
-fn png_empty_region_has_an_item_and_no_finding() {
-    let bytes = png_with(&[p::text(b"Title", b""), p::iccp(b"x", 0, b"")]);
+fn png_empty_regions_have_an_item_and_their_finding() {
+    // ExifTool 13.55 prints a tag for each of these (measured, SPEC-032 fix
+    // round): a text chunk with an empty value, PNG:ProfileName and
+    // PNG:ICC_Profile (0 bytes), PNG:XMP (0 bytes), PNG:Author empty. So the
+    // audit keeps the finding (DEC-020 clause 3); only a WebP region is dropped.
+    let bytes = png_with(&[
+        p::text(b"Title", b""),
+        p::iccp(b"x", 0, b""),
+        p::itxt(b"XML:com.adobe.xmp", 0, b"", b"", b""),
+        p::text(b"Author", b""),
+        p::ztxt(b"Author", &[]),
+    ]);
     let a = audit(&bytes);
-    assert!(region_items(&a)
-        .iter()
-        .any(|r| r.0 == RegionKind::Text && r.2 == 0));
-    assert!(a
-        .findings()
-        .iter()
-        .all(|f| f.category != Category::FreeText));
-    assert_eq!(a.items().len(), region_items(&a).len());
+    let items = region_items(&a);
+    assert_eq!(
+        items.iter().map(|r| (r.0, r.2)).collect::<Vec<_>>(),
+        vec![
+            (RegionKind::Text, 0),
+            (RegionKind::Icc, 0),
+            (RegionKind::Xmp, 0),
+            (RegionKind::Text, 0),
+            (RegionKind::Text, 0),
+        ]
+    );
+    assert_eq!(
+        categories(&a),
+        vec![
+            Category::FreeText,
+            Category::Icc,
+            Category::Xmp,
+            Category::Authorship,
+            Category::Authorship,
+        ]
+    );
+    assert_eq!(a.items().len(), items.len());
+    assert!(a.health().clean);
+}
+
+/// ExifTool 13.55 prints `PNG:ModifyDate` for a `tIME` chunk of every length 0
+/// to 12 (measured, SPEC-032 fix round: 0 bytes gives `0000:00:00 00:00:00`,
+/// 6 bytes `2020:01:02 03:04:00`, 8 to 12 bytes the same as 7), so the audit has
+/// a `Time` item and a `Timestamps` finding for each length class.
+#[test]
+fn png_time_chunk_of_any_length_is_a_timestamp() {
+    let full = [0x07, 0xE4, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+    for len in 0..=12usize {
+        let bytes = png_with(&[p::chunk(b"tIME", &full[..len])]);
+        let a = audit(&bytes);
+        assert_eq!(
+            region_items(&a),
+            vec![(RegionKind::Time, 1, len)],
+            "tIME of {len} bytes"
+        );
+        assert_eq!(categories(&a), vec![Category::Timestamps], "len {len}");
+        assert!(a.health().clean, "len {len}");
+    }
+}
+
+#[test]
+fn png_raw_profile_is_an_unreadable_block_never_clean() {
+    use exif_core::report::{status_of, FileResult, Status};
+    // The profile body is not decoded: hex for an Exif with GPS would be here.
+    let body: &[u8] = b"\nexif\n        26\n4578696600004d4d002a00000008\n";
+    let cases: Vec<(&str, Vec<u8>)> = vec![
+        (
+            "tEXt alone",
+            png_with(&[p::text(b"Raw profile type exif", body)]),
+        ),
+        (
+            "zTXt alone",
+            png_with(&[p::ztxt(b"Raw profile type exif", body)]),
+        ),
+        (
+            "tEXt beside a GPS-free eXIf",
+            png_with(&[
+                p::exif_chunk(&p::exif_with_make()),
+                p::text(b"Raw profile type exif", body),
+            ]),
+        ),
+        (
+            "zTXt beside a GPS-free eXIf",
+            png_with(&[
+                p::exif_chunk(&p::exif_with_make()),
+                p::ztxt(b"Raw profile type exif", body),
+            ]),
+        ),
+        (
+            "iTXt alone",
+            png_with(&[p::itxt(b"Raw profile type xmp", 1, b"", b"", body)]),
+        ),
+    ];
+    for (name, bytes) in cases {
+        let a = audit(&bytes);
+        assert_eq!(a.kind(), ContainerKind::Png, "{name}");
+        assert!(!a.health().clean, "{name}: not clean");
+        assert_eq!(a.health().failed_blocks, 1, "{name}");
+        assert_eq!(
+            a.health().jpeg_issues + a.health().exif_issues,
+            0,
+            "{name}: the raw profile is the only reason"
+        );
+        // Besides its OtherSegment finding, not instead of it.
+        assert!(
+            a.findings_in(Category::OtherSegment).next().is_some(),
+            "{name}"
+        );
+        let r = FileResult::Audited(a);
+        assert_eq!(status_of(&r), Status::Unreadable, "{name}: status");
+    }
+    // An EMPTY raw profile holds nothing: located, a finding, not unreadable.
+    let empty = png_with(&[p::text(b"Raw profile type exif", b"")]);
+    let a = audit(&empty);
+    assert!(a.health().clean && a.health().failed_blocks == 0);
+    // Two raw profiles are two failed blocks.
+    let two = png_with(&[
+        p::text(b"Raw profile type exif", body),
+        p::ztxt(b"Raw profile type xmp", body),
+    ]);
+    assert_eq!(audit(&two).health().failed_blocks, 2);
 }
 
 #[test]
@@ -260,23 +386,57 @@ fn webp_two_exif_blocks_are_both_inventoried() {
     assert!(a.items().iter().any(|i| i.origin().after_scan));
 }
 
-#[test]
-fn webp_seventeen_exif_blocks_with_gps_in_the_last_is_not_clean() {
-    // The library parses 16 blocks; the 17th (GPS only there) is not listed,
-    // so the audit must not read as clean or reliable (DEC-020 item 2).
+/// A WebP with `n` EXIF blocks, each holding a Make entry, and GPS in the last.
+fn webp_blocks_gps_last(n: usize) -> Vec<u8> {
     let mut parts = vec![w::vp8x(w::FLAG_EXIF, 1, 1), w::vp8l()];
-    for _ in 0..16 {
-        parts.push(w::exif_chunk(&w::tiff_empty()));
+    for _ in 1..n {
+        parts.push(w::exif_chunk(&w::exif_with_make()));
     }
     parts.push(w::exif_chunk(&tiff_with_gps()));
-    let bytes = w::riff(&parts);
-    let a = audit(&bytes);
-    assert_eq!(a.kind(), ContainerKind::Webp);
-    assert!(gps_findings(&a).is_empty(), "the 17th block is not listed");
-    assert!(!a.health().clean, "17 blocks: not clean");
-    for policy in StripPolicy::PRESETS {
-        let pv = preview(&a, policy);
-        assert!(!pv.reliable() && !pv.strippable());
+    w::riff(&parts)
+}
+
+/// The cap is 16 blocks (`MAX_WEBP_EXIF_BLOCKS`). Every EXIF chunk after the
+/// first already costs one `ExtraExif` walk issue, so "not clean" cannot tell
+/// the cap from a second block; the pair does: 16 blocks list the GPS of the
+/// 16th, 17 do not list the GPS of the 17th, the listed blocks are 16 either
+/// way, and the issue count is blocks - 1 (15, then 16: the 17th chunk is
+/// counted though it gets no block).
+#[test]
+fn webp_sixteen_blocks_list_the_last_gps_seventeen_do_not() {
+    let (b16, b17) = (webp_blocks_gps_last(16), webp_blocks_gps_last(17));
+    let sixteen = audit(&b16);
+    let seventeen = audit(&b17);
+    let listed = |a: &FileAudit<'_>| -> Vec<usize> {
+        let mut v: Vec<usize> = a.items().iter().filter_map(|i| i.origin().block).collect();
+        v.dedup();
+        v
+    };
+    assert_eq!(listed(&sixteen), (0..16).collect::<Vec<_>>());
+    assert_eq!(listed(&seventeen), (0..16).collect::<Vec<_>>());
+    assert_eq!(gps_findings(&sixteen), vec![Some(15)], "the 16th is listed");
+    assert!(
+        gps_findings(&seventeen).is_empty(),
+        "the 17th block is not listed"
+    );
+    assert_eq!(sixteen.health().jpeg_issues, 15, "15 extra EXIF chunks");
+    assert_eq!(
+        seventeen.health().jpeg_issues,
+        16,
+        "the 17th chunk is counted by the walk though it gets no block"
+    );
+    for a in [&sixteen, &seventeen] {
+        assert_eq!(a.kind(), ContainerKind::Webp);
+        assert!(!a.health().clean);
+        assert_eq!(
+            a.health().failed_blocks,
+            0,
+            "no block failed: it is `issues`"
+        );
+        for policy in StripPolicy::PRESETS {
+            let pv = preview(a, policy);
+            assert!(!pv.reliable() && !pv.strippable());
+        }
     }
 }
 
@@ -410,5 +570,42 @@ fn garbage_after_the_signature_does_not_panic() {
         b"RIFF\x04\x00\x00\x00WEBPJUNK",
     ] {
         assert!(!audit(bytes).health().clean);
+    }
+}
+
+/// `ContainerKind::strippable` is true for JPEG and TIFF only (DEC-020 clause
+/// 6); the preview reads it, so GIF, HEIC, BigTIFF, empty and unknown files
+/// say `strippable` false.
+#[test]
+fn only_jpeg_and_tiff_are_strippable() {
+    assert!(ContainerKind::Jpeg.strippable());
+    assert!(ContainerKind::Tiff.strippable());
+    assert!(!ContainerKind::Png.strippable());
+    assert!(!ContainerKind::Webp.strippable());
+    let inputs: Vec<(&str, Vec<u8>, bool)> = vec![
+        ("tiff", tiff_with_gps(), true),
+        ("jpeg", b"\xFF\xD8\xFF\xD9".to_vec(), true),
+        ("png", p::minimal(), false),
+        ("webp", w::minimal(), false),
+        (
+            "gif",
+            b"GIF89a\x01\x00\x01\x00\x00\x00\x00;".to_vec(),
+            false,
+        ),
+        (
+            "heic",
+            b"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00".to_vec(),
+            false,
+        ),
+        ("bigtiff", b"II+\x00\x08\x00\x00\x00".to_vec(), false),
+        ("empty", Vec::new(), false),
+        ("unknown", b"hello, world".to_vec(), false),
+    ];
+    for (name, bytes, want) in inputs {
+        let a = audit(&bytes);
+        assert_eq!(a.kind().strippable(), want, "{name}");
+        for policy in StripPolicy::PRESETS {
+            assert_eq!(preview(&a, policy).strippable(), want, "{name}");
+        }
     }
 }

@@ -17,8 +17,9 @@
 //! 2. **Text keywords.** `png-text-keywords` carries one `tEXt` chunk per
 //!    keyword; its record (`-a -G1 -s -n`, the `[PNG]` group) maps each keyword
 //!    to the tag name ExifTool printed. The audit's category for a keyword must
-//!    agree with the printed name (`Author`, `Copyright` to Authorship,
-//!    `CreationTime` to Timestamps, `Software` to Software, the rest FreeText),
+//!    agree with the printed name (`Artist`, `Author`, `Copyright` to
+//!    Authorship, `CreationTime`, `CreateDate`, `ModDate` to Timestamps,
+//!    `Software` to Software, the rest FreeText),
 //!    except for the keywords in [`KEYWORD_DIVERGENCES`].
 //!
 //! Red-proofs: a perturbed record makes each replay name the fixture or the
@@ -135,19 +136,19 @@ const DIFFERENCES: &[Difference] = &[
     Difference {
         input: "png-raw-xmp-itxt",
         categories: "xmp",
-        why: "ExifTool decodes the ImageMagick raw profile and prints the XMP; the audit locates the chunk as a RawProfile (OtherSegment, may hold XMP) and has no Xmp finding (DEC-018, DEC-020)",
+        why: "ExifTool decodes the ImageMagick raw profile and prints the XMP; the audit locates the chunk as a RawProfile (OtherSegment, may hold XMP) and has no Xmp finding, but the file is never clean and its status is `unreadable` (DEC-018, DEC-020 clause 5)",
         question_id: "png-raw-profile-not-decoded",
     },
     Difference {
         input: "png-raw-xmp-text",
         categories: "xmp",
-        why: "ExifTool decodes the ImageMagick raw profile and prints the XMP; the audit locates the chunk as a RawProfile (OtherSegment, may hold XMP) and has no Xmp finding (DEC-018, DEC-020)",
+        why: "ExifTool decodes the ImageMagick raw profile and prints the XMP; the audit locates the chunk as a RawProfile (OtherSegment, may hold XMP) and has no Xmp finding, but the file is never clean and its status is `unreadable` (DEC-018, DEC-020 clause 5)",
         question_id: "png-raw-profile-not-decoded",
     },
     Difference {
         input: "png-raw-xmp-ztxt",
         categories: "xmp",
-        why: "ExifTool decodes the ImageMagick raw profile and prints the XMP; the audit locates the chunk as a RawProfile (OtherSegment, may hold XMP) and has no Xmp finding (DEC-018, DEC-020)",
+        why: "ExifTool decodes the ImageMagick raw profile and prints the XMP; the audit locates the chunk as a RawProfile (OtherSegment, may hold XMP) and has no Xmp finding, but the file is never clean and its status is `unreadable` (DEC-018, DEC-020 clause 5)",
         question_id: "png-raw-profile-not-decoded",
     },
     Difference {
@@ -550,8 +551,8 @@ fn every_difference_has_a_question_a_reason_and_is_an_input_of_the_check() {
 /// a timestamp, `Software` software, every other name free text.
 fn category_of_printed_name(name: &str) -> Category {
     match name {
-        "Author" | "Copyright" => Category::Authorship,
-        "CreationTime" => Category::Timestamps,
+        "Artist" | "Author" | "Copyright" => Category::Authorship,
+        "CreationTime" | "CreateDate" | "ModDate" => Category::Timestamps,
         "Software" => Category::Software,
         _ => Category::FreeText,
     }
@@ -634,7 +635,14 @@ fn the_keyword_record_covers_every_keyword_of_the_fixture() {
     let keywords: Vec<&str> = named.iter().map(|(k, _)| k.as_str()).collect();
     assert_eq!(keywords, oracle_png::TEXT_KEYWORDS.to_vec());
     // The measured cases the rule rests on are in the fixture.
-    for k in ["Author", "author", "AUTHOR", "aUTHOR"] {
+    for k in [
+        "Author",
+        "author",
+        "AUTHOR",
+        "aUTHOR",
+        "Artist",
+        "create-date",
+    ] {
         assert!(keywords.contains(&k), "{k}");
     }
 }
@@ -690,6 +698,16 @@ fn the_audit_of_the_keyword_fixture_applies_the_table_in_chunk_order() {
     assert_eq!(by_hand("Copyright"), Authorship);
     assert_eq!(by_hand("Creation Time"), Timestamps);
     assert_eq!(by_hand("Software"), Software);
+    // L1 rows: ExifTool 13.55 prints `Artist`, `CreateDate`, `ModDate`.
+    assert_eq!(by_hand("Artist"), Authorship);
+    assert_eq!(by_hand("artist"), Authorship);
+    assert_eq!(by_hand("ARTIST"), FreeText);
+    assert_eq!(by_hand("create-date"), Timestamps);
+    assert_eq!(by_hand("Create-date"), FreeText);
+    assert_eq!(by_hand("CREATE-DATE"), FreeText);
+    assert_eq!(by_hand("modify-date"), Timestamps);
+    assert_eq!(by_hand("Modify-date"), FreeText);
+    assert_eq!(by_hand("MODIFY-DATE"), FreeText);
     assert_eq!(by_hand("Title"), FreeText);
     assert_eq!(by_hand("Unknown Keyword"), FreeText);
 }
@@ -773,4 +791,78 @@ fn the_seventeenth_exif_block_makes_the_audit_not_clean() {
     );
     let p = exif_core::audit::preview(&a, exif_core::StripPolicy::Everything);
     assert!(!p.reliable());
+}
+
+/// DEC-020 clause 5, against ExifTool (live; `SKIP` without it). An ImageMagick
+/// raw profile holding Exif with GPS, alone and beside a GPS-free `eXIf`, in a
+/// `tEXt` and a `zTXt` chunk: ExifTool 13.55 decodes it and prints
+/// `Composite:GPSLatitude` (measured, SPEC-032 fix round), the audit does not
+/// decode it, so it has no `Gps` finding. That difference is not a silent miss:
+/// the raw profile counts as a failed block, so the file is not clean and its
+/// report status is `unreadable` (exit 3 in the CLI). The committed replay
+/// fixtures carry no GPS raw profile, so this one is live only.
+#[test]
+fn a_raw_profile_with_gps_is_decoded_by_exiftool_and_unreadable_to_the_audit() {
+    use exif_core::report::{status_of, FileResult, Status};
+    let test = "a_raw_profile_with_gps_is_decoded_by_exiftool_and_unreadable_to_the_audit";
+    if !live_gate(test) {
+        return;
+    }
+    let tiff_named = |name: &str| -> Vec<u8> {
+        oracle_tiff::fixtures()
+            .into_iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, b)| b)
+            .unwrap_or_else(|| panic!("no TIFF fixture named {name}"))
+    };
+    let gps_tiff = tiff_named("exif-gps-ne-le");
+    let make_tiff = tiff_named("exif-basic-le");
+    let body = oracle_png::raw_profile_body("exif", &[&b"Exif\0\0"[..], &gps_tiff].concat());
+    let key: &[u8] = b"Raw profile type exif";
+    let cases: Vec<(&str, Vec<Vec<u8>>)> = vec![
+        ("text", vec![oracle_png::text(key, &body)]),
+        ("ztxt", vec![oracle_png::ztxt(key, &body)]),
+        (
+            "text-beside-exif",
+            vec![
+                oracle_png::exif_chunk(&make_tiff),
+                oracle_png::text(key, &body),
+            ],
+        ),
+        (
+            "ztxt-beside-exif",
+            vec![
+                oracle_png::exif_chunk(&make_tiff),
+                oracle_png::ztxt(key, &body),
+            ],
+        ),
+    ];
+    for (name, chunks) in cases {
+        let bytes = oracle_png::png(&chunks, &[], &[]);
+        let path = tools::temp_file_with_ext(&format!("raw-gps-{name}"), "png", &bytes)
+            .expect("temp file");
+        let args: Vec<String> = ["-a", "-G1", "-s", "-n"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let run = tools::run_tool("exiftool", &args, &path);
+        let _ = std::fs::remove_file(&path);
+        let live = String::from_utf8_lossy(&run.expect("run exiftool").stdout).into_owned();
+        assert!(
+            live.contains("[Composite]") && live.contains("GPSLatitude"),
+            "{name}: ExifTool printed no GPS (the oracle must see what the audit cannot):\n{live}"
+        );
+        assert!(
+            !ours(&bytes).gps,
+            "{name}: the audit decodes no raw profile"
+        );
+        let a = audit(&bytes);
+        assert!(!a.health().clean, "{name}: never clean");
+        assert_eq!(a.health().failed_blocks, 1, "{name}");
+        assert_eq!(
+            status_of(&FileResult::Audited(a)),
+            Status::Unreadable,
+            "{name}"
+        );
+    }
 }

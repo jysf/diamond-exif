@@ -1305,7 +1305,8 @@ fn png_two_exif_regions(w: &Writer) -> Vec<u8> {
     ])
 }
 
-/// Regions of length 0: an item each, no finding.
+/// Regions of length 0: an item and a finding each (a PNG region keeps its
+/// finding when empty, measured against ExifTool).
 fn png_empty_regions() -> Vec<u8> {
     png_around(&[
         png_shapes::text(b"Author", b""),

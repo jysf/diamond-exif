@@ -21,7 +21,7 @@ file: photos/full-house.jpg
     - jumbf [medium] region jumbf len=1 block=- segment=4: kept_unread (may hold what this policy removes)
   preview (all_pii): removed 10, kept 2, kept_unread 3; residual findings 5, residual severity medium
 
-file: photos/screenshot.png
+file: photos/screenshot.gif
   status: unsupported
   container: gif
   health: jpeg_issues=0 exif_issues=0 failed_blocks=0 inventory_truncated=false

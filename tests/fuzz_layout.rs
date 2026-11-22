@@ -1510,8 +1510,9 @@ fn audit_seeds_are_committed_and_have_the_shapes_they_claim() {
         let cats = |c: Category| au.findings().iter().filter(|f| f.category == c).count();
         assert_eq!(cats(Category::Authorship), 3);
         assert_eq!(cats(Category::Software), 1);
-        // One `tIME` is the 7-byte form, the other is too short to be a time.
-        assert_eq!(cats(Category::Timestamps), 2, "Creation Time and one tIME");
+        // One `tIME` is the 7-byte form, the other is short; both are times
+        // (ExifTool prints `PNG:ModifyDate` for a `tIME` of any length).
+        assert_eq!(cats(Category::Timestamps), 3, "Creation Time and two tIME");
         let two = audit_seed("audit-png-two-exif-regions");
         let au = audit(&two);
         assert_eq!(kind(&two), "Png");
@@ -1527,7 +1528,11 @@ fn audit_seeds_are_committed_and_have_the_shapes_they_claim() {
             .filter(|i| matches!(i.kind(), exif_core::audit::ItemKind::Region { len: 0, .. }))
             .count();
         assert_eq!(empties, 3, "an empty Author, XMP and ICC region");
-        assert_eq!(au.findings().len(), 1, "only the Title text is a finding");
+        assert_eq!(
+            au.findings().len(),
+            4,
+            "the Title text and the three empty PNG regions (ExifTool prints a tag for each)"
+        );
         let w = audit_seed("audit-webp-exif-xmp-icc");
         let au = audit(&w);
         assert_eq!(kind(&w), "Webp");
@@ -2011,6 +2016,7 @@ fn png_webp_plants() -> Vec<Plant> {
     const TWO: &str = "audit-png-two-exif-regions";
     const EMPTY: &str = "audit-png-empty-regions";
     const WEBP: &str = "audit-webp-exif-xmp-icc";
+    const WEBP_EMPTY: &str = "audit-webp-empty-regions";
     fn region_item(f: &Facts, name: &str) -> usize {
         f.items
             .iter()
@@ -2096,8 +2102,8 @@ fn png_webp_plants() -> Vec<Plant> {
             },
         },
         Plant {
-            name: "an empty region with a finding",
-            input: EMPTY,
+            name: "an empty WebP region with a finding",
+            input: WEBP_EMPTY,
             guard: "category_shape",
             apply: |f| {
                 let i = f
@@ -2112,6 +2118,56 @@ fn png_webp_plants() -> Vec<Plant> {
                     thumb: None,
                     embedded: None,
                 });
+            },
+        },
+        Plant {
+            name: "an empty PNG region without a finding",
+            input: EMPTY,
+            guard: "category_shape",
+            apply: |f| {
+                let i = f
+                    .items
+                    .iter()
+                    .position(|x| matches!(&x.what, What::Region { len: 0, .. }))
+                    .expect("an empty region item");
+                let n = f.findings.len();
+                f.findings.retain(|x| x.item != Some(i));
+                assert!(
+                    f.findings.len() < n,
+                    "premise: the empty region has a finding"
+                );
+            },
+        },
+        Plant {
+            name: "a short tIME item left out of the inventory",
+            input: TEXT,
+            guard: "inventory",
+            apply: |f| {
+                let i = f
+                    .items
+                    .iter()
+                    .position(|x| {
+                        matches!(&x.what, What::Region { kind, len, .. } if kind == "Time" && *len != 7)
+                    })
+                    .expect("a short tIME item");
+                f.items.remove(i);
+            },
+        },
+        Plant {
+            name: "a raw profile not counted as a failed block",
+            input: TWO,
+            guard: "health",
+            apply: |f| f.health.failed_blocks = 0,
+        },
+        Plant {
+            name: "a PNG with a raw profile reported clean",
+            input: TWO,
+            guard: "health",
+            apply: |f| {
+                f.health.failed_blocks = 0;
+                f.health.jpeg_issues = 0;
+                f.health.exif_issues = 0;
+                f.health.clean = true;
             },
         },
         Plant {

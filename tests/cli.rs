@@ -1702,6 +1702,101 @@ fn a_webp_with_unreadable_or_odd_metadata_is_not_ok() {
     assert_eq!(exit_of(&strict), 3);
 }
 
+/// DEC-020 clause 5: an ImageMagick raw profile can hold Exif with GPS that
+/// ExifTool decodes and the audit does not, so it is never `ok`: status
+/// `unreadable`, exit 3 (the incomplete code), with or without `--strict`.
+#[test]
+fn a_png_raw_profile_is_unreadable_and_exits_three() {
+    let t = Tree::new("png-raw-profile");
+    // The body is not decoded by the audit; this is what ImageMagick writes.
+    let body: &[u8] = b"\nexif\n        26\n4578696600004d4d002a00000008\n";
+    let files: Vec<(&str, Vec<u8>)> = vec![
+        (
+            "text.png",
+            png_around(&[png_shapes::text(b"Raw profile type exif", body)]),
+        ),
+        (
+            "ztxt.png",
+            png_around(&[png_shapes::ztxt(b"Raw profile type exif", body)]),
+        ),
+        (
+            "text-beside-exif.png",
+            png_around(&[
+                png_shapes::exif_chunk(&png_shapes::exif_with_make()),
+                png_shapes::text(b"Raw profile type exif", body),
+            ]),
+        ),
+        (
+            "ztxt-beside-exif.png",
+            png_around(&[
+                png_shapes::exif_chunk(&png_shapes::exif_with_make()),
+                png_shapes::ztxt(b"Raw profile type exif", body),
+            ]),
+        ),
+    ];
+    for (name, bytes) in files {
+        t.write(name, &bytes);
+        let r = one_file(&t, name);
+        assert_eq!(
+            (r.status.as_str(), r.container.as_str()),
+            ("unreadable", "png"),
+            "{name}"
+        );
+        assert!(
+            r.categories.iter().any(|c| c == "other_segment"),
+            "{name}: {:?}",
+            r.categories
+        );
+        assert_eq!(exit_of(&r.out), 3, "{name}: {}", r.out.text());
+        let strict = Cmd::new().args(["--strict", name]).cwd(&t.root).run();
+        assert_eq!(exit_of(&strict), 3, "{name} --strict");
+    }
+}
+
+/// DEC-020 clause 6: `strippable` is true only for JPEG and TIFF, so every
+/// other file says false in JSON, including the containers the audit does not
+/// read at all.
+#[test]
+fn strippable_is_false_in_json_for_every_kind_but_jpeg_and_tiff() {
+    let t = Tree::new("strippable");
+    let files: Vec<(&str, Vec<u8>, bool)> = vec![
+        ("a.tif", low_only(), true),
+        ("a.jpg", house(), true),
+        ("a.png", png_shapes::minimal(), false),
+        ("a.webp", webp_shapes::minimal(), false),
+        (
+            "a.gif",
+            b"GIF89a\x01\x00\x01\x00\x00\x00\x00;".to_vec(),
+            false,
+        ),
+        (
+            "a.heic",
+            b"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00".to_vec(),
+            false,
+        ),
+        ("a.btf", b"II+\x00\x08\x00\x00\x00".to_vec(), false),
+        ("empty.bin", Vec::new(), false),
+        ("unknown.bin", b"hello, world".to_vec(), false),
+    ];
+    for (name, bytes, want) in files {
+        t.write(name, &bytes);
+        let out = Cmd::new()
+            .args(["--json", "--policy", "all-pii", name])
+            .cwd(&t.root)
+            .run();
+        let j = json_of(&out);
+        let f = j.get("files").and_then(J::as_arr).expect("files")[0].clone();
+        let got = f
+            .get("preview")
+            .and_then(|p| p.get("strippable"))
+            .and_then(|b| match b {
+                J::Bool(v) => Some(*v),
+                _ => None,
+            });
+        assert_eq!(got, Some(want), "{name}: {}", out.text());
+    }
+}
+
 #[test]
 fn heic_is_still_unsupported_and_png_obeys_the_size_cap() {
     let t = Tree::new("heic");

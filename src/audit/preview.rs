@@ -7,8 +7,9 @@
 //! [`Disposition::KeptUnread`], not [`Disposition::Kept`]. Nothing else is
 //! consulted (not the severity, the container or the origin).
 //!
-//! A PNG or a WebP is the exception to the lookup (DEC-020): the writer refuses
-//! both, so every finding is [`Disposition::Kept`], nothing is removed,
+//! A container the writer refuses (everything but JPEG and TIFF; in practice a
+//! PNG or a WebP, the only others with findings) is the exception to the lookup
+//! (DEC-020): every finding is [`Disposition::Kept`], nothing is removed,
 //! [`Preview::strippable`] is false and [`Preview::reliable`] is false.
 //!
 //! The preview covers findings only. Inventory-only entries have no category
@@ -16,7 +17,7 @@
 //!
 //! Provenance (DEC-003, class 1): net-new code over [`Category`] and DEC-009.
 
-use super::{Category, ContainerKind, FileAudit, Severity};
+use super::{Category, FileAudit, Severity};
 use crate::policy::{may_hold, StripPolicy, StripSpec};
 
 /// What a policy does to one finding.
@@ -109,9 +110,11 @@ impl Preview {
         self.reliable
     }
 
-    /// Whether the writer can strip this container. False for a PNG and a WebP
-    /// (DEC-020): they are audited, but [`crate::write::strip`] refuses them, so
-    /// the dispositions describe nothing the writer would do.
+    /// Whether the writer can strip this container: [`ContainerKind::strippable`],
+    /// true only for JPEG and TIFF (DEC-020 clause 6). False for a PNG and a WebP
+    /// (audited, but [`crate::write::strip`] refuses them) and for GIF, HEIC,
+    /// BigTIFF, an empty file and an unknown one, so the dispositions describe
+    /// nothing the writer would do.
     pub fn strippable(&self) -> bool {
         self.strippable
     }
@@ -132,7 +135,7 @@ fn disposition_of(c: Category, spec: StripSpec) -> Disposition {
 /// linear in the findings.
 pub fn preview(audit: &FileAudit<'_>, policy: StripPolicy) -> Preview {
     let spec = policy.spec();
-    let strippable = !matches!(audit.kind(), ContainerKind::Png | ContainerKind::Webp);
+    let strippable = audit.kind().strippable();
     let mut counts = Counts {
         removed: 0,
         kept: 0,

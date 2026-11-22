@@ -235,9 +235,9 @@ impl Summary {
                 self.max_severity = Some(m);
             }
         }
-        // The same rule as `Preview::reliable`: a PNG or a WebP is never
-        // reliable, the writer refuses it (DEC-020).
-        let strippable = !matches!(a.kind(), ContainerKind::Png | ContainerKind::Webp);
+        // The same rule as `Preview::reliable`: a container the writer refuses
+        // is never reliable (DEC-020 clause 6, one shared definition).
+        let strippable = a.kind().strippable();
         let reliable = strippable && a.health().clean && !a.health().inventory_truncated;
         if reliable {
             self.reliable_files = self.reliable_files.saturating_add(1);

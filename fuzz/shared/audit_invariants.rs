@@ -23,7 +23,7 @@
 
 #[allow(dead_code)]
 mod audit_invariants {
-    use exif_core::audit::{audit, FileAudit, ItemKind};
+    use exif_core::audit::{audit, ContainerKind, FileAudit, ItemKind, Sniffed};
     use exif_core::jpeg::{self, Region, SegmentKind};
     use exif_core::png::{self, PngRegion};
     use exif_core::tiff::Container;
@@ -497,15 +497,20 @@ mod audit_invariants {
     }
 
     /// The PNG text keyword rule, typed again from DEC-020 and MEASURED against
-    /// ExifTool 13.55: the keyword's first letter is upper-cased, then the
-    /// whole keyword is compared exactly.
+    /// ExifTool 13.55: the keyword is compared exactly, and again after its
+    /// first letter is upper-cased. The two date keywords are spelled lower case
+    /// in ExifTool's table, so the second comparison cannot reach them: only
+    /// the exact spelling does (`create-date`, `modify-date`; measured).
     fn png_keyword_category(keyword: &[u8]) -> &'static str {
+        if keyword == b"create-date" || keyword == b"modify-date" {
+            return "Timestamps";
+        }
         let mut k = keyword.to_vec();
         if let Some(first) = k.first_mut() {
             *first = first.to_ascii_uppercase();
         }
         match k.as_slice() {
-            b"Author" | b"Copyright" => "Authorship",
+            b"Author" | b"Artist" | b"Copyright" => "Authorship",
             b"Creation Time" => "Timestamps",
             b"Software" => "Software",
             _ => "FreeText",
@@ -513,13 +518,18 @@ mod audit_invariants {
     }
 
     /// Items for the located regions, in input-offset order (ties keep the
-    /// order they were found in). A region of length 0 is an item with no
-    /// finding (DEC-020).
-    fn push_located(acc: &mut Acc, mut located: Vec<Located>) {
+    /// order they were found in). A WebP region of length 0 is an item with no
+    /// finding; a PNG region of length 0 keeps its finding (DEC-020 clause 3,
+    /// measured: ExifTool prints a tag for each empty PNG region).
+    fn push_located(acc: &mut Acc, mut located: Vec<Located>, drop_empty: bool) {
         located.sort_by_key(|l| l.offset);
         for l in located {
             let len_zero = matches!(&l.at.what, What::Region { len: 0, .. });
-            let category = if len_zero { None } else { l.category };
+            let category = if len_zero && drop_empty {
+                None
+            } else {
+                l.category
+            };
             acc.push(l.at, category, None);
         }
     }
@@ -570,6 +580,11 @@ mod audit_invariants {
         };
         for r in meta.regions() {
             tick(1);
+            // DEC-020 clause 5, typed again: a non-empty raw profile may hold
+            // Exif the audit cannot read, so it is a failed block.
+            if matches!(r, PngRegion::RawProfile { .. }) && !r.data().is_empty() {
+                *failed += 1;
+            }
             let (name, category) = match r {
                 PngRegion::Xmp { .. } => ("Xmp", "Xmp"),
                 PngRegion::Icc { .. } => ("Icc", "Icc"),
@@ -584,13 +599,14 @@ mod audit_invariants {
                 category: Some(category),
             });
         }
-        // A `tIME` chunk is a time only in its specified 7-byte form.
+        // A `tIME` chunk of ANY length is a time (ExifTool 13.55 prints
+        // `PNG:ModifyDate` for every length 0 to 12, measured).
         for (i, c) in chunks.iter().enumerate() {
             tick(1);
-            if &c.chunk_type() == b"tIME" && c.data().len() == 7 {
+            if &c.chunk_type() == b"tIME" {
                 located.push(Located {
                     offset: c.offset(),
-                    at: region_at("Time", i, 7, after(i)),
+                    at: region_at("Time", i, c.data().len(), after(i)),
                     category: Some("Timestamps"),
                 });
             }
@@ -604,7 +620,7 @@ mod audit_invariants {
                 category: Some("OtherSegment"),
             });
         }
-        push_located(acc, located);
+        push_located(acc, located, false);
         exif_issues
     }
 
@@ -665,7 +681,7 @@ mod audit_invariants {
                 category: Some(category),
             });
         }
-        push_located(acc, located);
+        push_located(acc, located, true);
         exif_issues
     }
 
@@ -957,14 +973,15 @@ mod audit_invariants {
             tick(1);
             if let What::Region { len, .. } = item.what {
                 let found = has_finding.get(i).copied().unwrap_or(false);
-                // DEC-020: a length-0 PNG or WebP region is inventoried and
-                // has no finding (ExifTool shows nothing for it); in every
-                // other case a region has exactly one.
-                let png_or_webp = got.kind == "Png" || got.kind == "Webp";
-                if png_or_webp && len == 0 && found {
+                // DEC-020 clause 3: a length-0 WebP region is inventoried and
+                // has no finding (ExifTool shows nothing for it); a length-0
+                // PNG region keeps its finding (ExifTool prints a tag for each,
+                // measured); every other region has exactly one.
+                let no_finding_expected = got.kind == "Webp" && len == 0;
+                if no_finding_expected && found {
                     return Err(format!("an empty region item {i} has a finding"));
                 }
-                if !(png_or_webp && len == 0) && !found {
+                if !no_finding_expected && !found {
                     return Err(format!("region item {i} has no finding"));
                 }
             }
@@ -1351,10 +1368,19 @@ mod audit_invariants {
         pub strippable: bool,
     }
 
-    /// Whether the writer can strip a container of this kind: it refuses a PNG
-    /// and a WebP (DEC-020), typed again.
+    /// Whether the writer can strip a container of this kind (DEC-020 clause
+    /// 6). The harness holds the kind as a label, so it maps the label back to
+    /// a `ContainerKind` and asks the ONE definition, `ContainerKind::strippable`
+    /// (true for JPEG and TIFF only); it keeps no copy of the rule.
     pub fn strippable_kind(kind: &str) -> bool {
-        kind != "Png" && kind != "Webp"
+        let k = match kind {
+            "Tiff" => ContainerKind::Tiff,
+            "Jpeg" => ContainerKind::Jpeg,
+            "Png" => ContainerKind::Png,
+            "Webp" => ContainerKind::Webp,
+            _ => ContainerKind::Unsupported(Sniffed::Unknown),
+        };
+        k.strippable()
     }
 
     /// `Preview::reliable`, re-derived: strippable, clean and not truncated.

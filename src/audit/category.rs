@@ -223,10 +223,15 @@ pub fn region_category(kind: RegionKind) -> Category {
 /// The PNG text keywords that are not free text (DEC-020), as data: one row per
 /// keyword, in ExifTool's standard spelling. SPEC-033 may re-home `Copyright`
 /// by editing its row.
-const TEXT_KEYWORDS: [(&[u8], Category); 4] = [
+const TEXT_KEYWORDS: [(&[u8], Category); 7] = [
+    (b"Artist", Category::Authorship),
     (b"Author", Category::Authorship),
     (b"Copyright", Category::Authorship),
     (b"Creation Time", Category::Timestamps),
+    // ExifTool's two lowercase-spelled keywords (`PNG:CreateDate`,
+    // `PNG:ModDate`): only the exact spelling names them (see the match rule).
+    (b"create-date", Category::Timestamps),
+    (b"modify-date", Category::Timestamps),
     (b"Software", Category::Software),
 ];
 
@@ -242,16 +247,27 @@ const TEXT_KEYWORDS: [(&[u8], Category); 4] = [
 /// their own auto-named tags (`Creation time` prints `CreationTime` but is
 /// not reformatted by `-d`). `warning` maps to the standard `PNGWarning`.
 /// Every other keyword is [`Category::FreeText`].
+///
+/// The rule, in full: a keyword names a row when it equals the row's name
+/// exactly, or when it equals it after its first letter is uppercased. The
+/// second half is why `artist` is `PNG:Artist`; the first is why `create-date`
+/// is `PNG:CreateDate` and `modify-date` is `PNG:ModDate` while `Create-date`
+/// and `CREATE-DATE` are their own tags (measured 13.55, SPEC-032 fix round,
+/// for `tEXt`, `iTXt` and `zTXt`: `Artist`, `artist` standard; `ARTIST`,
+/// `aRTIST` own; `create-date`, `modify-date` standard, `Create-date`,
+/// `Modify-date`, `Create-Date`, `CREATE-DATE` own).
 pub fn text_keyword_category(keyword: &[u8]) -> Category {
     let Some((&first, rest)) = keyword.split_first() else {
         return Category::FreeText;
     };
     let first = first.to_ascii_uppercase();
     for (name, category) in TEXT_KEYWORDS {
-        if let Some((&nf, nrest)) = name.split_first() {
-            if nf == first && nrest == rest {
-                return category;
-            }
+        let exact = name == keyword;
+        let first_upper = name
+            .split_first()
+            .is_some_and(|(&nf, nrest)| nf == first && nrest == rest);
+        if exact || first_upper {
+            return category;
         }
     }
     Category::FreeText
@@ -589,12 +605,28 @@ mod tests {
     #[test]
     fn text_keywords_match_the_measured_rule_row_by_row() {
         use Category::*;
-        let rows: [(&[u8], Category); 31] = [
+        let rows: [(&[u8], Category); 43] = [
             // Standard spellings.
             (b"Author", Authorship),
             (b"Copyright", Authorship),
             (b"Creation Time", Timestamps),
             (b"Software", Software),
+            // L1 rows (measured 13.55, tEXt, iTXt and zTXt): `PNG:Artist`,
+            // `PNG:CreateDate`, `PNG:ModDate`. The two date keywords are
+            // spelled lower case in ExifTool's table, so only that exact
+            // spelling names them; `Artist` follows the first-letter rule.
+            (b"Artist", Authorship),
+            (b"artist", Authorship),
+            (b"ARTIST", FreeText),
+            (b"aRTIST", FreeText),
+            (b"create-date", Timestamps),
+            (b"Create-date", FreeText),
+            (b"CREATE-DATE", FreeText),
+            (b"Create-Date", FreeText),
+            (b"modify-date", Timestamps),
+            (b"Modify-date", FreeText),
+            (b"MODIFY-DATE", FreeText),
+            (b"Modify-Date", FreeText),
             (b"Title", FreeText),
             (b"Description", FreeText),
             (b"Comment", FreeText),

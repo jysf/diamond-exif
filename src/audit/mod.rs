@@ -31,7 +31,13 @@
 //! # PNG and WebP are readable, not strippable
 //!
 //! The audit reads both (DEC-020), but [`crate::write::strip`] refuses them, so
-//! [`preview`] keeps every finding and [`Preview::strippable`] is false.
+//! [`preview`] keeps every finding and [`Preview::strippable`] is false. That
+//! flag is [`ContainerKind::strippable`], true only for JPEG and TIFF.
+//!
+//! A non-empty PNG raw profile (ImageMagick `Raw profile type exif`, ...) can
+//! hold Exif with GPS that this library does not decode, so it counts as a
+//! failed block: the file is never clean and its report status is
+//! `unreadable` (DEC-020 clause 5).
 //!
 //! # Bounds
 //!
@@ -87,6 +93,16 @@ pub enum ContainerKind {
     Webp,
     /// A container this library does not read (the sniffed kind is kept).
     Unsupported(Sniffed),
+}
+
+impl ContainerKind {
+    /// Whether the writer can strip this container: true only for JPEG and
+    /// TIFF (DEC-020 clause 6). It is the single definition the preview, the
+    /// report summary and the fuzz harness use; GIF, HEIC, BigTIFF, an empty
+    /// or unknown file, PNG and WebP are all false.
+    pub fn strippable(self) -> bool {
+        matches!(self, ContainerKind::Jpeg | ContainerKind::Tiff)
+    }
 }
 
 /// The kind of a located JPEG region (an item's [`ItemKind::Region`]).
@@ -281,7 +297,9 @@ pub struct Health {
     /// TIFF-layer issues summed over every readable TIFF (every Exif block).
     pub exif_issues: usize,
     /// Exif blocks (or the bare TIFF) whose IFD0 or header was unreadable. A
-    /// JPEG the walker rejected outright counts as one failed block.
+    /// JPEG the walker rejected outright counts as one failed block, and so
+    /// does each non-empty PNG raw profile (`Raw profile type ...`), which may
+    /// hold Exif this library does not decode (DEC-020 clause 5).
     pub failed_blocks: usize,
     /// Whether the inventory or the findings hit [`MAX_INVENTORY_ITEMS`].
     pub inventory_truncated: bool,
@@ -499,7 +517,8 @@ fn push_regions(b: &mut Builder<'_>, mut regions: Vec<ChunkRegion>) {
     }
 }
 
-/// A region's category: none when it is empty (ExifTool shows nothing for it).
+/// A WebP region's category: none when it is empty (ExifTool shows nothing for
+/// it, measured in SPEC-034). A PNG region is never dropped for being empty.
 fn nonempty(len: usize, category: Category) -> Option<Category> {
     if len == 0 {
         None
@@ -535,6 +554,12 @@ fn audit_png(data: &[u8]) -> FileAudit<'_> {
     }
     let mut regions = Vec::new();
     for region in meta.regions() {
+        // A non-empty raw profile can hold Exif (with GPS) that ExifTool decodes
+        // and this audit does not: it counts as a failed block, so the file is
+        // never clean and its status is `unreadable` (DEC-020 clause 5).
+        if matches!(region, PngRegion::RawProfile { .. }) && !region.data().is_empty() {
+            failed = failed.saturating_add(1);
+        }
         let (kind, category) = match *region {
             PngRegion::Xmp { .. } => (RegionKind::Xmp, Category::Xmp),
             PngRegion::Icc { .. } => (RegionKind::Icc, Category::Icc),
@@ -550,15 +575,21 @@ fn audit_png(data: &[u8]) -> FileAudit<'_> {
             kind,
             segment: chunk_index(&offsets, region.offset(), chunks.len()),
             len,
-            // A length-0 region has an item and no finding.
-            category: nonempty(len, category),
+            // A length-0 PNG region still has its finding: ExifTool prints a
+            // tag for an empty `iCCP` with a name, an empty iTXt XMP and an
+            // empty text value (measured 13.55, SPEC-032 fix round; DEC-020
+            // clause 3). Only a WebP region is dropped when empty.
+            category: Some(category),
             after_scan: region.after_idat() || region.after_iend(),
         });
     }
-    // `tIME` is not a region of `png::read`: find it in the walk. Only the
-    // specified 7-byte form is a time.
+    // `tIME` is not a region of `png::read`: find it in the walk. A `tIME` of
+    // ANY length is a time: ExifTool 13.55 prints `PNG:ModifyDate` for every
+    // length 0 to 12 (measured in the SPEC-032 fix round: 0 gives
+    // `0000:00:00 00:00:00`, shorter forms fill the missing fields with zero,
+    // longer ones read the first 7 bytes; DEC-020 clause 3).
     for (index, chunk) in chunks.iter().enumerate() {
-        if &chunk.chunk_type() == b"tIME" && chunk.data().len() == 7 {
+        if &chunk.chunk_type() == b"tIME" {
             regions.push(ChunkRegion {
                 offset: chunk.offset(),
                 kind: RegionKind::Time,

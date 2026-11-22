@@ -7,7 +7,7 @@
 //! a count of zero is printed as `0 findings` beside the status, and the
 //! residual numbers of a policy preview appear only for a reliable audit.
 
-use crate::audit::{Disposition, Finding, Item, ItemKind, Preview};
+use crate::audit::{ContainerKind, Disposition, Finding, Item, ItemKind, Preview};
 
 use super::{
     container_name, excerpt, ifd_name, item_categories, preview_of, region_name, safe_text,
@@ -123,8 +123,11 @@ fn finding_line(
     out.push('\n');
 }
 
-fn preview_lines(out: &mut String, p: &Preview) {
-    if !p.strippable() {
+/// `unsupported`: the container was not read at all, so the line stays "not
+/// read cleanly"; the "writer refuses" line is for a container that was read
+/// (a PNG or a WebP).
+fn preview_lines(out: &mut String, p: &Preview, unsupported: bool) {
+    if !p.strippable() && !unsupported {
         out.push_str(&format!(
             "  preview ({}): not strippable: the writer refuses this container, so nothing would be removed; every finding is kept\n",
             p.policy().name()
@@ -180,7 +183,7 @@ fn file_block(out: &mut String, entry: &FileEntry<'_>, opts: &RenderOptions) {
                 finding_line(out, f, d, pv.as_ref().is_none_or(Preview::strippable), opts);
             }
             if let Some(p) = &pv {
-                preview_lines(out, p);
+                preview_lines(out, p, matches!(a.kind(), ContainerKind::Unsupported(_)));
             }
             if opts.inventory {
                 out.push_str(&format!("  inventory: {} items\n", a.items().len()));

@@ -767,6 +767,18 @@ pub const TEXT_KEYWORDS: &[&str] = &[
     "Source",
     "Comment",
     "Unknown Keyword",
+    // SPEC-032 fix round (L1): the three keywords ExifTool names `Artist`,
+    // `CreateDate` and `ModDate`, with the case grid around each.
+    "Artist",
+    "artist",
+    "ARTIST",
+    "aRTIST",
+    "create-date",
+    "Create-date",
+    "CREATE-DATE",
+    "modify-date",
+    "Modify-date",
+    "MODIFY-DATE",
 ];
 
 /// The fixture's name; its record is [`TEXT_KEYWORDS_RECORD`].
