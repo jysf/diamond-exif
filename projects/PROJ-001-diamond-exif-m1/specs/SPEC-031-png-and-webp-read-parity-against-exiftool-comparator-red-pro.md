@@ -74,8 +74,8 @@ cost:
       agent: claude-sonnet-5-5
       interface: other
       basis: agent-result
-      tokens_total: 330309
-      estimated_usd: 2.18
+      tokens_total: 754348              # harness subagent_tokens: 330,309 (build) + 424,039 (follow-up for the 3 Mediums; the agent re-delivered the same hand-back repeatedly until stopped, which inflated this figure)
+      estimated_usd: 4.98
       duration_minutes: null
       recorded_at: 2026-11-21
       notes: "tokens_total is null: a sub-agent cannot read its own transcript token counts; the orchestrator replaces it with the harness figure. About 75 tool calls."

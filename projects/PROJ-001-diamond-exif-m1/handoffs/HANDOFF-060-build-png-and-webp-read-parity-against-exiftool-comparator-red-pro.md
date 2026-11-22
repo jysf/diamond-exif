@@ -51,8 +51,8 @@ handback:
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
   basis: agent-result                  # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: 330309              # harness subagent_tokens
-  estimated_usd: 2.18              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  tokens_total: 754348              # harness subagent_tokens: 330,309 (build) + 424,039 (follow-up for the 3 Mediums; the agent re-delivered the same hand-back repeatedly until stopped, which inflated this figure)
+  estimated_usd: 4.98              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
   branch: claude/spec-031-png-parity
   pr: null
