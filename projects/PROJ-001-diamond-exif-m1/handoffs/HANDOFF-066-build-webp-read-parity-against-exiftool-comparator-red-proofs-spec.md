@@ -51,14 +51,14 @@ handback:
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
   basis: estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  tokens_total: 179076              # harness subagent_tokens
+  estimated_usd: 1.18
   duration_minutes: null
   branch: claude/spec-034-fixes
   pr: null
   completed_at: 2026-11-22         # YYYY-MM-DD
   notes: "tokens_total null: the subagent session exposes no token count; the orchestrator replaces it with the harness figure. Not measured: duration."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-22
 ---
 
 # HANDOFF-066: Fix SPEC-034 verify punch list (narrow)

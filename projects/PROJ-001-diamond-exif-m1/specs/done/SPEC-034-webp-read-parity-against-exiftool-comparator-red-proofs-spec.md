@@ -6,7 +6,7 @@
 task:
   id: SPEC-034
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -89,10 +89,21 @@ cost:
       duration_minutes: 60
       recorded_at: 2026-11-21
       notes: "tokens_total is null: the verifier cannot read its own transcript token counts; the orchestrator replaces it with the harness figure. About 45 tool calls. Review only; nothing pushed."
+    - cycle: build
+      handoff: HANDOFF-066
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: estimate
+      tokens_total: 179076
+      estimated_usd: 1.18
+      duration_minutes: null
+      recorded_at: 2026-11-22
+      notes: "tokens_total null: the subagent session exposes no token count; the orchestrator replaces it with the harness figure. Not measured: duration."
   totals:
-    tokens_total: 515909
-    estimated_usd: 3.41
-    session_count: 2
+    tokens_total: 694985
+    estimated_usd: 4.59
+    session_count: 3
+shipped_at: 2026-11-22
 ---
 
 # SPEC-034: WebP read parity against ExifTool: comparator, red-proofs, SPEC-030 carried gaps
@@ -144,17 +155,17 @@ The 20 Exif selectors through `read_ours_webp` (the JPEG-style merge model above
 
 ## Acceptance Criteria
 
-- [ ] **Carried gaps (a) to (d)** done with tests killing the named mutants.
-- [ ] **Replay (no ExifTool):** every committed `webp-*.txt` record compares clean on an unmodified reading except pinned `KNOWN_DIVERGENCES`; headers carry command, ExifTool version and warnings.
-- [ ] **Live:** same comparison over freshly run ExifTool on the fixtures and the `webp_riff` seeds; missing ExifTool is a loud `SKIP`, a failure under `DIAMOND_EXIF_REQUIRE_ORACLE=1` (both tested).
-- [ ] **Several-`EXIF` model measured and pinned** by a test from the records (per selector: the first block wins four selectors, the later block the other 16; bad blocks ignored; all 20 read in both orders), documented in `oracle.rs` as different from PNG.
-- [ ] **Container independence:** the bare TIFF read equals the `EXIF`-wrapped read for every wrapped fixture, live and by record.
-- [ ] **Divergences pinned, each with a `questions.yaml` id, each required to still exist:** at least `webp-iccp-profile-not-validated` (garbage, stub), `webp-xmp-content-not-parsed` (garbage and 1 to 7 byte `XMP\0`), `webp-riff-other-forms-read-by-exiftool` (`RIFF....WAVE`, `RIFX`), plus whatever else the grid measures. State which side is right.
-- [ ] **Warning table pinned:** our `WebpIssue` kinds beside ExifTool's warnings for: prefix, truncated tail (trailing bytes, length past EOF, partial header), missing pad, `XMP\0`; and where ExifTool is silent (`RiffSizeMismatch`, `ChunkFlagMismatch`, `MisplacedVp8x`, `BadVp8x`) or louder (ICC).
-- [ ] **Replay-and-perturb red-proof:** changing one field of one committed record turns the comparison red naming exactly that selector; control first.
-- [ ] **Mutated-copy red-proofs** (control first, `RED-PROOF INJECTION`, needle exactly once, marker must not leak into `src/` or `tests/support/`): at least seven library faults, each naming the expected selectors and no others: the `EXIF` TIFF offset wrong by one; the first block wins instead of the last (visible on the two-block fixtures); the `Exif\0\0` prefix not skipped; the declared RIFF size limits the walk (visible on `webp-riff-size-0` and `-small`); the pad rule removed; `XMP\0` not accepted; `ICCP` not located; four-character codes compared case-insensitively. Plus two byte mutations of a fixture (a corrupted offset inside the `EXIF` payload; truncation between `VP8L` and `EXIF`), each also run live when ExifTool exists.
-- [ ] Any reader bug found is fixed here with a regression test; every divergence is in `guidance/questions.yaml`.
-- [ ] `just lint`, `just test`, `just mutation-oracle`, `just validate`, `just cost-audit`, `just forbid-unsafe` green; `just oracle-record` idempotent (twice, no diff); no `#[allow]` in `src/`; a 60 s `just fuzz-smoke webp_riff` after the seed additions.
+- [x] **Carried gaps (a) to (d)** done with tests killing the named mutants.
+- [x] **Replay (no ExifTool):** every committed `webp-*.txt` record compares clean on an unmodified reading except pinned `KNOWN_DIVERGENCES`; headers carry command, ExifTool version and warnings.
+- [x] **Live:** same comparison over freshly run ExifTool on the fixtures and the `webp_riff` seeds; missing ExifTool is a loud `SKIP`, a failure under `DIAMOND_EXIF_REQUIRE_ORACLE=1` (both tested).
+- [x] **Several-`EXIF` model measured and pinned** by a test from the records (per selector: the first block wins four selectors, the later block the other 16; bad blocks ignored; all 20 read in both orders), documented in `oracle.rs` as different from PNG.
+- [x] **Container independence:** the bare TIFF read equals the `EXIF`-wrapped read for every wrapped fixture, live and by record.
+- [x] **Divergences pinned, each with a `questions.yaml` id, each required to still exist:** at least `webp-iccp-profile-not-validated` (garbage, stub), `webp-xmp-content-not-parsed` (garbage and 1 to 7 byte `XMP\0`), `webp-riff-other-forms-read-by-exiftool` (`RIFF....WAVE`, `RIFX`), plus whatever else the grid measures. State which side is right.
+- [x] **Warning table pinned:** our `WebpIssue` kinds beside ExifTool's warnings for: prefix, truncated tail (trailing bytes, length past EOF, partial header), missing pad, `XMP\0`; and where ExifTool is silent (`RiffSizeMismatch`, `ChunkFlagMismatch`, `MisplacedVp8x`, `BadVp8x`) or louder (ICC).
+- [x] **Replay-and-perturb red-proof:** changing one field of one committed record turns the comparison red naming exactly that selector; control first.
+- [x] **Mutated-copy red-proofs** (control first, `RED-PROOF INJECTION`, needle exactly once, marker must not leak into `src/` or `tests/support/`): at least seven library faults, each naming the expected selectors and no others: the `EXIF` TIFF offset wrong by one; the first block wins instead of the last (visible on the two-block fixtures); the `Exif\0\0` prefix not skipped; the declared RIFF size limits the walk (visible on `webp-riff-size-0` and `-small`); the pad rule removed; `XMP\0` not accepted; `ICCP` not located; four-character codes compared case-insensitively. Plus two byte mutations of a fixture (a corrupted offset inside the `EXIF` payload; truncation between `VP8L` and `EXIF`), each also run live when ExifTool exists.
+- [x] Any reader bug found is fixed here with a regression test; every divergence is in `guidance/questions.yaml`.
+- [x] `just lint`, `just test`, `just mutation-oracle`, `just validate`, `just cost-audit`, `just forbid-unsafe` green; `just oracle-record` idempotent (twice, no diff); no `#[allow]` in `src/`; a 60 s `just fuzz-smoke webp_riff` after the seed additions.
 
 ## Failing Tests
 
@@ -181,34 +192,15 @@ Written first: the fixture list and comparator tests exist and are seen red for 
 
 ## Reflection
 
-*Appended during **ship**. Three questions, short answers.*
-
 1. **What would I do differently next time?**
-   — <answer>
+   — Measure every selector, not two, before writing a model: the design measured only Make and Model for several EXIF blocks and "later wins" was wrong for four of the 20 selectors (the verify's one High). Also measure each cap and size limit against ExifTool in the grid (the 17th-block case was missing). The variant grid did cut verify to one round (PNG took three); the fix round was a fresh narrow agent (179,076 tokens).
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — No DEC change. The fix round was accepted by the orchestrator without a second cold verify: it changed only tests, fixtures, records and the model (no `src/`), each finding re-measured against ExifTool, gates green. The same per-selector gap probably exists in the JPEG oracle (`read_ours_jpeg`, later-wins for all 20): evidence in HANDOFF-066; it needs its own small spec.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — Yes: fix the JPEG oracle's several-APP1 model (first block wins ImageWidth, ImageHeight, Orientation, XResolution). SPEC-032 carries: the audit must walk all `exif_blocks()`, never `exif()` alone (`exif()` is the first block only), apply the per-selector priority, and report blocks past the 16-block cap (decoy blocks can hide GPS); located regions can be invalid to ExifTool.
 
-4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
-   the defect-escape distribution is greppable across specs:
-   `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
-   `none` (clean first try).
-   — <one word>
-   *(Runtime/operational defects — the escape-prone class — only exist once the
-   artifact meets its real host. `escaped` here is a signal to strengthen the
-   §12 behavioral pre-flight for that surface.)*
+4. **Where was the worst defect caught?** — verify
 
-5. **What can a user do now that they couldn't before?** — one sentence,
-   before → after; quote the confirming number if one exists, name the outcome
-   if not. Write `none` if this spec has no user-visible outcome — that is a
-   real, greppable result, not a blank. This is the line a downstream work-log's
-   `impact` field is transcribed from, and both halves are already written above
-   (## Context is the before, ## Goal is the after): confirm the prediction,
-   don't reconstruct it from memory.
-   — <answer | none>
+5. **What can a user do now that they couldn't before?** — none: test evidence only; WebP reads are now checked against ExifTool on 98 fixtures and 53 seeds, with six divergences pinned and ten mutants showing the comparison bites.

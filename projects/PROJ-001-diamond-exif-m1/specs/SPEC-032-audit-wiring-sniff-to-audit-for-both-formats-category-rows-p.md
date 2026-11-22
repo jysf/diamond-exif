@@ -135,6 +135,8 @@ job in **build** is to make these pass.
 
 ## Notes for the Implementer
 
+Carried from the SPEC-034 verify (2026-11-22): `webp::read`'s `exif()` is the FIRST block only, but ExifTool merges several WebP `EXIF` chunks (the first block wins ImageWidth, ImageHeight, Orientation and XResolution, the last wins the other 16 selectors). The audit must walk `exif_blocks()`, never rely on `exif()`, apply that per-selector rule where it reports one value, and report blocks past `MAX_WEBP_EXIF_BLOCKS` (16): ExifTool reads a 17th block, so decoy blocks can hide GPS. An `ICCP` or `XMP ` region can be located yet unreadable to ExifTool: say "located", not "valid". An empty region is not metadata. ExifTool stops at an empty null chunk; we read on (the safe side).
+
 Gotchas, style preferences, reuse opportunities. Keep short — the full
 context graph lives in the handoff file.
 
