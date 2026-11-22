@@ -6,19 +6,19 @@
 task:
   id: SPEC-032
   type: story                      # epic | story | task | bug | chore
-  cycle: verify  # frame | design | build | verify | ship
+  cycle: build  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
   complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: punch-list  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
                                    #   rejects anything" stops being a hunch and becomes a number.
-  verify_rounds: []                # every verify outcome, oldest first, appended by
+  verify_rounds: [punch-list]  # every verify outcome, oldest first, appended by
                                    #   `just advance-cycle` each time the spec leaves verify.
                                    #   verify_verdict keeps only the LAST one, so a spec sent
                                    #   back and then approved read as "approved": irradiance's
