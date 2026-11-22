@@ -800,7 +800,10 @@ fn several_exif_model_is_per_selector_and_pinned() {
                 same(t, first) || same(t, last),
                 "{name} {sel}: ExifTool printed {t:?}, neither {first:?} nor {last:?}"
             );
-            assert!(same(&ours[i], &theirs[i]), "{name} {sel}: ours against ExifTool");
+            assert!(
+                same(&ours[i], &theirs[i]),
+                "{name} {sel}: ours against ExifTool"
+            );
         }
         // The winner is the same in both orders (first or last, never mixed).
         let a = &theirs_fixture("webp-exif-full-one-two")[i];
@@ -808,7 +811,10 @@ fn several_exif_model_is_per_selector_and_pinned() {
         if same(a, v1) && same(b, v2) {
             first_wins.push(sel);
         } else {
-            assert!(same(a, v2) && same(b, v1), "{sel}: ExifTool is not first or last");
+            assert!(
+                same(a, v2) && same(b, v1),
+                "{sel}: ExifTool is not first or last"
+            );
         }
     }
     assert_eq!(first_wins, oracle::WEBP_FIRST_BLOCK_WINS, "first-wins set");
@@ -867,7 +873,10 @@ fn exif_block_cap_is_measured_against_exiftool() {
     assert_eq!(meta.exif_blocks().len(), 16, "the 17th block is dropped");
     let ours = ours_fixture(&bytes);
     let theirs = theirs_fixture("webp-exif-16-then-gps");
-    assert!(theirs[lat].is_some() && theirs[lon].is_some(), "ExifTool reads the 17th");
+    assert!(
+        theirs[lat].is_some() && theirs[lon].is_some(),
+        "ExifTool reads the 17th"
+    );
     assert!(ours[lat].is_none() && ours[lon].is_none(), "we drop it");
     assert_clean("webp-exif-16-then-gps");
 }
@@ -1279,7 +1288,12 @@ const WARNING_TABLE: &[(&str, &str, &str, &[&str])] = &[
     // lose the XMP behind it.
     ("webp-stray-pad-then-xmp", "Truncated", "ok", &[]),
     // RIFF + an empty EXIF and nothing else: ExifTool is silent.
-    ("webp-header-20-exif-size-0", "MetadataWithoutVp8x", "fatal", &[]),
+    (
+        "webp-header-20-exif-size-0",
+        "MetadataWithoutVp8x",
+        "fatal",
+        &[],
+    ),
     // ExifTool warns about the packet's encoding; we only locate it.
     (
         "webp-xmp-utf8-bom",
@@ -1287,14 +1301,14 @@ const WARNING_TABLE: &[(&str, &str, &str, &[&str])] = &[
         "",
         &["Superfluous BOM at start of XMP"],
     ),
-    (
-        "webp-xmp-utf16le",
-        "",
-        "",
-        &["XMP is double UTF-encoded"],
-    ),
+    ("webp-xmp-utf16le", "", "", &["XMP is double UTF-encoded"]),
     // An 8-byte TIFF (header, no IFD): both sides call it bad.
-    ("webp-exif-tiff-8-bytes", "", "fatal", &["Bad IFD0 directory"]),
+    (
+        "webp-exif-tiff-8-bytes",
+        "",
+        "fatal",
+        &["Bad IFD0 directory"],
+    ),
 ];
 
 /// The committed warning record: `## name` sections of ExifTool's

@@ -1292,7 +1292,7 @@ pub fn read_ours_webp(meta: &WebpMetadata<'_>, selectors: &[Selector]) -> Vec<Op
             if WEBP_FIRST_BLOCK_WINS.contains(&s.exiftool) {
                 read.next()
             } else {
-                read.last()
+                read.next_back()
             }
         })
         .collect()

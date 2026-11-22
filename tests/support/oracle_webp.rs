@@ -140,7 +140,10 @@ pub fn tiff_full(v: u16) -> Vec<u8> {
         t::short(big, t::T_ORIENTATION, if v == 1 { 1 } else { 8 }),
         t::rational(big, t::T_X_RESOLUTION, &[(72 * u32::from(v), 1)]),
         t::ascii(t::T_SOFTWARE, format!("Soft{word}\0").as_bytes()),
-        t::ascii(t::T_DATE_TIME, format!("2020:01:0{v} 00:00:00\0").as_bytes()),
+        t::ascii(
+            t::T_DATE_TIME,
+            format!("2020:01:0{v} 00:00:00\0").as_bytes(),
+        ),
         t::ascii(t::T_ARTIST, format!("Artist{word}\0").as_bytes()),
         t::ascii(t::T_COPYRIGHT, format!("Copy{word}\0").as_bytes()),
         t::ptr(t::T_EXIF_IFD, 1),
@@ -489,7 +492,10 @@ fn shapes() -> Vec<(String, Vec<u8>)> {
     add("exif-16-then-gps", file(ef, &decoys));
     // L1: a later block whose Make is a SHORT.
     let make_short = t::assemble(false, &[t::ifd(vec![t::short(false, t::T_MAKE, 7)])]);
-    add("exif-make-short-later", file(ef, &[ex(&a), ex(&make_short)]));
+    add(
+        "exif-make-short-later",
+        file(ef, &[ex(&a), ex(&make_short)]),
+    );
     // M2: several regions that can be told apart.
     let xmp_x = chunk(b"XMP ", &packet_with("FirstTool"));
     let xmp_y = chunk(b"XMP ", &packet_with("SecondTool"));
@@ -514,11 +520,14 @@ fn shapes() -> Vec<(String, Vec<u8>)> {
         "stray-pad-then-xmp",
         file(
             ef | FLAG_XMP,
-            &[{
-                let mut e = chunk(b"EXIF", &tiff_a());
-                e.push(0xAA);
-                e
-            }, x.clone()],
+            &[
+                {
+                    let mut e = chunk(b"EXIF", &tiff_a());
+                    e.push(0xAA);
+                    e
+                },
+                x.clone(),
+            ],
         ),
     );
     add("header-20-exif-size-0", riff(&[chunk(b"EXIF", &[])]));
@@ -728,15 +737,21 @@ pub fn expected_regions() -> Vec<(String, Vec<Expect>)> {
     // The unpadded odd EXIF makes the next header start one byte late: the
     // `XMP ` chunk behind it is not located (ExifTool warns too).
     put("exif-odd-unpadded-then-xmp", &none);
-    put("xmp-two-distinct", &[
-        xr(&packet_with("FirstTool")),
-        xr(&packet_with("SecondTool")),
-    ]);
-    put("xmp-three", &[
-        xr(&packet_with("FirstTool")),
-        xr(&packet_with("SecondTool")),
-        xr(&packet_with("ThirdTool")),
-    ]);
+    put(
+        "xmp-two-distinct",
+        &[
+            xr(&packet_with("FirstTool")),
+            xr(&packet_with("SecondTool")),
+        ],
+    );
+    put(
+        "xmp-three",
+        &[
+            xr(&packet_with("FirstTool")),
+            xr(&packet_with("SecondTool")),
+            xr(&packet_with("ThirdTool")),
+        ],
+    );
     let mut bom = b"\xEF\xBB\xBF".to_vec();
     bom.extend_from_slice(&pk);
     put("xmp-utf8-bom", &[xr(&bom)]);
@@ -756,7 +771,10 @@ pub fn expected_regions() -> Vec<(String, Vec<Expect>)> {
         "icc-valid-trailing-garbage",
         &[ir(&[icc_p.clone(), b"garbage!".to_vec()].concat())],
     );
-    put("icc-header-only", &[ir(icc_p.get(..128).unwrap_or_default())]);
+    put(
+        "icc-header-only",
+        &[ir(icc_p.get(..128).unwrap_or_default())],
+    );
     put("icc-zero-tags", &[ir(icc_p.get(..132).unwrap_or_default())]);
     put(
         "icc-three",
