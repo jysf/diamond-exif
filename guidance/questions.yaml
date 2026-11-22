@@ -1393,3 +1393,51 @@ questions:
       the exif-audit binary and lists "publish exif-core to crates.io" as out of scope. An early
       pre-release (0.x, flagged as pre-M1) would be a release spec with its own DEC. Nothing is urgent:
       monorail-000's PROJ-002 has not started.
+
+  - id: png-raw-profile-not-decoded
+    question: "ExifTool 13.55 decodes ImageMagick raw profiles (Exif and XMP in hex text chunks, compressed or not) and exif-core only locates them (DEC-018): should a later spec decode them, or is locating enough?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-21
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-031). Command (every fixture): exiftool -T -n -s3 <the 20 Exif
+      selectors> -XMP-xmp:CreatorTool -PNG:ProfileName <file> (ExifTool 13.55, Homebrew,
+      macOS; the full line is in each record header). Measured, fixtures png-raw-exif-text,
+      png-raw-exif-ztxt and png-raw-exif-itxt (the profile `Raw profile type exif`, body
+      "\nexif\n<length>\n<hex of Exif\0\0 + the exif-basic-le TIFF>"): ExifTool prints all 14
+      Exif values of the TIFF (the same line as the bare TIFF); exif-core reads none (it
+      locates a RawProfile region). png-raw-xmp-text, -ztxt and -itxt (`Raw profile type xmp`):
+      ExifTool prints XMP-xmp:CreatorTool = DiamondTool; exif-core locates a RawProfile and
+      no readable XMP. png-exif-and-raw-exif (a real eXIf with Make AlphaCam beside a raw
+      profile with Make RawCam): ExifTool reads BOTH and prints the later, Make = RawCam;
+      exif-core reads the eXIf, Make = AlphaCam.
+      Right side: neither is wrong. The raw profile is an ImageMagick convention, not the PNG
+      specification (which defines eXIf); exif-core stays no-inflate and no-hex-decode by
+      DEC-018. Each is a pinned KNOWN_DIVERGENCES entry; the ExifTool side is pinned against
+      the record of the bare TIFF (png-exif-basic-le) so the entry cannot hide a change.
+      Cost of leaving it: an audit of an ImageMagick-written PNG reports no Exif, where
+      ExifTool reports it; the audit still locates the region (SPEC-032).
+
+  - id: png-compressed-xmp-not-inflated
+    question: "ExifTool 13.55 inflates compressed XMP text chunks (iTXt flag 1, zTXt) and exif-core only locates them (DEC-018): is locating enough for the audit and the stripper?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-21
+    assigned_to: null
+    notes: |
+      DIVERGENCE (SPEC-031). Command as for png-raw-profile-not-decoded. Measured on
+      png-xmp-itxt-compressed (iTXt, flag 1, a stored-deflate zlib stream the harness wrote)
+      and png-xmp-ztxt: ExifTool prints XMP-xmp:CreatorTool = DiamondTool; exif-core locates
+      an Xmp region with compressed = true and does not inflate it, so the readable-XMP
+      selector reads absent. The chunk is located (asserted by xmp_keyword_rules_agree).
+      Controls: png-xmp-itxt and png-xmp-text (uncompressed) agree; png-xmp-itxt-flag-2 (an
+      invalid flag) is not read by either side (ExifTool: "Error inflating
+      XML:com.adobe.xmp").
+      Right side: neither is wrong; the specification allows compression, DEC-018 keeps the
+      library free of inflate. Pinned in KNOWN_DIVERGENCES. NOTE for the verifier: the
+      selector is defined as READABLE XMP (uncompressed), not located XMP; defined by location
+      the compressed shapes would agree and this divergence would not exist (a choice made
+      where SPEC-031 is silent, see the handback).

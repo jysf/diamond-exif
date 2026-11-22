@@ -1,0 +1,39 @@
+# command: exiftool -a -G1 -s -n -Warning -Error <file>
+# exiftool-version: 13.55
+# source: fixtures 20
+## png-exif-prefix
+[ExifTool]      Warning                         : Improper "Exif00" header in EXIF chunk
+## png-no-iend
+[ExifTool]      Warning                         : Truncated PNG image
+## png-truncated-between-ihdr-and-idat
+[ExifTool]      Warning                         : Truncated PNG image
+## png-length-past-eof
+[ExifTool]      Warning                         : Corrupted PNG image
+## png-length-80000000
+[ExifTool]      Warning                         : Invalid PNG chunk size
+## png-no-ihdr
+[ExifTool]      Warning                         : PNG image did not start with IHDR [x3]
+## png-exif-before-ihdr
+[ExifTool]      Warning                         : PNG image did not start with IHDR
+## png-two-exif-same-tag
+[ExifTool]      Warning                         : IFD0 pointer references previous IFD0 directory
+## png-xmp-itxt-flag-2
+[ExifTool]      Warning                         : Error inflating XML:com.adobe.xmp
+## png-trailer-bytes
+[ExifTool]      Warning                         : [minor] Trailer data after PNG IEND chunk
+## png-exif-after-iend
+[ExifTool]      Warning                         : [minor] Trailer data after PNG IEND chunk
+[Trailer]       Warning                         : [minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)
+## png-exif-after-idat
+[ExifTool]      Warning                         : [minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)
+## png-xmp-after-idat
+[ExifTool]      Warning                         : [minor] Text/EXIF chunk(s) found after PNG IDAT (may be ignored by some readers)
+## png-exif-empty
+[ExifTool]      Warning                         : Invalid eXIf chunk
+## png-exif-not-tiff
+[ExifTool]      Warning                         : Invalid eXIf chunk
+## png-exif-bad-crc
+## png-keyword-80
+## png-exif-basic-le
+## png-xmp-itxt
+## png-iccp-valid
