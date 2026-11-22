@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: verifier             # implementer | verifier
   created_at: 2026-11-21
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-034
@@ -46,18 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                # completed | blocked | rejected
+  agent: claude-opus-5-5           # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
-  verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
+  verdict: punch-list              # verify handoffs: approved | punch-list | rejected
+  basis: estimate                  # transcript | agent-result | slash-cost | api-usage | estimate
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: null
-  branch: null
+  duration_minutes: 60
+  branch: claude/spec-034-verify
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-21         # YYYY-MM-DD
+  notes: "tokens_total is null: the verifier cannot read its own transcript token counts; the orchestrator replaces it with the harness figure. About 45 tool calls. Review only; nothing pushed."
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -101,20 +101,74 @@ Fixing anything, DEC edits, audit wiring (SPEC-032).
 
 ### Execution notes
 
-- **Branch / PR:**
-- **Completed at:**
-- **Verdict:**
+- **Branch / PR:** `claude/spec-034-verify` (local, from `claude/spec-034-webp-parity` at `36462af`, contains `1663d81`); no PR, not pushed.
+- **Completed at:** 2026-11-21
+- **Verdict:** PUNCH LIST
+
+The evidence is real. ExifTool 13.55 re-run on all 98 fixture records and all 53 seed records gives byte-identical stdout and the same `# stderr:` lines. `just oracle-record` leaves no diff. The builder's red-proofs bite. But the several-`EXIF` model is wrong for 4 of the 20 selectors, and three located-metadata shapes outside the grid disagree without a pinned divergence. All the probes and mutants ran on an rsync copy in scratch. The branch is unmodified apart from this handback.
 
 ### Cost self-report
 
-- **Tokens (total):**
-- **Source of the number:**
+- **Tokens (total):** null (not measurable from inside the session)
+- **Source of the number:** none; the orchestrator replaces it with the harness figure.
 
 ### Findings
 
--
+**High**
+
+- **H1. The several-`EXIF` model ("later block wins per tag") is wrong for `IFD0:ImageWidth`, `IFD0:ImageHeight`, `IFD0:Orientation` and `IFD0:XResolution`.** ExifTool 13.55 keeps the FIRST block's value for these four. The other 16 selectors follow the later block. `read_ours_webp` (`tests/support/oracle.rs:1220`, `.rev()` at 1226) applies later-wins to all 20. `several_exif_model_is_measured_and_pinned` (`tests/webp_oracle.rs:742`) measures only Make and Model, so the claim in the doc comment and in the spec's acceptance criterion is a generalisation that was never measured. Failing input: `RIFF`, `VP8X`(0x08), `VP8L`, then `EXIF`(IFD0 ImageWidth=100 SHORT, ImageLength=50, Orientation=1, XResolution=72/1, plus the other tags) and `EXIF`(the same with 200, 100, 8, 144/1). Measured with `exiftool -T -n -s3`: `100 50 MakeTwo ModelTwo 1 72 SoftTwo ...`. The model gives `200 100 MakeTwo ModelTwo 2 144 ...`. With the blocks reversed, ExifTool gives `200 100 MakeOne ... 2 144` and the model gives `100 50 ... 1 72`. Fix: a per-selector priority in the model, a full two-block fixture in both orders, and the test extended to all 20 selectors. `read_ours_jpeg` uses the same `.rev()` rule (`tests/support/oracle.rs:785`) and probably has the same gap; I did not measure JPEG.
+
+**Medium**
+
+- **M1. A 17th or later `EXIF` chunk is read by ExifTool and dropped by us.** The cause is `MAX_WEBP_EXIF_BLOCKS = 16` (`src/webp/metadata.rs:39`, `:242`). It is not a pinned divergence. Failing input: `file(0x08, [EXIF(tiff_a) x16, EXIF(exif-gps-full-le)])`. ExifTool prints `4000 3000 DiamondCam ... 37.4252083333333 122.096916666667`; we print `AlphaCam OnlyInA` and no GPS. The grid has no fixture with more than two distinct blocks (`webp-seed-meta-exif-seventeen` reads nothing on either side). So cap mutants `< 2` and `< 15` are killed only by `exif_blocks_capped_at_sixteen` and the fuzz-model tests, and the ExifTool comparison is blind to them. For SPEC-032 this is a privacy-evasion shape: 16 decoy blocks hide GPS from the audit while a reader shows it.
+- **M2. The region comparator is presence-only, so a located-but-wrong ICC region passes.** Scratch mutant m11 (`ChunkKind::Iccp` guarded so only the FIRST `ICCP` is located) SURVIVES the whole WebP suite (`webp_oracle`, `webp_walk`, `webp_metadata`, `fuzz_layout`). Failing input: `webp-icc-garbage-then-valid`. We locate only the garbage chunk, which reads "present", and ExifTool reads `acsp` from the second. `located_region_bytes_equal_what_the_builders_wrote` (`tests/webp_oracle.rs:1272`) covers only `webp-all-three`, `webp-xmp-nul-id` and `webp-exif-prefix`, never a multi-region fixture. Mutant m12 ("only the first non-empty XMP is located") is killed only by the unit test `two_xmp_both_located` (`tests/webp_metadata.rs:186`), not by the comparison, because the two packets in `webp-xmp-two` are identical. ExifTool reads every XMP chunk: with `-a`, two packets give `FirstTool` and `SecondTool`. Fix: region count, kinds and offsets in the comparison or the bytes test for every region fixture, and a two-XMP fixture with different CreatorTool values. This is the same blind spot as the PNG round.
+- **M3. An empty null chunk (`\0\0\0\0`, size 0) before `EXIF` makes ExifTool stop, and we still read the EXIF.** Failing input: `webp-exif-basic` with 8 zero bytes inserted at offset 44 (RIFF size fixed up). ExifTool warns "Encountered empty null chunk. Processing aborted" and prints no Make. We read `AlphaCam OnlyInA` with no issue. A null code with size 2, or `JUNK` with size 0, agrees. We over-read here (the safe side for an audit), but the shape is unmeasured and has no divergence entry.
+
+**Low**
+
+- **L1.** When a later block holds the same tag with a different type, ExifTool shows the later value and the model falls back to the earlier block. Failing input: EXIF(tiff_a) then EXIF(Make as SHORT 7). ExifTool prints `7`; the model prints `AlphaCam`, because `read_one` returns None and `find_map` goes on to the earlier block (`tests/support/oracle.rs:1227`).
+- **L2. Warning-only disagreements (not pinned).** 8 zero bytes after the last chunk: ExifTool "Encountered empty null chunk. Processing aborted"; ours only `RiffSizeMismatch`. An even `EXIF` plus a stray byte, then `XMP `: ExifTool silent, ours `Truncated`; both lose the XMP. A 20-byte file `RIFF` + `EXIF` with size 0: ExifTool silent, ours `RiffSizeMismatch,MetadataWithoutVp8x`. XMP with a UTF-8 BOM: "Superfluous BOM at start of XMP". UTF-16LE XMP: "XMP is double UTF-encoded". A TIFF of exactly 8 bytes: "Bad IFD0 directory". Ours has no WebP-layer issue for the last three.
+- **L3.** Seeds are compared on the 20 Exif selectors only (`tests/webp_oracle.rs:141-150`, `examples/oracle_record.rs` `record_webp`), not on XMP and ICC presence. The spec's Goal names both. This mirrors PNG; state it or extend it.
+
+**Checked and clean**
+
+- **Evidence.** 98 of 98 fixture records and 53 of 53 seed records are byte-identical to a fresh ExifTool run, including stderr. The headers carry the command and version 13.55. Oracle-record is idempotent.
+- **Independence.** `tests/support/oracle_webp.rs` imports only `oracle_png` (`xmp_packet`, `icc_profile`) and `oracle_tiff`.
+- **Model probes that agree with ExifTool:**
+  - three blocks
+  - a garbage block in the middle
+  - a prefixed block last, and a prefixed block first
+  - a later block lacking a tag the earlier one has
+  - LE then BE blocks
+  - GPS only in the second block
+- **Item-7 shapes that agree on located metadata:**
+  - `VP8X` between two `EXIF` chunks
+  - an 8-byte `EXIF`
+  - an `MM` TIFF
+  - a UTF-8 BOM packet and a UTF-16LE packet (both read by ExifTool, both located by us)
+  - a stray pad byte
+  - `EXIF` inside `ANMF` followed by an odd chunk, and an `ANMF` with an odd inner chunk
+  - `ICCP` then `EXIF` with the ICC flag unset
+  - a header plus a chunk header of size 0 or 10
+  - 16 blocks with the last one differing
+  - 8 `A` bytes as the tail
+- **The `exif()` hazard for SPEC-032 is real.** `exif()` is the first parsed block. ExifTool shows the later block for 16 of the 20 selectors, and the union of the blocks. On EXIF(tiff_a) then EXIF(gps-full), `exif()` has no GPS and ExifTool prints the GPS. The audit must walk `exif_blocks()` with the per-tag priority from H1 and report unparsed blocks (M1). It must never use `exif()` alone.
+- **Divergences.** I re-measured `webp-icc-garbage` (no signature; "Bad length ICC_Profile (length 1768121121)") and `webp-xmp-nul-id-3-bytes` ("Incorrect XMP tag ID", "Empty XMP"). `RIFF....AVI ` is read (FileType AVI, Make WaveCam) and `WAVE` reads as WAV. 12 trailing bytes are silent and 3 trailing bytes warn, so the builder is right and the design text was wrong. `a_divergence_that_stops_being_one_fails` flips each entry to stale.
+- **Red-proofs.** `just mutation-oracle` passes: 40 tests in the WebP file, the controls first, needles exactly once, the leak test included. My 14 scratch library mutants (m1 to m13, with b variants; table below) all die except m11 (M2). How each dies:
+
+  | Killed by | Mutants |
+  |---|---|
+  | The ExifTool replay or live comparison | m5 and m5b (`ANMF` walked from 0 or from 16) |
+  | The warning table only | m1 `MissingPad` never, m2 `XMP\0` not non-canonical, m6 `RiffSizeMismatch` never, m7 short tail clean |
+  | `empty_regions_never_count_as_present` | m4 and m4b (empty regions dropped), m7b (8 bytes left halts) |
+  | `located_region_bytes` | m13 (XMP offset +8) |
+  | Unit and fuzz-model tests only, never the comparison | m3 and m3b (EXIF cap 2 and 15), m10 (`ExtraExif` never), m12 (only the first non-empty XMP located) |
+
+- **Carried gaps.** Mutant m8 (last `VP8X` wins) is killed by `first_vp8x_wins_flags_and_one_flag_mismatch`. Mutant m9 (`BadVp8x` threshold 9) is killed by `webp_model_runs_on_every_walk_seed` (the new seed) and `vp8x_decode_short_and_misplaced`.
+- **Collateral.** No change under `src/`, `fuzz/fuzz_targets`, `fuzz/shared` or `examples/fuzz_seeds.rs`. The `webp-` filters in `jpeg_oracle`, `budget_oracle` and `inventory_oracle` only exclude new files. `app.just` runs the third file. The pins are 53 seeds and 37 walk seeds.
+- **Gates.** `just lint`, `just test` (1197 passed, 0 failed, 14 ignored), `just mutation-oracle`, `just validate`, `just cost-audit` and `just forbid-unsafe` all exit 0.
 
 ### Reflection
 
 1. **What was unclear in the spec or handoff?**
-   —
+   — The spec says the several-block rule is "later wins per tag", from a Make/Model measurement. ExifTool's per-tag priority is invisible to a two-tag fixture, so the next model spec should require a full 20-selector two-block fixture in both orders before it states a rule. Item 7's "17 `EXIF` chunks" needs a distinct last block to mean anything, which the seed lacks.
