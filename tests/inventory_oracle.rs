@@ -1174,7 +1174,7 @@ fn existing_oracle_records_are_byte_identical_to_the_committed_set() {
         .expect("read records")
         .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
         // SPEC-031: the PNG records (`png-*`) are checked by `tests/png_oracle.rs`.
-        .filter(|n| !n.starts_with("png-"))
+        .filter(|n| !n.starts_with("png-") && !n.starts_with("webp-"))
         .collect();
     on_disk.sort();
     let want: Vec<String> = EXISTING_RECORDS

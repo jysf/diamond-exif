@@ -1,0 +1,40 @@
+# command: exiftool -a -G1 -s -n -Warning -Error <file>
+# exiftool-version: 13.55
+# source: fixtures 23
+## webp-exif-prefix
+[ExifTool]      Warning                         : [minor] Improper EXIF header
+## webp-tail-12-bytes
+## webp-tail-3-bytes
+[ExifTool]      Warning                         : Error reading RIFF file (corrupted?)
+## webp-chunk-length-past-eof
+[ExifTool]      Warning                         : Error reading RIFF file (corrupted?)
+## webp-partial-header-5
+[ExifTool]      Warning                         : Error reading RIFF file (corrupted?)
+## webp-exif-odd-unpadded-last
+[ExifTool]      Warning                         : No padding on odd-sized EXIF chunk
+## webp-xmp-odd-unpadded-last
+[ExifTool]      Warning                         : No padding on odd-sized XMP  chunk
+## webp-xmp-nul-id
+[ExifTool]      Warning                         : [minor] Incorrect XMP tag ID
+## webp-xmp-nul-id-3-bytes
+[ExifTool]      Warning                         : [minor] Incorrect XMP tag ID
+[ExifTool]      Warning                         : [minor] Empty XMP
+## webp-riff-size-0
+## webp-riff-size-small
+## webp-flags-all-wrong
+## webp-vp8x-two
+## webp-vp8x-len-3
+## webp-exif-no-vp8x
+## webp-icc-garbage
+[ExifTool]      Warning                         : Bad length ICC_Profile (length 1768121121)
+## webp-icc-stub-132
+[ExifTool]      Warning                         : Bad length ICC_Profile (length 0)
+## webp-xmp-garbage
+[ExifTool]      Warning                         : [minor] Empty XMP
+## webp-header-11-bytes
+[ExifTool]      Error                           : File format error
+## webp-header-rifx
+[ExifTool]      Warning                         : Processing TIFF-like data after unknown 20-byte header
+## webp-exif-basic
+## webp-xmp-basic
+## webp-icc-valid-flag-set

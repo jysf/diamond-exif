@@ -472,7 +472,12 @@ fn tiff_records_are_byte_identical_to_the_committed_set() {
                 .into_owned()
         })
         // SPEC-031: the PNG records (`png-*`) are counted by `tests/png_oracle.rs`.
-        .filter(|n| !n.starts_with("jpeg-") && !n.starts_with("png-") && n != "audit-tag-names.txt")
+        .filter(|n| {
+            !n.starts_with("jpeg-")
+                && !n.starts_with("png-")
+                && !n.starts_with("webp-")
+                && n != "audit-tag-names.txt"
+        })
         .count();
     // 41 older TIFF records, plus the SPEC-017 ones: one for each of the three
     // new `tiff_ifd` seeds and `hostile-subifds-overlap` (whose `# stderr:`

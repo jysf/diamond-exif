@@ -285,6 +285,16 @@ fn main() {
                 std::process::exit(3);
             }
         }
+    } else if data.starts_with(b"RIFF") {
+        // SPEC-034: a file starting `RIFF` is read with `webp::read` and the
+        // WebP model (the several-block rule is the JPEG one).
+        match exif_core::webp::read(&data) {
+            Ok(meta) => oracle::read_webp_all(&meta),
+            Err(e) => {
+                eprintln!("PARSE-ERROR {e:?}");
+                std::process::exit(3);
+            }
+        }
     } else {
         match Container::parse(&data) {
             Ok(c) => oracle::read_ours(&c, oracle::SELECTORS),
