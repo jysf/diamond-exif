@@ -230,3 +230,39 @@ signals:
     last_touched: 2026-11-10
     raised_by: claude
     notes: "Closed in practice by the app.just change; walk at STAGE-004 close and drop if no recurrence."
+
+  - id: subagent-token-self-report-counts-cache-reads
+    type: process-debt
+    summary: "Builders and verifiers report cache-read-inclusive transcript totals (millions of tokens) for work the harness meters at about 175k to 460k; the orchestrator must replace every self-reported figure with the harness subagent_tokens."
+    evidence: "SPEC-035 build 6.3M vs 175,052; SPEC-035 verify 5.7M vs 178,261 (STAGE-008). The handoff template's 'basis: transcript' invites it. N=2."
+    bar: "N=3 same-outcome"
+    status: watch
+    disposition_at: project-close
+    first_flagged: 2026-11-22
+    last_touched: 2026-11-22
+    raised_by: claude
+    notes: "Candidate fix: the handoff template tells agents to leave tokens null and the orchestrator records the harness figure (what HANDOFF-069 to 072 did)."
+
+  - id: builder-gates-must-run-on-the-pinned-toolchain
+    type: lesson
+    summary: "A build handback said every gate was green while `just lint` failed on the pinned 1.90.0 toolchain (clippy 0.1.90 flagged nonminimal_bool that CI's newer stable does not), so a local gate can be red while CI is green."
+    evidence: "SPEC-032 verify H1 (fuzz/shared/audit_invariants.rs:967). N=1."
+    bar: "N=3 same-outcome"
+    status: watch
+    disposition_at: project-close
+    first_flagged: 2026-11-22
+    last_touched: 2026-11-22
+    raised_by: claude
+    notes: "At N=1. Handoffs already name the pinned toolchain; the verify re-ran on it and caught this."
+
+  - id: design-must-measure-hostile-edges-not-only-the-happy-keys
+    type: lesson
+    summary: "Designs that measure ExifTool on the central shapes leave hostile edges to verify: several-EXIF per selector (SPEC-034), raw-profile GPS read as ok, tIME lengths and empty PNG regions (SPEC-032); each was found by a verify variant grid, not by the builder's fixture list."
+    evidence: "SPEC-034 verify H1, SPEC-035 verify M1, SPEC-032 verify H2/M1/M3. N=3."
+    bar: "N=3 same-outcome"
+    status: watch
+    disposition_at: stage-close
+    first_flagged: 2026-11-22
+    last_touched: 2026-11-22
+    raised_by: claude
+    notes: "At the bar. Dispositioned at STAGE-008 close: make 'a variant grid of hostile shapes measured against the oracle' a design step for any parity or audit spec, not a verify-only one."

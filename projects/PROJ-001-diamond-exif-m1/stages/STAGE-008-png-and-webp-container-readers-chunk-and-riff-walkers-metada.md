@@ -5,7 +5,7 @@
 
 stage:
   id: STAGE-008                     # stable, zero-padded, continuous across the repo
-  status: proposed                  # proposed | active | shipped | cancelled | on_hold
+  status: shipped                   # proposed | active | shipped | cancelled | on_hold
   priority: high                    # critical | high | medium | low
   target_complete: null             # optional: YYYY-MM-DD
 
@@ -15,7 +15,7 @@ repo:
   id: diamond-exif
 
 created_at: 2026-11-21
-shipped_at: null
+shipped_at: 2026-11-22
 
 # What part of the project's value thesis this stage advances.
 # If you can't articulate value_contribution, the stage may be
@@ -43,7 +43,12 @@ value_contribution:
 # that is a division you cannot observe, so any per-spec number is invented.
 # Warn-only, never a gate. A null here is honest; a guess is not. (DEC-013 §5)
 orchestration_cost:
-  sessions: []                      # - tokens_total: N
+  sessions:
+    - tokens_total: 1216035
+      estimated_usd: 8.03
+      recorded_at: 2026-11-22
+      notes: "Measured by the orchestrator from this session's transcript (c6de7258), messages from the request 'stage-008' (2026-11-21T14:10Z) to the stage close (2026-11-22T21:05Z), 309 de-duplicated messages: input 704 + output 281,702 + cache_creation 933,629, cache reads excluded, 6.60 USD/Mtok (same method as STAGE-006). Covers framing, seven spec designs, DEC-017 to DEC-020, handoffs, routing of builders, verifies and fix rounds, PR and merge steps. Subagent spend is in the specs' own cost sessions, not here."
+                                    # - tokens_total: N
                                     #   estimated_usd: N
                                     #   recorded_at: YYYY-MM-DD
                                     #   notes: "framing + spec breakdown"
@@ -93,9 +98,9 @@ STAGE-002 set the container pattern and STAGE-003 to STAGE-006 built the audit C
 - [x] SPEC-034 (shipped on 2026-11-22) — [L] WebP read parity against ExifTool (applies the SPEC-031 apparatus) and the SPEC-030 carried test and seed gaps
 - [x] SPEC-035 (shipped on 2026-11-22) — [S] JPEG oracle: per-selector several-Exif-block model, measured (follow-up to SPEC-034 verify H1; test harness only)
 - [x] SPEC-032 (shipped on 2026-11-22) — [L, two builder parts] Audit wiring: PNG and WebP into exif-audit (kinds, text-keyword categories, honest preview, writer refusal, renderers, CLI, fuzz seeds, README); DEC-020
-- [ ] SPEC-036 (not yet created) — [M] Tag-level inventory parity against ExifTool for PNG and WebP (split out of SPEC-032)
+- [ ] ~~SPEC-036~~ (deferred, not created) — [M] Tag-level inventory parity against ExifTool for PNG and WebP; split out of SPEC-032 and carried to the next stage that touches the inventory oracle (see Stage-Level Reflection)
 
-**Count:** 7 shipped / 0 active / 1 pending
+**Count:** 7 shipped / 0 active / 0 pending (1 deferred)
 
 ## Design Notes
 
@@ -119,15 +124,18 @@ STAGE-002 set the container pattern and STAGE-003 to STAGE-006 built the audit C
 
 ## Stage-Level Reflection
 
-*Filled in when status moves to shipped.*
-
-- **Did we deliver the outcome in "What This Stage Is"?** <yes/no + notes>
-- **How many specs did it actually take?** <number vs. plan>
-- **How many outlines survived unchanged?** <n of m>
-- **What changed between starting and shipping?** <one sentence>
+- **Did we deliver the outcome in "What This Stage Is"?** Yes, with one deliberate carve-out. `exif-core` and `exif-audit` read PNG and WebP the way they read JPEG: tolerant walkers with fuzz targets, located regions, the Exif hand-off, ExifTool read parity on 98 + 53 WebP and the PNG fixtures with red-proofed comparators, and an audit that lists findings with a preview that never claims a removal. Tag-level inventory parity against ExifTool for PNG and WebP (SPEC-036) is deferred; the audit's GPS, XMP and ICC findings are checked against the committed ExifTool records on 299 fixtures (17 recorded differences) instead.
+- **How many specs did it actually take?** Seven (SPEC-028, 029, 030, 031, 034, 035, 032) against five planned. SPEC-034 was split from SPEC-031 at design, SPEC-035 (JPEG oracle per-selector model) was a follow-up found by SPEC-034's verify, and SPEC-032 ran as two builder parts plus a fix round.
+- **How many outlines survived unchanged?** Three of five (028, 029, 030). SPEC-031 split in two; SPEC-032 changed shape (inventory parity split out, `tIME`, raw profiles and a keyword table added).
+- **What changed between starting and shipping?** The verifies kept finding hostile shapes outside the designs and fixture lists (several-EXIF per selector, raw-profile GPS read as clean, `tIME` lengths, empty PNG regions), so the audit and the oracle models grew a per-selector rule and an "unreadable metadata" status that the outline did not have.
 - **Lessons that should update AGENTS.md, templates, or constraints?**
-  - <one-line updates>
+  - Designs for parity and audit specs include a variant grid of hostile shapes measured against the oracle (signal `design-must-measure-hostile-edges-not-only-the-happy-keys`, at N=3).
+  - Handoff templates should say: leave tokens null, the orchestrator records the harness figure (signal `subagent-token-self-report-counts-cache-reads`).
+  - Builder gates run on the pinned toolchain (signal `builder-gates-must-run-on-the-pinned-toolchain`).
+  - A DEC that a verify amends is normal here (DEC-020 clauses 3, 5, 6); say so in the DEC rather than treating it as drift.
 - **Signals dispositioned at this close?**
-  - <note>
+  - `design-must-measure-hostile-edges-not-only-the-happy-keys` is at the bar and dispositioned as a design-step rule above; the other two new signals stay on watch.
 - **Should any spec-level reflections be promoted to stage-level lessons?**
-  - <one-line items>
+  - Fresh narrow fix rounds beat resumed builders and repeated verify rounds (SPEC-034 took one fix round where PNG took three).
+  - Self-reported agent token counts are never the cost: the harness figure is.
+  - Open items carried: SPEC-036 (inventory parity), a nameless length-0 `iCCP` losing its ICC finding, the 24 h fuzz run, and Linux and real-Intel checks of the alpha binaries.
