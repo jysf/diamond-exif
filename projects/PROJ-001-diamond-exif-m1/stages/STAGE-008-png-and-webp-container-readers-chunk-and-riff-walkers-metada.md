@@ -92,10 +92,10 @@ STAGE-002 set the container pattern and STAGE-003 to STAGE-006 built the audit C
 - [x] SPEC-031 (shipped on 2026-11-21) — [L] PNG read parity against ExifTool: fixtures and records, comparator, warning table, replay-and-perturb and mutated-copy red-proofs
 - [x] SPEC-034 (shipped on 2026-11-22) — [L] WebP read parity against ExifTool (applies the SPEC-031 apparatus) and the SPEC-030 carried test and seed gaps
 - [x] SPEC-035 (shipped on 2026-11-22) — [S] JPEG oracle: per-selector several-Exif-block model, measured (follow-up to SPEC-034 verify H1; test harness only)
-- [ ] SPEC-032 (design) — [L, two builder parts] Audit wiring: PNG and WebP into exif-audit (kinds, text-keyword categories, honest preview, writer refusal, renderers, CLI, fuzz seeds, README); DEC-020
+- [x] SPEC-032 (shipped on 2026-11-22) — [L, two builder parts] Audit wiring: PNG and WebP into exif-audit (kinds, text-keyword categories, honest preview, writer refusal, renderers, CLI, fuzz seeds, README); DEC-020
 - [ ] SPEC-036 (not yet created) — [M] Tag-level inventory parity against ExifTool for PNG and WebP (split out of SPEC-032)
 
-**Count:** 6 shipped / 1 active / 1 pending
+**Count:** 7 shipped / 0 active / 1 pending
 
 ## Design Notes
 

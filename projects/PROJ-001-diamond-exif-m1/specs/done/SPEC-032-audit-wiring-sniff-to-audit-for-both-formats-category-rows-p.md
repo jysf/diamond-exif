@@ -6,7 +6,7 @@
 task:
   id: SPEC-032
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -83,15 +83,36 @@ cost:
       handoff: HANDOFF-070
       agent: claude-sonnet-5-5
       interface: other
-      tokens_total: 456904
-      estimated_usd: 3.02
+      tokens_total: 464054
+      estimated_usd: 3.06
+      duration_minutes: null
+      recorded_at: 2026-11-22
+      notes: "tokens left null by instruction: the orchestrator records the harness figure"
+    - cycle: verify
+      handoff: HANDOFF-071
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 250609
+      estimated_usd: 1.65
+      duration_minutes: null
+      recorded_at: 2026-11-22
+      notes: "tokens left null by instruction: the orchestrator records the harness subagent_tokens figure"
+    - cycle: build
+      handoff: HANDOFF-072
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 274471
+      estimated_usd: 1.81
       duration_minutes: null
       recorded_at: 2026-11-22
       notes: "tokens left null by instruction: the orchestrator records the harness figure"
   totals:
-    tokens_total: 691690
-    estimated_usd: 4.57
-    session_count: 2
+    tokens_total: 1226324
+    estimated_usd: 8.09
+    session_count: 4
+shipped_at: 2026-11-22
 ---
 
 # SPEC-032: Audit wiring: PNG and WebP into exif-audit (kinds, text-keyword categories, honest preview, CLI)
@@ -247,45 +268,15 @@ fuzz seeds and README updated.
 
 ## Reflection
 
-*Appended during **ship**. Three questions, short answers.*
-
 1. **What would I do differently next time?**
-   — <answer>
+   — Put the unreadable-metadata rule (raw profiles) and the all-lengths measurements (`tIME`, empty regions) in the DESIGN, not the verify: the design measured keyword names but not the hostile edges, and the verify's 94-shape grid found three cases where the audit said clean while ExifTool printed more. Ask builders to run the pinned toolchain's clippy: the part B handback said lint was green while 1.90.0 clippy failed.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — DEC-020 was amended during verify (clauses 3, 5, 6). Process debt for `guidance/signals.yaml`: builder and verifier self-reports of tokens count cache reads (6.3M and 5.7M for about 175k of spend), and a builder that "waits on background work" re-notifies the orchestrator repeatedly (I stopped it). The fix round got no second cold verify; I ran lint and the three affected test binaries myself.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — SPEC-036: tag-level inventory parity for PNG and WebP (split out at design). Small one: a nameless length-0 PNG `iCCP` is a walk issue with no located region, so its ICC finding is lost (ExifTool prints an empty `ICC_Profile`).
 
-4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
-   the defect-escape distribution is greppable across specs:
-   `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
-   `none` (clean first try).
-   — <one word>
-   *(Runtime/operational defects — the escape-prone class — only exist once the
-   artifact meets its real host. `escaped` here is a signal to strengthen the
-   §12 behavioral pre-flight for that surface.)*
+4. **Where was the worst defect caught?** — verify (raw-profile GPS read as `ok`, exit 0).
 
-5. **What can a user do now that they couldn't before?** — one sentence,
-   before → after; quote the confirming number if one exists, name the outcome
-   if not. Write `none` if this spec has no user-visible outcome — that is a
-   real, greppable result, not a blank. This is the line a downstream work-log's
-   `impact` field is transcribed from, and both halves are already written above
-   (## Context is the before, ## Goal is the after): confirm the prediction,
-   don't reconstruct it from memory.
-   — <answer | none>
-
-## Carried from SPEC-030 verify (2026-11-21)
-
-- A zero-length `Xmp` or `Icc` region (WebP) must not count as XMP or ICC present: ExifTool shows nothing for it (DEC-019 clarification).
-- PNG `Xmp`/`Icc`/`RawProfile` regions that are compressed, and PNG raw-profile text, are metadata the audit could not read (DEC-018); report them as such.
-
-## Carried from SPEC-031 verify (2026-11-21)
-
-- Any `BadTextChunk` or `BadIccpChunk` (PNG) issue means metadata is present that we could not read (ExifTool exposes such chunks as raw data or a name): report it as unreadable metadata, not as clean.
-- A PNG `RawProfile` region beside an `eXIf` may override it (ExifTool merges both and the later raw value wins, including raw-only tags such as GPS): flag the pair.
-- A PNG `Icc` region with an empty name is a real profile (ExifTool reads it); `Xmp` is only an `iTXt`/`tEXt`/`zTXt` XMP-keyword chunk with an empty language tag.
+5. **What can a user do now that they couldn't before?** — `exif-audit` audits PNG and WebP files (before: `unsupported`): GPS, XMP, ICC, text, timestamps, with a preview that never claims a removal; 299 oracle fixtures agree with ExifTool except 17 recorded differences.

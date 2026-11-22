@@ -58,7 +58,7 @@ handback:
   pr: null
   completed_at: 2026-11-22         # YYYY-MM-DD
   notes: "tokens left null by instruction: the orchestrator records the harness subagent_tokens figure"
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-22
 ---
 
 # HANDOFF-071: <Task Title — same as the spec's title>

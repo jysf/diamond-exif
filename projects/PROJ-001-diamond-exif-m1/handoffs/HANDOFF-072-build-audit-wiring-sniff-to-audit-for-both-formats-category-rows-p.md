@@ -50,15 +50,15 @@ handback:
   agent: claude-sonnet-5-5
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  basis: agent-result                      # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 274471               # REAL combined count — what cost-audit reads
+  estimated_usd: 1.81              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
   branch: claude/spec-032-fixes
   pr: null
   completed_at: 2026-11-22
   notes: "tokens left null by instruction: the orchestrator records the harness figure"
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-22
 ---
 
 # HANDOFF-072: SPEC-032 verify punch list (fix round)
@@ -182,8 +182,8 @@ Mirror what you put in the `handback:` front-matter, and say where the number
 came from. **This is the number that lands in the spec** — the orchestrator
 transcribes it via `just handback-sync`, it does not estimate it.
 
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
+- **Tokens (total):** 274471 (harness subagent_tokens)
+- **Estimated USD:** 1.81
 - **Duration (minutes):** <estimate>
 - **Source of the number:** `/cost` | API `usage` | harness report | none available
 
@@ -206,3 +206,6 @@ transcribes it via `just handback-sync`, it does not estimate it.
 
 3. **If you did this task again, what would you do differently?**
    — <answer>
+
+
+Orchestrator note: the builder left this prose section unfilled; its report (all punch-list items fixed, gates green on 1.90.0, one live-only GPS raw-profile test, one nameless length-0 iCCP case lost) is summarised in the SPEC-032 reflection.
