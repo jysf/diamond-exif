@@ -51,14 +51,14 @@ handback:
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
   basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  tokens_total: 456904               # REAL combined count — what cost-audit reads
+  estimated_usd: 3.02              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
   branch: claude/spec-032-audit-b
   pr: null
   completed_at: 2026-11-22         # YYYY-MM-DD
   notes: "tokens left null by instruction: the orchestrator records the harness figure"   # if unusual; double-quote it — an unquoted " #" starts a YAML comment
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-22
 ---
 
 # HANDOFF-070: Audit wiring: PNG and WebP into exif-audit, PART B (CLI, renderers, fuzz, oracle replay, README)
@@ -193,7 +193,7 @@ Mirror what you put in the `handback:` front-matter, and say where the number
 came from. **This is the number that lands in the spec** — the orchestrator
 transcribes it via `just handback-sync`, it does not estimate it.
 
-- **Tokens (total):** null: left for the orchestrator to record from the harness
+- **Tokens (total):** 456904 (harness subagent_tokens): left for the orchestrator to record from the harness
 - **Estimated USD:** null
 - **Duration (minutes):** not measured
 - **Source of the number:** none available to the agent (orchestrator records the harness figure)

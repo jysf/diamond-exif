@@ -58,7 +58,7 @@ handback:
   pr: null
   completed_at: 2026-11-22         # YYYY-MM-DD
   notes: "Part A only; cost is the harness subagent_tokens figure recorded by the orchestrator."   # if unusual; double-quote it — an unquoted " #" starts a YAML comment
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-22
 ---
 
 # HANDOFF-069: Audit wiring: PNG and WebP into exif-audit, PART A (model and writer)

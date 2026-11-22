@@ -6,7 +6,7 @@
 task:
   id: SPEC-032
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: verify  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -68,11 +68,30 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: 650000
-  sessions: []
+  sessions:
+    - cycle: build
+      handoff: HANDOFF-069
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 237190
+      estimated_usd: 1.57
+      duration_minutes: 21
+      recorded_at: 2026-11-22
+      notes: "Part A only; cost is the harness subagent_tokens figure recorded by the orchestrator."
+    - cycle: build
+      handoff: HANDOFF-070
+      agent: claude-sonnet-5-5
+      interface: other
+      tokens_total: 456904
+      estimated_usd: 3.02
+      duration_minutes: null
+      recorded_at: 2026-11-22
+      notes: "tokens left null by instruction: the orchestrator records the harness figure"
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 691690
+    estimated_usd: 4.57
+    session_count: 2
 ---
 
 # SPEC-032: Audit wiring: PNG and WebP into exif-audit (kinds, text-keyword categories, honest preview, CLI)
