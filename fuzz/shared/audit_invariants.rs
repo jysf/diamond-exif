@@ -214,7 +214,7 @@ mod audit_invariants {
 
     pub fn kind_label(d: &[u8]) -> String {
         match magic(d) {
-            m @ ("Jpeg" | "Tiff") => m.to_string(),
+            m @ ("Jpeg" | "Tiff" | "Png" | "Webp") => m.to_string(),
             m => format!("Unsupported({m})"),
         }
     }
@@ -487,6 +487,14 @@ mod audit_invariants {
     /// The expected audit of `data`, from scratch.
     pub fn rederive(data: &[u8]) -> Facts {
         let kind = kind_label(data);
+        // STOPGAP (SPEC-032 part A): PNG and WebP are audited since DEC-020, but
+        // their independent re-derivation is part B. Until then the expected
+        // facts ARE the library's, so every guard is satisfied trivially for
+        // these two kinds and nothing is claimed about them here. The PNG and
+        // WebP unit tests in `tests/audit_png_webp.rs` carry the checks.
+        if kind == "Png" || kind == "Webp" {
+            return facts(&audit(data));
+        }
         let mut acc = Acc {
             items: Vec::new(),
             findings: Vec::new(),
@@ -637,7 +645,12 @@ mod audit_invariants {
         if got.health.clean && unsupported {
             return Err("clean but unsupported".into());
         }
-        if got.health.clean && !(got.kind == "Tiff" || got.kind == "Jpeg") {
+        if got.health.clean
+            && !(got.kind == "Tiff"
+                || got.kind == "Jpeg"
+                || got.kind == "Png"
+                || got.kind == "Webp")
+        {
             return Err(format!("clean for kind {:?}", got.kind));
         }
         Ok(())

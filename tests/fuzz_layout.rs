@@ -1463,7 +1463,7 @@ fn audit_seeds_are_committed_and_have_the_shapes_they_claim() {
 
     // Each new shape reaches what its name promises.
     let kind = |b: &[u8]| format!("{:?}", audit(b).kind());
-    assert_eq!(kind(&audit_seed("audit-png-magic")), "Unsupported(Png)");
+    assert_eq!(kind(&audit_seed("audit-png-magic")), "Png");
     assert_eq!(
         kind(&audit_seed("audit-bigtiff-magic")),
         "Unsupported(BigTiff)"
@@ -1957,13 +1957,13 @@ fn plants_before_spec_019() -> Vec<Plant> {
         // unsupported => nothing, never clean.
         Plant {
             name: "an unsupported file reported clean",
-            input: "audit-png-magic",
+            input: "audit-bigtiff-magic",
             guard: "unsupported",
             apply: |f| f.health.clean = true,
         },
         Plant {
             name: "an unsupported file with an item",
-            input: "audit-png-magic",
+            input: "audit-bigtiff-magic",
             guard: "unsupported",
             apply: |f| f.items.push(dummy_item()),
         },
@@ -3079,7 +3079,7 @@ fn preview_plants() -> Vec<PreviewPlant> {
         },
         PreviewPlant {
             name: "an unsupported file is reported reliable",
-            input: "audit-png-magic",
+            input: "audit-bigtiff-magic",
             guard: "preview_residual_and_reliable",
             apply: |p| p.cases[0].got.reliable = true,
         },
@@ -3321,7 +3321,7 @@ fn audit_render_seeds_are_committed_and_have_the_shapes_they_claim() {
     assert!(long.json.contains("\"truncated\":true"));
     // A PNG signature, and an empty file.
     let png = render_ctx(PNG_VALUES);
-    assert_eq!(format!("{:?}", audit(&png.file).kind()), "Unsupported(Png)");
+    assert_eq!(format!("{:?}", audit(&png.file).kind()), "Unsupported(Gif)");
     let empty = by("empty-file");
     assert!(empty.file.is_empty());
     assert_eq!(

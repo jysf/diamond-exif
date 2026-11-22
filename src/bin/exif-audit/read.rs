@@ -364,7 +364,7 @@ pub(crate) mod tests {
             matches!(read_file(&p("five.jpg"), 4), Loaded::Failed(f) if f.reason == FailReason::TooLarge)
         );
         // A non-image larger than the cap is answered from its head.
-        let mut big = b"\x89PNG\r\n\x1a\n".to_vec();
+        let mut big = b"GIF89a\x00\x00".to_vec();
         big.resize(10_000, 0);
         fs::write(p("big.png"), &big).unwrap();
         match read_file(&p("big.png"), 100) {

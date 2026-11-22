@@ -23,7 +23,7 @@ file: photos/full-house.jpg
 
 file: photos/screenshot.png
   status: unsupported
-  container: png
+  container: gif
   health: jpeg_issues=0 exif_issues=0 failed_blocks=0 inventory_truncated=false
   max severity: none
   0 findings

@@ -210,7 +210,51 @@ pub fn region_category(kind: RegionKind) -> Category {
         RegionKind::EmbeddedImage => Category::EmbeddedImage,
         RegionKind::Comment => Category::FreeText,
         RegionKind::OtherApp | RegionKind::Trailer => Category::OtherSegment,
+        // A raw profile and a PNG trailer are present, not parsed, and may hold
+        // Exif (DEC-020).
+        RegionKind::RawProfile => Category::OtherSegment,
+        RegionKind::Time => Category::Timestamps,
+        // A text chunk is categorised by its keyword: the audit calls
+        // `text_keyword_category`; this is the keyword-less default.
+        RegionKind::Text => Category::FreeText,
     }
+}
+
+/// The PNG text keywords that are not free text (DEC-020), as data: one row per
+/// keyword, in ExifTool's standard spelling. SPEC-033 may re-home `Copyright`
+/// by editing its row.
+const TEXT_KEYWORDS: [(&[u8], Category); 4] = [
+    (b"Author", Category::Authorship),
+    (b"Copyright", Category::Authorship),
+    (b"Creation Time", Category::Timestamps),
+    (b"Software", Category::Software),
+];
+
+/// The category of a PNG text chunk (`tEXt`, `zTXt`, `iTXt`) by its keyword.
+///
+/// Match rule, MEASURED against ExifTool 13.55 (`-a -G1 -s -n`, SPEC-032 build)
+/// for `tEXt`, `zTXt`, `iTXt` and compressed `iTXt`: ExifTool uppercases the
+/// keyword's FIRST letter and then compares exactly. `author`, `copyright`,
+/// `software` and `creation Time` map to the standard tags (`Author`,
+/// `Copyright`, `Software`, `CreationTime`, the last one reformatted by `-d`),
+/// while `AUTHOR`, `aUTHOR` (printed `AUTHOR`), `COPYRIGHT`, `SOFTWARE`,
+/// `creation time`, `Creation time` and `CREATION TIME` do NOT: they print as
+/// their own auto-named tags (`Creation time` prints `CreationTime` but is
+/// not reformatted by `-d`). `warning` maps to the standard `PNGWarning`.
+/// Every other keyword is [`Category::FreeText`].
+pub fn text_keyword_category(keyword: &[u8]) -> Category {
+    let Some((&first, rest)) = keyword.split_first() else {
+        return Category::FreeText;
+    };
+    let first = first.to_ascii_uppercase();
+    for (name, category) in TEXT_KEYWORDS {
+        if let Some((&nf, nrest)) = name.split_first() {
+            if nf == first && nrest == rest {
+                return category;
+            }
+        }
+    }
+    Category::FreeText
 }
 
 #[cfg(test)]
@@ -524,6 +568,75 @@ mod tests {
         for c in [Category::EmbeddedImage, Category::OtherSegment] {
             assert_eq!(c.severity(), Severity::Medium, "{c:?}");
             assert!(c.is_block(), "{c:?}");
+        }
+    }
+
+    #[test]
+    fn png_region_kinds_map_to_the_dec_020_categories() {
+        assert_eq!(
+            region_category(RegionKind::RawProfile),
+            Category::OtherSegment
+        );
+        assert_eq!(region_category(RegionKind::Time), Category::Timestamps);
+        assert_eq!(region_category(RegionKind::Trailer), Category::OtherSegment);
+        assert_eq!(region_category(RegionKind::Text), Category::FreeText);
+    }
+
+    /// The keyword table typed out again as data, one row per keyword, with
+    /// what ExifTool 13.55 was MEASURED to do (SPEC-032 build): `(keyword, the
+    /// category)`. The match rule is the first letter case-insensitive and the
+    /// rest exact.
+    #[test]
+    fn text_keywords_match_the_measured_rule_row_by_row() {
+        use Category::*;
+        let rows: [(&[u8], Category); 31] = [
+            // Standard spellings.
+            (b"Author", Authorship),
+            (b"Copyright", Authorship),
+            (b"Creation Time", Timestamps),
+            (b"Software", Software),
+            (b"Title", FreeText),
+            (b"Description", FreeText),
+            (b"Comment", FreeText),
+            (b"Disclaimer", FreeText),
+            (b"Warning", FreeText),
+            (b"Source", FreeText),
+            // First letter lower case: ExifTool maps these to the standard
+            // tags (`author` printed `Author`, `warning` printed `PNGWarning`,
+            // `creation Time` was reformatted by `-d`).
+            (b"author", Authorship),
+            (b"copyright", Authorship),
+            (b"software", Software),
+            (b"creation Time", Timestamps),
+            (b"title", FreeText),
+            // Any other letter changed: its own tag, not the standard one
+            // (`AUTHOR`, `aUTHOR` printed `AUTHOR`; `creation time` and
+            // `Creation time` were NOT reformatted by `-d`).
+            (b"AUTHOR", FreeText),
+            (b"aUTHOR", FreeText),
+            (b"COPYRIGHT", FreeText),
+            (b"coPYRIGHT", FreeText),
+            (b"SOFTWARE", FreeText),
+            (b"sOFTWARE", FreeText),
+            (b"creation time", FreeText),
+            (b"Creation time", FreeText),
+            (b"Creation TIME", FreeText),
+            (b"CREATION TIME", FreeText),
+            // Not the keyword exactly.
+            (b"Creation  Time", FreeText),
+            (b"CreationTime", FreeText),
+            (b"Authors", FreeText),
+            (b"", FreeText),
+            (b"Unknown Keyword", FreeText),
+            (b"\xC3\xA9", FreeText),
+        ];
+        for (keyword, want) in rows {
+            assert_eq!(
+                text_keyword_category(keyword),
+                want,
+                "{}",
+                String::from_utf8_lossy(keyword)
+            );
         }
     }
 }

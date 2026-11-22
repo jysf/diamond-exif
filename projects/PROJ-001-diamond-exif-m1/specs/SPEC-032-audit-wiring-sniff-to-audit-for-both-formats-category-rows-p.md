@@ -139,14 +139,14 @@ fuzz seeds and README updated.
 
 ## Acceptance Criteria
 
-- [ ] `audit()` returns `ContainerKind::Png` / `Webp` for those inputs; every
+- [x] `audit()` returns `ContainerKind::Png` / `Webp` for those inputs; every
       other sniffed kind is unchanged; truncated or `Err` parses are
       `unreadable(kind)`, never clean.
-- [ ] Every parsed Exif block of a PNG and a WebP is inventoried with its block
+- [x] Every parsed Exif block of a PNG and a WebP is inventoried with its block
       index and chunk index; two blocks give two sets of items; no merge.
-- [ ] A WebP with 17 `EXIF` blocks (GPS only in the 17th) is not clean, and its
+- [x] A WebP with 17 `EXIF` blocks (GPS only in the 17th) is not clean, and its
       preview is unreliable; a test names the case.
-- [ ] Regions: `Xmp`, `Icc` (PNG `iCCP`, WebP `ICCP`), `Text`, `RawProfile`,
+- [x] Regions: `Xmp`, `Icc` (PNG `iCCP`, WebP `ICCP`), `Text`, `RawProfile`,
       `Time`, PNG `Trailer`; a length-0 region has an item and no finding;
       after-IDAT / after-IEND is recorded in `Origin::after_scan`.
 - [ ] Text keywords: Author and Copyright to `Authorship`, Creation Time to
@@ -155,10 +155,10 @@ fuzz seeds and README updated.
       `Author`, `author`, `AUTHOR`, `aUTHOR` and pinned; the committed
       `png-text-keywords` record agrees with the table (a keyword ExifTool
       prints under a different name is a recorded divergence, not silent).
-- [ ] `preview()` of a PNG or WebP: every finding `Kept`, `removed == 0`,
+- [x] `preview()` of a PNG or WebP: every finding `Kept`, `removed == 0`,
       `reliable()` false, `strippable()` false, for every `StripPolicy`; JPEG and
       TIFF previews unchanged byte for byte.
-- [ ] `strip()` of a PNG and of a WebP returns `StripError::Unsupported` with
+- [x] `strip()` of a PNG and of a WebP returns `StripError::Unsupported` with
       the new kind, for every policy; no output bytes.
 - [ ] CLI: a PNG with GPS in `eXIf` exits with the findings code, a clean PNG
       is `ok`, a WebP with unreadable metadata is `issues`, HEIC is still

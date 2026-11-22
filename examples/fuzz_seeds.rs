@@ -1248,7 +1248,10 @@ fn render_seeds() -> Vec<(String, Vec<u8>)> {
     const VAL: u8 = 16;
     let house = report_inputs::full_house_jpeg();
     let house_tiff = report_inputs::full_house_tiff();
-    let png = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0];
+    // An unsupported container with a `.png` label. The bytes were a PNG
+    // signature until PNG was audited (SPEC-032, DEC-020); the seed names are
+    // historical, a GIF header keeps the unsupported cases covered.
+    let png = [b'G', b'I', b'F', b'8', b'9', b'a', 0, 0, 0, 0];
     let long_ascii = {
         let payload: Vec<u8> = (0..300u32).map(|i| b'a' + (i % 26) as u8).collect();
         report_inputs::tiff_with_payloads(&[(0x010F, 2, &payload)])

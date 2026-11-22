@@ -7,12 +7,16 @@
 //! [`Disposition::KeptUnread`], not [`Disposition::Kept`]. Nothing else is
 //! consulted (not the severity, the container or the origin).
 //!
+//! A PNG or a WebP is the exception to the lookup (DEC-020): the writer refuses
+//! both, so every finding is [`Disposition::Kept`], nothing is removed,
+//! [`Preview::strippable`] is false and [`Preview::reliable`] is false.
+//!
 //! The preview covers findings only. Inventory-only entries have no category
 //! and are out of scope (DEC-009, "What the preview does not say").
 //!
 //! Provenance (DEC-003, class 1): net-new code over [`Category`] and DEC-009.
 
-use super::{Category, FileAudit, Severity};
+use super::{Category, ContainerKind, FileAudit, Severity};
 use crate::policy::{may_hold, StripPolicy, StripSpec};
 
 /// What a policy does to one finding.
@@ -62,6 +66,7 @@ pub struct Preview {
     counts: Counts,
     residual_severity: Option<Severity>,
     reliable: bool,
+    strippable: bool,
 }
 
 impl Preview {
@@ -98,9 +103,17 @@ impl Preview {
         self.residual_severity
     }
 
-    /// Whether the audit was clean and its findings complete.
+    /// Whether the audit was clean and its findings complete. Always false for
+    /// a container the writer cannot strip (see [`Preview::strippable`]).
     pub fn reliable(&self) -> bool {
         self.reliable
+    }
+
+    /// Whether the writer can strip this container. False for a PNG and a WebP
+    /// (DEC-020): they are audited, but [`crate::write::strip`] refuses them, so
+    /// the dispositions describe nothing the writer would do.
+    pub fn strippable(&self) -> bool {
+        self.strippable
     }
 }
 
@@ -119,6 +132,7 @@ fn disposition_of(c: Category, spec: StripSpec) -> Disposition {
 /// linear in the findings.
 pub fn preview(audit: &FileAudit<'_>, policy: StripPolicy) -> Preview {
     let spec = policy.spec();
+    let strippable = !matches!(audit.kind(), ContainerKind::Png | ContainerKind::Webp);
     let mut counts = Counts {
         removed: 0,
         kept: 0,
@@ -127,7 +141,12 @@ pub fn preview(audit: &FileAudit<'_>, policy: StripPolicy) -> Preview {
     let mut residual: Option<Severity> = None;
     let mut dispositions = Vec::with_capacity(audit.findings().len());
     for f in audit.findings() {
-        let d = disposition_of(f.category, spec);
+        // A container the writer refuses removes nothing (DEC-020).
+        let d = if strippable {
+            disposition_of(f.category, spec)
+        } else {
+            Disposition::Kept
+        };
         match d {
             Disposition::Removed => counts.removed = counts.removed.saturating_add(1),
             Disposition::Kept => counts.kept = counts.kept.saturating_add(1),
@@ -143,7 +162,7 @@ pub fn preview(audit: &FileAudit<'_>, policy: StripPolicy) -> Preview {
     }
     let health = audit.health();
     let residual_severity = if health.inventory_truncated {
-        if spec == StripSpec::all() {
+        if strippable && spec == StripSpec::all() {
             None
         } else {
             audit.max_severity()
@@ -156,7 +175,8 @@ pub fn preview(audit: &FileAudit<'_>, policy: StripPolicy) -> Preview {
         dispositions,
         counts,
         residual_severity,
-        reliable: health.clean && !health.inventory_truncated,
+        reliable: strippable && health.clean && !health.inventory_truncated,
+        strippable,
     }
 }
 
@@ -428,10 +448,10 @@ mod tests {
 
     #[test]
     fn unsupported_empty_and_unreadable_audits_have_no_dispositions_and_are_not_reliable() {
-        let png = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR";
+        let gif = b"GIF89a\x01\x00\x01\x00";
         let tiff_bad = b"II*\0\x08\0\0\0\xFF\xFF"; // IFD0 declares more than exists
         let cases: [(&str, Vec<u8>); 4] = [
-            ("png", png.to_vec()),
+            ("gif", gif.to_vec()),
             ("empty", Vec::new()),
             ("unreadable tiff", tiff_bad.to_vec()),
             ("garbage", b"not an image at all".to_vec()),
@@ -447,10 +467,10 @@ mod tests {
                 assert_eq!(p.residual_severity(), None, "{label}");
             }
         }
-        // Sanity: the PNG really is the unsupported kind.
+        // Sanity: the GIF really is the unsupported kind.
         assert!(matches!(
-            audit(png).kind(),
-            ContainerKind::Unsupported(Sniffed::Png)
+            audit(gif).kind(),
+            ContainerKind::Unsupported(Sniffed::Gif)
         ));
         // And a reliable one exists: a clean file with no findings.
         let ok = synthetic(&[], true, false);

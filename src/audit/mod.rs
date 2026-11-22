@@ -1,11 +1,12 @@
 //! The audit model (SPEC-012, DEC-008): a pure function from bytes to a
 //! [`FileAudit`].
 //!
-//! [`audit`] sniffs the container ([`sniff`]), reads a TIFF or a JPEG with the
-//! existing tolerant readers, and returns
+//! [`audit`] sniffs the container ([`sniff`]), reads a TIFF, a JPEG, a PNG or a
+//! WebP with the existing tolerant readers, and returns
 //!
 //! * an **inventory** ([`FileAudit::items`]): every IFD entry the reader found
-//!   (counts and types only, no value bytes) and every located JPEG region;
+//!   (counts and types only, no value bytes) and every located region (JPEG
+//!   segments, PNG and WebP chunks);
 //! * **findings** ([`FileAudit::findings`]): the DEC-008 categories, each
 //!   pointing at the inventory item it is about;
 //! * a **health** summary ([`FileAudit::health`]): was the file readable at
@@ -14,17 +15,23 @@
 //! # Three things a caller must not conflate
 //!
 //! "No findings", "clean" and "safe" are different. An unsupported container
-//! (PNG, WebP, HEIC, BigTIFF, ...), an empty file and a recognised container
+//! (HEIC, GIF, BigTIFF, ...), an empty file and a recognised container
 //! whose metadata could not be read all have **no findings**, and none of them
 //! is [`Health::clean`]. A caller that wants to say "nothing personal was
 //! found" must check [`FileAudit::kind`] and [`FileAudit::health`] as well.
 //!
 //! # Several Exif blocks
 //!
-//! Findings come from **every** parsed Exif block of a JPEG, each tagged with
-//! its block index ([`Origin::block`]) and whether it lies after the scan
-//! ([`Origin::after_scan`]). Nothing is merged or deduplicated: a privacy
-//! report must show every copy.
+//! Findings come from **every** parsed Exif block of a JPEG, a PNG (`eXIf`) or
+//! a WebP (`EXIF`), each tagged with its block index ([`Origin::block`]) and
+//! whether it lies after the scan ([`Origin::after_scan`]; for a PNG or WebP,
+//! after the image data). Nothing is merged or deduplicated: a privacy report
+//! must show every copy (DEC-020).
+//!
+//! # PNG and WebP are readable, not strippable
+//!
+//! The audit reads both (DEC-020), but [`crate::write::strip`] refuses them, so
+//! [`preview`] keeps every finding and [`Preview::strippable`] is false.
 //!
 //! # Bounds
 //!
@@ -42,13 +49,15 @@ mod category;
 mod preview;
 mod sniff;
 
-pub use category::{categorize, region_category, Category, Severity};
+pub use category::{categorize, region_category, text_keyword_category, Category, Severity};
 pub use preview::{preview, Counts, Disposition, Preview};
 pub use sniff::{sniff, Sniffed};
 
 use crate::jpeg::{self, Region};
+use crate::png::{self, PngRegion};
 use crate::policy::StripSpec;
 use crate::tiff::{Container, Ifd, IfdKind};
+use crate::webp::{self, WebpRegion};
 
 /// The most items (and, separately, the most findings) an audit keeps.
 /// Exceeding either sets [`Health::inventory_truncated`].
@@ -66,11 +75,16 @@ const TYPE_LONG: u16 = 4;
 
 /// What container the audit decided the input is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ContainerKind {
     /// Classic TIFF, read with [`Container::parse`].
     Tiff,
     /// JPEG, read with [`jpeg::read`].
     Jpeg,
+    /// PNG, read with [`png::read`] (DEC-020).
+    Png,
+    /// WebP, read with [`webp::read`] (DEC-020).
+    Webp,
     /// A container this library does not read (the sniffed kind is kept).
     Unsupported(Sniffed),
 }
@@ -95,8 +109,17 @@ pub enum RegionKind {
     Comment,
     /// An unrecognised APPn segment.
     OtherApp,
-    /// Bytes after the `EOI` that no embedded image accounts for.
+    /// Bytes after the `EOI` that no embedded image accounts for, or (PNG) the
+    /// bytes after `IEND`.
     Trailer,
+    /// A PNG `tEXt`, `zTXt` or `iTXt` chunk that is not XMP and not a raw
+    /// profile. Its category depends on its keyword ([`text_keyword_category`]).
+    Text,
+    /// A PNG ImageMagick `Raw profile type ...` text chunk (may hold Exif,
+    /// XMP, ICC or IPTC; not decoded).
+    RawProfile,
+    /// A PNG `tIME` chunk (a modification time).
+    Time,
 }
 
 /// Where an inventory item came from.
@@ -105,10 +128,11 @@ pub struct Origin {
     /// The Exif block (index into [`jpeg::JpegMetadata::exif_blocks`]) for an
     /// entry of a JPEG's Exif; `None` for a bare TIFF and for regions.
     pub block: Option<usize>,
-    /// The JPEG segment index the block or region came from; `None` for a bare
-    /// TIFF.
+    /// The JPEG segment index (a PNG or WebP: the chunk index) the block or
+    /// region came from; `None` for a bare TIFF.
     pub segment: Option<usize>,
-    /// Whether that segment lies after the first scan.
+    /// Whether that segment lies after the first scan (a PNG or WebP: after the
+    /// image data).
     pub after_scan: bool,
 }
 
@@ -250,7 +274,9 @@ pub struct Health {
     /// TIFF-layer issue, no failed block and no truncation. **Not** "no
     /// personal data": see the module docs.
     pub clean: bool,
-    /// JPEG-layer issues (the walker's and the extraction's).
+    /// Container-layer issues for every format (the walker's and the
+    /// extraction's): the JPEG, PNG or WebP layer. The name is kept for report
+    /// schema stability (DEC-010, DEC-020).
     pub jpeg_issues: usize,
     /// TIFF-layer issues summed over every readable TIFF (every Exif block).
     pub exif_issues: usize,
@@ -313,6 +339,8 @@ pub fn audit(data: &[u8]) -> FileAudit<'_> {
     match sniff(data) {
         Sniffed::Tiff => audit_tiff(data),
         Sniffed::Jpeg => audit_jpeg(data, true),
+        Sniffed::Png => audit_png(data),
+        Sniffed::Webp => audit_webp(data),
         other => FileAudit {
             kind: ContainerKind::Unsupported(other),
             items: Vec::new(),
@@ -424,6 +452,201 @@ fn audit_jpeg(data: &[u8], embedded: bool) -> FileAudit<'_> {
     b.finish(
         ContainerKind::Jpeg,
         meta.jpeg_issues().len(),
+        exif_issues,
+        failed,
+    )
+}
+
+/// One located PNG or WebP region, before it becomes an item.
+struct ChunkRegion {
+    /// Input offset of the chunk (orders the inventory).
+    offset: usize,
+    kind: RegionKind,
+    /// The chunk index (one past the last chunk for bytes after `IEND`).
+    segment: usize,
+    len: usize,
+    /// `None`: inventoried, no finding (a length-0 region, DEC-020).
+    category: Option<Category>,
+    after_scan: bool,
+}
+
+/// The index of the chunk starting at `offset`, by binary search (chunks are
+/// in ascending offset order). `not_found` when it is not a walked chunk (a
+/// chunk of the bytes after `IEND`).
+fn chunk_index(offsets: &[usize], offset: usize, not_found: usize) -> usize {
+    offsets.binary_search(&offset).unwrap_or(not_found)
+}
+
+/// Push the regions as items and findings, in input order.
+fn push_regions(b: &mut Builder<'_>, mut regions: Vec<ChunkRegion>) {
+    // Stable: equal offsets keep their discovery order.
+    regions.sort_by_key(|r| r.offset);
+    for r in regions {
+        let origin = Origin {
+            block: None,
+            segment: Some(r.segment),
+            after_scan: r.after_scan,
+        };
+        let item = Item::new(
+            origin,
+            ItemKind::Region {
+                kind: r.kind,
+                segment: r.segment,
+                len: r.len,
+            },
+        );
+        b.push(item, r.category, None);
+    }
+}
+
+/// A region's category: none when it is empty (ExifTool shows nothing for it).
+fn nonempty(len: usize, category: Category) -> Option<Category> {
+    if len == 0 {
+        None
+    } else {
+        Some(category)
+    }
+}
+
+/// The audit of a PNG (DEC-020): every `eXIf` block, then the located regions
+/// and `tIME` chunks in chunk order, then the bytes after `IEND`.
+fn audit_png(data: &[u8]) -> FileAudit<'_> {
+    let Ok(meta) = png::read(data) else {
+        return unreadable(ContainerKind::Png);
+    };
+    let chunks = meta.png().chunks();
+    let offsets: Vec<usize> = chunks.iter().map(png::Chunk::offset).collect();
+    let mut b = Builder::default();
+    let mut exif_issues = 0usize;
+    let mut failed = 0usize;
+    for (index, block) in meta.exif_blocks().iter().enumerate() {
+        match block.container() {
+            Ok(container) => {
+                exif_issues = container.issues().len().saturating_add(exif_issues);
+                let origin = Origin {
+                    block: Some(index),
+                    segment: Some(chunk_index(&offsets, block.offset(), chunks.len())),
+                    after_scan: block.after_idat() || block.after_iend(),
+                };
+                b.add_container(container, block.tiff(), origin);
+            }
+            Err(_) => failed = failed.saturating_add(1),
+        }
+    }
+    let mut regions = Vec::new();
+    for region in meta.regions() {
+        let (kind, category) = match *region {
+            PngRegion::Xmp { .. } => (RegionKind::Xmp, Category::Xmp),
+            PngRegion::Icc { .. } => (RegionKind::Icc, Category::Icc),
+            PngRegion::RawProfile { .. } => (
+                RegionKind::RawProfile,
+                region_category(RegionKind::RawProfile),
+            ),
+            PngRegion::Text { keyword, .. } => (RegionKind::Text, text_keyword_category(keyword)),
+        };
+        let len = region.data().len();
+        regions.push(ChunkRegion {
+            offset: region.offset(),
+            kind,
+            segment: chunk_index(&offsets, region.offset(), chunks.len()),
+            len,
+            // A length-0 region has an item and no finding.
+            category: nonempty(len, category),
+            after_scan: region.after_idat() || region.after_iend(),
+        });
+    }
+    // `tIME` is not a region of `png::read`: find it in the walk. Only the
+    // specified 7-byte form is a time.
+    for (index, chunk) in chunks.iter().enumerate() {
+        if &chunk.chunk_type() == b"tIME" && chunk.data().len() == 7 {
+            regions.push(ChunkRegion {
+                offset: chunk.offset(),
+                kind: RegionKind::Time,
+                segment: index,
+                len: chunk.data().len(),
+                category: Some(region_category(RegionKind::Time)),
+                after_scan: chunk.after_idat(),
+            });
+        }
+    }
+    let trailer = meta.png().trailer();
+    if !trailer.is_empty() {
+        regions.push(ChunkRegion {
+            offset: data.len().saturating_sub(trailer.len()),
+            kind: RegionKind::Trailer,
+            segment: chunks.len(),
+            len: trailer.len(),
+            category: Some(region_category(RegionKind::Trailer)),
+            after_scan: true,
+        });
+    }
+    push_regions(&mut b, regions);
+    b.finish(
+        ContainerKind::Png,
+        meta.png_issues().len(),
+        exif_issues,
+        failed,
+    )
+}
+
+/// The audit of a WebP (DEC-020): every `EXIF` block, then the located `XMP `
+/// and `ICCP` regions.
+fn audit_webp(data: &[u8]) -> FileAudit<'_> {
+    let Ok(meta) = webp::read(data) else {
+        return unreadable(ContainerKind::Webp);
+    };
+    let chunks = meta.webp().chunks();
+    let offsets: Vec<usize> = chunks.iter().map(webp::Chunk::offset).collect();
+    // "After the image data": after the first chunk that carries pixels.
+    let first_image = chunks
+        .iter()
+        .position(|c| {
+            matches!(
+                c.kind(),
+                webp::ChunkKind::Vp8 | webp::ChunkKind::Vp8l | webp::ChunkKind::Anmf
+            )
+        })
+        .unwrap_or(chunks.len());
+    let after_scan = |segment: usize| segment > first_image;
+    let mut b = Builder::default();
+    let mut exif_issues = 0usize;
+    let mut failed = 0usize;
+    for (index, block) in meta.exif_blocks().iter().enumerate() {
+        match block.container() {
+            Ok(container) => {
+                exif_issues = container.issues().len().saturating_add(exif_issues);
+                let segment = chunk_index(&offsets, block.offset(), chunks.len());
+                let origin = Origin {
+                    block: Some(index),
+                    segment: Some(segment),
+                    after_scan: after_scan(segment),
+                };
+                b.add_container(container, block.tiff(), origin);
+            }
+            Err(_) => failed = failed.saturating_add(1),
+        }
+    }
+    let mut regions = Vec::new();
+    for region in meta.regions() {
+        let (kind, category) = match *region {
+            WebpRegion::Xmp { .. } => (RegionKind::Xmp, Category::Xmp),
+            WebpRegion::Icc { .. } => (RegionKind::Icc, Category::Icc),
+        };
+        let len = region.data().len();
+        let segment = chunk_index(&offsets, region.offset(), chunks.len());
+        regions.push(ChunkRegion {
+            offset: region.offset(),
+            kind,
+            segment,
+            len,
+            category: nonempty(len, category),
+            after_scan: after_scan(segment),
+        });
+    }
+    push_regions(&mut b, regions);
+    b.finish(
+        ContainerKind::Webp,
+        meta.webp_issues().len(),
         exif_issues,
         failed,
     )
@@ -834,11 +1057,6 @@ mod tests {
             (Sniffed::Empty, vec![]),
             (Sniffed::BigTiff, b"II\x2B\x00\x08\x00\x08\x00".to_vec()),
             (Sniffed::BigTiff, b"MM\x00\x2B\x00\x08\x00\x00".to_vec()),
-            (
-                Sniffed::Png,
-                vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0],
-            ),
-            (Sniffed::Webp, b"RIFF\x04\x00\x00\x00WEBPVP8 ".to_vec()),
             (Sniffed::Heic, b"\x00\x00\x00\x18ftypheic".to_vec()),
             (Sniffed::Gif, b"GIF89a\x01\x00\x01\x00".to_vec()),
             (Sniffed::Unknown, b"this is not an image".to_vec()),

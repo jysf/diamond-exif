@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-22
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-032
@@ -46,18 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                # completed | blocked | rejected
+  agent: claude-sonnet-5-5         # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
+  basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
-  branch: null
+  branch: claude/spec-032-audit-a
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-22         # YYYY-MM-DD
+  notes: "Part A only. tokens_total, estimated_usd and duration_minutes are left null: the orchestrator replaces them with the harness figure (a subagent cannot read its own transcript)."   # if unusual; double-quote it — an unquoted " #" starts a YAML comment
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -171,9 +171,9 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
+- **Branch / PR:** `claude/spec-032-audit-a` (no PR opened, by instruction)
+- **Completed at:** 2026-11-22
+- **All acceptance criteria met?** Part A criteria: yes (see the report). Part B criteria remain: CLI, renderers' "not strippable" wording and JSON `strippable`, fuzz seeds and the independent harness re-derivation, the oracle replay and `png-text-keywords` record, README, `just mutation-oracle`, `fuzz-smoke`, `oracle-record`.
 - **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
 
 ### Cost self-report
@@ -182,27 +182,30 @@ Mirror what you put in the `handback:` front-matter, and say where the number
 came from. **This is the number that lands in the spec** — the orchestrator
 transcribes it via `just handback-sync`, it does not estimate it.
 
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null: the orchestrator replaces it with the harness figure
+- **Estimated USD:** null (same reason)
+- **Duration (minutes):** null (same reason)
+- **Source of the number:** none available to the subagent; harness report by the orchestrator
 
 ### Drift and new artifacts
 
 - **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
+  - none
 - **Deviations from spec:**
-  - [list]
+  - Keyword rule measured (ExifTool 13.55, `-a -G1 -s -n`, tEXt, zTXt, iTXt, compressed iTXt): ExifTool uppercases the FIRST letter of the keyword and then compares exactly. `author`, `copyright`, `software`, `warning`, `disclaimer`, `creation Time` map to the standard tags; `AUTHOR`, `aUTHOR`, `COPYRIGHT`, `SOFTWARE`, `creation time`, `Creation time`, `CREATION TIME` are their own auto-named tags (`Creation time` prints `CreationTime` but `-d` does not reformat it, so the printed name alone does not prove a standard tag). Pinned in `text_keyword_category`.
+  - A bare `RIFF....WEBP` header with no chunks is a clean audit (the library reports no issue); the hostile test uses a header plus a truncated chunk head.
+  - Fuzz harness stopgap (outside the handoff's Part A list, needed to keep `just test` green): `fuzz/shared/audit_invariants.rs` `rederive` returns the library's own facts for Png and Webp (circular, commented STOPGAP); Part B replaces it with an independent re-derivation. The `png()` stand-ins in `tests/cli.rs`, `tests/report_formats.rs`, `tests/report_render.rs` (+ three golden files), the two `render-*` png seeds (generator `examples/fuzz_seeds.rs`) and four plant inputs in `tests/fuzz_layout.rs` were PNG signatures used as "an unsupported file"; they are now GIF headers or BigTIFF so they stay unsupported.
+  - Part A tests for preview and writer live in `tests/audit_png_webp.rs` (integration) rather than in `src/audit/preview.rs` and `src/write`, as the handoff allows; the keyword and region-kind tables are unit-tested in `src/audit/category.rs`.
 - **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - none beyond Part B
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — Whether Part A had to keep the fuzz harness and the CLI/report tests green: they use PNG signatures as the unsupported stand-in, and the handoff did not say how to treat them.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — The mutation oracle's exactly-once needles in `src/audit/mod.rs` (a line copied into audit_png/audit_webp broke one); worth listing.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Grep for every PNG-signature stand-in in tests and seeds first, and decide the unsupported replacement once.

@@ -37,9 +37,12 @@ fn house() -> Vec<u8> {
     report_inputs::full_house_jpeg()
 }
 
+/// A stand-in for an unsupported container. It was a PNG signature until PNG
+/// became audited (SPEC-032, DEC-020); a GIF stays unsupported. Part B adds
+/// real PNG and WebP cases beside it.
 fn png() -> Vec<u8> {
-    let mut v = b"\x89PNG\r\n\x1a\n".to_vec();
-    v.extend_from_slice(&[0; 8]);
+    let mut v = b"GIF89a".to_vec();
+    v.extend_from_slice(&[0; 10]);
     v
 }
 

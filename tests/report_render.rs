@@ -38,7 +38,7 @@ fn root() -> PathBuf {
 #[test]
 fn golden_text_json_csv_match_byte_for_byte() {
     let jpeg = report_inputs::full_house_jpeg();
-    let png = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    let png = *b"GIF89a\x01\x00\x01\x00"; // unsupported; was a PNG signature before SPEC-032
     let files = vec![
         FileEntry {
             label: b"photos/full-house.jpg",
@@ -83,7 +83,7 @@ fn golden_text_json_csv_match_byte_for_byte() {
 #[test]
 fn golden_files_are_unchanged_and_the_builder_reproduces_them() {
     let jpeg = report_inputs::full_house_jpeg();
-    let png = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    let png = *b"GIF89a\x01\x00\x01\x00"; // unsupported; was a PNG signature before SPEC-032
     let files = vec![
         FileEntry {
             label: b"photos/full-house.jpg",

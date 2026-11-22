@@ -356,6 +356,17 @@ pub fn strip(data: &[u8], policy: StripPolicy) -> Result<Stripped, StripError> {
     match sniffed {
         Sniffed::Jpeg | Sniffed::Tiff => {}
         Sniffed::Empty | Sniffed::Unknown => return Err(StripError::NotJpeg),
+        // Audited (DEC-020) but not strippable: refuse, with the real kind.
+        Sniffed::Png => {
+            return Err(StripError::Unsupported {
+                kind: ContainerKind::Png,
+            })
+        }
+        Sniffed::Webp => {
+            return Err(StripError::Unsupported {
+                kind: ContainerKind::Webp,
+            })
+        }
         other => {
             return Err(StripError::Unsupported {
                 kind: ContainerKind::Unsupported(other),

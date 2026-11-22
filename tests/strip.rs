@@ -113,21 +113,17 @@ fn png_webp_heic_are_unsupported_naming_the_container() {
     heic.extend_from_slice(b"ftypheic");
     heic.extend_from_slice(&[0; 16]);
     for (bytes, want) in [
-        (png, Sniffed::Png),
-        (webp, Sniffed::Webp),
-        (heic, Sniffed::Heic),
+        (png, ContainerKind::Png),
+        (webp, ContainerKind::Webp),
+        (heic, ContainerKind::Unsupported(Sniffed::Heic)),
     ] {
         assert_eq!(
             strip(&bytes, StripPolicy::Everything).unwrap_err(),
-            StripError::Unsupported {
-                kind: ContainerKind::Unsupported(want)
-            }
+            StripError::Unsupported { kind: want }
         );
         assert_eq!(
             sanitize(&bytes, StripPolicy::Everything).unwrap_err(),
-            StripError::Unsupported {
-                kind: ContainerKind::Unsupported(want)
-            }
+            StripError::Unsupported { kind: want }
         );
     }
 }

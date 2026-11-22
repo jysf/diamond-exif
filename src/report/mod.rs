@@ -398,6 +398,8 @@ pub(crate) fn container_name(kind: ContainerKind) -> &'static str {
     match kind {
         ContainerKind::Tiff => "tiff",
         ContainerKind::Jpeg => "jpeg",
+        ContainerKind::Png => "png",
+        ContainerKind::Webp => "webp",
         ContainerKind::Unsupported(s) => match s {
             Sniffed::Png => "png",
             Sniffed::Webp => "webp",
@@ -438,6 +440,9 @@ pub(crate) fn region_name(kind: crate::audit::RegionKind) -> &'static str {
         RegionKind::Comment => "comment",
         RegionKind::OtherApp => "other_app",
         RegionKind::Trailer => "trailer",
+        RegionKind::Text => "text",
+        RegionKind::RawProfile => "raw_profile",
+        RegionKind::Time => "time",
     }
 }
 
@@ -545,8 +550,8 @@ mod tests {
         };
         assert_eq!(status_of(&failed), Status::Failed);
         // unsupported, zero findings: still `unsupported`.
-        let png = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0];
-        let a = audit(&png);
+        let png = b"GIF89a\x01\x00\x01\x00";
+        let a = audit(png);
         assert!(a.findings().is_empty());
         assert_eq!(
             status_of(&FileResult::Audited(a)),
@@ -660,7 +665,7 @@ mod tests {
     #[test]
     fn summarize_counts_each_status_category_and_reliability() {
         let clean = tiff_ascii(b"Cam");
-        let png = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+        let png = b"GIF89a\x01\x00\x01\x00";
         let bad = b"II\x2A\x00\x40\x00\x00\x00";
         let issues = [0xFF, 0xD8];
         let files = vec![
@@ -670,7 +675,7 @@ mod tests {
             },
             FileEntry {
                 label: b"b",
-                result: FileResult::Audited(audit(&png)),
+                result: FileResult::Audited(audit(png)),
             },
             FileEntry {
                 label: b"c",
@@ -739,7 +744,7 @@ mod tests {
         // No reliable file: no residual number at all (never a zero).
         let only_png = [FileEntry {
             label: b"b",
-            result: FileResult::Audited(audit(&png)),
+            result: FileResult::Audited(audit(png)),
         }];
         assert_eq!(summarize(&only_png, &keeping).residual_findings, None);
         // An empty run.
