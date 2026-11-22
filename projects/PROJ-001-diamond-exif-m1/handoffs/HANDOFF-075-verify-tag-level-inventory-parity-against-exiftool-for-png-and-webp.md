@@ -51,8 +51,8 @@ handback:
                                    #   to_agent above is a prediction from tier_map
   verdict: punch-list              # verify handoffs: approved | punch-list | rejected
   basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  tokens_total: 218377               # REAL combined count — what cost-audit reads
+  estimated_usd: 1.44              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
   branch: claude/spec-036-verify
   pr: null
@@ -310,8 +310,8 @@ copy was restored afterwards and compared byte-identical (`cmp`) with the worktr
 
 ### Cost self-report
 
-- **Tokens (total):** null. Left for the orchestrator to record from the harness, by instruction.
-- **Estimated USD:** null
+- **Tokens (total):** 218377 (harness subagent_tokens)
+- **Estimated USD:** 1.44
 - **Duration (minutes):** null
 - **Source of the number:** harness report (orchestrator)
 
