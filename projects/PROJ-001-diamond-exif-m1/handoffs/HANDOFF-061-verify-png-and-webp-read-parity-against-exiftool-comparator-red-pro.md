@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: verifier             # implementer | verifier
   created_at: 2026-11-21
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                  # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-031
@@ -46,18 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                # completed | blocked | rejected
+  agent: claude-opus-5-5           # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
-  verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
+  verdict: punch-list              # verify handoffs: approved | punch-list | rejected
+  basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: null
-  branch: null
+  duration_minutes: 40
+  branch: claude/spec-031-verify
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-21         # YYYY-MM-DD
+  notes: "tokens_total is null: a sub-agent cannot read its own transcript token counts; the orchestrator replaces it with the harness figure. About 45 tool calls."  # if unusual; double-quote it — an unquoted " #" starts a YAML comment
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -116,43 +116,77 @@ If you cannot complete the task:
 
 ## Handback
 
-*Filled in by the receiving agent. The orchestrator does not reconstruct any of
-this — it transcribes it. The reflection questions are part of completion.*
-
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `claude/spec-031-verify` (from `claude/spec-031-png-parity` at `937b15f`, which contains `79712b5` and `358322b`); no PR (verify).
+- **Completed at:** 2026-11-21
+- **All acceptance criteria met?** The listed criteria are met as written and every gate is green. The evidence is real and the red-proofs bite. The punch list is about coverage: three shapes the fixture list leaves out disagree with ExifTool on located metadata, and one comparator blind spot lets a located-but-wrong XMP region pass the whole suite.
+- **For `verify`:** ⚠ PUNCH LIST (3 Medium, 6 Low; no High).
+
+#### Findings
+
+**Medium**
+
+- **M1. `iCCP` profile-name rule: ExifTool reads ICC that we do not locate.** `src/png/metadata.rs:364` (`name_end`), used at `:516`. ExifTool 13.55 reads the profile, the full `ICC-header` and `ICC_Profile:ProfileDescription`, when the name is 80 bytes or empty. `png::read` records `BadIccpChunk` and locates no `Icc` region. Failing inputs (built from `oracle_png::iccp`): a name of 80 `N` bytes gives ExifTool `PNG:ProfileName = NNN…(80)` plus the ICC header, and ours gives no region. An empty name gives ExifTool every ICC-header tag with `ProfileName` absent, and ours gives no region. With a 79-byte name the two agree. None of these is a fixture. For the strip and audit this is located metadata missed in the "we see less" direction (DEC-018 says malformed but locatable is located with an issue, as for an 80-byte text keyword). Fix: locate the chunk with `bad` set, as `text_parts` does, or pin it as a divergence with a question. Add fixtures `png-iccp-name-79`, `-80` and `-empty`.
+- **M2. `iTXt` XMP with a language tag: we locate XMP that ExifTool does not treat as XMP.** `src/png/metadata.rs:402` and `:487`. The failing input is `iTXt`, keyword `XML:com.adobe.xmp`, flag 0, method 0, language `en-US`, translated keyword `XMP Daten`, then the `oracle_png::xmp_packet()` body. ExifTool prints `XMP-xmp:CreatorTool` as `-` and shows the packet only as the plain PNG text tag `XMLcomadobexmp`. Ours locates `PngRegion::Xmp` (readable), so the presence selector mismatches. That is not a fixture either: every `iTXt` fixture has empty language and translated keyword. The direction is safe (we report more), but it is an unmeasured disagreement on located metadata. Either route a language-tagged XMP keyword to `Text`, or record a divergence with a question.
+- **M3. Comparator honesty: XMP (and ICC) presence lets a located-but-wrong region pass.** `tests/support/oracle.rs:858` (`PNG_REGION_SELECTORS`) and `read_png_regions`. My mutant v7 changes the `Xmp` arm's `data: value,` (`src/png/metadata.rs:491`) to `data: value.get(7..).unwrap_or(value),`. **The entire `cargo test` stays green**, and so do `png_oracle`, `png_metadata` and `png_walk` on their own. Nothing checks the bytes of a located XMP region against the packet the harness wrote. My mutants v8 (`Icc` `data` becomes the whole chunk) and v9 (`iTXt` translated-keyword NUL not skipped) also pass the PNG comparison, and only `tests/png_metadata.rs` catches them. On the ICC side, the `PNG:ProfileName` selector cannot see an ICC profile whose name is empty (M1's empty-name input: ExifTool reads the ICC, its ProfileName is `-`, ours has no region, and the comparison would say "agree"). Fix: in `png_oracle`, assert that every hand-built fixture's located `Xmp`/`Icc` region `data` is byte-equal to the packet or zlib stream the builder put there. That uses no ExifTool and is independent of `src/`. Optionally, use `ICC-header:ProfileFileSignature` (or `-ICC_Profile:all` presence) instead of `PNG:ProfileName` for ICC presence.
+
+**Low**
+
+- **L1. Fixture gap: `iCCP` name of 79 bytes.** My mutant v1 (`name_end` limit `MAX_KEYWORD.saturating_add(1)` becomes `MAX_KEYWORD`, `src/png/metadata.rs:365`) rejects a 79-byte name and survives the full `cargo test`. Today's behaviour agrees with ExifTool (measured), but nothing pins it. The M1 fixtures close this.
+- **L2. Zero-length `tEXt` XMP reads as readable XMP present.** The input is `tEXt` `XML:com.adobe.xmp\0` with an empty value. ExifTool gives `Warning: Invalid XMP` and binary `XMP` of 0 bytes, with no CreatorTool. Ours gives an `Xmp` region of 0 bytes, `compressed = false`, so `read_png_regions` says present, with no issue. This is the empty-packet case of M3.
+- **L3. The XMP selector is "XMP carrying CreatorTool", not "readable XMP".** `tests/support/oracle.rs:850-857`, doc comment. The failing input is an uncompressed `iTXt` XMP with only `dc:format`: ExifTool's CreatorTool is `-` and ours is present, a false red. It hides nothing (it goes red), but the definition should say that every XMP fixture must carry `xmp:CreatorTool`.
+- **L4. Privacy consequence of `png-exif-and-raw-exif` is not stated.** `tests/support/oracle.rs:513` and `guidance/questions.yaml:1420`. The measured fact is right. I re-measured it: `-T` gives `RawCam OnlyInA`, and `-a -G1` lists `IFD0:Make` twice, AlphaCam then RawCam, so ExifTool merges and the later value wins. The entry says "exif-core for the specification", and the question's "cost of leaving it" covers only raw-profile-only PNGs. Add one sentence: when a PNG has both, a reader shows the raw profile's values (and any tags that exist only there, such as GPS), so an audit or strip that trusts the `eXIf` alone can miss metadata a reader displays. That needs a SPEC-032 or strip follow-up (at least flag a RawProfile region beside an `eXIf`).
+- **L5. Library faults the PNG comparison misses, caught only by unit tests.** v2 (an `iTXt`/`tEXt` keyword is bad at 79, `:378`), v5 (region cap 1, `:428`: no fixture has a second region that matters) and v6 (`BadTextChunk` not recorded on the `None` path, `:481`) all leave `png_oracle` green. `tests/png_metadata.rs` catches each. Issue-only faults are expected to miss a value comparator. v5 is a fixture gap: one fixture with `eXIf` + XMP + `iCCP` together would close it.
+- **L6. `measured_stdout` in the PNG `KNOWN_DIVERGENCES` entries is a paraphrase, not the literal stdout.** `tests/support/oracle.rs:458-537`. The records hold the literal line (verified byte for byte), so this is presentation only.
+
+#### Focus-area results
+
+1. **Evidence is real.** I wrote every fixture out with a scratch example that `#[path]`-includes `oracle_png.rs` and `oracle_tiff.rs`, and ran `perl -e 'alarm 8; exec @ARGV' -- exiftool -T -n -s3 <the 22 recorded selectors>` on all **49** hand-built fixtures. Stdout equals the committed record body byte for byte on 49 of 49. The `Warning:`/`Error:` stderr lines, with the path replaced by `<file>`, equal the `# stderr:` lines on 49 of 49. Headers carry the command, `exiftool-version: 13.55` and the source. `just oracle-record` run twice leaves `git status` empty both times (117 PNG records plus the warnings record).
+2. **Fixture independence: holds.** `tests/support/oracle_png.rs` uses only `crate::oracle_tiff`. It has no `exif_core` import, nothing from `src/`, `examples/fuzz_seeds.rs`, `fuzz/shared` or `png_shapes.rs`. CRC-32 (bitwise, reflected) and Adler-32 are written from scratch. `tests/png_oracle.rs:264-265` checks them against the published vectors (`crc32("123456789") = 0xCBF43926`, `adler32("Wikipedia") = 0x11E60398`), and that test can fail.
+3. **Comparator.** The several-`eXIf` model is confirmed. `read_ours_png` equals `PngMetadata::exif()` (the same `find_map` over parsed containers, `src/png/metadata.rs:283`), and ExifTool agrees with it on **13** variants outside the fixture list: garbage then good, good then garbage, `Exif\0\0`-prefixed first then plain, plain then prefixed, two good blocks with different IFD0 content in both orders, empty then good, bare `Exif\0\0` then good, an 8-byte header then good, an IFD past the end then good, a bad-CRC good block then good, good before IDAT with another after, and after-IDAT then after-IEND. Honesty: see M3, L2 and L3.
+4. **Divergences.** All 9 PNG entries name a question, and both questions exist in `guidance/questions.yaml`. I re-measured `png-exif-and-raw-exif` (`- - RawCam OnlyInA …`) and `png-xmp-ztxt` (CreatorTool `DiamondTool`) plus `png-raw-exif-ztxt`, and all match their records. `a_divergence_that_stops_being_one_fails` flips ExifTool to agree and asserts `stale` is non-empty. Mutant p7 shows a vanished divergence going red through `stale`. The privacy wording gap is L4.
+5. **Red-proofs.** `just mutation-oracle`: 58 + 39 passed, the 1 ignored test is the shared `tools::env_limit_child`. The seven mutants p1 to p7 each run `assert_control_clean` first and are injected with `marked()` (`RED-PROOF INJECTION`) via `probe::inject_replace`, which asserts the needle occurs exactly once. The leak test also pins all seven needles at count 1 and proves the scan catches a planted marker. Both byte mutations check that the unmutated control is clean first. My own mutants, on an rsync copy with a scratch `src/png/metadata.rs`, never on the branch:
+
+   | Mutant | `png_oracle` | full suite |
+   |---|---|---|
+   | v1 `iCCP` name limit 78 | green | **green** (L1) |
+   | v2 keyword bad at 79 | green | red (`png_metadata`) |
+   | v3 `after_idat` false | **red** | red |
+   | v4 ExtraExif from the third block | **red** (warning table, several-eXIf) | red |
+   | v5 region cap 1 | green | red (`png_metadata`) |
+   | v6 BadTextChunk not recorded | green | red (`png_metadata`) |
+   | v7 XMP data shifted 7 | green | **green** (M3) |
+   | v8 ICC data is the whole chunk | green | red (`png_metadata`) |
+   | v9 translated NUL not skipped | green | red (`png_metadata`) |
+   | v10 trailer `after_idat` false | **red** | red |
+
+   v1 and v7 are gaps, not equivalent mutants (each changes observable output: a located ICC region, and the XMP bytes).
+6. **Shape coverage.** I probed ExifTool on these shapes, none of which is a fixture. Agree: `eXIf` of exactly 8 bytes (both read nothing, ExifTool warns `Bad IFD0 directory` and we raise no issue: Low, warnings only), a big-endian TIFF with IFD0 at odd offset 9, `iCCP` name 79, `zTXt` method 1 (both locate; ExifTool warns `Unknown compression method 1`), `iTXt` flag 0 method 1, `iTXt` with a language tag and no NUL (both nothing), two IHDR chunks with `eXIf`, and an IDAT-less file with `eXIf` (both read all 14 values). Disagree: `iCCP` name 80 and empty (M1), `iTXt` language tag plus translated keyword (M2), and an empty `tEXt` XMP (L2).
+7. **Collateral.** No change under `src/` or `fuzz/` since `a04413d`. The three `.filter(|n| !n.starts_with("png-"))` additions only remove `png-*` names. The non-PNG lists they compare against are unchanged. `tests/png_oracle.rs:382` (`the_png_record_set_is_exactly_the_fixtures_and_the_seeds`) pins the PNG set exactly, so nothing is orphaned. The `app.just` change adds `--test png_mutation_oracle` to `just mutation-oracle`, which is sound. The README has no PNG record counts, so no change is needed.
+8. **Gates** (`RUSTUP_TOOLCHAIN=1.90.0`, `~/.cargo/bin` first, `DIAMOND_EXIF_REQUIRE_ORACLE=1`): `just lint` 0, `just test` 0 (png_oracle 37 passed, 1 ignored; png_mutation_oracle 39 passed, 1 ignored; no failures), `just mutation-oracle` 0, `just validate` 0, `just cost-audit` 0, `just forbid-unsafe` 0. `just oracle-record` twice: no diff.
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null. A sub-agent cannot read its own transcript token counts; the orchestrator replaces this with the harness figure.
+- **Estimated USD:** null
+- **Duration (minutes):** about 40
+- **Source of the number:** harness report (to be filled in by the orchestrator)
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
-- **Deviations from spec:**
-  - [list]
+- **New decisions emitted:** none
+- **Deviations from spec:** none. Review only. The scratch probes and mutants lived in the scratchpad copy, never on the branch.
 - **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - Fixtures `png-iccp-name-79`, `-80` and `-empty`, `png-xmp-itxt-lang`, `png-xmp-text-empty`, and one with `eXIf` + XMP + `iCCP` together; decide M1 and M2 (fix or divergence plus question).
+  - A region-bytes check in `png_oracle` (M3).
+  - SPEC-032: flag a RawProfile beside an `eXIf` (L4).
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
-
+   Nothing material. The handoff's list of probe shapes was exactly where the problems were.
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
-
+   DEC-018 says what to do with a malformed text keyword (locate with an issue) but not with a malformed `iCCP` name. The reader rejects it, ExifTool reads it, and the spec never asked.
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   Write the scratch fixture dumper first. It made the 49-record byte comparison, the 13 several-`eXIf` variants and the shape probes one loop each.
