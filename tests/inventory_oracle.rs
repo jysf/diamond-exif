@@ -2328,9 +2328,15 @@ fn png_webp_live_parity() {
             .find(|s| s.name == d.canonical.name)
             .expect("a committed section");
         if lines != sec.lines || stderr != sec.stderr {
+            // Say WHAT differs: the committed and the live text of the side that
+            // does (a record made on another ExifTool or perl build shows here).
             errors.push(format!(
-                "{}: the live listing differs from the committed record (re-record and review)",
-                d.canonical.key()
+                "{}: the live listing differs from the committed record (re-record and review)\n  stderr: committed {:?} live {:?}\n  lines: committed {:?} live {:?}",
+                d.canonical.key(),
+                sec.stderr,
+                stderr,
+                sec.lines,
+                lines
             ));
         }
         match inventory_of(&lines) {
