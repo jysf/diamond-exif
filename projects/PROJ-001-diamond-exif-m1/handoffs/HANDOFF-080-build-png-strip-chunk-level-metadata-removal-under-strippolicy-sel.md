@@ -51,14 +51,14 @@ handback:
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
   basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  tokens_total: 253930               # REAL combined count — what cost-audit reads
+  estimated_usd: 1.68              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
   branch: claude/spec-037-fixes
   pr: null
   completed_at: 2026-11-22               # YYYY-MM-DD
   notes: "Token count not exposed to the implementer; tokens_total left null for the orchestrator to measure from the transcript."                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-22
 ---
 
 # HANDOFF-080: SPEC-037 verify punch list (fix round)
@@ -190,8 +190,8 @@ Mirror what you put in the `handback:` front-matter, and say where the number
 came from. **This is the number that lands in the spec** — the orchestrator
 transcribes it via `just handback-sync`, it does not estimate it.
 
-- **Tokens (total):** null (not exposed to the implementer)
-- **Estimated USD:** <number, or null>
+- **Tokens (total):** 253930 (harness subagent_tokens)
+- **Estimated USD:** 1.68
 - **Duration (minutes):** <estimate>
 - **Source of the number:** `/cost` | API `usage` | harness report | none available
 

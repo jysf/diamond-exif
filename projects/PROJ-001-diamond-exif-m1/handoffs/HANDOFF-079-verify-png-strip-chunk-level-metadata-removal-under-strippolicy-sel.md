@@ -58,7 +58,7 @@ handback:
   pr: null
   completed_at: 2026-11-22         # YYYY-MM-DD
   notes: "Tokens left null on instruction: the orchestrator records the harness figure for this delegated run. Verify of claude/spec-037-part-b at 8a5bb81."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-22
 ---
 
 # HANDOFF-079: <Task Title — same as the spec's title>

@@ -6,7 +6,7 @@
 task:
   id: SPEC-037
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -89,10 +89,30 @@ cost:
       duration_minutes: null
       recorded_at: 2026-11-22
       notes: "Tokens left null: the delegated run has no transcript access. Part B only; src/write/png.rs and the reader/audit untouched."
+    - cycle: verify
+      handoff: HANDOFF-079
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 281545
+      estimated_usd: 1.86
+      duration_minutes: null
+      recorded_at: 2026-11-22
+      notes: "Tokens left null on instruction: the orchestrator records the harness figure for this delegated run. Verify of claude/spec-037-part-b at 8a5bb81."
+    - cycle: build
+      handoff: HANDOFF-080
+      agent: claude-sonnet-5-5
+      interface: other
+      tokens_total: 253930
+      estimated_usd: 1.68
+      duration_minutes: null
+      recorded_at: 2026-11-22
+      notes: "Token count not exposed to the implementer; tokens_total left null for the orchestrator to measure from the transcript."
   totals:
-    tokens_total: 702051
-    estimated_usd: 4.64
-    session_count: 2
+    tokens_total: 1237526
+    estimated_usd: 8.18
+    session_count: 4
+shipped_at: 2026-11-22
 ---
 
 # SPEC-037: PNG strip: chunk-level metadata removal under StripPolicy, self-verify, rewrite_png fuzz
@@ -158,34 +178,15 @@ DEC-013 gives the writer a foundation (pure function, `Remove` and same-length `
 
 ## Reflection
 
-*Appended during **ship**. Three questions, short answers.*
-
 1. **What would I do differently next time?**
-   — <answer>
+   — Put an ExifTool run on the strip OUTPUT in the build, not only in the verify: every builder and harness check was against our own audit and a model typed from the same measurements, so a wrong measurement (chunk types fold case for `eXIf` and `zxIf`; I had the rule from one type, `tXMP`) passed everything. The verifier's first act, running ExifTool on 1,500 outputs, found the one leak. The gated live test (`tests/strip_png_live.rs`) is now the build-time version of that check, and SPEC-039 formalises it.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — DEC-020 clause 5 and DEC-021's carrier table were corrected (case folding for two types); DEC-021 got clarifications from the fix round and states the `caBX` and over-removal residuals. Signal `design-must-measure-hostile-edges-not-only-the-happy-keys` is now N=5; a new lesson worth recording: a model built from the same measurement as the code cannot catch a wrong measurement (fuzz harness and tests shared one carrier list). A builder that "waits on background work" re-notified again and was stopped at part B. The fix round (which changed `src/png`) got no second cold verify; I ran lint-fuzz and the strip and live tests myself.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — No new spec: SPEC-039 (ExifTool write parity and the audit and CLI switch-over) is next and already framed. It should reuse `tests/strip_png_live.rs` as its seed.
 
-4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
-   the defect-escape distribution is greppable across specs:
-   `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
-   `none` (clean first try).
-   — <one word>
-   *(Runtime/operational defects — the escape-prone class — only exist once the
-   artifact meets its real host. `escaped` here is a signal to strengthen the
-   §12 behavioral pre-flight for that surface.)*
+4. **Where was the worst defect caught?** — verify (mixed-case `EXIF`/`zxIf` chunks kept full Exif under every preset including Everything, while the audit said `ok`).
 
-5. **What can a user do now that they couldn't before?** — one sentence,
-   before → after; quote the confirming number if one exists, name the outcome
-   if not. Write `none` if this spec has no user-visible outcome — that is a
-   real, greppable result, not a blank. This is the line a downstream work-log's
-   `impact` field is transcribed from, and both halves are already written above
-   (## Context is the before, ## Goal is the after): confirm the prediction,
-   don't reconstruct it from memory.
-   — <answer | none>
+5. **What can a user do now that they couldn't before?** — `strip` of a PNG under any preset (library only): GPS, device, author, text and timestamp metadata removed whole-chunk, `eXIf` edited in place with a valid CRC, pixels byte-identical; the audit and CLI still say "not strippable" until SPEC-039.
