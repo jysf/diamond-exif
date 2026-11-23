@@ -50,15 +50,15 @@ handback:
   agent: claude-sonnet-5-5         # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  basis: agent-result                      # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 358530               # REAL combined count — what cost-audit reads
+  estimated_usd: 2.37              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
   branch: claude/spec-038-fixes
   pr: null
   completed_at: 2026-11-22         # YYYY-MM-DD
   notes: "tokens_total left null on purpose (not measured in this run)"                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-22
 ---
 
 # HANDOFF-084: SPEC-038 verify punch list (fix round)
@@ -193,8 +193,8 @@ Mirror what you put in the `handback:` front-matter, and say where the number
 came from. **This is the number that lands in the spec** — the orchestrator
 transcribes it via `just handback-sync`, it does not estimate it.
 
-- **Tokens (total):** null (not measured in this run)
-- **Estimated USD:** null
+- **Tokens (total):** 358530 (harness subagent_tokens)
+- **Estimated USD:** 2.37
 - **Duration (minutes):** <estimate>
 - **Source of the number:** none available
 

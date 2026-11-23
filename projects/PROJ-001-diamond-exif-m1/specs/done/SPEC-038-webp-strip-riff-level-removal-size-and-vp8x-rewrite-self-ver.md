@@ -6,7 +6,7 @@
 task:
   id: SPEC-038
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -89,10 +89,31 @@ cost:
       duration_minutes: null
       recorded_at: 2026-11-22
       notes: "tokens_total is null: the implementer harness reports no token count to the agent; the orchestrator fills it from the harness result"
+    - cycle: verify
+      handoff: HANDOFF-083
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 261175
+      estimated_usd: 1.72
+      duration_minutes: null
+      recorded_at: 2026-11-22
+      notes: "tokens_total is null: the verifier harness reports no token count to the agent; the orchestrator fills it from the harness result"
+    - cycle: build
+      handoff: HANDOFF-084
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 358530
+      estimated_usd: 2.37
+      duration_minutes: null
+      recorded_at: 2026-11-22
+      notes: "tokens_total left null on purpose (not measured in this run)"
   totals:
-    tokens_total: 751031
-    estimated_usd: 4.96
-    session_count: 2
+    tokens_total: 1370736
+    estimated_usd: 9.05
+    session_count: 4
+shipped_at: 2026-11-22
 ---
 
 # SPEC-038: WebP strip: RIFF-level removal, size and VP8X rewrite, self-verify, rewrite_webp fuzz
@@ -165,34 +186,15 @@ Measured at design (ExifTool 13.55, `-a -u -G1 -H -s`): a `LIST` chunk of type `
 
 ## Reflection
 
-*Appended during **ship**. Three questions, short answers.*
-
 1. **What would I do differently next time?**
-   — <answer>
+   — Make "the carrier table is complete against the oracle's own tag-id list" an acceptance criterion at design, not a fix-round item. The SPEC-037 lesson (a model typed from the same measurement as the code cannot catch a wrong measurement) was in the handoff and the builders measured carefully, yet a chunk coded `RIFF` (ExifTool walks into it) was outside every candidate list until the verifier's nested-chunk grid hit it. The completeness sweep (2,700 codes x 8 payloads through ExifTool, `tests/strip_webp_sweep_live.rs`) is now the build-time check, and it found nothing else.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — DEC-022 was filled and amended (a `RIFF` chunk is a carrier; clause 7 now clears the flag in every `VP8X` that holds the flag byte; clarifications 7 to 11); DEC-020's SPEC-038 clarification was corrected. Signal `design-must-measure-hostile-edges-not-only-the-happy-keys` is now N=6; the lesson that completeness must be executable against the tool's own id list applies to PNG too (SPEC-039). The part A builder again re-notified while "waiting on background work"; I stopped it. The fix round got no second cold verify; I re-ran lint and lint-fuzz and read the agent's gate report.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — No new spec: SPEC-039 (ExifTool write parity, the audit and CLI switch-over) is next; its outline gets the PNG completeness sweep (three cheapest steps from the fix round) and the shared `tests/support/sweep.rs` extraction.
 
-4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
-   the defect-escape distribution is greppable across specs:
-   `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
-   `none` (clean first try).
-   — <one word>
-   *(Runtime/operational defects — the escape-prone class — only exist once the
-   artifact meets its real host. `escaped` here is a signal to strengthen the
-   §12 behavioral pre-flight for that surface.)*
+4. **Where was the worst defect caught?** — verify (a chunk coded `RIFF` inside a WebP kept all its Exif, XMP, ICC and C2PA under every preset, with the audit saying `ok`).
 
-5. **What can a user do now that they couldn't before?** — one sentence,
-   before → after; quote the confirming number if one exists, name the outcome
-   if not. Write `none` if this spec has no user-visible outcome — that is a
-   real, greppable result, not a blank. This is the line a downstream work-log's
-   `impact` field is transcribed from, and both halves are already written above
-   (## Context is the before, ## Goal is the after): confirm the prediction,
-   don't reconstruct it from memory.
-   — <answer | none>
+5. **What can a user do now that they couldn't before?** — `strip` of a WebP under any preset (library only): GPS, device, author and text metadata, XMP, ICC (by preset), LIST/INFO and the other measured carriers removed whole-chunk, `EXIF` edited in place, the RIFF size and `VP8X` flags kept consistent, image chunks byte-identical; the audit and CLI still say "not strippable" until SPEC-039.

@@ -58,7 +58,7 @@ handback:
   pr: null
   completed_at: 2026-11-22         # YYYY-MM-DD
   notes: "tokens_total is null: the verifier harness reports no token count to the agent; the orchestrator fills it from the harness result"
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-22
 ---
 
 # HANDOFF-083: <Task Title — same as the spec's title>
