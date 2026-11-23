@@ -79,7 +79,7 @@ mod render_invariants {
     pub const IFDS: [&str; 8] = [
         "ifd0", "ifd1", "chain", "sub", "exif", "gps", "interop", "other",
     ];
-    pub const REGIONS: [&str; 12] = [
+    pub const REGIONS: [&str; 14] = [
         "xmp",
         "extended_xmp",
         "iptc",
@@ -92,6 +92,10 @@ mod render_invariants {
         "text",
         "raw_profile",
         "time",
+        // `carrier` and `other_chunk` (SPEC-037 and SPEC-038) were missing
+        // here until the SPEC-038 fix round put a carrier in an audit seed.
+        "carrier",
+        "other_chunk",
     ];
 
     /// A region kind's report name (DEC-010 as amended by DEC-012), typed by

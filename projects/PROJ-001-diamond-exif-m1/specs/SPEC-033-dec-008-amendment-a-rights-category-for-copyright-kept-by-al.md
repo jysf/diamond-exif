@@ -93,18 +93,18 @@ into code and tests.
 
 **Revision (2026-11-22): PNG and WebP.** This spec was designed on 368c9f1. Since then STAGE-008 and STAGE-010 added
 PNG and WebP audit (SPEC-032, DEC-020), the PNG strip (SPEC-037, DEC-021, merged at fd94d4f) and the WebP strip
-(SPEC-038, DEC-022, PR #55, open at this revision). They change this spec in three ways:
+(SPEC-038, DEC-022, PR #55, merged at 9133727). They change this spec in three ways:
 
 - **A second Copyright source.** A PNG text chunk keyed `Copyright` (or `copyright`, by the measured first-letter
   rule) is `Authorship` through the `TEXT_KEYWORDS` table in `src/audit/category.rs`, a row the SPEC-032 build
   left for this spec to re-home. It moves to `Rights` too (DEC-020 and DEC-021 amendments, 2026-11-22). WebP has
   no keyword table: its `LIST/INFO` Copyright is inside an opaque carrier, removed whole by every preset.
 - **More copies of the Exif set.** `src/write/png.rs` calls `exif9()` (carrier rule and whole-removal category),
-  and PR #55 adds `src/write/webp.rs` doing the same, a WebP `exif_set()` user in `verify.rs`, and hand-typed
+  `src/write/webp.rs` does the same (and reuses `png::removes_carriers`), `verify.rs` has a WebP `exif_set()` user, and hand-typed
   `EXIF9` copies in `fuzz/shared/rewrite_png_invariants.rs`, `fuzz/shared/rewrite_webp_invariants.rs`,
   `tests/strip_png.rs` and `tests/strip_webp.rs`. Every one becomes the ten-category set.
-- **Ordering.** `depends_on: [SPEC-038]`: the build branches from `main` after PR #55 merges, so every WebP site
-  is in the tree it edits. The builder greps for `exif9`, `EXIF9`, `exif_set`, `all9` and `Authorship` over
+- **Ordering.** `depends_on: [SPEC-038]`, now shipped: the build branches from current `main`, which holds every
+  WebP site. The builder greps for `exif9`, `EXIF9`, `exif_set`, `all9` and `Authorship` over
   `src`, `fuzz/shared` and `tests` first and treats every hit as in scope; the lists below are the known sites,
   not a cap.
 
@@ -120,15 +120,16 @@ Governing code, verified on `origin/main` at 368c9f1 and re-checked at fd94d4f (
 - `src/write/exif.rs`: `exif9()` (line 781) and `mode` (line 799). `src/write/jpeg.rs` line 191 uses
   `exif9()`. `src/write/verify.rs` line 50 holds its own hand-typed nine-category list for `exif_gone`.
 - `src/audit/preview.rs` tests (line 272).
-- PNG and WebP (fd94d4f, plus PR #55 for WebP): `src/audit/category.rs` `TEXT_KEYWORDS` (the `Copyright` row) and
+- PNG and WebP (verified at 9133727): `src/audit/category.rs` `TEXT_KEYWORDS` (the `Copyright` row) and
   its unit test `text_keywords_match_the_measured_rule_row_by_row` (`Copyright`, `copyright` rows);
-  `src/write/png.rs` (`removes_carriers` line 59, the `Mode::Whole` arm line 328); `src/write/webp.rs` (the same
-  two uses); `src/write/verify.rs` (`exif_set()` line 381 and its PNG/WebP callers). Models and tests:
+  `src/write/png.rs` (`removes_carriers` line 59, the `Mode::Whole` arm line 328); `src/write/webp.rs` (`exif9()` line 225, `all9` line 239;
+  carriers through `png::removes_carriers`); `src/write/verify.rs` (`exif_set()` line 381 and its PNG/WebP callers). Models and tests:
   `fuzz/shared/audit_invariants.rs` (keyword model line 513), `fuzz/shared/rewrite_png_invariants.rs` (`EXIF9`
   line 58, keyword table line 494), `fuzz/shared/rewrite_webp_invariants.rs` (`EXIF9`), `tests/strip_png.rs`
   (`EXIF9` line 61, the `copyright` text part line 222), `tests/strip_webp.rs` (`EXIF9`),
   `tests/strip_png_live.rs` (`AUTHORSHIP_TAGS` line 55, which pins `Copyright` as removed by `AllPii`),
-  `tests/strip_webp_live.rs` (its own pinned list, if it names Copyright), `tests/audit_png_webp.rs` (line 157),
+  `tests/strip_webp_live.rs` (its live judge maps ExifTool's `Copyright` to `Authorship`, line 253, and its doc
+  comment line 27 says so), `tests/audit_png_webp.rs` (line 157),
   `tests/audit_png_webp_oracle.rs` (`by_hand` line 554 and its assertion line 698).
 - Fuzz models, each an independent hand-typed copy: `fuzz/shared/audit_invariants.rs` (tag table line 232,
   severity line 277, category list line 443, may-hold rows from line 967), `fuzz/shared/render_invariants.rs`
@@ -237,8 +238,8 @@ Everything normative is in the three DEC amendments. The implementation choices 
       Copyright (entry deleted in place for Artist, CRC patched) and the self-check passes.
 - [ ] WebP: an `EXIF` chunk holding Artist and Copyright under `AllPii` keeps Copyright and the self-check
       passes; `All` removes the chunk whole. A `LIST/INFO` carrier is still removed by every preset.
-- [ ] `strip_png_live` (and `strip_webp_live` if it pins Copyright) moves `Copyright` out of the `AllPii` list
-      into an `All`/`Everything` list; run live with `DIAMOND_EXIF_REQUIRE_ORACLE=1` and paste the summary.
+- [ ] `strip_png_live` moves `Copyright` out of the `AllPii` list into an `All`/`Everything` list, and
+      `strip_webp_live`'s judge maps `Copyright` to `Rights`; run live with `DIAMOND_EXIF_REQUIRE_ORACLE=1` and paste the summary.
 - [ ] TIFF writer: `strip(tiff with Artist and Copyright in IFD0, AllPii)` keeps Copyright and deletes Artist.
 - [ ] Every existing test passes. Any test that asserted Copyright under `Authorship`, or removed under
       `AllPii`, is changed in this spec and named in the handback.
@@ -321,7 +322,7 @@ from the code under test.
   literals (the lint set forbids `<<` on integers, which is why `bit` is a literal table).
 - Re-recording needs ExifTool 13.55 on PATH. If it is missing, stop and say so in the handback. Never hand-edit
   a record.
-- Branch from `main` after PR #55 is merged, then run the grep in Context and list every
+- Branch from current `main` (PR #55 is merged), then run the grep in Context and list every
   hit in the handback with what you did to it.
 - Budget: one builder, sonnet, about 120 tool calls. Cold verify on opus, one round; a second round only for
   High or Medium findings.

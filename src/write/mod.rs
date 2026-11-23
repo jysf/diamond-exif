@@ -1,5 +1,5 @@
-//! The writer foundation, the JPEG strip and the PNG strip (SPEC-020, SPEC-037,
-//! DEC-013, DEC-021).
+//! The writer foundation, the JPEG strip, the PNG strip and the WebP strip
+//! (SPEC-020, SPEC-037, SPEC-038, DEC-013, DEC-021, DEC-022).
 //!
 //! [`strip`] is a pure function from input bytes and a [`StripPolicy`] to new
 //! bytes or a typed refusal. It never returns a file that still holds a finding
@@ -30,6 +30,7 @@ mod plan;
 mod png;
 mod tiff;
 mod verify;
+mod webp;
 
 use core::fmt;
 
@@ -75,10 +76,12 @@ pub enum RemovalKind {
     /// An ImageMagick `Raw profile type ...` PNG text chunk.
     RawProfile,
     /// A PNG chunk whose Exif or XMP the library does not decode (`zxIf`,
-    /// `tXMP`, `meTa`, ...), removed with the tag categories (DEC-021 clause 4).
+    /// `tXMP`, `meTa`, ...), or a WebP chunk ExifTool decodes into tags that
+    /// the library does not read (`LIST`, `IDIT`, a text `JUNK`, `ID3 `, ...),
+    /// removed with the tag categories (DEC-021 clause 4, DEC-022 clause 4).
     Carrier,
-    /// A PNG chunk that is an opaque binary tag and not metadata for any preset
-    /// (`dSIG`, `cpIp`, `gIFx`, ...).
+    /// A PNG or WebP chunk that is an opaque binary tag and not metadata for
+    /// any preset (PNG `dSIG`, `cpIp`, `gIFx`, ...; WebP `fmt `, `smpl`, ...).
     OtherChunk,
 }
 
@@ -114,6 +117,12 @@ pub enum PatchKind {
     /// The CRC-32 of a PNG `eXIf` chunk whose data was edited (SPEC-037),
     /// computed over the chunk type and the edited data.
     ChunkCrc,
+    /// The 4-byte little-endian size at offset 4 of a WebP after chunks inside
+    /// the declared range were removed (SPEC-038, DEC-022 clause 6).
+    RiffSize,
+    /// The flag byte of a WebP `VP8X` chunk, with the bit of each kind of
+    /// metadata chunk the strip removed entirely cleared (DEC-022 clause 7).
+    Vp8xFlags,
 }
 
 /// One patched range, in **output** coordinates.
@@ -274,8 +283,9 @@ pub enum UnstrippableReason {
     TooManyIssues,
     /// A segment range overflowed `usize` (not reachable from a real slice).
     RangeOverflow,
-    /// A PNG chunk, or fewer bytes than one chunk's frame, runs past the end of
-    /// the input: the bytes after it were never audited (SPEC-037).
+    /// A PNG or WebP chunk runs past the end of the input (PNG: or fewer bytes
+    /// than one chunk's frame): the bytes after it were never audited
+    /// (SPEC-037, SPEC-038).
     ChunkPastEnd,
 }
 
@@ -330,7 +340,10 @@ pub enum Check {
     Walk,
     /// (e) Stripping the output again would change it.
     Idempotent,
-    /// A Multi-Picture field is stale or cannot be computed.
+    /// A Multi-Picture field is stale or cannot be computed; for a WebP, the
+    /// RIFF size is not the declared size less the bytes removed from inside
+    /// it, or the `VP8X` flags do not agree with the chunks present (SPEC-038,
+    /// DEC-022 clause 9 (f)).
     MpfFields,
     /// (g) The output's tag inventory is not the input's minus the deleted
     /// entries (SPEC-021).
@@ -376,14 +389,9 @@ impl std::error::Error for StripError {}
 pub fn strip(data: &[u8], policy: StripPolicy) -> Result<Stripped, StripError> {
     let sniffed = sniff(data);
     match sniffed {
-        Sniffed::Jpeg | Sniffed::Tiff | Sniffed::Png => {}
+        Sniffed::Jpeg | Sniffed::Tiff | Sniffed::Png | Sniffed::Webp => {}
         Sniffed::Empty | Sniffed::Unknown => return Err(StripError::NotJpeg),
         // Audited (DEC-020) but not strippable: refuse, with the real kind.
-        Sniffed::Webp => {
-            return Err(StripError::Unsupported {
-                kind: ContainerKind::Webp,
-            })
-        }
         other => {
             return Err(StripError::Unsupported {
                 kind: ContainerKind::Unsupported(other),
@@ -394,6 +402,10 @@ pub fn strip(data: &[u8], policy: StripPolicy) -> Result<Stripped, StripError> {
     if sniffed == Sniffed::Png {
         let planned = png::plan(data, spec)?;
         return finish(data, spec, planned, Format::Png);
+    }
+    if sniffed == Sniffed::Webp {
+        let planned = webp::plan(data, spec)?;
+        return finish(data, spec, planned, Format::Webp);
     }
     if sniffed == Sniffed::Tiff {
         let planned = tiff::plan(data, spec)?;
@@ -409,6 +421,7 @@ enum Format {
     Jpeg,
     Tiff,
     Png,
+    Webp,
 }
 
 /// Apply a plan, run the self-check (always, an empty plan included: the
@@ -464,6 +477,14 @@ fn finish(
                     }
                 })?;
                 verify::verify_png(data, &bytes, spec, &zeroed, &removed)
+            }
+            Format::Webp => {
+                let removed = planned.plan.merged_removals(data.len()).map_err(|_| {
+                    StripError::VerifyFailed {
+                        check: Check::MpfFields,
+                    }
+                })?;
+                verify::verify_webp(data, &bytes, spec, &zeroed, &removed)
             }
         };
     checked.map_err(|check| StripError::VerifyFailed { check })?;

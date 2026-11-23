@@ -86,3 +86,10 @@ path = "fuzz_targets/rewrite_png.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "rewrite_webp"
+path = "fuzz_targets/rewrite_webp.rs"
+test = false
+doc = false
+bench = false

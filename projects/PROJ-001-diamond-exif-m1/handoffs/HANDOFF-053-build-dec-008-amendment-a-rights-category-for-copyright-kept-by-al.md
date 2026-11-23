@@ -83,8 +83,8 @@ You share no memory with the architect. Everything you need is in the files belo
 - **The two PNG amendments, dated 2026-11-22**, at the bottom of `./decisions/DEC-020-…md` (the `Copyright`
   text keyword is `Rights`) and `./decisions/DEC-021-…md` (PNG strip keeps it under `AllPii`). Read the spec's
   "Revision (2026-11-22): PNG and WebP" paragraph with them.
-- **Precondition:** PR #55 (SPEC-038, WebP strip) is merged into `main`. If `src/write/webp.rs` is not on
-  `origin/main`, stop and report it; do not branch from PR #55's branch.
+- **Precondition (met, 9133727):** PR #55 (SPEC-038, WebP strip) is merged into `main`, so `src/write/webp.rs`
+  and its tests are in the tree you branch from.
 - **Stage:** `./projects/PROJ-001-diamond-exif-m1/stages/STAGE-009-keep-the-copyright-notice-under-allpii.md`
 - **Project brief:** `./projects/PROJ-001-diamond-exif-m1/brief.md`
 - **Toolchain brief:** `./guidance/toolchain-brief.md`. Read it for the pinned toolchain, the
@@ -147,8 +147,7 @@ Full text in `./guidance/constraints.yaml`:
     and new `rights` sections may change.
   - `just fuzz-smoke` for `audit`, `audit_render`, `rewrite_jpeg`, `rewrite_tiff`, `rewrite_png` and
     `rewrite_webp`, 60 s each.
-  - `DIAMOND_EXIF_REQUIRE_ORACLE=1 cargo test --test strip_png_live` (and `strip_webp_live` if you changed it),
-    summary pasted.
+  - `DIAMOND_EXIF_REQUIRE_ORACLE=1 cargo test --test strip_png_live --test strip_webp_live`, summary pasted.
 - Branch `feat/spec-033-rights-category` from `origin/main`, and one PR against `main`. The PR description
   names PROJ-001, STAGE-009, SPEC-033, HANDOFF-053, DEC-008/009/010/012/013/020/021 and the constraints above.
   Its body ends with the line `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.

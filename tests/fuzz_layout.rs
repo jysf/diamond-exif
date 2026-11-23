@@ -1394,7 +1394,7 @@ fn audit_target_is_declared_and_runs_in_ci() {
     let ci = read(".github/workflows/ci.yml");
     assert!(
         ci.contains(
-            "target: [tiff_ifd, jpeg_segments, rewrite_jpeg, rewrite_tiff, rewrite_png, audit, audit_render, cli_args, png_chunks, webp_riff]"
+            "target: [tiff_ifd, jpeg_segments, rewrite_jpeg, rewrite_tiff, rewrite_png, rewrite_webp, audit, audit_render, cli_args, png_chunks, webp_riff]"
         ),
         "the fuzz-smoke matrix must run the audit target"
     );
@@ -1648,8 +1648,8 @@ fn audit_harness_holds_on_every_seed_and_degenerate_inputs() {
     }
     assert_eq!(
         seen,
-        86 + 17 + 72 + 53,
-        "32 TIFF + 37 JPEG + 17 new + 17 SPEC-019 shapes + 72 PNG + 53 WebP"
+        86 + 17 + 72 + 56,
+        "32 TIFF + 37 JPEG + 17 new + 17 SPEC-019 shapes + 72 PNG + 56 WebP"
     );
     for data in audit_degenerate_inputs() {
         audit_invariants::check(&data);
@@ -2736,7 +2736,7 @@ fn tiff_harness_entry_budget_invariants_hold_on_every_seed() {
             seen += 1;
         }
     }
-    assert_eq!(seen, 32 + 86 + 17 + 72 + 53);
+    assert_eq!(seen, 32 + 86 + 17 + 72 + 56);
     // The degenerate inputs too, and the generated big inventory.
     for data in audit_degenerate_inputs() {
         entry_budget_invariants::check_input(&data);
@@ -3210,7 +3210,7 @@ fn preview_guards_hold_on_every_seed_and_degenerate_inputs() {
             inputs.push((path.display().to_string(), data));
         }
     }
-    assert_eq!(inputs.len(), 32 + 37 + 86 + 17 + 17 + 72 + 53);
+    assert_eq!(inputs.len(), 32 + 37 + 86 + 17 + 17 + 72 + 56);
     for (i, d) in audit_degenerate_inputs().into_iter().enumerate() {
         inputs.push((format!("degenerate {i}"), d));
     }
@@ -7232,7 +7232,7 @@ mod webp_shapes;
 include!("../fuzz/shared/webp_riff_invariants.rs");
 
 /// The committed `webp_riff` seed names, pinned.
-const WEBP_SEEDS: [&str; 53] = [
+const WEBP_SEEDS: [&str; 56] = [
     "anmf-payload",
     "bad-magic",
     "chunk-past-end",
@@ -7260,6 +7260,9 @@ const WEBP_SEEDS: [&str; 53] = [
     "meta-exif-two",
     "meta-flags-all-wrong",
     "meta-halted-after-exifs",
+    "meta-riff-nested",
+    "meta-riff-appended",
+    "meta-riff-depth-three",
     "meta-iccp",
     "meta-xmp",
     "meta-xmp-nul-id",
@@ -7456,7 +7459,7 @@ fn webp_metadata_model_red_proofs() {
         o.regions.pop();
     }));
     assert!(red(&rich, |o| {
-        o.regions[0].0 = !o.regions[0].0;
+        o.regions[0].0 ^= 1;
     }));
     // A missed Exif block, and a shifted tiff_at.
     assert!(red(&two, |o| {
@@ -8116,13 +8119,14 @@ fn rewrite_png_target_is_declared_and_runs_in_ci() {
     assert!(root()
         .join("fuzz/shared/rewrite_png_invariants.rs")
         .is_file());
-    assert!(read(".github/workflows/ci.yml").contains("rewrite_tiff, rewrite_png, audit,"));
-    assert!(read("app.just").contains("rewrite_tiff rewrite_png audit"));
+    assert!(read(".github/workflows/ci.yml")
+        .contains("rewrite_tiff, rewrite_png, rewrite_webp, audit,"));
+    assert!(read("app.just").contains("rewrite_tiff rewrite_png rewrite_webp audit"));
     let readme = read("README.md");
-    assert!(readme.contains("ten fuzz targets"));
-    assert!(readme.contains("rewrite_tiff, rewrite_png, audit"));
-    // Ten bins in all.
-    assert_eq!(fuzz.matches("[[bin]]").count(), 10);
+    assert!(readme.contains("eleven fuzz targets"));
+    assert!(readme.contains("rewrite_tiff, rewrite_png, rewrite_webp, audit"));
+    // Eleven bins in all.
+    assert_eq!(fuzz.matches("[[bin]]").count(), 11);
 }
 
 /// The harness is independent of the writer: no line of code names its module
@@ -8143,4 +8147,972 @@ fn the_rewrite_png_harness_does_not_read_the_writer() {
             .count();
         assert_eq!(uses, 0, "{needle}");
     }
+}
+
+// ── SPEC-038: the `rewrite_webp` target (the WebP strip writer, DEC-022) ─────
+
+#[path = "support/webp_carriers.rs"]
+mod webp_carriers;
+
+include!("../fuzz/shared/rewrite_webp_invariants.rs");
+
+/// The committed `rewrite_webp` seed count, pinned: 66 shapes under eight
+/// policy bytes (all five presets, three customs), three shapes under seven
+/// more and a mask each, and two degenerate seeds.
+const REWRITE_WEBP_SEEDS: usize = 594;
+
+fn rewrite_webp_seed_files() -> Vec<(String, Vec<u8>)> {
+    let dir = root().join("fuzz/seeds/rewrite_webp");
+    let mut v: Vec<(String, Vec<u8>)> = fs::read_dir(&dir)
+        .expect("read rewrite_webp seeds")
+        .map(|e| {
+            let p = e.unwrap().path();
+            (
+                p.file_name().unwrap().to_string_lossy().into_owned(),
+                fs::read(&p).unwrap(),
+            )
+        })
+        .collect();
+    v.sort();
+    v
+}
+
+/// Degenerate inputs the policy byte can be put in front of: huge chunk counts,
+/// chunk lengths 0xFFFFFFFF, many issues, many `EXIF` chunks.
+fn rewrite_webp_degenerate() -> Vec<Vec<u8>> {
+    use webp_shapes::{chunk, exif_chunk, header, raw_chunk, riff, vp8l, vp8x};
+    let tiff = png_exif_gps();
+    // More chunks than the walk records (65 536), and exactly the cap.
+    let many = |n: usize| {
+        let mut d = riff(&[vp8l()]);
+        for _ in 0..n {
+            d.extend_from_slice(&chunk(b"abCd", b""));
+        }
+        d
+    };
+    let mut misplaced = riff(&webp_shapes::misplaced_vp8x(2000));
+    misplaced.extend_from_slice(&chunk(b"LIST", b""));
+    let mut forty_exif: Vec<Vec<u8>> = vec![vp8x(0x08, 1, 1)];
+    forty_exif.extend((0..40).map(|_| exif_chunk(&tiff)));
+    let mut sig = header(4);
+    sig.extend_from_slice(&raw_chunk(b"LIST", 0xFFFF_FFFF, b""));
+    let mut sig_big = header(4);
+    sig_big.extend_from_slice(&raw_chunk(b"EXIF", 0x8000_0000, b"x"));
+    let mut sig_max_minus = header(4);
+    sig_max_minus.extend_from_slice(&raw_chunk(b"XMP ", 0xFFFF_FFF8, b""));
+    vec![
+        header(4),
+        header(4)[..11].to_vec(),
+        sig,
+        sig_big,
+        sig_max_minus,
+        [header(4), vec![0xFF; 12]].concat(),
+        [header(4), vec![0; 7]].concat(),
+        many(65_535),
+        many(65_536),
+        many(70_000),
+        misplaced,
+        riff(&forty_exif),
+    ]
+}
+
+#[test]
+fn rewrite_webp_harness_holds_on_every_seed_and_every_policy_byte() {
+    let seeds = rewrite_webp_seed_files();
+    assert_eq!(seeds.len(), REWRITE_WEBP_SEEDS, "the rewrite_webp seed set");
+    for (_, data) in &seeds {
+        // The seed as committed, and with every policy byte in front of it.
+        rewrite_webp_invariants::check(data);
+        let (_, webp) = rewrite_webp_invariants::decode(data);
+        for head in 0u8..=17 {
+            let mut v = vec![head, 0x08, 0x40];
+            v.extend_from_slice(webp);
+            rewrite_webp_invariants::check(&v);
+        }
+    }
+    for d in rewrite_webp_degenerate() {
+        for head in 0u8..=17 {
+            let mut v = vec![head, 0xFF, 0x7F];
+            v.extend_from_slice(&d);
+            rewrite_webp_invariants::check(&v);
+        }
+        // Every custom set of the 15 single categories.
+        for bit in 0..15u16 {
+            let m = (1u16 << bit).to_le_bytes();
+            let mut v = vec![6, m[0], m[1]];
+            v.extend_from_slice(&d);
+            rewrite_webp_invariants::check(&v);
+        }
+    }
+    rewrite_webp_invariants::check(&[]);
+    rewrite_webp_invariants::check(&[6]);
+    // Prefix truncations of the rich seeds: every prefix is a refusal or a
+    // strip, never a panic, and always agrees with the prediction, under every
+    // preset.
+    for name in ["kitchen-sink-everywhere", "kitchen-sink-pii", "every-row"] {
+        let rich = &seeds
+            .iter()
+            .find(|(n, _)| n == &format!("everything-{name}"))
+            .expect("a seed")
+            .1[1..];
+        for cut in (1..rich.len()).step_by(5) {
+            for head in 0u8..=4 {
+                let mut v = vec![head];
+                v.extend_from_slice(&rich[..cut]);
+                rewrite_webp_invariants::check(&v);
+            }
+        }
+    }
+}
+
+#[test]
+fn rewrite_webp_seeds_are_committed_and_cover_every_rule_and_refusal() {
+    let seeds = rewrite_webp_seed_files();
+    let names: Vec<&str> = seeds.iter().map(|(n, _)| n.as_str()).collect();
+    // One seed per DEC-022 rule, under the eight policy bytes.
+    let rules = [
+        "exif-gps",
+        "exif-gps-prefix",
+        "exif-make",
+        "exif-make-prefix",
+        "exif-pii",
+        "exif-no-entries",
+        "exif-unparseable",
+        "exif-empty-chunk",
+        "exif-three-places",
+        "exif-sixteen",
+        "exif-seventeen",
+        "xmp",
+        "xmp-nul-id",
+        "xmp-two",
+        "xmp-empty",
+        "iccp",
+        "iccp-empty",
+        "all-three",
+        "carrier-list-info",
+        "carrier-list-adtl",
+        "carrier-idit",
+        "carrier-junk-text",
+        "carrier-junk-not-text",
+        "carrier-junq",
+        "carrier-xml",
+        "carrier-audio",
+        "carrier-id3",
+        "carrier-gps",
+        "c2pa",
+        "other-chunks",
+        "not-metadata",
+        "wrong-case-kept",
+        "case-spellings-kept",
+        "carrier-before-image",
+        "carrier-beyond-declared",
+        "carrier-after-null-chunk",
+        "empty-chunks",
+        "size-too-small",
+        "size-too-large",
+        "size-zero",
+        "size-ends-inside-removed-chunk",
+        "size-odd",
+        "flags-unset-with-chunks",
+        "flags-set-no-chunks",
+        "flags-mixed",
+        "flags-only-xmp-set",
+        "animated",
+        "vp8x-nine-bytes",
+        "vp8x-after-carrier",
+        "vp8x-twice",
+        "no-vp8x-with-metadata",
+        "pad-missing-last",
+        "pad-missing-middle",
+        "trailing-bytes-1",
+        "trailing-bytes-7",
+        "walk-chunk-past-end",
+        "walk-tail-8-garbage",
+        "walk-length-ffffffff",
+        "walk-halted-mid",
+        "walk-too-many-issues",
+        "walk-stub",
+        "walk-stub-11-bytes",
+        "every-row",
+        "kitchen-sink",
+        "kitchen-sink-pii",
+        "kitchen-sink-everywhere",
+    ];
+    assert_eq!(rules.len(), 66);
+    for rule in rules {
+        for label in [
+            "everything",
+            "gps-and-device",
+            "all-pii",
+            "all",
+            "gps",
+            "other-segment",
+            "icc",
+            "gps-only",
+        ] {
+            assert!(
+                names.contains(&format!("{label}-{rule}").as_str()),
+                "{label}-{rule}"
+            );
+        }
+    }
+    // Every policy byte leads at least one seed.
+    let heads: std::collections::BTreeSet<u8> = seeds
+        .iter()
+        .filter_map(|(_, d)| d.first().copied())
+        .collect();
+    for h in 0u8..=16 {
+        assert!(heads.contains(&h), "no seed starts with policy byte {h}");
+    }
+    // The refusal classes and the edit are all reached by a committed seed.
+    let class = |name: &str| -> String {
+        let (_, d) = seeds.iter().find(|(n, _)| n == name).expect("a seed");
+        let (policy, webp) = rewrite_webp_invariants::decode(d);
+        match exif_core::strip(webp, policy) {
+            Ok(s) if s.patches().is_empty() => "ok".into(),
+            Ok(s)
+                if s.patches().iter().any(|p| {
+                    !matches!(
+                        p.kind,
+                        exif_core::write::PatchKind::RiffSize
+                            | exif_core::write::PatchKind::Vp8xFlags
+                    )
+                }) =>
+            {
+                "ok-edited".into()
+            }
+            Ok(_) => "ok-patched".into(),
+            Err(exif_core::StripError::Unstrippable { reason, .. }) => {
+                format!("unstrippable {reason:?}")
+            }
+            Err(exif_core::StripError::Overlap { .. }) => "overlap".into(),
+            Err(exif_core::StripError::Uneditable { reason, .. }) => {
+                format!("uneditable {reason:?}")
+            }
+            Err(e) => format!("other {e:?}"),
+        }
+    };
+    assert_eq!(
+        class("gps-walk-chunk-past-end"),
+        "unstrippable ChunkPastEnd"
+    );
+    assert_eq!(class("gps-walk-halted-mid"), "unstrippable ChunkPastEnd");
+    assert_eq!(
+        class("gps-walk-length-ffffffff"),
+        "unstrippable ChunkPastEnd"
+    );
+    assert_eq!(
+        class("gps-walk-tail-8-garbage"),
+        "unstrippable ChunkPastEnd"
+    );
+    assert_eq!(
+        class("gps-walk-too-many-issues"),
+        "unstrippable TooManyIssues"
+    );
+    assert_eq!(
+        class("gps-only-exif-seventeen"),
+        "uneditable TooManyExifSegments"
+    );
+    assert_eq!(
+        class("gps-only-exif-unparseable"),
+        "uneditable BlockNotClean"
+    );
+    assert_eq!(class("gps-only-exif-gps"), "ok-edited");
+    assert_eq!(class("gps-only-flags-mixed"), "ok");
+    assert_eq!(class("icc-flags-mixed"), "ok-patched");
+    assert_eq!(class("everything-exif-gps"), "ok-patched");
+    assert_eq!(class("everything-kitchen-sink-everywhere"), "ok-patched");
+    assert_eq!(class("everything-walk-stub"), "ok");
+    assert_eq!(class("everything-trailing-bytes-7"), "ok-patched");
+}
+
+/// The harness table is the measured data, row by row: a wrong measurement
+/// shows here as a diff against the recorded facts, not as two copies agreeing.
+#[test]
+fn the_rewrite_webp_carrier_table_is_the_measured_table() {
+    use rewrite_webp_invariants::{class_of, Class, TABLE};
+    // Every measured row (but `JUNK`, a rule of its own) is a harness row of
+    // the class its region and category record, and no harness row is extra.
+    let want = |region: &str| match region {
+        "carrier" => Class::Carrier,
+        "other_chunk" => Class::Other,
+        "jumbf" => Class::Jumbf,
+        other => panic!("region {other}"),
+    };
+    let mut seen = 0usize;
+    for row in webp_carriers::ROWS {
+        if &row.code == b"JUNK" {
+            assert_eq!(row.region, "carrier");
+            continue;
+        }
+        let harness = TABLE
+            .iter()
+            .find(|(c, _)| *c == row.code)
+            .unwrap_or_else(|| panic!("no harness row for {:?}", row.code));
+        assert_eq!(harness.1, want(row.region), "{:?}", row.code);
+        // The category the row is located under: only C2PA is not `OtherSegment`.
+        assert_eq!(
+            row.category == "jumbf",
+            harness.1 == Class::Jumbf,
+            "{:?}",
+            row.code
+        );
+        // The measured payload is classed the same way.
+        let data = webp_carriers::payload(row.payload);
+        assert_eq!(class_of(&row.code, &data), Some(harness.1));
+        seen += 1;
+    }
+    assert_eq!(seen, TABLE.len(), "a harness row with no measured row");
+    assert_eq!(webp_carriers::ROWS.len(), TABLE.len() + 1);
+    // Case: no spelling other than the exact code (and the other measured
+    // rows, `ID3 ` and `id3 `) is a chunk with a rule, whatever its data.
+    for row in webp_carriers::ROWS {
+        for s in webp_carriers::spellings(row.code) {
+            if s == row.code || webp_carriers::ROWS.iter().any(|r| r.code == s) {
+                continue;
+            }
+            assert_eq!(
+                class_of(&s, &webp_carriers::payload(row.payload)),
+                None,
+                "{s:?}"
+            );
+            assert_eq!(class_of(&s, b"Jane Doe"), None, "{s:?}");
+        }
+    }
+    // Chunks measured as not metadata.
+    for code in webp_carriers::NOT_METADATA {
+        assert_eq!(class_of(code, b"Jane Doe\0"), None, "{code:?}");
+    }
+    // The `JUNK` text rule, both ways.
+    for d in webp_carriers::JUNK_TEXT {
+        assert_eq!(class_of(b"JUNK", d), Some(Class::Carrier), "{d:?}");
+    }
+    for d in webp_carriers::JUNK_NOT_TEXT {
+        assert_eq!(class_of(b"JUNK", d), None, "{d:?}");
+    }
+    // And the library agrees with the recorded facts about every row (the
+    // library is checked against the measurement too, not only against the
+    // harness): `Everything` removes the row's chunk and nothing else.
+    for row in webp_carriers::ROWS {
+        let bytes = webp_shapes::riff(&[
+            webp_shapes::vp8l(),
+            webp_carriers::row_chunk(&row.code, row.payload),
+        ]);
+        let out = exif_core::strip(&bytes, exif_core::StripPolicy::Everything)
+            .unwrap_or_else(|e| panic!("{:?}: {e:?}", row.code));
+        assert_eq!(out.removals().len(), 1, "{:?}", row.code);
+        assert!(out.bytes().len() < bytes.len());
+    }
+}
+
+/// A plant: a wrong answer put into the library's flattened answer for `input`
+/// under the policy bytes `head`, which the named guard must reject. `apply`
+/// also gets the input, for the plants that leave bytes the library cut.
+struct WebpPlant {
+    name: &'static str,
+    input: &'static str,
+    head: &'static [u8],
+    guard: rewrite_webp_invariants::Guard,
+    apply: fn(&mut rewrite_webp_invariants::Facts, &[u8]),
+}
+
+fn webp_plant_input(name: &str) -> Vec<u8> {
+    use webp_carriers::{payload, Payload};
+    use webp_shapes::{
+        chunk, exif_chunk, raw_chunk, riff, riff_with_size, vp8l, vp8x, FLAG_ALPHA, FLAG_EXIF,
+        FLAG_ICC, FLAG_XMP,
+    };
+    let gps = png_exif_gps();
+    let list = || chunk(b"LIST", &payload(Payload::ListInfo));
+    let xmp = chunk(b"XMP ", b"<x:xmpmeta/>");
+    let icc = chunk(b"ICCP", b"icc profile");
+    let all = FLAG_ICC | FLAG_EXIF | FLAG_XMP;
+    match name {
+        // Every kind of chunk, a flag set for each, the size exact.
+        "sink" => riff(&[
+            vp8x(all | FLAG_ALPHA, 8, 8),
+            icc.clone(),
+            vp8l(),
+            exif_chunk(&gps),
+            xmp.clone(),
+            list(),
+            chunk(b"IDIT", b"Jane Doe"),
+            chunk(b"C2PA", &payload(Payload::Jumbf)),
+            chunk(b"CSET", &[0; 8]),
+            chunk(b"PAD ", b"pad"),
+        ]),
+        // An `EXIF` chunk a Gps-only policy edits in place.
+        "exif-edit" => riff(&[vp8x(FLAG_EXIF, 8, 8), vp8l(), exif_chunk(&gps)]),
+        // A chunk past the end of the input.
+        "past-end" => {
+            let mut v = riff(&[vp8x(FLAG_XMP, 8, 8), vp8l(), xmp.clone()]);
+            v.extend_from_slice(&raw_chunk(b"XMP ", 1000, b"abc"));
+            v
+        }
+        // Seventeen `EXIF` chunks.
+        "seventeen" => {
+            let mut parts = vec![vp8x(FLAG_EXIF, 8, 8)];
+            parts.extend((0..17).map(|_| exif_chunk(&gps)));
+            riff(&parts)
+        }
+        // A declared size that lies, with a removal inside and beyond.
+        "size-small" => riff_with_size(4, &[vp8x(FLAG_XMP, 8, 8), vp8l(), list(), xmp.clone()]),
+        // Three flags set, all three kinds of chunk there.
+        "flags-mixed" => riff(&[
+            vp8x(all, 8, 8),
+            icc,
+            vp8l(),
+            exif_chunk(&webp_shapes::exif_with_make()),
+            xmp,
+        ]),
+        // Several `VP8X` with a flag byte ExifTool reads (SPEC-038 fix round).
+        "vp8x-several" => riff(&[
+            vp8x(all, 8, 8),
+            chunk(b"VP8X", &[all, 0, 0, 0, 0, 0, 0, 0]),
+            icc,
+            vp8l(),
+            vp8x(all, 8, 8),
+        ]),
+        // Nothing to strip.
+        "ok" => riff(&[vp8x(0, 8, 8), vp8l()]),
+        other => panic!("no plant input {other}"),
+    }
+}
+
+fn webp_ok(f: &mut rewrite_webp_invariants::Facts) -> &mut rewrite_webp_invariants::OkFacts {
+    f.result.as_mut().expect("an Ok answer")
+}
+
+fn webp_out(f: &mut rewrite_webp_invariants::Facts) -> &mut rewrite_webp_invariants::OutFacts {
+    f.out.as_mut().expect("output facts")
+}
+
+/// The offset of the first chunk of type `code` in `bytes`.
+fn webp_chunk_at(bytes: &[u8], code: &[u8; 4]) -> usize {
+    let mut p = 12;
+    while p + 8 <= bytes.len() {
+        let size = u32::from_le_bytes([bytes[p + 4], bytes[p + 5], bytes[p + 6], bytes[p + 7]]);
+        if &bytes[p..p + 4] == code {
+            return p;
+        }
+        p += 8 + size as usize + (size as usize & 1);
+    }
+    panic!("no {code:?} chunk");
+}
+
+fn rewrite_webp_plants() -> Vec<WebpPlant> {
+    use rewrite_webp_invariants::{ErrFact, Guard};
+    vec![
+        // Prediction: a writer that leaves removed chunks, one that cuts a kept
+        // chunk, one that changes a kept byte, one that answers where a refusal
+        // is predicted.
+        WebpPlant {
+            name: "a writer that leaves every removed chunk",
+            input: "sink",
+            head: &[4],
+            guard: Guard::Prediction,
+            apply: |f, input| webp_ok(f).bytes = input.to_vec(),
+        },
+        WebpPlant {
+            name: "a writer that leaves one removed chunk (the LIST)",
+            input: "sink",
+            head: &[4],
+            guard: Guard::Prediction,
+            apply: |f, input| {
+                let at = webp_chunk_at(input, b"LIST");
+                let size = u32::from_le_bytes(input[at + 4..at + 8].try_into().unwrap()) as usize;
+                let b = &mut webp_ok(f).bytes;
+                let end = b.len() - 12;
+                b.splice(end..end, input[at..at + 8 + size].iter().copied());
+            },
+        },
+        WebpPlant {
+            name: "a writer that cuts a kept chunk (PAD)",
+            input: "sink",
+            head: &[4],
+            guard: Guard::Prediction,
+            apply: |f, _| {
+                let b = &mut webp_ok(f).bytes;
+                b.truncate(b.len() - 12);
+            },
+        },
+        WebpPlant {
+            name: "a kept byte is changed",
+            input: "sink",
+            head: &[4],
+            guard: Guard::Prediction,
+            apply: |f, _| {
+                let b = &mut webp_ok(f).bytes;
+                let at = webp_chunk_at(b, b"VP8L") + 9;
+                b[at] ^= 1;
+            },
+        },
+        WebpPlant {
+            name: "an Ok answer where a refusal is predicted",
+            input: "past-end",
+            head: &[0],
+            guard: Guard::Prediction,
+            apply: |f, input| {
+                f.result = Ok(rewrite_webp_invariants::OkFacts {
+                    bytes: input.to_vec(),
+                    removals: vec![],
+                    patches: vec![],
+                });
+            },
+        },
+        // KeptChunks.
+        WebpPlant {
+            name: "a kept chunk is cut",
+            input: "sink",
+            head: &[4],
+            guard: Guard::KeptChunks,
+            apply: |f, _| {
+                let b = &mut webp_ok(f).bytes;
+                b.truncate(b.len() - 12);
+            },
+        },
+        WebpPlant {
+            name: "a kept chunk's data changed in place",
+            input: "sink",
+            head: &[4],
+            guard: Guard::KeptChunks,
+            apply: |f, _| {
+                let b = &mut webp_ok(f).bytes;
+                let at = webp_chunk_at(b, b"VP8L") + 9;
+                b[at] ^= 1;
+            },
+        },
+        WebpPlant {
+            name: "an edited EXIF chunk changes its length field",
+            input: "exif-edit",
+            head: &[11],
+            guard: Guard::KeptChunks,
+            apply: |f, _| {
+                let b = &mut webp_ok(f).bytes;
+                let at = webp_chunk_at(b, b"EXIF");
+                b[at + 4] ^= 2;
+            },
+        },
+        // Records.
+        WebpPlant {
+            name: "a removal record is one byte too long",
+            input: "sink",
+            head: &[4],
+            guard: Guard::Records,
+            apply: |f, _| webp_ok(f).removals[0].len += 1,
+        },
+        WebpPlant {
+            name: "a removal record is missing",
+            input: "sink",
+            head: &[4],
+            guard: Guard::Records,
+            apply: |f, _| {
+                webp_ok(f).removals.pop();
+            },
+        },
+        WebpPlant {
+            name: "a removal is recorded under the wrong kind",
+            input: "sink",
+            head: &[4],
+            guard: Guard::Records,
+            apply: |f, _| webp_ok(f).removals[0].kind = "other-chunk",
+        },
+        WebpPlant {
+            name: "a patch outside any EXIF chunk",
+            input: "exif-edit",
+            head: &[11],
+            guard: Guard::Records,
+            apply: |f, _| webp_ok(f).patches.push((0, 4, "other")),
+        },
+        WebpPlant {
+            name: "the size patch is not recorded",
+            input: "sink",
+            head: &[4],
+            guard: Guard::Records,
+            apply: |f, _| webp_ok(f).patches.retain(|p| p.2 != "riff-size"),
+        },
+        WebpPlant {
+            name: "a flag patch is recorded at the wrong place",
+            input: "sink",
+            head: &[4],
+            guard: Guard::Records,
+            apply: |f, _| {
+                for p in webp_ok(f).patches.iter_mut() {
+                    if p.2 == "vp8x-flags" {
+                        p.0 += 1;
+                    }
+                }
+            },
+        },
+        // Length.
+        WebpPlant {
+            name: "an output longer than the input",
+            input: "sink",
+            head: &[4],
+            guard: Guard::Length,
+            apply: |f, input| webp_ok(f).bytes.resize(input.len() + 1, 0),
+        },
+        WebpPlant {
+            name: "removals dropped though the output is shorter",
+            input: "sink",
+            head: &[4],
+            guard: Guard::Length,
+            apply: |f, _| webp_ok(f).removals.clear(),
+        },
+        // RiffSize: not patched, patched wrongly (an output-length repair).
+        WebpPlant {
+            name: "the RIFF size is not patched",
+            input: "sink",
+            head: &[4],
+            guard: Guard::RiffSize,
+            apply: |f, input| webp_ok(f).bytes[4..8].copy_from_slice(&input[4..8]),
+        },
+        WebpPlant {
+            name: "the RIFF size is patched one byte wrong",
+            input: "sink",
+            head: &[4],
+            guard: Guard::RiffSize,
+            apply: |f, _| webp_ok(f).bytes[4] ^= 1,
+        },
+        WebpPlant {
+            name: "a lying RIFF size is repaired to the output length less 8",
+            input: "size-small",
+            head: &[4],
+            guard: Guard::RiffSize,
+            apply: |f, _| {
+                let b = &mut webp_ok(f).bytes;
+                let n = (b.len() - 8) as u32;
+                b[4..8].copy_from_slice(&n.to_le_bytes());
+            },
+        },
+        // Vp8xFlags: a stale flag, a flag cleared that must stay.
+        WebpPlant {
+            name: "a stale ICC flag stays set after every ICCP went",
+            input: "flags-mixed",
+            head: &[9],
+            guard: Guard::Vp8xFlags,
+            apply: |f, input| {
+                let at = webp_chunk_at(input, b"VP8X") + 8;
+                webp_ok(f).bytes[at] = input[at];
+            },
+        },
+        WebpPlant {
+            name: "the ICC flag of the last VP8X stays set (only the first is cleared)",
+            input: "vp8x-several",
+            head: &[9],
+            guard: Guard::Vp8xFlags,
+            apply: |f, input| {
+                let at = input.windows(4).rposition(|w| w == b"VP8X").unwrap() + 8;
+                let out = webp_ok(f);
+                let last = out.bytes.windows(4).rposition(|w| w == b"VP8X").unwrap() + 8;
+                out.bytes[last] = input[at];
+            },
+        },
+        WebpPlant {
+            name: "an 8-byte VP8X keeps its ICC flag",
+            input: "vp8x-several",
+            head: &[9],
+            guard: Guard::Vp8xFlags,
+            apply: |f, input| {
+                let at = input.windows(4).position(|w| w == b"VP8X").unwrap();
+                let second = at
+                    + 18
+                    + input[at + 18..]
+                        .windows(4)
+                        .position(|w| w == b"VP8X")
+                        .unwrap();
+                let out = webp_ok(f);
+                let o = out.bytes.windows(4).position(|w| w == b"VP8X").unwrap();
+                let o2 = o
+                    + 18
+                    + out.bytes[o + 18..]
+                        .windows(4)
+                        .position(|w| w == b"VP8X")
+                        .unwrap();
+                out.bytes[o2 + 8] = input[second + 8];
+            },
+        },
+        WebpPlant {
+            name: "the XMP flag is cleared though the XMP chunk stays",
+            input: "flags-mixed",
+            head: &[9],
+            guard: Guard::Vp8xFlags,
+            apply: |f, _| {
+                let at = webp_chunk_at(&webp_ok(f).bytes.clone(), b"VP8X") + 8;
+                webp_ok(f).bytes[at] &= !0x04;
+            },
+        },
+        WebpPlant {
+            name: "the alpha bit is cleared with the metadata flags",
+            input: "sink",
+            head: &[4],
+            guard: Guard::Vp8xFlags,
+            apply: |f, _| {
+                let at = webp_chunk_at(&webp_ok(f).bytes.clone(), b"VP8X") + 8;
+                webp_ok(f).bytes[at] = 0;
+            },
+        },
+        // RemovedCategories.
+        WebpPlant {
+            name: "the output still has a GPS finding",
+            input: "exif-edit",
+            head: &[0],
+            guard: Guard::RemovedCategories,
+            apply: |f, _| webp_out(f).categories.push(exif_core::audit::Category::Gps),
+        },
+        WebpPlant {
+            name: "the output still has an XMP finding",
+            input: "sink",
+            head: &[4],
+            guard: Guard::RemovedCategories,
+            apply: |f, _| webp_out(f).categories.push(exif_core::audit::Category::Xmp),
+        },
+        // KeptFindings.
+        WebpPlant {
+            name: "a kept category gained a finding",
+            input: "sink",
+            head: &[0],
+            guard: Guard::KeptFindings,
+            apply: |f, _| {
+                let o = webp_out(f);
+                if let Some(v) = o.kept_out.as_mut() {
+                    v[0].1 += 1;
+                }
+            },
+        },
+        WebpPlant {
+            name: "a kept category lost its findings",
+            input: "sink",
+            head: &[0],
+            guard: Guard::KeptFindings,
+            apply: |f, _| webp_out(f).kept_out = Some(vec![]),
+        },
+        // NoRemovableLeft.
+        WebpPlant {
+            name: "the chunks are left under Everything",
+            input: "sink",
+            head: &[4],
+            guard: Guard::NoRemovableLeft,
+            apply: |f, input| webp_ok(f).bytes = input.to_vec(),
+        },
+        WebpPlant {
+            name: "the carriers are left under OtherSegment alone",
+            input: "sink",
+            head: &[8],
+            guard: Guard::NoRemovableLeft,
+            apply: |f, input| webp_ok(f).bytes = input.to_vec(),
+        },
+        // Idempotent, Deterministic.
+        WebpPlant {
+            name: "stripping the output removes more",
+            input: "sink",
+            head: &[4],
+            guard: Guard::Idempotent,
+            apply: |f, _| webp_out(f).idempotent = false,
+        },
+        WebpPlant {
+            name: "stripping the output removes more (patch case)",
+            input: "exif-edit",
+            head: &[11],
+            guard: Guard::Idempotent,
+            apply: |f, _| webp_out(f).idempotent = false,
+        },
+        WebpPlant {
+            name: "the second strip differs",
+            input: "sink",
+            head: &[4],
+            guard: Guard::Deterministic,
+            apply: |f, _| f.deterministic = false,
+        },
+        WebpPlant {
+            name: "the second strip differs (refusal)",
+            input: "past-end",
+            head: &[0],
+            guard: Guard::Deterministic,
+            apply: |f, _| f.deterministic = false,
+        },
+        // ErrClass.
+        WebpPlant {
+            name: "the wrong walk reason",
+            input: "past-end",
+            head: &[0],
+            guard: Guard::ErrClass,
+            apply: |f, _| f.result = Err(ErrFact::Unstrippable("too-many-issues", 0)),
+        },
+        WebpPlant {
+            name: "the right reason at another offset",
+            input: "past-end",
+            head: &[0],
+            guard: Guard::ErrClass,
+            apply: |f, _| match &mut f.result {
+                Err(ErrFact::Unstrippable(_, o)) => *o += 1,
+                other => panic!("{other:?}"),
+            },
+        },
+        WebpPlant {
+            name: "the 17th EXIF chunk refused at another offset",
+            input: "seventeen",
+            head: &[11],
+            guard: Guard::ErrClass,
+            apply: |f, _| match &mut f.result {
+                Err(ErrFact::Uneditable(_, o)) => *o += 1,
+                other => panic!("{other:?}"),
+            },
+        },
+        WebpPlant {
+            name: "an Overlap where the strip is fine",
+            input: "ok",
+            head: &[8],
+            guard: Guard::ErrClass,
+            apply: |f, _| f.result = Err(ErrFact::Overlap(0)),
+        },
+        WebpPlant {
+            name: "Uneditable where no entry edit is needed",
+            input: "ok",
+            head: &[4],
+            guard: Guard::ErrClass,
+            apply: |f, _| f.result = Err(ErrFact::Uneditable("block-not-clean", 0)),
+        },
+        WebpPlant {
+            name: "Uneditable too-many where there are 16 or fewer EXIF chunks",
+            input: "exif-edit",
+            head: &[11],
+            guard: Guard::ErrClass,
+            apply: |f, _| f.result = Err(ErrFact::Uneditable("too-many-exif-segments", 0)),
+        },
+        // VerifyAllowed.
+        WebpPlant {
+            name: "VerifyFailed on a clean file",
+            input: "sink",
+            head: &[4],
+            guard: Guard::VerifyAllowed,
+            apply: |f, _| f.result = Err(ErrFact::VerifyFailed("verify")),
+        },
+        WebpPlant {
+            name: "VerifyFailed on a refusal",
+            input: "past-end",
+            head: &[0],
+            guard: Guard::VerifyAllowed,
+            apply: |f, _| f.result = Err(ErrFact::VerifyFailed("verify")),
+        },
+    ]
+}
+
+#[test]
+fn each_rewrite_webp_guard_goes_red_when_planted() {
+    let plants = rewrite_webp_plants();
+    for g in rewrite_webp_invariants::GUARDS {
+        let n = plants.iter().filter(|p| p.guard == g).count();
+        assert!(n >= 2, "{g:?} has {n} plants");
+    }
+    for p in &plants {
+        let input = webp_plant_input(p.input);
+        let mut seed = p.head.to_vec();
+        seed.extend_from_slice(&input);
+        let (policy, webp) = rewrite_webp_invariants::decode(&seed);
+        let spec = policy.spec();
+        let pred = rewrite_webp_invariants::predict(webp, spec);
+        let good = rewrite_webp_invariants::facts(webp, policy);
+        // CONTROL: the unplanted answer satisfies every guard.
+        let control = rewrite_webp_invariants::failures(webp, spec, &good, &pred);
+        assert!(control.is_empty(), "{}: control: {control:?}", p.name);
+        let mut bad = good.clone();
+        (p.apply)(&mut bad, webp);
+        assert_ne!(bad, good, "{}: the plant changed nothing", p.name);
+        // The guard rejects the plant, run alone.
+        assert!(
+            !rewrite_webp_invariants::holds(p.guard, webp, spec, &bad, &pred),
+            "{}: guard {:?} did not reject the planted bug",
+            p.name,
+            p.guard
+        );
+    }
+}
+
+#[test]
+fn the_rewrite_webp_prediction_is_the_library_answer_on_the_plant_inputs() {
+    // The naive stripper predicts the exact bytes (outside an edited chunk) and
+    // the exact refusal, so a guard is not red merely because it is constant.
+    let sink = webp_plant_input("sink");
+    let spec = exif_core::StripPolicy::Everything.spec();
+    match rewrite_webp_invariants::predict(&sink, spec) {
+        rewrite_webp_invariants::Pred::Ok {
+            bytes,
+            removals,
+            size_patched,
+            flags_patched,
+            ..
+        } => {
+            let got = exif_core::strip(&sink, exif_core::StripPolicy::Everything).unwrap();
+            assert_eq!(got.bytes(), &bytes[..]);
+            assert_eq!(removals.len(), got.removals().len());
+            assert!(bytes.len() < sink.len());
+            assert!(size_patched && flags_patched > 0);
+        }
+        other => panic!("{other:?}"),
+    }
+    let past = webp_plant_input("past-end");
+    assert!(matches!(
+        rewrite_webp_invariants::predict(&past, spec),
+        rewrite_webp_invariants::Pred::Unstrippable("chunk-past-end", _)
+    ));
+    let many = webp_plant_input("seventeen");
+    let gps_only = exif_core::StripPolicy::Custom(
+        exif_core::StripSpec::none().include(exif_core::audit::Category::Gps),
+    )
+    .spec();
+    assert!(matches!(
+        rewrite_webp_invariants::predict(&many, gps_only),
+        rewrite_webp_invariants::Pred::Uneditable("too-many-exif-segments", _)
+    ));
+    // The lying size keeps its lie (the prediction is not the output length).
+    let small = webp_plant_input("size-small");
+    match rewrite_webp_invariants::predict(&small, spec) {
+        rewrite_webp_invariants::Pred::Ok { riff_size, .. } => assert_eq!(riff_size, 4),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn rewrite_webp_target_is_declared_and_runs_in_ci() {
+    let fuzz = read("fuzz/Cargo.toml");
+    assert!(
+        fuzz.contains("name = \"rewrite_webp\"") && fuzz.contains("fuzz_targets/rewrite_webp.rs"),
+        "fuzz/Cargo.toml must declare the rewrite_webp bin"
+    );
+    assert!(root().join("fuzz/fuzz_targets/rewrite_webp.rs").is_file());
+    let target = read("fuzz/fuzz_targets/rewrite_webp.rs");
+    assert!(target.contains("rewrite_webp_invariants::check"));
+    assert!(target.contains("../shared/rewrite_webp_invariants.rs"));
+    assert!(root()
+        .join("fuzz/shared/rewrite_webp_invariants.rs")
+        .is_file());
+    assert!(read(".github/workflows/ci.yml").contains("rewrite_png, rewrite_webp, audit,"));
+    assert!(read("app.just").contains("rewrite_png rewrite_webp audit"));
+    assert!(read("README.md").contains("rewrite_png`, `rewrite_webp`"));
+}
+
+/// The harness is independent of the writer: no line of code names its module
+/// or its helpers.
+#[test]
+fn the_rewrite_webp_harness_does_not_read_the_writer() {
+    let h = read("fuzz/shared/rewrite_webp_invariants.rs");
+    for needle in [
+        "write::webp",
+        "src/write/webp",
+        "plan_block",
+        "exif9",
+        "removes_carriers",
+        "chunk_class",
+        "ChunkClass",
+    ] {
+        let uses = h
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//") && l.contains(needle))
+            .count();
+        assert_eq!(uses, 0, "{needle}");
+    }
+    // The only reader items it names are the walk's two caps.
+    assert!(h.contains("use exif_core::webp::{MAX_WEBP_CHUNKS, MAX_WEBP_ISSUES};"));
+    assert_eq!(h.matches("exif_core::webp::").count(), 1);
 }

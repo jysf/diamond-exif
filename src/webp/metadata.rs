@@ -10,7 +10,11 @@
 //!   with that header skipped and one [`Error::ImproperExifHeader`] issue;
 //! * located, never decoded, [`WebpRegion`]s: `Xmp` (from `XMP ` and `XMP\0`
 //!   chunks) and `Icc` (from `ICCP` chunks), their data borrowed from the
-//!   input. WebP has no compression inside these chunks.
+//!   input. WebP has no compression inside these chunks;
+//! * located, never decoded, [`WebpRegion::Chunk`]s: the other RIFF chunk types
+//!   ExifTool 13.55 decodes into tags in a WebP (`LIST`, `IDIT`, a text `JUNK`,
+//!   `C2PA`, `ID3 `, ... see [`chunk_class`] and DEC-022 clause 4), by type
+//!   alone.
 //!
 //! Chunks inside an `ANMF` frame payload are never walked, so metadata there is
 //! not found; an `EXIF` chunk after an `ANMF` chunk at top level is.
@@ -83,6 +87,79 @@ impl<'a> WebpExifBlock<'a> {
     }
 }
 
+/// What a RIFF chunk located by type alone is (SPEC-038, DEC-022 clause 4,
+/// measured on ExifTool 13.55). These are the chunk types besides `EXIF`,
+/// `XMP ` and `ICCP` that ExifTool decodes into tags in a WebP; the library
+/// locates them and decodes none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ChunkClass {
+    /// A `LIST` chunk of any list type (`INFO` and `INF0` print `Artist`,
+    /// `Copyright`, `Software`, ...; `adtl`, `exif`, `hdrl` print too).
+    List,
+    /// A chunk ExifTool prints as text or a free-form string: `IDIT`, a `JUNK`
+    /// chunk of printable ASCII, `afsp`, `bext`, `guan`, `list`, `labl`,
+    /// `note`, `ltxt`, `olym`.
+    Text,
+    /// A chunk ExifTool reads as XMP or XML: `_PMX`, `SEAL`, `aXML`, `iXML`
+    /// and `JUNQ` (an old XMP packet).
+    XmlCarrier,
+    /// An ID3 tag: `ID3 ` or `id3 `.
+    Id3,
+    /// A chunk ExifTool reads as a GPS position: `gps0`, `SGLT`, `SLLT`.
+    Gps,
+    /// `C2PA`, a JUMBF box.
+    Jumbf,
+    /// A chunk coded exactly `RIFF` (SPEC-038 fix round, DEC-022 clause 4):
+    /// ExifTool 13.55 walks into it as a nested container, whatever its form
+    /// type, size or depth, and prints every tag it finds inside. Opaque.
+    Riff,
+    /// A chunk ExifTool prints as binary structure that is not personal
+    /// metadata: `CSET`, `acid`, `ds64`, `fact`, `fmt `, `inst`, `smpl`,
+    /// `cue `, `plst`, `gsen`.
+    Other,
+}
+
+/// Whether `data` is what ExifTool 13.55 prints as `TextJunk`: one or more
+/// printable ASCII bytes (0x20 to 0x7E) followed by zero or more NUL bytes
+/// (measured: a control byte, a high byte, a NUL before the text, or no bytes
+/// at all prints nothing).
+fn is_text_junk(data: &[u8]) -> bool {
+    let trimmed_len = data
+        .iter()
+        .rposition(|&b| b != 0)
+        .map_or(0, |last| last.saturating_add(1));
+    trimmed_len > 0
+        && data
+            .iter()
+            .take(trimmed_len)
+            .all(|b| (0x20..=0x7E).contains(b))
+}
+
+/// The class of a chunk by its four code bytes (and, for `JUNK`, its data), or
+/// `None` for every other chunk. The codes are case-sensitive: the SPEC-038
+/// build measured all 16 ASCII-case spellings of every type below and none
+/// folds (`ID3 ` and `id3 ` are two separate codes ExifTool knows).
+/// `EXIF`, `XMP `, `XMP\0` and `ICCP` are not classified here: they have their
+/// own regions. Chunks inside an `ANMF` payload are never walked.
+pub fn chunk_class(code: [u8; 4], data: &[u8]) -> Option<ChunkClass> {
+    match &code {
+        b"LIST" => Some(ChunkClass::List),
+        b"IDIT" | b"afsp" | b"bext" | b"guan" | b"list" | b"labl" | b"note" | b"ltxt" | b"olym" => {
+            Some(ChunkClass::Text)
+        }
+        b"JUNK" if is_text_junk(data) => Some(ChunkClass::Text),
+        b"_PMX" | b"SEAL" | b"aXML" | b"iXML" | b"JUNQ" => Some(ChunkClass::XmlCarrier),
+        b"ID3 " | b"id3 " => Some(ChunkClass::Id3),
+        b"gps0" | b"SGLT" | b"SLLT" => Some(ChunkClass::Gps),
+        b"C2PA" => Some(ChunkClass::Jumbf),
+        b"RIFF" => Some(ChunkClass::Riff),
+        b"CSET" | b"acid" | b"ds64" | b"fact" | b"fmt " | b"inst" | b"smpl" | b"cue " | b"plst"
+        | b"gsen" => Some(ChunkClass::Other),
+        _ => None,
+    }
+}
+
 /// A located, not decoded, metadata region. Borrowed; never interpreted.
 ///
 /// `offset` is the input offset of the chunk's four-character code; `data` is
@@ -104,20 +181,37 @@ pub enum WebpRegion<'a> {
         /// The profile bytes.
         data: &'a [u8],
     },
+    /// A chunk located by its type alone (see [`ChunkClass`]): a carrier of
+    /// metadata the library cannot read. `data` is the whole chunk data,
+    /// possibly empty.
+    Chunk {
+        /// Input offset of the chunk.
+        offset: usize,
+        /// The four code bytes.
+        chunk_type: [u8; 4],
+        /// What the type is.
+        class: ChunkClass,
+        /// The chunk's data.
+        data: &'a [u8],
+    },
 }
 
 impl<'a> WebpRegion<'a> {
     /// Input offset of the region's chunk.
     pub fn offset(&self) -> usize {
         match *self {
-            WebpRegion::Xmp { offset, .. } | WebpRegion::Icc { offset, .. } => offset,
+            WebpRegion::Xmp { offset, .. }
+            | WebpRegion::Icc { offset, .. }
+            | WebpRegion::Chunk { offset, .. } => offset,
         }
     }
 
     /// The located bytes, borrowed from the input.
     pub fn data(&self) -> &'a [u8] {
         match *self {
-            WebpRegion::Xmp { data, .. } | WebpRegion::Icc { data, .. } => data,
+            WebpRegion::Xmp { data, .. }
+            | WebpRegion::Icc { data, .. }
+            | WebpRegion::Chunk { data, .. } => data,
         }
     }
 }
@@ -232,8 +326,9 @@ impl<'a> Extract<'a> {
         self.issues.push(WebpIssue::new(error, offset));
     }
 
-    /// Extract from one chunk, by its kind. Other kinds are ignored.
-    fn chunk(&mut self, kind: ChunkKind, data: &'a [u8], offset: usize) {
+    /// Extract from one chunk, by its kind. Other kinds are located by their
+    /// code alone when they are carriers (see [`chunk_class`]).
+    fn chunk(&mut self, kind: ChunkKind, code: [u8; 4], data: &'a [u8], offset: usize) {
         match kind {
             ChunkKind::Exif => {
                 if self.exif_seen >= 1 {
@@ -259,6 +354,16 @@ impl<'a> Extract<'a> {
             }
             ChunkKind::Xmp => self.regions.push(WebpRegion::Xmp { offset, data }),
             ChunkKind::Iccp => self.regions.push(WebpRegion::Icc { offset, data }),
+            ChunkKind::Other => {
+                if let Some(class) = chunk_class(code, data) {
+                    self.regions.push(WebpRegion::Chunk {
+                        offset,
+                        chunk_type: code,
+                        class,
+                        data,
+                    });
+                }
+            }
             _ => {}
         }
     }
@@ -273,7 +378,7 @@ fn extract(webp: Webp<'_>) -> WebpMetadata<'_> {
         exif_seen: 0,
     };
     for c in webp.chunks() {
-        ex.chunk(c.kind(), c.data(), c.offset());
+        ex.chunk(c.kind(), c.fourcc(), c.data(), c.offset());
     }
     WebpMetadata {
         exif_blocks: ex.blocks,
