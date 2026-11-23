@@ -34,6 +34,9 @@ pub enum Payload {
     Jumbf,
     /// An ID3v2.3 tag with an artist.
     Id3,
+    /// A `RIFF` chunk's data: the form type `WEBP`, then a `LIST` chunk of
+    /// type `INFO` with an `IART` sub-chunk (ExifTool walks into it).
+    RiffNested,
 }
 
 /// One measured row.
@@ -60,6 +63,13 @@ pub const ROWS: &[Row] = &[
     Row {
         code: *b"LIST",
         payload: Payload::ListInfo,
+        region: CARRIER,
+        category: OTHER_SEGMENT,
+        prints: "RIFF:Artist",
+    },
+    Row {
+        code: *b"RIFF",
+        payload: Payload::RiffNested,
         region: CARRIER,
         category: OTHER_SEGMENT,
         prints: "RIFF:Artist",
@@ -289,7 +299,7 @@ pub const NOT_METADATA: &[[u8; 4]] = &[
     *b"PAD ", *b"strd", *b"strn", *b"PrmL", *b"Cr8r", *b"wavl", *b"slnt", *b"DISP", *b"avih",
     *b"strh", *b"strf", *b"vedt", *b"ISFT", *b"IART", *b"INAM", *b"ICMT", *b"ICOP", *b"TEXT",
     *b"COMM", *b"umid", *b"regn", *b"link", *b"axml", *b"junk", *b"pad ", *b"Junk", *b"exif",
-    *b"xmp ", *b"iccp", *b"Exif",
+    *b"xmp ", *b"iccp", *b"Exif", *b"RF64", *b"RIFX",
 ];
 
 /// `LIST` list types that printed tags with the matching sub-chunk (every
@@ -384,6 +394,7 @@ pub fn payload(p: Payload) -> Vec<u8> {
             let manifest = [desc(&c2pa_uuid, b"c2pa"), jbox(b"jumb", &assertion)].concat();
             jbox(b"jumb", &manifest)
         }
+        Payload::RiffNested => riff_nested(1),
         Payload::Id3 => {
             // The frame size counts the encoding byte and the 11 text bytes.
             let frame = b"TPE1\0\0\0\x0c\0\0\0Jane Artist";
@@ -404,4 +415,18 @@ pub fn payload(p: Payload) -> Vec<u8> {
 /// The chunk (frame, data, pad) of a row, spelt `code`.
 pub fn row_chunk(code: &[u8; 4], p: Payload) -> Vec<u8> {
     chunk(code, &payload(p))
+}
+
+/// The data of a `RIFF` chunk nested `depth` levels deep (depth 1: the form
+/// type `WEBP`, then a `LIST/INFO` with an artist; each further level wraps the
+/// whole previous `RIFF` chunk in another).
+pub fn riff_nested(depth: usize) -> Vec<u8> {
+    let mut data = b"WEBP".to_vec();
+    data.extend_from_slice(&chunk(b"LIST", &payload(Payload::ListInfo)));
+    for _ in 1..depth {
+        let inner = chunk(b"RIFF", &data);
+        data = b"WEBP".to_vec();
+        data.extend_from_slice(&inner);
+    }
+    data
 }

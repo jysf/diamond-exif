@@ -277,10 +277,10 @@ mod webp_riff_invariants {
     /// printable ASCII then NULs. Shares nothing with `src/webp`.
     fn carrier_code(code: &[u8; 4], data: &[u8]) -> bool {
         match code.as_slice() {
-            b"LIST" | b"IDIT" | b"afsp" | b"bext" | b"guan" | b"list" | b"labl" | b"note"
-            | b"ltxt" | b"olym" | b"_PMX" | b"SEAL" | b"aXML" | b"iXML" | b"JUNQ" | b"ID3 "
-            | b"id3 " | b"gps0" | b"SGLT" | b"SLLT" | b"C2PA" | b"CSET" | b"acid" | b"ds64"
-            | b"fact" | b"fmt " | b"inst" | b"smpl" | b"cue " | b"plst" | b"gsen" => true,
+            b"LIST" | b"RIFF" | b"IDIT" | b"afsp" | b"bext" | b"guan" | b"list" | b"labl"
+            | b"note" | b"ltxt" | b"olym" | b"_PMX" | b"SEAL" | b"aXML" | b"iXML" | b"JUNQ"
+            | b"ID3 " | b"id3 " | b"gps0" | b"SGLT" | b"SLLT" | b"C2PA" | b"CSET" | b"acid"
+            | b"ds64" | b"fact" | b"fmt " | b"inst" | b"smpl" | b"cue " | b"plst" | b"gsen" => true,
             b"JUNK" => {
                 let text = data
                     .iter()

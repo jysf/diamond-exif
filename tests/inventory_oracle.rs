@@ -1904,8 +1904,8 @@ fn line(group: &str, id: Option<u32>, name: &str) -> Line {
     }
 }
 
-/// The `png-webp` corpus: 619 inputs (555 of Part A and the 64 hostile extras of
-/// Part B and the fix round), 364 distinct by content; the five older
+/// The `png-webp` corpus: 628 inputs (555 of Part A and the 73 hostile extras of
+/// Part B and the fix rounds, three of them the SPEC-038 RIFF-chunk seeds), 367 distinct by content; the five older
 /// corpora are untouched and `png-webp` is not one of them.
 #[test]
 fn png_webp_corpus_counts_are_pinned() {
@@ -1913,8 +1913,8 @@ fn png_webp_corpus_counts_are_pinned() {
     assert!(!inventory_corpus::CORPORA.contains(&"png-webp"));
     assert!(inventory_corpus::NEW_CORPORA.contains(&"png-webp"));
     let all = png_webp_inputs();
-    assert_eq!(all.len(), 619, "inputs of png-webp");
-    assert_eq!(inventory_corpus::distinct(&all).len(), 364, "distinct");
+    assert_eq!(all.len(), 628, "inputs of png-webp");
+    assert_eq!(inventory_corpus::distinct(&all).len(), 367, "distinct");
     // Every name is unique (a record section is keyed by it).
     let names: BTreeSet<&str> = all.iter().map(|i| i.name.as_str()).collect();
     assert_eq!(names.len(), all.len());
@@ -2350,7 +2350,7 @@ fn png_webp_live_parity() {
         checked += 1;
     }
     assert!(errors.is_empty(), "{}", errors.join("\n"));
-    assert_eq!(checked, 364, "every distinct png-webp input runs live");
+    assert_eq!(checked, 367, "every distinct png-webp input runs live");
 }
 
 /// The dropped `[PNG]` names are measured, listed as constants and pinned: the

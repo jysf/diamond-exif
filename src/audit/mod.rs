@@ -683,7 +683,11 @@ fn audit_webp(data: &[u8]) -> FileAudit<'_> {
                 // A non-empty chunk ExifTool reads as XMP or XML can hold GPS
                 // the audit does not see: a failed block, as for a PNG
                 // `tXMP` (DEC-020 clause 5, SPEC-038).
-                if class == webp::ChunkClass::XmlCarrier && !data.is_empty() {
+                // A non-empty `RIFF` chunk is a nested container ExifTool
+                // walks into: everything inside is unread here, so the same.
+                if matches!(class, webp::ChunkClass::XmlCarrier | webp::ChunkClass::Riff)
+                    && !data.is_empty()
+                {
                     failed = failed.saturating_add(1);
                 }
                 let kind = match class {

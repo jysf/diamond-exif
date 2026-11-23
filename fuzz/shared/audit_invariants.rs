@@ -685,7 +685,7 @@ mod audit_invariants {
                     b"CSET" | b"acid" | b"ds64" | b"fact" | b"fmt " | b"inst" | b"smpl"
                     | b"cue " | b"plst" | b"gsen" => ("OtherChunk", "OtherSegment"),
                     t => {
-                        if matches!(t, b"_PMX" | b"SEAL" | b"aXML" | b"iXML" | b"JUNQ")
+                        if matches!(t, b"_PMX" | b"SEAL" | b"aXML" | b"iXML" | b"JUNQ" | b"RIFF")
                             && !data.is_empty()
                         {
                             *failed += 1;

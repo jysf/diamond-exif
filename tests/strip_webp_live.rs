@@ -480,6 +480,38 @@ fn carrier_cases() -> Vec<Case> {
             });
         }
     }
+    // SPEC-038 fix round: a chunk coded `RIFF` is walked into at any depth and
+    // a second whole file appended after the first is one (measured); each
+    // must print `RIFF:Artist` before the strip and nothing after it.
+    let artist = webp_carriers::ROWS
+        .iter()
+        .find(|r| &r.code == b"RIFF")
+        .map(|r| r.prints.to_string())
+        .expect("the RIFF row");
+    let deep = webp_shapes::chunk(b"RIFF", &webp_carriers::riff_nested(3));
+    let mut appended = bare();
+    appended.extend_from_slice(&webp_shapes::riff(&[webp_shapes::chunk(
+        b"LIST",
+        &webp_carriers::payload(webp_carriers::Payload::ListInfo),
+    )]));
+    for (name, input) in [
+        (
+            "riff-depth-three",
+            webp_shapes::riff(&[webp_shapes::vp8l(), deep]),
+        ),
+        ("riff-appended-second-file", appended),
+    ] {
+        out.push(Case {
+            name: name.to_string(),
+            input,
+            judge: Judge::Carrier {
+                baseline: bare(),
+                removed_by: [true; 5],
+                prints: artist.clone(),
+            },
+            allow_refusal: false,
+        });
+    }
     out
 }
 
@@ -621,16 +653,16 @@ fn every_measured_carrier_row_leaves_no_decoded_tag_for_exiftool() {
         return;
     }
     let cases = carrier_cases();
-    assert_eq!(cases.len(), webp_carriers::ROWS.len() * 4);
+    // Four positions per row, plus the two RIFF-chunk shapes.
+    let n = webp_carriers::ROWS.len() * 4 + 2;
+    assert_eq!(cases.len(), n);
     let tally = run_all(cases);
     println!(
-        "carrier rows: {} files, {} strips, {} non-vacuous checks",
-        webp_carriers::ROWS.len() * 4,
-        tally.stripped,
-        tally.checked
+        "carrier rows: {n} files, {} strips, {} non-vacuous checks",
+        tally.stripped, tally.checked
     );
     assert!(tally.failures.is_empty(), "{:#?}", tally.failures);
-    assert!(tally.checked >= webp_carriers::ROWS.len() * 4 * 5);
+    assert!(tally.checked >= n * 5);
 }
 
 /// The case grid: no other spelling of a carrier code is decoded by ExifTool
@@ -641,8 +673,9 @@ fn the_case_grid_is_neither_decoded_nor_touched() {
         return;
     }
     let cases = case_grid_cases();
-    // 32 rows, 16 spellings each, less the exact code and the other rows.
-    assert_eq!(cases.len(), 400, "spellings");
+    // 33 rows (the `RIFF` row since the fix round), 16 spellings each, less the
+    // exact code and the other rows.
+    assert_eq!(cases.len(), 415, "spellings");
     let n = cases.len();
     let tally = run_all(cases);
     println!("case grid: {n} files, {} untouched checks", tally.checked);

@@ -57,6 +57,7 @@ One chunk per file in a minimal WebP, the chunk before the image data, after it,
 | Chunk type | Located as | Category | Removed by | A tag ExifTool 13.55 printed from it |
 |---|---|---|---|---|
 | `LIST` | Carrier region | OtherSegment | every preset (any tag category, `Xmp`, `Iptc` or `OtherSegment`) | `RIFF:Artist` |
+| `RIFF` | Carrier region | OtherSegment | every preset (any tag category, `Xmp`, `Iptc` or `OtherSegment`) | `RIFF:Artist` |
 | `IDIT` | Carrier region | OtherSegment | every preset (any tag category, `Xmp`, `Iptc` or `OtherSegment`) | `RIFF:DateTimeOriginal` |
 | `JUNK` (only when its data is text) | Carrier region | OtherSegment | every preset (any tag category, `Xmp`, `Iptc` or `OtherSegment`) | `RIFF:TextJunk` |
 | `JUNQ` | Carrier region | OtherSegment | every preset (any tag category, `Xmp`, `Iptc` or `OtherSegment`) | `RIFF:OldXMP` |
@@ -91,7 +92,7 @@ One chunk per file in a minimal WebP, the chunk before the image data, after it,
 
 Chunk types that printed only an `Unknown_<code>` binary dump under `-u`, or nothing, are not metadata, are never located and are never removed: `PAD `, `strd`, `strn`, `PrmL`, `Cr8r`, `wavl`, `slnt`, `DISP`, `avih`, `strh`, `strf`, `vedt`, `ISFT`, `IART`, `INAM`, `ICMT`, `ICOP`, `TEXT`, `COMM`, `umid`, `regn`, `link`, `axml`, `junk`, `pad `, `Junk`, `exif`, `xmp `, `iccp`, `Exif` (`junk` and `Junk` are case spellings of `JUNK`; `exif`, `xmp `, `iccp` and `Exif` of types with a rule).
 
-**Case.** Measured for all 16 ASCII-case spellings of every row's code: no type folds case. Only the exact code decodes (and `ID3 ` and `id3 `, two codes ExifTool knows); the other spellings print only `Unknown_*` tags and are kept. The live test `tests/strip_webp_live.rs` repeats this against the installed ExifTool for every spelling (400 files) and for every row in four positions.
+**Case.** Measured for all 16 ASCII-case spellings of every row's code: no type folds case. Only the exact code decodes (and `ID3 ` and `id3 `, two codes ExifTool knows); the other spellings print only `Unknown_*` tags and are kept. The live test `tests/strip_webp_live.rs` repeats this against the installed ExifTool for every spelling (415 files) and for every row in four positions, plus a depth-3 `RIFF` chunk and an appended second file.
 
 **`JUNK`.** A `JUNK` chunk is a carrier only when its data is printable ASCII (0x20 to 0x7E) followed by zero or more NULs and holds at least one text byte (ExifTool printed `TextJunk`); empty data, all zeros, a NUL before or inside the text and any control or high byte print nothing and the chunk is kept. `junk`, `Junk` are not `JUNK`.
 
@@ -107,6 +108,8 @@ Chunk types that printed only an `Unknown_<code>` binary dump under `-u`, or not
 6. **A shorter tail is not a chunk.** Fewer than 8 bytes after the last chunk halt the walk without an issue the writer refuses; the bytes are kept as they are. A chunk whose declared size runs past the end of the input is refused (`ChunkPastEnd`), at the chunk's offset.
 7. **Only the `VP8X` the reader reports is patched** (the first `VP8X`, when it has 10 bytes or more); a later `VP8X`, or one that is not first, is a malformed file and is kept byte for byte.
 8. **Overlap cannot occur** on a WebP (chunks never overlap and the header is never a chunk); the fuzz harness treats an `Overlap` answer as a failure.
+
+9. **A chunk coded `RIFF` is an opaque carrier (SPEC-038 verify H1, fix round).** ExifTool 13.55 walks into a top-level chunk coded exactly `RIFF` as a container and prints every tag it finds inside (`EXIF`, `XMP `, `ICCP`, `C2PA`, `LIST`, `IDIT`, `JUNK`, `ID3 ` measured), which the first build never listed. Measured on 13.55 (`-a -u -G1 -s`): the code is matched case-sensitively and exactly (`RF64`, `RIFX`, `riff`, `Riff`, `rIFF` and `RIFf` print `Unknown_*` only and are kept); the form type after the chunk header does not matter (`WEBP`, `AVI `, `WAVE` and an unknown `XXXX` were all walked into); the walk goes in at any depth (1, 2, 3, 6 and 12 measured), before or after the image data, and a second whole `RIFF....WEBP` file appended after the first is just a `RIFF` chunk beyond the declared size to this walker; the chunk's own size is not trusted by ExifTool (a size too short, too long or a bare 4 (the form type only) still printed what lay inside); the first four bytes of the data are always read as the form type (a `LIST` placed directly inside, with no form type, lost its own code and printed nothing), and an empty `RIFF` chunk holds nothing to print. So a chunk coded `RIFF` is located by code alone as a carrier (`ChunkClass::Riff`, `RegionKind::Carrier`, `OtherSegment`), removed whole by every preset under the carrier rule (clause 4), whatever its form type, size or depth. A non-empty one counts as a failed block (the nested bytes are unread, as for a PNG `tXMP`), so the file reads `unreadable` until it is removed. A `RIFF` chunk whose declared size is too short to hold what follows leaves the walker inside it with a bogus next chunk: when that runs past the end the strip refuses (`ChunkPastEnd`, clause 8), fail closed.
 
 ## Context
 

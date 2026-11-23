@@ -1648,8 +1648,8 @@ fn audit_harness_holds_on_every_seed_and_degenerate_inputs() {
     }
     assert_eq!(
         seen,
-        86 + 17 + 72 + 53,
-        "32 TIFF + 37 JPEG + 17 new + 17 SPEC-019 shapes + 72 PNG + 53 WebP"
+        86 + 17 + 72 + 56,
+        "32 TIFF + 37 JPEG + 17 new + 17 SPEC-019 shapes + 72 PNG + 56 WebP"
     );
     for data in audit_degenerate_inputs() {
         audit_invariants::check(&data);
@@ -2736,7 +2736,7 @@ fn tiff_harness_entry_budget_invariants_hold_on_every_seed() {
             seen += 1;
         }
     }
-    assert_eq!(seen, 32 + 86 + 17 + 72 + 53);
+    assert_eq!(seen, 32 + 86 + 17 + 72 + 56);
     // The degenerate inputs too, and the generated big inventory.
     for data in audit_degenerate_inputs() {
         entry_budget_invariants::check_input(&data);
@@ -3210,7 +3210,7 @@ fn preview_guards_hold_on_every_seed_and_degenerate_inputs() {
             inputs.push((path.display().to_string(), data));
         }
     }
-    assert_eq!(inputs.len(), 32 + 37 + 86 + 17 + 17 + 72 + 53);
+    assert_eq!(inputs.len(), 32 + 37 + 86 + 17 + 17 + 72 + 56);
     for (i, d) in audit_degenerate_inputs().into_iter().enumerate() {
         inputs.push((format!("degenerate {i}"), d));
     }
@@ -7232,7 +7232,7 @@ mod webp_shapes;
 include!("../fuzz/shared/webp_riff_invariants.rs");
 
 /// The committed `webp_riff` seed names, pinned.
-const WEBP_SEEDS: [&str; 53] = [
+const WEBP_SEEDS: [&str; 56] = [
     "anmf-payload",
     "bad-magic",
     "chunk-past-end",
@@ -7260,6 +7260,9 @@ const WEBP_SEEDS: [&str; 53] = [
     "meta-exif-two",
     "meta-flags-all-wrong",
     "meta-halted-after-exifs",
+    "meta-riff-nested",
+    "meta-riff-appended",
+    "meta-riff-depth-three",
     "meta-iccp",
     "meta-xmp",
     "meta-xmp-nul-id",
@@ -8156,7 +8159,7 @@ include!("../fuzz/shared/rewrite_webp_invariants.rs");
 /// The committed `rewrite_webp` seed count, pinned: 66 shapes under eight
 /// policy bytes (all five presets, three customs), three shapes under seven
 /// more and a mask each, and two degenerate seeds.
-const REWRITE_WEBP_SEEDS: usize = 554;
+const REWRITE_WEBP_SEEDS: usize = 586;
 
 fn rewrite_webp_seed_files() -> Vec<(String, Vec<u8>)> {
     let dir = root().join("fuzz/seeds/rewrite_webp");

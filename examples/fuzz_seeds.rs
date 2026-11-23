@@ -2404,6 +2404,29 @@ fn rewrite_webp_shapes() -> Vec<(&'static str, Vec<u8>)> {
         ("carrier-list-info", with(0, &[row(b"LIST"), vp8l()])),
         ("carrier-list-adtl", with(0, &[vp8l(), list_adtl])),
         ("carrier-idit", with(0, &[vp8l(), row(b"IDIT")])),
+        // A chunk coded `RIFF` is walked into by ExifTool (SPEC-038 fix
+        // round): nested, a whole second file appended, three levels deep, and
+        // a size that lies (too short, so the walker's next chunk starts
+        // inside it).
+        ("carrier-riff-nested", with(0, &[row(b"RIFF"), vp8l()])),
+        (
+            "carrier-riff-appended",
+            beyond(&[vp8x(0, 8, 8), vp8l()], &[riff(&[row(b"LIST")])]),
+        ),
+        (
+            "carrier-riff-depth-three",
+            with(0, &[vp8l(), chunk(b"RIFF", &webp_carriers::riff_nested(3))]),
+        ),
+        (
+            "carrier-riff-short-size",
+            with(
+                0,
+                &[
+                    raw_chunk(b"RIFF", 6, &webp_carriers::riff_nested(1)),
+                    vp8l(),
+                ],
+            ),
+        ),
         ("carrier-junk-text", with(0, &[vp8l(), junk_text.clone()])),
         (
             "carrier-junk-not-text",

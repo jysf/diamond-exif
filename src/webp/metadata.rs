@@ -110,6 +110,10 @@ pub enum ChunkClass {
     Gps,
     /// `C2PA`, a JUMBF box.
     Jumbf,
+    /// A chunk coded exactly `RIFF` (SPEC-038 fix round, DEC-022 clause 4):
+    /// ExifTool 13.55 walks into it as a nested container, whatever its form
+    /// type, size or depth, and prints every tag it finds inside. Opaque.
+    Riff,
     /// A chunk ExifTool prints as binary structure that is not personal
     /// metadata: `CSET`, `acid`, `ds64`, `fact`, `fmt `, `inst`, `smpl`,
     /// `cue `, `plst`, `gsen`.
@@ -149,6 +153,7 @@ pub fn chunk_class(code: [u8; 4], data: &[u8]) -> Option<ChunkClass> {
         b"ID3 " | b"id3 " => Some(ChunkClass::Id3),
         b"gps0" | b"SGLT" | b"SLLT" => Some(ChunkClass::Gps),
         b"C2PA" => Some(ChunkClass::Jumbf),
+        b"RIFF" => Some(ChunkClass::Riff),
         b"CSET" | b"acid" | b"ds64" | b"fact" | b"fmt " | b"inst" | b"smpl" | b"cue " | b"plst"
         | b"gsen" => Some(ChunkClass::Other),
         _ => None,

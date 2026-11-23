@@ -100,8 +100,11 @@ mod rewrite_webp_invariants {
     /// the type is matched case-sensitively (all 16 spellings of each were
     /// measured; none other than the exact code decoded). `JUNK` is not here:
     /// it is a carrier only when its data is text (see [`junk_is_text`]).
-    pub const TABLE: [([u8; 4], Class); 31] = [
+    pub const TABLE: [([u8; 4], Class); 32] = [
         (*b"LIST", Class::Carrier),
+        // SPEC-038 fix round: ExifTool walks into a chunk coded `RIFF` (any
+        // form type, size or depth) and prints what it finds inside.
+        (*b"RIFF", Class::Carrier),
         (*b"IDIT", Class::Carrier),
         (*b"JUNQ", Class::Carrier),
         (*b"SEAL", Class::Carrier),

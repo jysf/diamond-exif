@@ -261,7 +261,30 @@ pub fn meta_seeds() -> Vec<(&'static str, Vec<u8>)> {
         chunk(b"XMP ", b"<x/>"),
     ]);
     halted.extend_from_slice(b"EXIF\x10");
+    // SPEC-038 fix round: a chunk coded `RIFF` is walked into by ExifTool.
+    let list_info = chunk(
+        b"LIST",
+        &[b"INFO".as_slice(), &chunk(b"IART", b"Jane\0")].concat(),
+    );
+    let nested = |depth: usize| {
+        let mut data = [b"WEBP".as_slice(), &list_info].concat();
+        for _ in 1..depth {
+            data = [b"WEBP".as_slice(), &chunk(b"RIFF", &data)].concat();
+        }
+        chunk(b"RIFF", &data)
+    };
+    let mut appended = riff(&[vp8x(0, 1, 1), vp8l()]);
+    appended.extend_from_slice(&riff(std::slice::from_ref(&list_info)));
     vec![
+        (
+            "meta-riff-nested",
+            riff(&[vp8x(0, 1, 1), nested(1), vp8l()]),
+        ),
+        ("meta-riff-appended", appended),
+        (
+            "meta-riff-depth-three",
+            riff(&[vp8x(0, 1, 1), vp8l(), nested(3)]),
+        ),
         (
             "meta-exif",
             riff(&[vp8x(FLAG_EXIF, 1, 1), vp8l(), exif_chunk(&make)]),

@@ -23,7 +23,7 @@ use exif_core::policy::{StripPolicy, StripSpec};
 use exif_core::write::{PatchKind, RemovalKind, UneditableReason, UnstrippableReason};
 use exif_core::{sanitize, strip, StripError};
 use webp_carriers::{payload, row_chunk, spellings, Payload, JUNK_NOT_TEXT, JUNK_TEXT, ROWS};
-use webp_shapes::{chunk, exif_chunk, vp8l, vp8x, FLAG_EXIF, FLAG_ICC, FLAG_XMP};
+use webp_shapes::{chunk, exif_chunk, raw_chunk, vp8l, vp8x, FLAG_EXIF, FLAG_ICC, FLAG_XMP};
 
 // ── the model ───────────────────────────────────────────────────────────────
 
@@ -549,7 +549,8 @@ fn the_case_grid_removes_only_the_measured_spellings_under_every_preset() {
                 let out = strip(&fx.bytes(), policy).unwrap();
                 let (want, _, _) = expected(&fx, policy.spec());
                 assert_eq!(out.bytes(), want.as_slice(), "{} {policy:?}", fx.name);
-                let survives = out.bytes().windows(4).any(|w| w == sp);
+                // Past the 12-byte header (whose first four bytes are `RIFF`).
+                let survives = out.bytes()[12..].windows(4).any(|w| w == sp);
                 assert_eq!(survives, !known, "{} {policy:?}", fx.name);
             }
         }
@@ -1091,4 +1092,74 @@ fn a_working_strip_and_strippable_false_coexist_for_webp() {
     let pv = exif_core::audit::preview(&a, StripPolicy::AllPii);
     assert!(!pv.strippable());
     assert_eq!(pv.counts().removed, 0);
+}
+
+// ── a chunk coded `RIFF` (SPEC-038 fix round, DEC-022 clause 4) ─────────────
+
+fn riff_of(parts: &[Vec<u8>]) -> Vec<u8> {
+    webp_shapes::riff(parts)
+}
+
+/// ExifTool 13.55 walks into a chunk coded exactly `RIFF`, whatever its form
+/// type, size, depth or position (measured), so the strip removes it under
+/// every preset and the audit reads the file as `unreadable`.
+#[test]
+fn a_riff_chunk_is_an_opaque_carrier_wherever_it_lies_and_however_deep() {
+    let image = vp8l();
+    let nested = |depth| chunk(b"RIFF", &webp_carriers::riff_nested(depth));
+    let bare = riff_of(std::slice::from_ref(&image));
+    // The verifier's two minimal cases: a nested one before the image, and a
+    // whole second file appended after the first.
+    let mut appended = bare.clone();
+    appended.extend_from_slice(&riff_of(&[chunk(b"LIST", &payload(Payload::ListInfo))]));
+    let cases: Vec<(&str, Vec<u8>)> = vec![
+        ("nested before", riff_of(&[nested(1), image.clone()])),
+        ("nested after", riff_of(&[image.clone(), nested(1)])),
+        ("depth 3", riff_of(&[image.clone(), nested(3)])),
+        ("depth 12", riff_of(&[image.clone(), nested(12)])),
+        ("appended second file", appended),
+        (
+            "form type AVI",
+            riff_of(&[image.clone(), chunk(b"RIFF", b"AVI LIST\0\0\0\0")]),
+        ),
+        (
+            "no form type",
+            riff_of(&[image.clone(), chunk(b"RIFF", b"LI")]),
+        ),
+    ];
+    for (name, input) in &cases {
+        // A non-empty chunk the audit cannot read is never `clean`.
+        let a = audit(input);
+        assert!(a.health().failed_blocks >= 1, "{name}: failed block");
+        for policy in StripPolicy::PRESETS {
+            let out = strip(input, policy).unwrap_or_else(|e| panic!("{name} {policy:?}: {e:?}"));
+            assert!(
+                !out.bytes()[4..].windows(4).any(|w| w == b"RIFF"),
+                "{name} {policy:?}: a RIFF chunk is still there"
+            );
+            assert_eq!(
+                audit(out.bytes()).health().failed_blocks,
+                0,
+                "{name} {policy:?}"
+            );
+        }
+    }
+    // A size too short to hold the nested file leaves the walker inside the
+    // chunk with a bogus next chunk that runs past the end: refused, fail
+    // closed (DEC-022 clause 8), never a silent partial strip.
+    let lying = riff_of(&[
+        raw_chunk(b"RIFF", 6, &webp_carriers::riff_nested(1)),
+        image.clone(),
+    ]);
+    assert!(matches!(
+        strip(&lying, StripPolicy::Everything),
+        Err(StripError::Unstrippable { .. })
+    ));
+    // Not walked by ExifTool: `RF64`, `RIFX`, lower-case spellings and the
+    // other case spellings are kept (measured: they print `Unknown_*` only).
+    for code in [b"RF64", b"RIFX", b"riff", b"Riff", b"rIFF", b"RIFf"] {
+        let input = riff_of(&[image.clone(), chunk(code, &webp_carriers::riff_nested(1))]);
+        let out = strip(&input, StripPolicy::Everything).unwrap();
+        assert_eq!(out.bytes(), input.as_slice(), "{code:?} must be kept");
+    }
 }
