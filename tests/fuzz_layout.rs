@@ -7456,7 +7456,7 @@ fn webp_metadata_model_red_proofs() {
         o.regions.pop();
     }));
     assert!(red(&rich, |o| {
-        o.regions[0].0 = !o.regions[0].0;
+        o.regions[0].0 ^= 1;
     }));
     // A missed Exif block, and a shifted tiff_at.
     assert!(red(&two, |o| {

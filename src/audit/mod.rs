@@ -138,10 +138,13 @@ pub enum RegionKind {
     Time,
     /// A PNG chunk whose data ExifTool reads as Exif or XMP/XML tags and this
     /// library does not decode (`zxIf`, `tXMP`, `meTa`, ...; SPEC-037, DEC-020
-    /// clarification). Present, not parsed, may hold GPS.
+    /// clarification). Present, not parsed, may hold GPS. For a WebP: a RIFF
+    /// chunk ExifTool decodes into tags (`LIST`, `IDIT`, a text `JUNK`, `ID3 `,
+    /// `gps0`, ...; SPEC-038).
     Carrier,
     /// A PNG chunk ExifTool prints as an opaque binary tag that is neither
-    /// Exif nor XMP nor image structure (`dSIG`, `cpIp`, `gIFx`, ...).
+    /// Exif nor XMP nor image structure (`dSIG`, `cpIp`, `gIFx`, ...); for a
+    /// WebP, a RIFF structure chunk (`fmt `, `smpl`, `cue `, ...).
     OtherChunk,
 }
 
@@ -634,8 +637,8 @@ fn audit_png(data: &[u8]) -> FileAudit<'_> {
     )
 }
 
-/// The audit of a WebP (DEC-020): every `EXIF` block, then the located `XMP `
-/// and `ICCP` regions.
+/// The audit of a WebP (DEC-020): every `EXIF` block, then the located `XMP `,
+/// `ICCP` and carrier-chunk regions (SPEC-038, DEC-022 clause 4).
 fn audit_webp(data: &[u8]) -> FileAudit<'_> {
     let Ok(meta) = webp::read(data) else {
         return unreadable(ContainerKind::Webp);
@@ -676,6 +679,20 @@ fn audit_webp(data: &[u8]) -> FileAudit<'_> {
         let (kind, category) = match *region {
             WebpRegion::Xmp { .. } => (RegionKind::Xmp, Category::Xmp),
             WebpRegion::Icc { .. } => (RegionKind::Icc, Category::Icc),
+            WebpRegion::Chunk { class, data, .. } => {
+                // A non-empty chunk ExifTool reads as XMP or XML can hold GPS
+                // the audit does not see: a failed block, as for a PNG
+                // `tXMP` (DEC-020 clause 5, SPEC-038).
+                if class == webp::ChunkClass::XmlCarrier && !data.is_empty() {
+                    failed = failed.saturating_add(1);
+                }
+                let kind = match class {
+                    webp::ChunkClass::Jumbf => RegionKind::Jumbf,
+                    webp::ChunkClass::Other => RegionKind::OtherChunk,
+                    _ => RegionKind::Carrier,
+                };
+                (kind, region_category(kind))
+            }
         };
         let len = region.data().len();
         let segment = chunk_index(&offsets, region.offset(), chunks.len());
