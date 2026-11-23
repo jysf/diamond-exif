@@ -1,4 +1,5 @@
-//! The writer foundation and the JPEG strip (SPEC-020, DEC-013).
+//! The writer foundation, the JPEG strip and the PNG strip (SPEC-020, SPEC-037,
+//! DEC-013, DEC-021).
 //!
 //! [`strip`] is a pure function from input bytes and a [`StripPolicy`] to new
 //! bytes or a typed refusal. It never returns a file that still holds a finding
@@ -26,6 +27,7 @@
 mod exif;
 mod jpeg;
 mod plan;
+mod png;
 mod tiff;
 mod verify;
 
@@ -62,8 +64,22 @@ pub enum RemovalKind {
     Comment,
     /// An unrecognised APPn segment.
     OtherApp,
-    /// Bytes after the `EOI` that no embedded image accounts for.
+    /// Bytes after the `EOI` that no embedded image accounts for, or (PNG) the
+    /// bytes after `IEND`.
     Trailer,
+    /// A PNG `tEXt`, `zTXt` or `iTXt` chunk that is not XMP and not a raw
+    /// profile (SPEC-037).
+    Text,
+    /// A PNG `tIME` chunk.
+    Time,
+    /// An ImageMagick `Raw profile type ...` PNG text chunk.
+    RawProfile,
+    /// A PNG chunk whose Exif or XMP the library does not decode (`zxIf`,
+    /// `tXMP`, `meTa`, ...), removed with the tag categories (DEC-021 clause 4).
+    Carrier,
+    /// A PNG chunk that is an opaque binary tag and not metadata for any preset
+    /// (`dSIG`, `cpIp`, `gIFx`, ...).
+    OtherChunk,
 }
 
 /// One removed region, in **input** coordinates.
@@ -95,6 +111,9 @@ pub enum PatchKind {
     /// Bytes overwritten with zeros: a deleted entry's out-of-line value, a
     /// removed IFD's table, a removed thumbnail.
     Scrub,
+    /// The CRC-32 of a PNG `eXIf` chunk whose data was edited (SPEC-037),
+    /// computed over the chunk type and the edited data.
+    ChunkCrc,
 }
 
 /// One patched range, in **output** coordinates.
@@ -255,6 +274,9 @@ pub enum UnstrippableReason {
     TooManyIssues,
     /// A segment range overflowed `usize` (not reachable from a real slice).
     RangeOverflow,
+    /// A PNG chunk, or fewer bytes than one chunk's frame, runs past the end of
+    /// the input: the bytes after it were never audited (SPEC-037).
+    ChunkPastEnd,
 }
 
 /// Why an Exif entry edit is refused (DEC-013 amendment B.4).
@@ -354,14 +376,9 @@ impl std::error::Error for StripError {}
 pub fn strip(data: &[u8], policy: StripPolicy) -> Result<Stripped, StripError> {
     let sniffed = sniff(data);
     match sniffed {
-        Sniffed::Jpeg | Sniffed::Tiff => {}
+        Sniffed::Jpeg | Sniffed::Tiff | Sniffed::Png => {}
         Sniffed::Empty | Sniffed::Unknown => return Err(StripError::NotJpeg),
         // Audited (DEC-020) but not strippable: refuse, with the real kind.
-        Sniffed::Png => {
-            return Err(StripError::Unsupported {
-                kind: ContainerKind::Png,
-            })
-        }
         Sniffed::Webp => {
             return Err(StripError::Unsupported {
                 kind: ContainerKind::Webp,
@@ -374,6 +391,10 @@ pub fn strip(data: &[u8], policy: StripPolicy) -> Result<Stripped, StripError> {
         }
     }
     let spec = policy.spec();
+    if sniffed == Sniffed::Png {
+        let planned = png::plan(data, spec)?;
+        return finish(data, spec, planned, Format::Png);
+    }
     if sniffed == Sniffed::Tiff {
         let planned = tiff::plan(data, spec)?;
         return finish(data, spec, planned, Format::Tiff);
@@ -387,6 +408,7 @@ pub fn strip(data: &[u8], policy: StripPolicy) -> Result<Stripped, StripError> {
 enum Format {
     Jpeg,
     Tiff,
+    Png,
 }
 
 /// Apply a plan, run the self-check (always, an empty plan included: the
@@ -431,10 +453,19 @@ fn finish(
         .collect();
     scrubs.sort_by_key(|s| s.offset);
     let zeroed: Vec<(usize, usize)> = scrubs.iter().map(|s| (s.offset, s.len)).collect();
-    let checked = match format {
-        Format::Jpeg => verify::verify(data, &bytes, spec, &zeroed),
-        Format::Tiff => verify::verify_tiff(data, &bytes, spec, &zeroed),
-    };
+    let checked =
+        match format {
+            Format::Jpeg => verify::verify(data, &bytes, spec, &zeroed),
+            Format::Tiff => verify::verify_tiff(data, &bytes, spec, &zeroed),
+            Format::Png => {
+                let removed = planned.plan.merged_removals(data.len()).map_err(|_| {
+                    StripError::VerifyFailed {
+                        check: Check::MpfFields,
+                    }
+                })?;
+                verify::verify_png(data, &bytes, spec, &zeroed, &removed)
+            }
+        };
     checked.map_err(|check| StripError::VerifyFailed { check })?;
     Ok(Stripped {
         bytes,

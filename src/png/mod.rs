@@ -34,6 +34,7 @@ pub use metadata::{
     MAX_PNG_EXIF_BLOCKS, MAX_PNG_REGIONS, MAX_PNG_TRAILER_CHUNKS,
 };
 
+pub(crate) use crc::crc32_parts;
 
 use crate::error::Error;
 

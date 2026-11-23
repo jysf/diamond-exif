@@ -569,3 +569,169 @@ fn verify_tiff_accepts_the_identity_and_rejects_a_changed_header() {
         );
     }
 }
+
+// ── the PNG self-check (SPEC-037, DEC-021 clause 6) ─────────────────────────
+
+fn png_chunk(ty: &[u8; 4], data: &[u8]) -> Vec<u8> {
+    let mut v = u32::try_from(data.len()).unwrap().to_be_bytes().to_vec();
+    v.extend_from_slice(ty);
+    v.extend_from_slice(data);
+    v.extend_from_slice(&crate::png::crc32_parts(ty, data).to_be_bytes());
+    v
+}
+
+fn png(parts: &[Vec<u8>]) -> Vec<u8> {
+    let mut v = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    let mut ihdr = vec![0, 0, 0, 1, 0, 0, 0, 1];
+    ihdr.extend_from_slice(&[8, 0, 0, 0, 0]);
+    v.extend_from_slice(&png_chunk(b"IHDR", &ihdr));
+    for p in parts {
+        v.extend_from_slice(p);
+    }
+    v
+}
+
+fn png_idat() -> Vec<u8> {
+    png_chunk(b"IDAT", &[0x78, 0x01, 0x63, 0x60, 0, 0])
+}
+
+fn png_iend() -> Vec<u8> {
+    png_chunk(b"IEND", &[])
+}
+
+fn png_text(keyword: &[u8], value: &[u8]) -> Vec<u8> {
+    let mut d = keyword.to_vec();
+    d.push(0);
+    d.extend_from_slice(value);
+    png_chunk(b"tEXt", &d)
+}
+
+fn verify_png(
+    input: &[u8],
+    output: &[u8],
+    spec: StripSpec,
+    removed: &[core::ops::Range<usize>],
+) -> Result<(), Check> {
+    super::verify_png(input, output, spec, &[], removed)
+}
+
+/// One removed range (a one-element array of ranges trips clippy).
+fn rm(start: usize, len: usize) -> Vec<core::ops::Range<usize>> {
+    vec![core::ops::Range {
+        start,
+        end: start + len,
+    }]
+}
+
+/// Offset of the first chunk after `IHDR` in the PNGs above.
+const AFTER_IHDR: usize = 8 + 25;
+
+#[test]
+fn png_a_clean_removal_passes_every_check() {
+    let author = png_text(b"Author", b"x");
+    let input = png(&[author.clone(), png_idat(), png_iend()]);
+    let output = png(&[png_idat(), png_iend()]);
+    let removed = rm(AFTER_IHDR, author.len());
+    assert_eq!(
+        verify_png(&input, &output, spec(&[Category::Authorship]), &removed),
+        Ok(())
+    );
+}
+
+#[test]
+fn png_a_chunk_of_a_removed_category_left_fails_check_preview() {
+    let input = png(&[png_text(b"Author", b"x"), png_idat(), png_iend()]);
+    assert_eq!(
+        verify_png(&input, &input, spec(&[Category::Authorship]), &[]),
+        Err(Check::Preview)
+    );
+}
+
+#[test]
+fn png_a_carrier_left_under_a_preset_fails_check_preview_though_its_category_is_kept() {
+    // `OtherSegment` is not in the policy, but a raw profile is removed by
+    // every policy with a tag category (DEC-021 clause 4).
+    let raw = png_text(b"Raw profile type exif", b"x");
+    let input = png(&[raw.clone(), png_idat(), png_iend()]);
+    let gps = spec(&[Category::Gps]);
+    assert_eq!(verify_png(&input, &input, gps, &[]), Err(Check::Preview));
+    // Removed, the self-check passes although the category is not in the
+    // policy: the exemption.
+    let output = png(&[png_idat(), png_iend()]);
+    assert_eq!(
+        verify_png(&input, &output, gps, &rm(AFTER_IHDR, raw.len())),
+        Ok(())
+    );
+    // A policy with no tag category leaves the carrier: keeping it is right.
+    assert_eq!(
+        verify_png(&input, &input, spec(&[Category::Icc]), &[]),
+        Ok(())
+    );
+}
+
+#[test]
+fn png_a_removed_kept_finding_fails_check_kept() {
+    let title = png_text(b"Title", b"x");
+    let input = png(&[title.clone(), png_idat(), png_iend()]);
+    let output = png(&[png_idat(), png_iend()]);
+    assert_eq!(
+        verify_png(
+            &input,
+            &output,
+            spec(&[Category::Authorship]),
+            &rm(AFTER_IHDR, title.len())
+        ),
+        Err(Check::Kept)
+    );
+}
+
+#[test]
+fn png_a_changed_image_chunk_fails_check_scan() {
+    let author = png_text(b"Author", b"x");
+    let input = png(&[author.clone(), png_idat(), png_iend()]);
+    let other = png_chunk(b"IDAT", &[0x78, 0x01, 0x63, 0x60, 0, 1]);
+    let output = png(&[other, png_iend()]);
+    assert_eq!(
+        verify_png(
+            &input,
+            &output,
+            spec(&[Category::Authorship]),
+            &rm(AFTER_IHDR, author.len())
+        ),
+        Err(Check::Scan)
+    );
+}
+
+#[test]
+fn png_a_kept_chunk_with_a_worse_crc_fails_check_scan() {
+    let title = png_text(b"Title", b"x");
+    let input = png(&[title.clone(), png_idat(), png_iend()]);
+    let mut output = input.clone();
+    // Break the CRC of the kept text chunk (the policy edits nothing there).
+    let crc_at = AFTER_IHDR + title.len() - 1;
+    output[crc_at] ^= 0xFF;
+    assert_eq!(
+        verify_png(&input, &output, spec(&[Category::Authorship]), &[]),
+        Err(Check::Scan)
+    );
+}
+
+#[test]
+fn png_bytes_after_iend_are_compared_by_count_less_what_was_removed() {
+    let author = png_text(b"Author", b"x");
+    let mut input = png(&[png_idat(), png_iend()]);
+    let tail_at = input.len();
+    input.extend_from_slice(&author);
+    input.extend_from_slice(b"tail");
+    let mut output = png(&[png_idat(), png_iend()]);
+    output.extend_from_slice(b"tail");
+    let removed = rm(tail_at, author.len());
+    assert_eq!(
+        verify_png(&input, &output, spec(&[Category::Authorship]), &removed),
+        Ok(())
+    );
+    // The tail changed: refused.
+    let mut bad = png(&[png_idat(), png_iend()]);
+    bad.extend_from_slice(b"TAIL");
+    assert!(verify_png(&input, &bad, spec(&[Category::Authorship]), &removed).is_err());
+}
