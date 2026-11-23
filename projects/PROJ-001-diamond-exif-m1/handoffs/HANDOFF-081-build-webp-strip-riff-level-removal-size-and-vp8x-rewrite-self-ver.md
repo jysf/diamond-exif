@@ -58,7 +58,7 @@ handback:
   pr: null
   completed_at: 2026-11-23               # YYYY-MM-DD
   notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-22
 ---
 
 # HANDOFF-081: WebP strip, PART A (measurement, reader/audit extension, planner, self-check)

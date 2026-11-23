@@ -6,7 +6,7 @@
 task:
   id: SPEC-038
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: verify  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -68,11 +68,31 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: 900000
-  sessions: []
+  sessions:
+    - cycle: build
+      handoff: HANDOFF-081
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 401638
+      estimated_usd: 2.65
+      duration_minutes: null
+      recorded_at: 2026-11-22
+      notes: "transcribed from HANDOFF-081 by handback-sync"
+    - cycle: build
+      handoff: HANDOFF-082
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 349393
+      estimated_usd: 2.31
+      duration_minutes: null
+      recorded_at: 2026-11-22
+      notes: "tokens_total is null: the implementer harness reports no token count to the agent; the orchestrator fills it from the harness result"
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 751031
+    estimated_usd: 4.96
+    session_count: 2
 ---
 
 # SPEC-038: WebP strip: RIFF-level removal, size and VP8X rewrite, self-verify, rewrite_webp fuzz

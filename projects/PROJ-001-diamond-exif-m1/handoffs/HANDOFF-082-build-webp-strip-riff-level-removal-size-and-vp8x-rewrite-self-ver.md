@@ -50,15 +50,15 @@ handback:
   agent: claude-sonnet-5-5         # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  basis: agent-result                      # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 349393               # REAL combined count — what cost-audit reads
+  estimated_usd: 2.31              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
   branch: claude/spec-038-part-b
   pr: null
   completed_at: 2026-11-22
   notes: "tokens_total is null: the implementer harness reports no token count to the agent; the orchestrator fills it from the harness result"
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-22
 ---
 
 # HANDOFF-082: WebP strip, PART B (rewrite_webp fuzz target, seeds, pins, plants, CI, live ExifTool test, README, DEC fill)
@@ -215,8 +215,8 @@ Mirror what you put in the `handback:` front-matter, and say where the number
 came from. **This is the number that lands in the spec** — the orchestrator
 transcribes it via `just handback-sync`, it does not estimate it.
 
-- **Tokens (total):** null (the harness gives the agent no count)
-- **Estimated USD:** null
+- **Tokens (total):** 349393 (harness subagent_tokens)
+- **Estimated USD:** 2.31
 - **Duration (minutes):** not measured
 - **Source of the number:** none available
 
