@@ -1832,6 +1832,353 @@ fn rewrite_seeds() -> Vec<(String, Vec<u8>)> {
     out
 }
 
+/// SPEC-037: the PNG shapes of `rewrite_png`, one per DEC-021 rule: each
+/// category of text, `iCCP`, `tIME`, `caBX`, `eXIf` (whole, edit, unparseable,
+/// three places), raw profiles in the three text chunks, the carriers, the
+/// opaque chunks, a trailer (chunks, bytes, a located chunk that makes the
+/// whole-trailer removal an overlap), chunks after `IDAT` and after `IEND`,
+/// empty chunks, a kept bad CRC, halted walks, a missing `IEND`, structure.
+fn rewrite_png_shapes() -> Vec<(&'static str, Vec<u8>)> {
+    let w = Writer { big: false };
+    let gps = tiff_gps_and_thumbnail(&w);
+    let c = |ty: &[u8; 4], d: &[u8]| png_shapes::chunk(ty, d);
+    let tk = |kw: &[u8]| png_shapes::text(kw, b"canary");
+    let xmp: &[u8] = b"<x:xmpmeta/>";
+    let phys = [0u8, 0, 0xB, 0x13, 0, 0, 0xB, 0x13, 1];
+    let time = [7u8, 228, 1, 2, 3, 4, 5];
+    // IHDR, `pre`, IDAT, `post`, IEND, `trail`, `tail`.
+    let shaped = |pre: &[Vec<u8>], post: &[Vec<u8>], trail: &[Vec<u8>], tail: &[u8]| {
+        let mut all = vec![png_shapes::ihdr()];
+        all.extend_from_slice(pre);
+        all.push(png_shapes::idat());
+        all.extend_from_slice(post);
+        all.push(png_shapes::iend());
+        all.extend_from_slice(trail);
+        let mut v = png_shapes::png(&all);
+        v.extend_from_slice(tail);
+        v
+    };
+    let around = |parts: &[Vec<u8>]| shaped(parts, &[], &[], b"");
+    let kitchen: Vec<Vec<u8>> = vec![
+        tk(b"Author"),
+        tk(b"Copyright"),
+        tk(b"Creation Time"),
+        tk(b"Software"),
+        tk(b"Title"),
+        png_shapes::ztxt(b"Comment", b"\x78\x01canary"),
+        png_shapes::itxt(b"Description", 0, b"", b"", b"canary"),
+        png_shapes::itxt(b"XML:com.adobe.xmp", 0, b"", b"", xmp),
+        png_shapes::iccp(b"canary", 0, b"\x78\x01xx"),
+        c(b"tIME", &time),
+        c(b"caBX", b"\0\0\0\x08jumb"),
+        png_shapes::exif_chunk(&gps),
+        png_shapes::raw_profile("exif", b"\n4\n68\n"),
+        c(b"zxIf", b"canary payload"),
+        c(b"tXMP", xmp),
+        c(b"dSIG", b"canary"),
+        c(b"pHYs", &phys),
+    ];
+    let mut kitchen_trailer = kitchen.clone();
+    kitchen_trailer.push(png_shapes::exif_chunk(&gps));
+    let mut v: Vec<(&'static str, Vec<u8>)> = vec![
+        ("minimal", around(&[])),
+        (
+            "text-authorship",
+            around(&[tk(b"Author"), tk(b"Copyright"), tk(b"artist")]),
+        ),
+        (
+            "text-timestamps",
+            around(&[tk(b"Creation Time"), tk(b"create-date")]),
+        ),
+        ("text-software", around(&[tk(b"Software"), tk(b"software")])),
+        (
+            "text-freetext",
+            around(&[tk(b"Title"), tk(b"AUTHOR"), tk(b"Comment")]),
+        ),
+        (
+            "text-compressed",
+            around(&[
+                png_shapes::ztxt(b"Comment", b"\x78\x01canary"),
+                png_shapes::itxt(b"Description", 1, b"", b"", b"\x78\x01c"),
+            ]),
+        ),
+        (
+            "xmp-itxt",
+            around(&[png_shapes::itxt(b"XML:com.adobe.xmp", 0, b"", b"", xmp)]),
+        ),
+        (
+            "xmp-text",
+            around(&[png_shapes::text(b"XML:com.adobe.xmp", xmp)]),
+        ),
+        (
+            "xmp-tagged-is-text",
+            around(&[png_shapes::itxt(b"XML:com.adobe.xmp", 0, b"en", b"", xmp)]),
+        ),
+        (
+            "text-unlocated",
+            around(&[c(b"tEXt", b"nonul"), c(b"zTXt", b"kw\0")]),
+        ),
+        (
+            "iccp",
+            around(&[png_shapes::iccp(b"canary", 0, b"\x78\x01xx")]),
+        ),
+        (
+            "iccp-empty-and-unlocated",
+            around(&[png_shapes::iccp(b"n", 0, b""), c(b"iCCP", b"nonul")]),
+        ),
+        (
+            "time",
+            around(&[c(b"tIME", &time), c(b"tIME", &[]), c(b"tIME", &[1; 12])]),
+        ),
+        ("jumbf", around(&[c(b"caBX", b"\0\0\0\x08jumb")])),
+        ("exif-gps", around(&[png_shapes::exif_chunk(&gps)])),
+        (
+            "exif-make",
+            around(&[png_shapes::exif_chunk(&png_shapes::exif_with_make())]),
+        ),
+        (
+            "exif-unparseable",
+            around(&[png_shapes::exif_chunk(b"not a tiff at all")]),
+        ),
+        (
+            "exif-three-places",
+            shaped(
+                &[png_shapes::exif_chunk(&gps)],
+                &[png_shapes::exif_chunk(&gps)],
+                &[png_shapes::exif_chunk(&gps)],
+                b"",
+            ),
+        ),
+        (
+            "exif-and-text",
+            around(&[png_shapes::exif_chunk(&gps), tk(b"Author"), tk(b"Title")]),
+        ),
+        (
+            "raw-profile-text",
+            around(&[png_shapes::raw_profile("exif", b"\n4\n68\n")]),
+        ),
+        (
+            "raw-profile-ztxt-itxt",
+            around(&[
+                png_shapes::ztxt(b"Raw profile type xmp", b"\x78\x01x"),
+                png_shapes::itxt(b"Raw profile type iptc", 0, b"", b"", b"\n4\n"),
+                png_shapes::text(b"raw profile type exif", b"x"),
+            ]),
+        ),
+        // The 60 s smoke's second finding: an `Icc`-category entry inside an
+        // `eXIf` chunk goes with the chunk under `All`, which keeps `Icc`.
+        (
+            "exif-icc-entry",
+            around(&[png_shapes::exif_chunk(&{
+                let mut d = b"MM\x00\x2A\x00\x00\x00\x08".to_vec();
+                d.extend_from_slice(&[0, 2, 0x01, 0x0F, 0, 2, 0, 0, 0, 4]);
+                d.extend_from_slice(b"abc\0");
+                d.extend_from_slice(&[0x87, 0x73, 0, 4, 0, 0, 0, 1, 0, 0, 0, 0x3D]);
+                d.extend_from_slice(&[0, 0, 0, 0]);
+                d
+            })]),
+        ),
+        // The 60 s smoke's first finding: a `zTXt` whose body is empty (a
+        // method byte and nothing after) is still located, so it is a raw profile.
+        (
+            "raw-profile-ztxt-method-only",
+            around(&[c(b"zTXt", b"Raw profile type e exif\0x")]),
+        ),
+        (
+            "raw-wrong-case-is-text",
+            around(&[png_shapes::text(b"Raw Profile Type exif", b"x")]),
+        ),
+        (
+            "carrier-zxif",
+            around(&[
+                c(b"zxIf", b"canary payload"),
+                c(b"zxif", b"x"),
+                c(b"exif", b"y"),
+            ]),
+        ),
+        ("carrier-txmp", around(&[c(b"tXMP", xmp)])),
+        (
+            "carrier-meta-seal",
+            around(&[c(b"meTa", xmp), c(b"seAl", xmp)]),
+        ),
+        ("carrier-case-sensitive", around(&[c(b"txmp", xmp)])),
+        (
+            "other-dsig",
+            around(&[c(b"dSIG", b"canary"), c(b"cpIp", b"c"), c(b"fRAc", b"f")]),
+        ),
+        (
+            "other-gifx",
+            around(&[c(b"gIFx", b"g"), c(b"gIFg", b"g"), c(b"gIFt", b"t")]),
+        ),
+        (
+            "structure",
+            around(&[
+                c(b"pHYs", &phys),
+                c(b"gAMA", &[0, 1, 0xB1, 0x8F]),
+                c(b"abCd", b"unknown"),
+            ]),
+        ),
+        (
+            "after-idat",
+            shaped(&[], &[tk(b"Author"), c(b"tIME", &time)], &[], b""),
+        ),
+        (
+            "after-iend",
+            shaped(
+                &[],
+                &[],
+                &[tk(b"Author"), c(b"tIME", &time), c(b"dSIG", b"d")],
+                b"",
+            ),
+        ),
+        (
+            "after-iend-structure",
+            shaped(&[], &[], &[c(b"abCd", b"unknown")], b""),
+        ),
+        (
+            "after-iend-exif",
+            shaped(&[], &[], &[png_shapes::exif_chunk(&gps)], b""),
+        ),
+        (
+            "after-iend-icc-xmp",
+            shaped(
+                &[],
+                &[],
+                &[
+                    png_shapes::iccp(b"n", 0, b"xx"),
+                    png_shapes::text(b"XML:com.adobe.xmp", xmp),
+                ],
+                b"",
+            ),
+        ),
+        (
+            "after-iend-carriers",
+            shaped(
+                &[],
+                &[],
+                &[c(b"zxIf", b"z"), png_shapes::raw_profile("exif", b"x")],
+                b"",
+            ),
+        ),
+        ("trailer-bytes", shaped(&[], &[], &[], b"trailing bytes")),
+        (
+            "trailer-chunk-and-bytes",
+            shaped(&[], &[], &[tk(b"Title")], b"junk"),
+        ),
+        ("kitchen-sink", around(&kitchen)),
+        (
+            "kitchen-sink-trailer",
+            shaped(&[], &[], &kitchen_trailer, b"tail"),
+        ),
+        (
+            "kitchen-sink-everywhere",
+            shaped(&kitchen, &kitchen, &kitchen_trailer, b"\0\0\0"),
+        ),
+    ];
+    // Empty chunks of every kind the writer has a rule for.
+    let empties = vec![
+        c(b"tEXt", &[]),
+        c(b"zTXt", &[]),
+        c(b"iTXt", &[]),
+        c(b"iCCP", &[]),
+        c(b"tIME", &[]),
+        c(b"eXIf", &[]),
+        c(b"caBX", &[]),
+        c(b"zxIf", &[]),
+    ];
+    v.push(("empty-chunks", around(&empties)));
+    // A kept chunk with a wrong CRC stays wrong; an edited `eXIf` gets a right one.
+    v.push((
+        "bad-crc-kept",
+        around(&[
+            png_shapes::chunk_with_crc(b"tEXt", b"Title\0keep", 0xDEAD_BEEF),
+            png_shapes::chunk_with_crc(b"tEXt", b"Author\0gone", 0xDEAD_BEEF),
+            png_shapes::chunk_with_crc(b"pHYs", &phys, 1),
+        ]),
+    ));
+    v.push((
+        "bad-crc-exif-edit",
+        around(&[png_shapes::chunk_with_crc(b"eXIf", &gps, 0xDEAD_BEEF)]),
+    ));
+    // Walks the writer refuses, or does not: a chunk past the end (after IDAT
+    // and early), a bad length word, a missing IEND, a stub of
+    // eleven bytes.
+    let mut past = png_shapes::png(&[png_shapes::ihdr(), tk(b"Author"), png_shapes::idat()]);
+    past.extend_from_slice(&[0, 0, 3, 0xE8, b't', b'E', b'X', b't', 1, 2]);
+    v.push(("walk-chunk-past-end", past));
+    let mut past_mid = png_shapes::png(&[png_shapes::ihdr(), tk(b"Author")]);
+    past_mid.extend_from_slice(&[0, 0, 3, 0xE8, b'I', b'D', b'A', b'T', 1, 2]);
+    v.push(("walk-halted-mid", past_mid));
+    v.push((
+        "walk-bad-length",
+        png_shapes::png(&[
+            png_shapes::ihdr(),
+            tk(b"Author"),
+            png_shapes::raw_chunk(0x8000_0000, b"abCd", b"", 0),
+        ]),
+    ));
+    v.push((
+        "walk-no-iend",
+        png_shapes::png(&[png_shapes::ihdr(), tk(b"Author"), png_shapes::idat()]),
+    ));
+    let mut stub = around(&[]);
+    stub.extend_from_slice(&[0; 11]);
+    v.push(("walk-stub-11-bytes", stub));
+    v.push(("signature-only", png_shapes::png(&[])));
+    v
+}
+
+/// SPEC-037: the seeds of `rewrite_png`. Byte 0 selects the policy (see
+/// `fuzz/shared/rewrite_png_invariants.rs`): 4 `Everything`, 3 `All`, 0 `Gps`,
+/// 8 `Custom(OtherSegment)`, 9 `Custom(Icc)`, 11 `Custom(Gps)` for every
+/// shape; three shapes also under every other policy byte and a mask.
+fn rewrite_png_seeds() -> Vec<(String, Vec<u8>)> {
+    let mut out = Vec::new();
+    let policies: [(&str, u8); 6] = [
+        ("everything", 4),
+        ("all", 3),
+        ("gps", 0),
+        ("other-segment", 8),
+        ("icc", 9),
+        ("gps-only", 11),
+    ];
+    let shapes = rewrite_png_shapes();
+    for (name, bytes) in &shapes {
+        for (label, head) in policies {
+            let mut v = vec![head];
+            v.extend_from_slice(bytes);
+            out.push((format!("{label}-{name}"), v));
+        }
+    }
+    let rest: [(&str, u8); 9] = [
+        ("gps-and-device", 1),
+        ("all-pii", 2),
+        ("none", 5),
+        ("xmp", 10),
+        ("jumbf", 12),
+        ("freetext", 13),
+        ("timestamps", 14),
+        ("software", 15),
+        ("default", 16),
+    ];
+    for sink in ["kitchen-sink", "kitchen-sink-trailer", "exif-three-places"] {
+        let bytes = &shapes.iter().find(|(n, _)| *n == sink).expect("a shape").1;
+        for (label, head) in rest {
+            let mut v = vec![head];
+            v.extend_from_slice(bytes);
+            out.push((format!("{label}-{sink}"), v));
+        }
+        // A mask: bits 2, 3 and 14 of `Category::ALL`.
+        let mut v = vec![6, 0x0C, 0x40];
+        v.extend_from_slice(bytes);
+        out.push((format!("mask-{sink}"), v));
+    }
+    // Degenerate: a policy byte alone, a mask cut short.
+    out.push(("policy-byte-only".to_string(), vec![7]));
+    out.push(("mask-cut-short".to_string(), vec![6, 0x40]));
+    out
+}
+
 fn main() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/tiff_ifd");
     fs::create_dir_all(&dir).expect("create seeds dir");
@@ -1949,6 +2296,14 @@ fn main() {
         fs::write(tdir.join(name), bytes).expect("write seed");
     }
     println!("wrote {} seeds to {}", tseeds.len(), tdir.display());
+
+    let ndir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/rewrite_png");
+    fs::create_dir_all(&ndir).expect("create seeds dir");
+    let nseeds = rewrite_png_seeds();
+    for (name, bytes) in &nseeds {
+        fs::write(ndir.join(name), bytes).expect("write seed");
+    }
+    println!("wrote {} seeds to {}", nseeds.len(), ndir.display());
 
     let cdir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/cli_args");
     fs::create_dir_all(&cdir).expect("create seeds dir");

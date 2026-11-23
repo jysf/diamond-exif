@@ -1394,7 +1394,7 @@ fn audit_target_is_declared_and_runs_in_ci() {
     let ci = read(".github/workflows/ci.yml");
     assert!(
         ci.contains(
-            "target: [tiff_ifd, jpeg_segments, rewrite_jpeg, rewrite_tiff, audit, audit_render, cli_args, png_chunks, webp_riff]"
+            "target: [tiff_ifd, jpeg_segments, rewrite_jpeg, rewrite_tiff, rewrite_png, audit, audit_render, cli_args, png_chunks, webp_riff]"
         ),
         "the fuzz-smoke matrix must run the audit target"
     );
@@ -7477,4 +7477,669 @@ fn webp_metadata_model_red_proofs() {
     assert!(red(&halted, |o| {
         o.issues.push((exif_core::Error::MetadataWithoutVp8x, 12));
     }));
+}
+
+// ── SPEC-037: the `rewrite_png` target (the PNG strip writer, DEC-021) ───────
+
+include!("../fuzz/shared/rewrite_png_invariants.rs");
+
+/// The committed `rewrite_png` seed count, pinned: 56 shapes under six policy
+/// bytes, three shapes under ten more, and two degenerate seeds.
+const REWRITE_PNG_SEEDS: usize = 338;
+
+fn rewrite_png_seed_files() -> Vec<(String, Vec<u8>)> {
+    let dir = root().join("fuzz/seeds/rewrite_png");
+    let mut v: Vec<(String, Vec<u8>)> = fs::read_dir(&dir)
+        .expect("read rewrite_png seeds")
+        .map(|e| {
+            let p = e.unwrap().path();
+            (
+                p.file_name().unwrap().to_string_lossy().into_owned(),
+                fs::read(&p).unwrap(),
+            )
+        })
+        .collect();
+    v.sort();
+    v
+}
+
+/// A big-endian TIFF with Make, Orientation and a GPS IFD (latitude), 104 bytes.
+fn png_exif_gps() -> Vec<u8> {
+    let mut d = b"MM\x00\x2A\x00\x00\x00\x08".to_vec();
+    d.extend_from_slice(&[0, 3]);
+    d.extend_from_slice(&[0x01, 0x0F, 0, 2, 0, 0, 0, 4]);
+    d.extend_from_slice(b"abc\0");
+    d.extend_from_slice(&[0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 1, 0, 0]);
+    d.extend_from_slice(&[0x88, 0x25, 0, 4, 0, 0, 0, 1, 0, 0, 0, 50]);
+    d.extend_from_slice(&[0, 0, 0, 0]);
+    d.extend_from_slice(&[0, 2]);
+    d.extend_from_slice(&[0, 1, 0, 2, 0, 0, 0, 2, b'N', 0, 0, 0]);
+    d.extend_from_slice(&[0, 2, 0, 5, 0, 0, 0, 3, 0, 0, 0, 80]);
+    d.extend_from_slice(&[0, 0, 0, 0]);
+    for (n, den) in [(51u32, 1u32), (30, 1), (0, 1)] {
+        d.extend_from_slice(&n.to_be_bytes());
+        d.extend_from_slice(&den.to_be_bytes());
+    }
+    d
+}
+
+/// Degenerate inputs the policy byte can be put in front of.
+fn rewrite_png_degenerate() -> Vec<Vec<u8>> {
+    let sig = png_shapes::SIG.to_vec();
+    let mut many = png_shapes::png(&[png_shapes::ihdr()]);
+    for _ in 0..70_000 {
+        many.extend_from_slice(&png_shapes::chunk(b"abCd", b""));
+    }
+    let mut bad_crcs = png_shapes::png(&[png_shapes::ihdr()]);
+    bad_crcs.extend_from_slice(&png_shapes::bad_crc_texts(1100));
+    bad_crcs.extend_from_slice(&png_shapes::idat());
+    bad_crcs.extend_from_slice(&png_shapes::iend());
+    let base = png_shapes::png(&[png_shapes::ihdr(), png_shapes::idat(), png_shapes::iend()]);
+    let mut trailer = base.clone();
+    for _ in 0..4100 {
+        trailer.extend_from_slice(&png_shapes::text(b"Title", b"x"));
+    }
+    let mut trailer_cap = base;
+    for _ in 0..4096 {
+        trailer_cap.extend_from_slice(&png_shapes::chunk(b"abCd", b""));
+    }
+    vec![
+        sig.clone(),
+        [sig.clone(), vec![0, 0, 0]].concat(),
+        [sig.clone(), vec![0, 0, 0, 0, b'I', b'E', b'N', b'D']].concat(),
+        [sig.clone(), vec![0xFF; 12]].concat(),
+        [
+            sig,
+            vec![0x7F, 0xFF, 0xFF, 0xFF, b'e', b'X', b'I', b'f', 0, 0, 0, 0],
+        ]
+        .concat(),
+        many,
+        bad_crcs,
+        trailer,
+        trailer_cap,
+    ]
+}
+
+#[test]
+fn rewrite_png_harness_holds_on_every_seed_and_every_policy_byte() {
+    let seeds = rewrite_png_seed_files();
+    assert_eq!(seeds.len(), REWRITE_PNG_SEEDS, "the rewrite_png seed set");
+    for (_, data) in &seeds {
+        // The seed as committed, and with every policy byte in front of it.
+        rewrite_png_invariants::check(data);
+        let (_, png) = rewrite_png_invariants::decode(data);
+        for head in 0u8..=17 {
+            let mut v = vec![head, 0x08, 0x40];
+            v.extend_from_slice(png);
+            rewrite_png_invariants::check(&v);
+        }
+    }
+    for d in rewrite_png_degenerate() {
+        for head in 0u8..=17 {
+            let mut v = vec![head, 0xFF, 0x7F];
+            v.extend_from_slice(&d);
+            rewrite_png_invariants::check(&v);
+        }
+        // Every custom set of the 15 single categories.
+        for bit in 0..15u16 {
+            let m = (1u16 << bit).to_le_bytes();
+            let mut v = vec![6, m[0], m[1]];
+            v.extend_from_slice(&d);
+            rewrite_png_invariants::check(&v);
+        }
+    }
+    rewrite_png_invariants::check(&[]);
+    rewrite_png_invariants::check(&[6]);
+    // Truncations of a rich seed: every prefix is a refusal or a strip, never a
+    // panic, and always agrees with the prediction.
+    let rich = &seeds
+        .iter()
+        .find(|(n, _)| n == "everything-kitchen-sink-everywhere")
+        .expect("a seed")
+        .1;
+    for cut in (1..rich.len()).step_by(7) {
+        rewrite_png_invariants::check(&rich[..cut]);
+    }
+}
+
+#[test]
+fn rewrite_png_seeds_are_committed_and_cover_every_rule_and_refusal() {
+    let seeds = rewrite_png_seed_files();
+    let names: Vec<&str> = seeds.iter().map(|(n, _)| n.as_str()).collect();
+    // One seed per DEC-021 rule (and per spelling), under the six policy bytes.
+    let rules = [
+        "text-authorship",
+        "text-timestamps",
+        "text-software",
+        "text-freetext",
+        "text-compressed",
+        "xmp-itxt",
+        "xmp-text",
+        "xmp-tagged-is-text",
+        "text-unlocated",
+        "iccp",
+        "iccp-empty-and-unlocated",
+        "time",
+        "jumbf",
+        "exif-gps",
+        "exif-make",
+        "exif-unparseable",
+        "exif-three-places",
+        "exif-and-text",
+        "raw-profile-text",
+        "raw-profile-ztxt-itxt",
+        "raw-profile-ztxt-method-only",
+        "exif-icc-entry",
+        "raw-wrong-case-is-text",
+        "carrier-zxif",
+        "carrier-txmp",
+        "carrier-meta-seal",
+        "carrier-case-sensitive",
+        "other-dsig",
+        "other-gifx",
+        "structure",
+        "after-idat",
+        "after-iend",
+        "after-iend-exif",
+        "after-iend-icc-xmp",
+        "after-iend-carriers",
+        "trailer-bytes",
+        "trailer-chunk-and-bytes",
+        "empty-chunks",
+        "bad-crc-kept",
+        "bad-crc-exif-edit",
+        "walk-chunk-past-end",
+        "walk-halted-mid",
+        "walk-bad-length",
+        "walk-no-iend",
+        "walk-stub-11-bytes",
+        "signature-only",
+        "kitchen-sink",
+        "kitchen-sink-trailer",
+        "kitchen-sink-everywhere",
+    ];
+    for rule in rules {
+        for label in [
+            "everything",
+            "all",
+            "gps",
+            "other-segment",
+            "icc",
+            "gps-only",
+        ] {
+            assert!(
+                names.contains(&format!("{label}-{rule}").as_str()),
+                "{label}-{rule}"
+            );
+        }
+    }
+    // Every policy byte leads at least one seed.
+    let heads: std::collections::BTreeSet<u8> = seeds
+        .iter()
+        .filter_map(|(_, d)| d.first().copied())
+        .collect();
+    for h in 0u8..=16 {
+        assert!(heads.contains(&h), "no seed starts with policy byte {h}");
+    }
+    // The refusal classes and the edit are all reached by a committed seed.
+    let class = |name: &str| -> String {
+        let (_, d) = seeds.iter().find(|(n, _)| n == name).expect("a seed");
+        let (policy, png) = rewrite_png_invariants::decode(d);
+        match exif_core::strip(png, policy) {
+            Ok(s) if s.patches().is_empty() => "ok".into(),
+            Ok(_) => "ok-patched".into(),
+            Err(exif_core::StripError::Unstrippable { reason, .. }) => {
+                format!("unstrippable {reason:?}")
+            }
+            Err(exif_core::StripError::Overlap { .. }) => "overlap".into(),
+            Err(exif_core::StripError::Uneditable { .. }) => "uneditable".into(),
+            Err(e) => format!("other {e:?}"),
+        }
+    };
+    assert_eq!(
+        class("gps-walk-chunk-past-end"),
+        "unstrippable ChunkPastEnd"
+    );
+    assert_eq!(class("gps-walk-halted-mid"), "unstrippable ChunkPastEnd");
+    assert_eq!(
+        class("gps-walk-bad-length"),
+        "unstrippable BadSegmentLength"
+    );
+    assert_eq!(class("other-segment-after-iend-exif"), "overlap");
+    assert_eq!(class("other-segment-after-iend-icc-xmp"), "overlap");
+    assert_eq!(class("gps-only-exif-gps"), "ok-patched");
+    assert_eq!(class("gps-only-bad-crc-exif-edit"), "ok-patched");
+    assert_eq!(class("everything-exif-gps"), "ok");
+    assert_eq!(class("everything-kitchen-sink-everywhere"), "ok");
+    assert_eq!(class("gps-walk-no-iend"), "ok");
+    assert_eq!(class("everything-signature-only"), "ok");
+}
+
+/// A plant: a wrong answer put into the library's flattened answer for `input`
+/// under the policy bytes `head`, which the named guard must reject. `apply`
+/// also gets the input, for the plants that leave bytes the library cut.
+struct PngPlant {
+    name: &'static str,
+    input: &'static str,
+    head: &'static [u8],
+    guard: rewrite_png_invariants::Guard,
+    apply: fn(&mut rewrite_png_invariants::Facts, &[u8]),
+}
+
+fn png_plant_input(name: &str) -> Vec<u8> {
+    use png_shapes::{chunk, exif_chunk, iccp, idat, iend, ihdr, png, text};
+    let gps = png_exif_gps();
+    match name {
+        // Text, a profile, a time, a carrier, a raw profile, an opaque chunk and
+        // structure, no trailer.
+        "sink" => png(&[
+            ihdr(),
+            text(b"Author", b"x"),
+            text(b"Title", b"y"),
+            iccp(b"n", 0, b"zz"),
+            chunk(b"tIME", &[7, 228, 1, 2, 3, 4, 5]),
+            chunk(b"zxIf", b"carrier"),
+            png_shapes::raw_profile("exif", b"x"),
+            chunk(b"dSIG", b"d"),
+            chunk(b"pHYs", &[0; 9]),
+            idat(),
+            iend(),
+        ]),
+        // An `eXIf` chunk a Gps-only policy edits in place.
+        "exif-edit" => png(&[ihdr(), exif_chunk(&gps), idat(), iend()]),
+        // A chunk past the end of the input.
+        "past-end" => {
+            let mut v = png(&[ihdr(), text(b"Author", b"x"), idat()]);
+            v.extend_from_slice(&[0, 0, 3, 0xE8, b't', b'E', b'X', b't', 1, 2]);
+            v
+        }
+        // An `eXIf` chunk after `IEND`: `OtherSegment` alone would cut it.
+        "trailer-exif" => png(&[ihdr(), idat(), iend(), exif_chunk(&gps)]),
+        "ok" => png(&[ihdr(), text(b"Author", b"x"), idat(), iend()]),
+        other => panic!("no plant input {other}"),
+    }
+}
+
+fn png_ok(f: &mut rewrite_png_invariants::Facts) -> &mut rewrite_png_invariants::OkFacts {
+    f.result.as_mut().expect("an Ok answer")
+}
+
+fn png_out(f: &mut rewrite_png_invariants::Facts) -> &mut rewrite_png_invariants::OutFacts {
+    f.out.as_mut().expect("output facts")
+}
+
+/// The output range of the first `eXIf` chunk of `bytes`.
+fn png_exif_range(bytes: &[u8]) -> std::ops::Range<usize> {
+    let at = bytes
+        .windows(4)
+        .position(|w| w == b"eXIf")
+        .expect("an eXIf")
+        - 4;
+    let len = u32::from_be_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]) as usize;
+    at..at + len + 12
+}
+
+fn rewrite_png_plants() -> Vec<PngPlant> {
+    use rewrite_png_invariants::{ErrFact, Guard};
+    vec![
+        // Prediction: a writer that leaves a removed chunk, one that cuts a
+        // kept chunk, one that changes a kept byte (both directions).
+        PngPlant {
+            name: "a writer that leaves every removed chunk",
+            input: "sink",
+            head: &[4],
+            guard: Guard::Prediction,
+            apply: |f, input| png_ok(f).bytes = input.to_vec(),
+        },
+        PngPlant {
+            name: "a writer that cuts a kept chunk (IEND)",
+            input: "sink",
+            head: &[4],
+            guard: Guard::Prediction,
+            apply: |f, _| {
+                let b = &mut png_ok(f).bytes;
+                b.truncate(b.len() - 12);
+            },
+        },
+        PngPlant {
+            name: "a kept byte is changed",
+            input: "sink",
+            head: &[4],
+            guard: Guard::Prediction,
+            apply: |f, _| {
+                let b = &mut png_ok(f).bytes;
+                let last = b.len() - 1;
+                b[last] ^= 1;
+            },
+        },
+        PngPlant {
+            name: "an Ok answer where a refusal is predicted",
+            input: "past-end",
+            head: &[0],
+            guard: Guard::Prediction,
+            apply: |f, input| {
+                f.result = Ok(rewrite_png_invariants::OkFacts {
+                    bytes: input.to_vec(),
+                    removals: vec![],
+                    patches: vec![],
+                });
+            },
+        },
+        // Records.
+        PngPlant {
+            name: "a removal record is one byte too long",
+            input: "sink",
+            head: &[4],
+            guard: Guard::Records,
+            apply: |f, _| png_ok(f).removals[0].len += 1,
+        },
+        PngPlant {
+            name: "a removal record is missing",
+            input: "sink",
+            head: &[4],
+            guard: Guard::Records,
+            apply: |f, _| {
+                png_ok(f).removals.pop();
+            },
+        },
+        PngPlant {
+            name: "a removal is recorded under the wrong kind",
+            input: "sink",
+            head: &[4],
+            guard: Guard::Records,
+            apply: |f, _| png_ok(f).removals[0].kind = "other-chunk",
+        },
+        PngPlant {
+            name: "a patch outside any eXIf chunk",
+            input: "exif-edit",
+            head: &[11],
+            guard: Guard::Records,
+            apply: |f, _| png_ok(f).patches.push((0, 4)),
+        },
+        // Length.
+        PngPlant {
+            name: "an output longer than the input",
+            input: "sink",
+            head: &[4],
+            guard: Guard::Length,
+            apply: |f, input| png_ok(f).bytes.resize(input.len() + 1, 0),
+        },
+        PngPlant {
+            name: "removals dropped though the output is shorter",
+            input: "sink",
+            head: &[4],
+            guard: Guard::Length,
+            apply: |f, _| png_ok(f).removals.clear(),
+        },
+        // RemovedCategories.
+        PngPlant {
+            name: "the output still has a GPS finding",
+            input: "exif-edit",
+            head: &[0],
+            guard: Guard::RemovedCategories,
+            apply: |f, _| png_out(f).categories.push(exif_core::audit::Category::Gps),
+        },
+        PngPlant {
+            name: "the output still has free text",
+            input: "sink",
+            head: &[4],
+            guard: Guard::RemovedCategories,
+            apply: |f, _| {
+                png_out(f)
+                    .categories
+                    .push(exif_core::audit::Category::FreeText)
+            },
+        },
+        // KeptFindings.
+        PngPlant {
+            name: "a kept category gained a finding",
+            input: "sink",
+            head: &[0],
+            guard: Guard::KeptFindings,
+            apply: |f, _| {
+                let o = png_out(f);
+                if let Some(v) = o.kept_out.as_mut() {
+                    v[0].1 += 1;
+                }
+            },
+        },
+        PngPlant {
+            name: "a kept category lost its findings",
+            input: "sink",
+            head: &[0],
+            guard: Guard::KeptFindings,
+            apply: |f, _| png_out(f).kept_out = Some(vec![]),
+        },
+        // EditedCrc.
+        PngPlant {
+            name: "an edited eXIf chunk with a wrong CRC",
+            input: "exif-edit",
+            head: &[11],
+            guard: Guard::EditedCrc,
+            apply: |f, _| {
+                let b = &mut png_ok(f).bytes;
+                let r = png_exif_range(b);
+                b[r.end - 1] ^= 0xFF;
+            },
+        },
+        PngPlant {
+            name: "an edited eXIf chunk whose data changed but not its CRC",
+            input: "exif-edit",
+            head: &[11],
+            guard: Guard::EditedCrc,
+            apply: |f, _| {
+                let b = &mut png_ok(f).bytes;
+                let r = png_exif_range(b);
+                b[r.start + 9] ^= 0xFF;
+            },
+        },
+        // NoCarrierLeft.
+        PngPlant {
+            name: "the carriers are left under Everything",
+            input: "sink",
+            head: &[4],
+            guard: Guard::NoCarrierLeft,
+            apply: |f, input| png_ok(f).bytes = input.to_vec(),
+        },
+        PngPlant {
+            name: "the carriers are left under OtherSegment alone",
+            input: "sink",
+            head: &[8],
+            guard: Guard::NoCarrierLeft,
+            apply: |f, input| png_ok(f).bytes = input.to_vec(),
+        },
+        // Idempotent, Deterministic.
+        PngPlant {
+            name: "stripping the output removes more",
+            input: "sink",
+            head: &[4],
+            guard: Guard::Idempotent,
+            apply: |f, _| png_out(f).idempotent = false,
+        },
+        PngPlant {
+            name: "stripping the output removes more (patch case)",
+            input: "exif-edit",
+            head: &[11],
+            guard: Guard::Idempotent,
+            apply: |f, _| png_out(f).idempotent = false,
+        },
+        PngPlant {
+            name: "the second strip differs",
+            input: "sink",
+            head: &[4],
+            guard: Guard::Deterministic,
+            apply: |f, _| f.deterministic = false,
+        },
+        PngPlant {
+            name: "the second strip differs (refusal)",
+            input: "past-end",
+            head: &[0],
+            guard: Guard::Deterministic,
+            apply: |f, _| f.deterministic = false,
+        },
+        // ErrClass.
+        PngPlant {
+            name: "the wrong walk reason",
+            input: "past-end",
+            head: &[0],
+            guard: Guard::ErrClass,
+            apply: |f, _| f.result = Err(ErrFact::Unstrippable("bad-length", 0)),
+        },
+        PngPlant {
+            name: "the right reason at another offset",
+            input: "past-end",
+            head: &[0],
+            guard: Guard::ErrClass,
+            apply: |f, _| match &mut f.result {
+                Err(ErrFact::Unstrippable(_, o)) => *o += 1,
+                other => panic!("{other:?}"),
+            },
+        },
+        PngPlant {
+            name: "Overlap at another offset",
+            input: "trailer-exif",
+            head: &[8],
+            guard: Guard::ErrClass,
+            apply: |f, _| match &mut f.result {
+                Err(ErrFact::Overlap(o)) => *o += 1,
+                other => panic!("{other:?}"),
+            },
+        },
+        PngPlant {
+            name: "an Overlap where the strip is fine",
+            input: "ok",
+            head: &[8],
+            guard: Guard::ErrClass,
+            apply: |f, _| f.result = Err(ErrFact::Overlap(0)),
+        },
+        PngPlant {
+            name: "Uneditable where no entry edit is needed",
+            input: "ok",
+            head: &[4],
+            guard: Guard::ErrClass,
+            apply: |f, _| f.result = Err(ErrFact::Uneditable("block-not-clean", 0)),
+        },
+        // VerifyAllowed.
+        PngPlant {
+            name: "VerifyFailed on a clean file",
+            input: "sink",
+            head: &[4],
+            guard: Guard::VerifyAllowed,
+            apply: |f, _| f.result = Err(ErrFact::VerifyFailed("verify")),
+        },
+        PngPlant {
+            name: "VerifyFailed on a refusal",
+            input: "past-end",
+            head: &[0],
+            guard: Guard::VerifyAllowed,
+            apply: |f, _| f.result = Err(ErrFact::VerifyFailed("verify")),
+        },
+    ]
+}
+
+#[test]
+fn each_rewrite_png_guard_goes_red_when_planted() {
+    let plants = rewrite_png_plants();
+    for g in rewrite_png_invariants::GUARDS {
+        let n = plants.iter().filter(|p| p.guard == g).count();
+        assert!(n >= 2, "{g:?} has {n} plants");
+    }
+    for p in &plants {
+        let input = png_plant_input(p.input);
+        let mut seed = p.head.to_vec();
+        seed.extend_from_slice(&input);
+        let (policy, png) = rewrite_png_invariants::decode(&seed);
+        let spec = policy.spec();
+        let pred = rewrite_png_invariants::predict(png, spec);
+        let good = rewrite_png_invariants::facts(png, policy);
+        // CONTROL: the unplanted answer satisfies every guard.
+        let control = rewrite_png_invariants::failures(png, spec, &good, &pred);
+        assert!(control.is_empty(), "{}: control: {control:?}", p.name);
+        let mut bad = good.clone();
+        (p.apply)(&mut bad, png);
+        assert_ne!(bad, good, "{}: the plant changed nothing", p.name);
+        // The guard rejects the plant, run alone.
+        assert!(
+            !rewrite_png_invariants::holds(p.guard, png, spec, &bad, &pred),
+            "{}: guard {:?} did not reject the planted bug",
+            p.name,
+            p.guard
+        );
+    }
+}
+
+#[test]
+fn the_rewrite_png_prediction_is_the_library_answer_on_the_plant_inputs() {
+    // The naive stripper predicts the exact bytes (outside an edited chunk) and
+    // the exact refusal, so a guard is not red merely because it is constant.
+    let sink = png_plant_input("sink");
+    let spec = exif_core::StripPolicy::Everything.spec();
+    match rewrite_png_invariants::predict(&sink, spec) {
+        rewrite_png_invariants::Pred::Ok {
+            bytes, removals, ..
+        } => {
+            let got = exif_core::strip(&sink, exif_core::StripPolicy::Everything).unwrap();
+            assert_eq!(got.bytes(), &bytes[..]);
+            assert_eq!(removals.len(), got.removals().len());
+            assert!(bytes.len() < sink.len());
+        }
+        other => panic!("{other:?}"),
+    }
+    let past = png_plant_input("past-end");
+    assert!(matches!(
+        rewrite_png_invariants::predict(&past, spec),
+        rewrite_png_invariants::Pred::Unstrippable("chunk-past-end", _)
+    ));
+    let trailer = png_plant_input("trailer-exif");
+    let other = exif_core::StripPolicy::Custom(
+        exif_core::StripSpec::none().include(exif_core::audit::Category::OtherSegment),
+    )
+    .spec();
+    assert!(matches!(
+        rewrite_png_invariants::predict(&trailer, other),
+        rewrite_png_invariants::Pred::Overlap(_)
+    ));
+}
+
+#[test]
+fn rewrite_png_target_is_declared_and_runs_in_ci() {
+    let fuzz = read("fuzz/Cargo.toml");
+    assert!(
+        fuzz.contains("name = \"rewrite_png\"") && fuzz.contains("fuzz_targets/rewrite_png.rs"),
+        "fuzz/Cargo.toml must declare the rewrite_png bin"
+    );
+    assert!(root().join("fuzz/fuzz_targets/rewrite_png.rs").is_file());
+    let target = read("fuzz/fuzz_targets/rewrite_png.rs");
+    assert!(target.contains("rewrite_png_invariants::check"));
+    assert!(target.contains("../shared/rewrite_png_invariants.rs"));
+    assert!(root()
+        .join("fuzz/shared/rewrite_png_invariants.rs")
+        .is_file());
+    assert!(read(".github/workflows/ci.yml").contains("rewrite_tiff, rewrite_png, audit,"));
+    assert!(read("app.just").contains("rewrite_tiff rewrite_png audit"));
+    let readme = read("README.md");
+    assert!(readme.contains("ten fuzz targets"));
+    assert!(readme.contains("rewrite_tiff, rewrite_png, audit"));
+    // Ten bins in all.
+    assert_eq!(fuzz.matches("[[bin]]").count(), 10);
+}
+
+/// The harness is independent of the writer: no line of code names its module
+/// or its helpers.
+#[test]
+fn the_rewrite_png_harness_does_not_read_the_writer() {
+    let h = read("fuzz/shared/rewrite_png_invariants.rs");
+    for needle in [
+        "write::png",
+        "src/write/png",
+        "plan_block",
+        "exif9",
+        "removes_carriers",
+    ] {
+        let uses = h
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//") && l.contains(needle))
+            .count();
+        assert_eq!(uses, 0, "{needle}");
+    }
 }

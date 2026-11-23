@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-22
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-037
@@ -46,18 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                # completed | blocked | rejected
+  agent: claude-sonnet-5-5         # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
   basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
+  tokens_total: null               # not measured by the delegated run; the orchestrator fills it
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
-  branch: null
+  branch: claude/spec-037-part-b
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-22
+  notes: "Tokens left null: the delegated run has no transcript access. Part B only; src/write/png.rs and the reader/audit untouched."
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -182,38 +182,30 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `claude/spec-037-part-b` (no PR)
+- **Completed at:** 2026-11-22
+- **All acceptance criteria met?** yes for Part B (target, seeds, pins and plants, CI, README, DEC-021 fill, gates); see the report for anything unfinished.
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null (not measured by the delegated run)
+- **Estimated USD:** null
+- **Duration (minutes):** null
+- **Source of the number:** none available
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
-- **Deviations from spec:**
-  - [list]
-- **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+- **New decisions emitted:** none (DEC-021 filled: carrier table, four judgement calls, the target).
+- **Deviations from spec:** the harness predicts the bytes of an edited `eXIf` chunk only structurally (same length, valid CRC), the entry editor being covered by `rewrite_jpeg`'s naive editor.
+- **Follow-up work identified:** none.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   - The handoff said the measured table was in DEC-021 already; it was not, so it was re-measured.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   - A trailer chunk that does not fit is trailer bytes, not a refused walk; only a chunk before `IEND` that runs past the end is `ChunkPastEnd`.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   - Run the 60 s smoke earlier: it found two gaps in the harness model within minutes.

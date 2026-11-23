@@ -103,16 +103,16 @@ DEC-013 gives the writer a foundation (pure function, `Remove` and same-length `
 
 ## Acceptance Criteria
 
-- [ ] For every PNG fixture and seed and each of the five presets, `strip` returns bytes that pass the self-check or a typed refusal; never panics; output length at most the input length.
-- [ ] Pixel integrity (I1): an independent recomputation (the input with exactly the listed removals deleted and the listed patches applied) equals the output byte for byte; `IHDR`, `PLTE`, `IDAT` and every kept chunk are unchanged and in order.
-- [ ] Every category rule of DEC-021 clause 2 is tested per chunk kind, in each position (before `IDAT`, after `IDAT`, after `IEND`), compressed and not.
-- [ ] `eXIf`: all-categories policy removes every `eXIf` (several, after `IDAT`, after `IEND`); a partial policy edits entries in place and the chunk CRC is valid in the output; none leaves them; an unparseable `eXIf` is removed whole under `Everything`/`All` and is `Uneditable` under a partial policy.
-- [ ] Opaque carriers: raw profiles (every spelling the audit treats as a raw profile, in `tEXt`, `zTXt`, `iTXt`) and the measured extra chunk types are removed by every preset; `dSIG`-class chunks only by `Everything`; the measured list is in DEC-021 and a test iterates it.
-- [ ] Refusals: a walk halted by the chunk or issue cap, a chunk length past EOF, and an `eXIf` that cannot be edited exactly return the typed refusal with no bytes; a missing `IEND`, a bad CRC on a removed chunk and a bad CRC on a kept chunk do not refuse (the kept chunk stays as it was).
-- [ ] The preview stays honest: `ContainerKind::strippable()` is still false for PNG, the CLI and reports are unchanged, and a test pins that `strip` working and `strippable()` false coexist until SPEC-039.
-- [ ] Idempotent: `strip(strip(x)) == strip(x)` for every fixture and preset.
-- [ ] `rewrite_png` fuzz target, seeds, layout pins and a 60 s CI smoke job; the harness model re-derives the invariants independently of the library.
-- [ ] `just lint`, `just test`, `just forbid-unsafe`, `just validate`, `just cost-audit`, `just oracle-record` idempotent, `just fuzz-smoke rewrite_png`, and the smokes of every fuzz target whose code changed (`png_chunks`, `audit`, `audit_render`) green, on the pinned 1.90.0.
+- [x] For every PNG fixture and seed and each of the five presets, `strip` returns bytes that pass the self-check or a typed refusal; never panics; output length at most the input length.
+- [x] Pixel integrity (I1): an independent recomputation (the input with exactly the listed removals deleted and the listed patches applied) equals the output byte for byte; `IHDR`, `PLTE`, `IDAT` and every kept chunk are unchanged and in order.
+- [x] Every category rule of DEC-021 clause 2 is tested per chunk kind, in each position (before `IDAT`, after `IDAT`, after `IEND`), compressed and not.
+- [x] `eXIf`: all-categories policy removes every `eXIf` (several, after `IDAT`, after `IEND`); a partial policy edits entries in place and the chunk CRC is valid in the output; none leaves them; an unparseable `eXIf` is removed whole under `Everything`/`All` and is `Uneditable` under a partial policy.
+- [x] Opaque carriers: raw profiles (every spelling the audit treats as a raw profile, in `tEXt`, `zTXt`, `iTXt`) and the measured extra chunk types are removed by every preset; `dSIG`-class chunks only by `Everything`; the measured list is in DEC-021 and a test iterates it.
+- [x] Refusals: a walk halted by the chunk or issue cap, a chunk length past EOF, and an `eXIf` that cannot be edited exactly return the typed refusal with no bytes; a missing `IEND`, a bad CRC on a removed chunk and a bad CRC on a kept chunk do not refuse (the kept chunk stays as it was).
+- [x] The preview stays honest: `ContainerKind::strippable()` is still false for PNG, the CLI and reports are unchanged, and a test pins that `strip` working and `strippable()` false coexist until SPEC-039.
+- [x] Idempotent: `strip(strip(x)) == strip(x)` for every fixture and preset.
+- [x] `rewrite_png` fuzz target, seeds, layout pins and a 60 s CI smoke job; the harness model re-derives the invariants independently of the library.
+- [x] `just lint`, `just test`, `just forbid-unsafe`, `just validate`, `just cost-audit`, `just oracle-record` idempotent, `just fuzz-smoke rewrite_png`, and the smokes of every fuzz target whose code changed (`png_chunks`, `audit`, `audit_render`) green, on the pinned 1.90.0.
 
 ## Failing Tests
 
