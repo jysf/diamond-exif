@@ -676,6 +676,23 @@ mod audit_invariants {
             let (name, category) = match r {
                 WebpRegion::Xmp { .. } => ("Xmp", "Xmp"),
                 WebpRegion::Icc { .. } => ("Icc", "Icc"),
+                // SPEC-038: the class by code bytes, typed again from DEC-022
+                // clause 4. A non-empty XML carrier is a failed block.
+                WebpRegion::Chunk {
+                    chunk_type, data, ..
+                } => match chunk_type {
+                    b"C2PA" => ("Jumbf", "Jumbf"),
+                    b"CSET" | b"acid" | b"ds64" | b"fact" | b"fmt " | b"inst" | b"smpl"
+                    | b"cue " | b"plst" | b"gsen" => ("OtherChunk", "OtherSegment"),
+                    t => {
+                        if matches!(t, b"_PMX" | b"SEAL" | b"aXML" | b"iXML" | b"JUNQ" | b"RIFF")
+                            && !data.is_empty()
+                        {
+                            *failed += 1;
+                        }
+                        ("Carrier", "OtherSegment")
+                    }
+                },
                 _ => panic!("a WebpRegion variant the harness does not know"),
             };
             let segment = segment_of(r.offset());

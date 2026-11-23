@@ -24,11 +24,13 @@ use crate::jpeg::{self, Jpeg, Region};
 use crate::png;
 use crate::policy::StripSpec;
 use crate::tiff::{Container, IfdKind};
+use crate::webp::{self, ChunkKind};
 
 use super::exif::protected_ranges;
 use super::jpeg::plan;
 use super::png as png_plan;
 use super::tiff;
+use super::webp as webp_plan;
 use super::Check;
 
 /// Check `output` against `input` for the categories `spec`. `scrubs` are the
@@ -377,6 +379,222 @@ pub(super) fn verify_png(
     }
 }
 
+/// One chunk of a WebP as compared: its kind, its code, the whole chunk (frame,
+/// data and pad byte) and its data alone.
+type WebpChunk<'a> = (ChunkKind, [u8; 4], &'a [u8], &'a [u8]);
+
+/// Every chunk of a WebP and the bytes after the last chunk the walk framed.
+type WebpChunks<'a> = (Vec<WebpChunk<'a>>, &'a [u8]);
+
+fn webp_chunks(data: &[u8]) -> Option<WebpChunks<'_>> {
+    let walk = webp::Webp::parse(data).ok()?;
+    let list: Vec<WebpChunk<'_>> = walk
+        .chunks()
+        .iter()
+        .map(|c| Some((c.kind(), c.fourcc(), data.get(c.range())?, c.data())))
+        .collect::<Option<_>>()?;
+    let end = walk.chunks().last().map_or(WEBP_HEADER, |c| c.range().end);
+    Some((list, data.get(end..)?))
+}
+
+/// Bytes of the RIFF header: `RIFF`, the size field, `WEBP`.
+const WEBP_HEADER: usize = 12;
+
+/// Bytes of a `VP8X` chunk's data ExifTool needs to read its flag byte.
+const WEBP_VP8X_FLAGS: usize = 4;
+
+/// How many chunks of `kind` a walk framed.
+fn count_kind(list: &[WebpChunk<'_>], kind: ChunkKind) -> usize {
+    list.iter().filter(|c| c.0 == kind).count()
+}
+
+/// Whether a WebP chunk is one the strip may remove or edit.
+fn webp_removable(c: &WebpChunk<'_>) -> bool {
+    webp_plan::removable(c.0, c.1, c.3)
+}
+
+/// The self-check of a WebP strip (SPEC-038, DEC-022 clause 9). Like the PNG
+/// one it reads the input, the output and the policy; the byte ranges the plan
+/// removed are used only to compute what the RIFF size must now say.
+///
+/// (a) no finding in a removed category, and none of the carrier chunks the
+/// policy removes (a `Carrier` region has category `OtherSegment`, which most
+/// presets do not remove, yet every preset removes it: DEC-022 clause 4); (b)
+/// the kept categories have the same findings; (c) the header words, every
+/// chunk that is not removable (the image chunks included) and the bytes after
+/// the last chunk are byte-identical and in order, `VP8X` apart from the three
+/// flag bits the strip may clear, and the removable chunks that are left are
+/// the input's in order (an `EXIF` may differ in its bytes, never in its
+/// length); (d) the output walks with no new kind of issue; (f) the declared
+/// RIFF size is the input's less the bytes removed from inside the declared
+/// range, and the `VP8X` flags are the input's with the bit of each kind of
+/// metadata chunk that is now absent (and was present) cleared; (g) the Exif
+/// entry inventory is the input's minus the deleted entries; (h) zeroed ranges
+/// read zero; (e) stripping again changes nothing.
+pub(super) fn verify_webp(
+    input: &[u8],
+    output: &[u8],
+    spec: StripSpec,
+    scrubs: &[(usize, usize)],
+    removed: &[core::ops::Range<usize>],
+) -> Result<(), Check> {
+    let before = audit(input);
+    let after = audit(output);
+    let carriers = png_plan::removes_carriers(spec);
+
+    // (a) Nothing the policy removes is left.
+    if after.findings().iter().any(|f| spec.contains(f.category)) {
+        return Err(Check::Preview);
+    }
+    if carriers
+        && after.items().iter().any(
+            |i| matches!(i.kind(), ItemKind::Region { kind, .. } if kind == RegionKind::Carrier),
+        )
+    {
+        return Err(Check::Preview);
+    }
+
+    // (b) Everything it keeps is still there.
+    let exif_gone = exif_set().iter().all(|c| spec.contains(*c));
+    let (mut kept_before, _) = kept_findings(&before, spec, exif_gone);
+    let (mut kept_after, _) = kept_findings(&after, spec, false);
+    if carriers {
+        // Removed although their category stays: leave them out of both sides.
+        kept_before.retain(|k| k.1 != "Carrier");
+        kept_after.retain(|k| k.1 != "Carrier");
+    }
+    if kept_before != kept_after {
+        return Err(Check::Kept);
+    }
+
+    // (c) The chunks the strip does not target are untouched.
+    let (Some((cin, tail_in)), Some((cout, tail_out))) = (webp_chunks(input), webp_chunks(output))
+    else {
+        return Err(Check::Walk);
+    };
+    let words = |d: &[u8]| {
+        (
+            d.get(..4).map(<[u8]>::to_vec),
+            d.get(8..WEBP_HEADER).map(<[u8]>::to_vec),
+        )
+    };
+    if words(input) != words(output) {
+        return Err(Check::Scan);
+    }
+    // Every `VP8X` with a flag byte ExifTool reads has its three bits compared
+    // in check (f), not here.
+    let fixed = |list: &[WebpChunk<'_>]| -> Vec<Vec<u8>> {
+        list.iter()
+            .filter(|c| !webp_removable(c))
+            .map(|c| {
+                let mut bytes = c.2.to_vec();
+                if c.0 == ChunkKind::Vp8x && c.3.len() >= WEBP_VP8X_FLAGS {
+                    // The flag byte is the first byte of the data, after the
+                    // 8-byte frame; the three bits the strip may clear are
+                    // compared in check (f).
+                    if let Some(b) = bytes.get_mut(8) {
+                        *b &= !(webp_plan::FLAG_ICC | webp_plan::FLAG_EXIF | webp_plan::FLAG_XMP);
+                    }
+                }
+                bytes
+            })
+            .collect()
+    };
+    if fixed(&cin) != fixed(&cout) || tail_in != tail_out {
+        return Err(Check::Scan);
+    }
+    // The removable chunks that are left are a subsequence of the input's.
+    let mut at = 0usize;
+    for out_chunk in cout.iter().filter(|c| webp_removable(c)) {
+        let found = cin.iter().skip(at).position(|c| {
+            webp_removable(c)
+                && c.0 == out_chunk.0
+                && c.1 == out_chunk.1
+                && (c.2 == out_chunk.2
+                    || (out_chunk.0 == ChunkKind::Exif && c.2.len() == out_chunk.2.len()))
+        });
+        match found {
+            Some(n) => at = at.saturating_add(n).saturating_add(1),
+            None => return Err(Check::Scan),
+        }
+    }
+
+    // (d) The output walks, with no new kind of issue.
+    let kinds = |data: &[u8]| -> Option<Vec<Discriminant<Error>>> {
+        let meta = webp::read(data).ok()?;
+        Some(
+            meta.webp_issues()
+                .iter()
+                .map(|i| discriminant(i.error()))
+                .collect(),
+        )
+    };
+    match (kinds(input), kinds(output)) {
+        (Some(old), Some(new)) if new.iter().all(|k| old.contains(k)) => {}
+        _ => return Err(Check::Walk),
+    }
+
+    // (f) The RIFF size and the `VP8X` flags still say what the file holds.
+    let (Ok(win), Ok(wout)) = (webp::Webp::parse(input), webp::Webp::parse(output)) else {
+        return Err(Check::Walk);
+    };
+    let declared = win.declared_size();
+    let window_end = usize::try_from(declared)
+        .ok()
+        .and_then(|d| d.checked_add(8))
+        .unwrap_or(usize::MAX)
+        .min(input.len());
+    let inside = super::plan::removed_in(removed, 8..window_end);
+    let expected_size = u32::try_from(inside)
+        .ok()
+        .and_then(|n| declared.checked_sub(n));
+    if expected_size != Some(wout.declared_size()) {
+        return Err(Check::MpfFields);
+    }
+    let mut clear = 0u8;
+    for (bit, kind) in [
+        (webp_plan::FLAG_ICC, ChunkKind::Iccp),
+        (webp_plan::FLAG_EXIF, ChunkKind::Exif),
+        (webp_plan::FLAG_XMP, ChunkKind::Xmp),
+    ] {
+        if count_kind(&cin, kind) > 0 && count_kind(&cout, kind) == 0 {
+            clear |= bit;
+        }
+    }
+    let flag_bytes = |list: &[WebpChunk<'_>]| -> Vec<u8> {
+        list.iter()
+            .filter(|c| c.0 == ChunkKind::Vp8x && c.3.len() >= WEBP_VP8X_FLAGS)
+            .filter_map(|c| c.3.first().copied())
+            .collect()
+    };
+    let expected_flags: Vec<u8> = flag_bytes(&cin).iter().map(|f| f & !clear).collect();
+    if expected_flags != flag_bytes(&cout) {
+        return Err(Check::MpfFields);
+    }
+
+    // (g) The Exif tag inventory is the input's minus the deleted entries.
+    if !exif_gone {
+        entries(input, spec, &before, &after, Source::Webp)?;
+    }
+
+    // (h) Every range the plan zeroed reads zero in the output.
+    for &(offset, len) in scrubs {
+        let zero = offset
+            .checked_add(len)
+            .and_then(|end| output.get(offset..end))
+            .is_some_and(|bytes| bytes.iter().all(|b| *b == 0));
+        if !zero {
+            return Err(Check::Scrubbed);
+        }
+    }
+
+    // (e) Idempotence: the plan for the output is empty.
+    match webp_plan::plan(output, spec) {
+        Ok(p) if p.plan.is_empty() => Ok(()),
+        _ => Err(Check::Idempotent),
+    }
+}
+
 /// The nine categories an Exif block can hold (DEC-013 part 4), by hand.
 fn exif_set() -> [Category; 9] {
     [
@@ -399,6 +617,7 @@ enum Source {
     Jpeg,
     Tiff,
     Png,
+    Webp,
 }
 
 /// One tag of the inventory, as compared: its block, the IFD kind, the tag, the
@@ -491,6 +710,15 @@ fn entries(
             }
             Source::Png => {
                 let meta = png::read(input).map_err(|_| Check::Entries)?;
+                for (b, block) in meta.exif_blocks().iter().enumerate() {
+                    let Ok(container) = block.container() else {
+                        continue;
+                    };
+                    gps_pointers(container, Some(b), &mut gone)?;
+                }
+            }
+            Source::Webp => {
+                let meta = webp::read(input).map_err(|_| Check::Entries)?;
                 for (b, block) in meta.exif_blocks().iter().enumerate() {
                     let Ok(container) = block.container() else {
                         continue;

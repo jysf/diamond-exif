@@ -382,7 +382,7 @@ fn replay_webp_records_are_clean_on_an_unmodified_reading() {
         seeds += 1;
     }
     assert_eq!(fixtures, oracle_webp::fixtures().len());
-    assert_eq!(seeds, 53, "the committed webp_riff seeds");
+    assert_eq!(seeds, 56, "the committed webp_riff seeds");
 }
 
 #[test]

@@ -34,7 +34,8 @@ use core::ops::Range;
 
 pub use issue::WebpIssue;
 pub use metadata::{
-    read, AnyWebpIssue, WebpExifBlock, WebpMetadata, WebpRegion, MAX_WEBP_EXIF_BLOCKS,
+    chunk_class, read, AnyWebpIssue, ChunkClass, WebpExifBlock, WebpMetadata, WebpRegion,
+    MAX_WEBP_EXIF_BLOCKS,
 };
 
 use crate::error::Error;

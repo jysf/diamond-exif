@@ -225,6 +225,15 @@ fn golden_png_and_webp_report_in_all_three_formats() {
     let text = render(Format::Text, &files, &opts);
     assert!(text.matches("not strippable").count() >= 2);
     assert!(!text.contains("valid"), "regions are located, never valid");
+    // SPEC-038 verify M1: both strips exist and neither is checked yet; the
+    // WebP line no longer says the writer refuses the container.
+    assert!(text.contains(
+        "the PNG strip exists but has not been checked against ExifTool yet, so no removal is claimed"
+    ));
+    assert!(text.contains(
+        "the WebP strip exists but has not been checked against ExifTool yet, so no removal is claimed"
+    ));
+    assert!(!text.contains("the writer refuses this container"));
     // The summary does not count either file as a reliable one.
     assert!(json.contains("\"reliable_files\":0,\"unreliable_files\":2"));
 }

@@ -548,21 +548,41 @@ fn jpeg_and_tiff_previews_are_strippable_and_unchanged() {
 }
 
 #[test]
-fn strip_refuses_webp_for_every_policy_and_png_strips_while_not_strippable() {
+fn png_and_webp_strip_while_not_strippable_and_heic_and_gif_still_refuse() {
     for policy in StripPolicy::PRESETS {
-        // SPEC-037: a PNG strips now (DEC-021); the audit still says it is not
-        // strippable until SPEC-039 shows ExifTool agrees (DEC-020 clause 6).
+        // SPEC-037 and SPEC-038: a PNG and a WebP strip now (DEC-021, DEC-022);
+        // the audit still says neither is strippable until SPEC-039 shows
+        // ExifTool agrees (DEC-020 clause 6, DEC-022 clause 10).
         let out = strip(&rich_png(), policy)
             .unwrap_or_else(|e| panic!("png under {}: {e:?}", policy.name()));
         assert!(out.bytes().len() <= rich_png().len());
         assert!(!preview(&audit(&rich_png()), policy).strippable());
-        match strip(&rich_webp(), policy) {
-            Err(StripError::Unsupported { kind }) => assert_eq!(kind, ContainerKind::Webp),
-            other => panic!("webp under {}: {other:?}", policy.name()),
-        }
-        // Even a minimal WebP: no bytes.
-        assert!(strip(&webp_shapes::minimal(), policy).is_err());
+        let out = strip(&rich_webp(), policy)
+            .unwrap_or_else(|e| panic!("webp under {}: {e:?}", policy.name()));
+        assert!(out.bytes().len() <= rich_webp().len());
+        assert!(!preview(&audit(&rich_webp()), policy).strippable());
+        // Even a minimal WebP or PNG: the output is the input.
+        assert_eq!(
+            strip(&webp_shapes::minimal(), policy).unwrap().bytes(),
+            webp_shapes::minimal().as_slice()
+        );
         assert!(strip(&p::minimal(), policy).is_ok());
+        // HEIC and GIF still refuse, naming the container.
+        let mut heic = vec![0, 0, 0, 0x18];
+        heic.extend_from_slice(b"ftypheic");
+        heic.extend_from_slice(&[0; 16]);
+        match strip(&heic, policy) {
+            Err(StripError::Unsupported { kind }) => {
+                assert_eq!(kind, ContainerKind::Unsupported(Sniffed::Heic));
+            }
+            other => panic!("heic under {}: {other:?}", policy.name()),
+        }
+        match strip(b"GIF89a\x01\0\x01\0\0\0\0;", policy) {
+            Err(StripError::Unsupported { kind }) => {
+                assert_eq!(kind, ContainerKind::Unsupported(Sniffed::Gif));
+            }
+            other => panic!("gif under {}: {other:?}", policy.name()),
+        }
     }
 }
 

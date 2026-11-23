@@ -7262,6 +7262,27 @@ RIFF	0x0006	ImageHeight
 RIFF	0x0000	WebP_Flags
 RIFF	0x0004	ImageWidth
 RIFF	0x0006	ImageHeight
+## webp-shape-meta-riff-nested
+RIFF	0x0000	WebP_Flags
+RIFF	0x0004	ImageWidth
+RIFF	0x0006	ImageHeight
+RIFF	-	Artist
+RIFF	0x0001	ImageWidth
+RIFF	0x0004	AlphaIsUsed
+## webp-shape-meta-riff-appended
+RIFF	0x0000	WebP_Flags
+RIFF	0x0004	ImageWidth
+RIFF	0x0006	ImageHeight
+RIFF	0x0001	ImageWidth
+RIFF	0x0004	AlphaIsUsed
+RIFF	-	Artist
+## webp-shape-meta-riff-depth-three
+RIFF	0x0000	WebP_Flags
+RIFF	0x0004	ImageWidth
+RIFF	0x0006	ImageHeight
+RIFF	0x0001	ImageWidth
+RIFF	0x0004	AlphaIsUsed
+RIFF	-	Artist
 ## webp-shape-meta-exif
 RIFF	0x0000	WebP_Flags
 RIFF	0x0004	ImageWidth
@@ -9264,6 +9285,27 @@ XMP	-	TagX
 RIFF	0x0000	WebP_Flags
 RIFF	0x0004	ImageWidth
 RIFF	0x0006	ImageHeight
+RIFF	0x0001	ImageWidth
+RIFF	0x0004	AlphaIsUsed
+## webp_riff-meta-riff-appended
+RIFF	0x0000	WebP_Flags
+RIFF	0x0004	ImageWidth
+RIFF	0x0006	ImageHeight
+RIFF	0x0001	ImageWidth
+RIFF	0x0004	AlphaIsUsed
+RIFF	-	Artist
+## webp_riff-meta-riff-depth-three
+RIFF	0x0000	WebP_Flags
+RIFF	0x0004	ImageWidth
+RIFF	0x0006	ImageHeight
+RIFF	0x0001	ImageWidth
+RIFF	0x0004	AlphaIsUsed
+RIFF	-	Artist
+## webp_riff-meta-riff-nested
+RIFF	0x0000	WebP_Flags
+RIFF	0x0004	ImageWidth
+RIFF	0x0006	ImageHeight
+RIFF	-	Artist
 RIFF	0x0001	ImageWidth
 RIFF	0x0004	AlphaIsUsed
 ## webp_riff-meta-xmp
@@ -14618,6 +14660,27 @@ XMP	-	TagX
 RIFF	0x0000	WebP_Flags
 RIFF	0x0004	ImageWidth
 RIFF	0x0006	ImageHeight
+RIFF	0x0001	ImageWidth
+RIFF	0x0004	AlphaIsUsed
+## audit-webp-meta-riff-appended
+RIFF	0x0000	WebP_Flags
+RIFF	0x0004	ImageWidth
+RIFF	0x0006	ImageHeight
+RIFF	0x0001	ImageWidth
+RIFF	0x0004	AlphaIsUsed
+RIFF	-	Artist
+## audit-webp-meta-riff-depth-three
+RIFF	0x0000	WebP_Flags
+RIFF	0x0004	ImageWidth
+RIFF	0x0006	ImageHeight
+RIFF	0x0001	ImageWidth
+RIFF	0x0004	AlphaIsUsed
+RIFF	-	Artist
+## audit-webp-meta-riff-nested
+RIFF	0x0000	WebP_Flags
+RIFF	0x0004	ImageWidth
+RIFF	0x0006	ImageHeight
+RIFF	-	Artist
 RIFF	0x0001	ImageWidth
 RIFF	0x0004	AlphaIsUsed
 ## audit-webp-meta-xmp

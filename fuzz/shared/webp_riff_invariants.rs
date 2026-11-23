@@ -28,8 +28,9 @@ mod webp_riff_invariants {
     pub(super) type ChunkT = (usize, [u8; 4], ChunkKind, (usize, usize), usize);
     /// One Exif block: (chunk offset, tiff_at, tiff range).
     pub(super) type BlockT = (usize, usize, (usize, usize));
-    /// One region: (is ICC, chunk offset, data range).
-    pub(super) type RegionT = (bool, usize, (usize, usize));
+    /// One region: (class, chunk offset, data range). The class is 0 for XMP,
+    /// 1 for ICC and 2 for a carrier chunk located by its code (SPEC-038).
+    pub(super) type RegionT = (u8, usize, (usize, usize));
 
     /// What an implementation reports, as comparable data.
     #[derive(Clone, Debug, PartialEq)]
@@ -244,7 +245,7 @@ mod webp_riff_invariants {
     fn extract(d: &[u8], w: &Walked) -> (Vec<BlockT>, Vec<RegionT>, Vec<(Error, usize)>) {
         let (mut blocks, mut regions, mut issues) = (Vec::new(), Vec::new(), Vec::new());
         let mut exif_seen = 0usize;
-        for &(off, _code, kind, (s, e), _end) in &w.chunks {
+        for &(off, code, kind, (s, e), _end) in &w.chunks {
             match kind {
                 ChunkKind::Exif => {
                     if exif_seen >= 1 && !w.halted {
@@ -260,12 +261,35 @@ mod webp_riff_invariants {
                     }
                     exif_seen += 1;
                 }
-                ChunkKind::Xmp => regions.push((false, off, (s, e))),
-                ChunkKind::Iccp => regions.push((true, off, (s, e))),
+                ChunkKind::Xmp => regions.push((0, off, (s, e))),
+                ChunkKind::Iccp => regions.push((1, off, (s, e))),
+                ChunkKind::Other if carrier_code(&code, &d[s..e]) => {
+                    regions.push((2, off, (s, e)));
+                }
                 _ => {}
             }
         }
         (blocks, regions, issues)
+    }
+
+    /// The model's own carrier table, typed from DEC-022 clause 4 (measured on
+    /// ExifTool 13.55): codes are case-sensitive, `JUNK` only when its data is
+    /// printable ASCII then NULs. Shares nothing with `src/webp`.
+    fn carrier_code(code: &[u8; 4], data: &[u8]) -> bool {
+        match code.as_slice() {
+            b"LIST" | b"RIFF" | b"IDIT" | b"afsp" | b"bext" | b"guan" | b"list" | b"labl"
+            | b"note" | b"ltxt" | b"olym" | b"_PMX" | b"SEAL" | b"aXML" | b"iXML" | b"JUNQ"
+            | b"ID3 " | b"id3 " | b"gps0" | b"SGLT" | b"SLLT" | b"C2PA" | b"CSET" | b"acid"
+            | b"ds64" | b"fact" | b"fmt " | b"inst" | b"smpl" | b"cue " | b"plst" | b"gsen" => true,
+            b"JUNK" => {
+                let text = data
+                    .iter()
+                    .rposition(|&b| b != 0)
+                    .map_or(0, |last| last + 1);
+                text > 0 && data[..text].iter().all(|b| (0x20..=0x7E).contains(b))
+            }
+            _ => false,
+        }
     }
 
     fn range_of(base: &[u8], part: &[u8]) -> (usize, usize) {
@@ -285,8 +309,9 @@ mod webp_riff_invariants {
             .regions()
             .iter()
             .map(|r| match *r {
-                WebpRegion::Xmp { offset, data } => (false, offset, range_of(d, data)),
-                WebpRegion::Icc { offset, data } => (true, offset, range_of(d, data)),
+                WebpRegion::Xmp { offset, data } => (0, offset, range_of(d, data)),
+                WebpRegion::Icc { offset, data } => (1, offset, range_of(d, data)),
+                WebpRegion::Chunk { offset, data, .. } => (2, offset, range_of(d, data)),
                 // `WebpRegion` is non-exhaustive: a new variant must be modelled.
                 _ => panic!("a WebpRegion variant the model does not know"),
             })

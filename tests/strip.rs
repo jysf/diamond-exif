@@ -103,16 +103,16 @@ fn removal_ranges(e: &Expect) -> Vec<Range<usize>> {
 // ── dispatch and refusals ───────────────────────────────────────────────────
 
 #[test]
-fn webp_and_heic_are_unsupported_naming_the_container() {
+fn heic_and_gif_are_unsupported_naming_the_container() {
     // (TIFF moved to SPEC-022, `tests/strip_tiff.rs`; PNG to SPEC-037,
-    // `tests/strip_png.rs`: a PNG now strips.)
-    let mut webp = b"RIFF\x10\0\0\0WEBPVP8 ".to_vec();
-    webp.extend_from_slice(&[0; 16]);
+    // `tests/strip_png.rs`; WebP to SPEC-038, `tests/strip_webp.rs`: those
+    // strip now.)
     let mut heic = vec![0, 0, 0, 0x18];
     heic.extend_from_slice(b"ftypheic");
     heic.extend_from_slice(&[0; 16]);
+    let gif = b"GIF89a\x01\0\x01\0\0\0\0;".to_vec();
     for (bytes, want) in [
-        (webp, ContainerKind::Webp),
+        (gif, ContainerKind::Unsupported(Sniffed::Gif)),
         (heic, ContainerKind::Unsupported(Sniffed::Heic)),
     ] {
         for (_, policy) in policies() {
