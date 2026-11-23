@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-21
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-033
@@ -46,19 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
-                                   #   to_agent above is a prediction from tier_map
-  verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: null
-  branch: null
-  pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  status: completed
+  agent: claude-sonnet-5-5
+  verdict: null
+  basis: transcript
+  tokens_total: 37156982
+  estimated_usd: null
+  duration_minutes: 55
+  branch: feat/spec-033-rights-category
+  pr: PR_URL
+  completed_at: 2026-11-23
+  notes: "Measured from the session transcript at the end of the build (143 messages, each counted once, largest output): input 289, cache creation 315875, cache read 36773945, output 66873. estimated_usd is null because I do not have Sonnet 5.5 list rates; the architect can price these four components."
+  synced_at: null
 ---
 
 # HANDOFF-053: DEC-008 amendment: a `Rights` category for Copyright, kept by `AllPii`
@@ -191,38 +190,42 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `feat/spec-033-rights-category`, PR_URL
+- **Completed at:** 2026-11-23
+- **All acceptance criteria met?** yes. Gates (all run on the final tree): `just test` 1036 passed, 0 failed; `RUSTUP_TOOLCHAIN=1.90.0 just lint` clean; `just lint-fuzz` clean; `just deny` and `just deny-fuzz` "licenses ok"; `just mutation-oracle` 67 passed, 1 ignored; `just oracle-record` run twice, identical diff (see below); six fuzz smokes 60 s each, no crash: audit 149208 runs, audit_render 39570, rewrite_jpeg 106546, rewrite_tiff 403846, rewrite_png 653361, rewrite_webp 1106689; `DIAMOND_EXIF_REQUIRE_ORACLE=1 cargo test --test strip_png_live --test strip_webp_live`: strip_png_live 21 passed, 0 failed, 1 ignored; strip_webp_live 23 passed, 0 failed, 1 ignored. ExifTool 13.55 and the nightly toolchain were present.
+- **Red first:** the `category.rs` and `policy.rs` unit tests (and `preview.rs` pins) were written first and were red as a compile failure (21 errors, `Rights` did not exist). The integration tests (`strip`, `strip_tiff`, `strip_png`, `strip_webp`, `policy_preview`, `report_formats`, the strip-oracle comparator test) were written after the code. I then showed them red by reverting the `by_id` row (0x8298 back to `Authorship`) in a scratch edit: 20 tests failed, including every new SPEC-033 test and the replay `exiftool_tag_sets_equal_the_declared_tables_per_policy_and_fixture`. The row was restored.
+- **oracle-record diff:** 34 files, 894 insertions, 0 deletions. In `exiftool-strip`: a `IFD0 Copyright` line in the `all_pii` and `authorship` sections of the exif-* records, and a new `## rights` section in 33 records. One more file changed: `exiftool-inventory/seed-audit.txt` gains the new audit seed.
+- **Grep hits** (`exif9|EXIF9|exif_set|all9|Authorship`): src `exif.rs`, `jpeg.rs`, `png.rs`, `webp.rs` (exif9/all9 renamed exif10/all10), `verify.rs` (exif_set and the exif_gone list, both gain Rights, kept hand-typed); fuzz `rewrite_invariants.rs`, `rewrite_png_invariants.rs`, `rewrite_webp_invariants.rs` (EXIF10), `audit_invariants.rs`, `render_invariants.rs` (tables, may-hold, severity, order, keyword model); tests `strip_shapes.rs`, `strip.rs`, `strip_png.rs`, `strip_webp.rs` (EXIF10), `exif_layout.rs`, `exif_records.rs`, `strip_records.rs`, `strip_png_live.rs`, `strip_webp_live.rs`, `audit_png_webp.rs`, `audit_png_webp_oracle.rs`, `fuzz_layout.rs` (exif9 needles to exif10), `policy_preview.rs`, `report_formats.rs`. Other Authorship hits are Artist/Author rows and stay.
+- **Pins moved:** audit seeds 86 to 87 (`audit_model`, `policy_preview`, `fuzz_layout`), `AUDIT_NEW_SEEDS` 17 to 18, `REWRITE_SEEDS` 1038 to 1039 and its entry-seed offset 187 to 188, `REWRITE_PNG_SEEDS` 434 to 435, `budget_oracle` audit extras, inventory corpus counts (254 to 255 inputs, 185 to 186 distinct, 81 to 82 audit, 12 to 13 audit-only, live parity 80 to 81), `mutation_oracle` (185 to 186, 184 to 185). New seeds: `audit-copyright-only-le`, `rewrite_jpeg/all-pii-artist-and-copyright`, `rewrite_png/all-pii-exif-artist-copyright-text`; no other seed changed.
+- **Tests that asserted Copyright as Authorship or removed under AllPii, changed:** category.rs table/severity/order/keyword rows, policy.rs grid and may-hold, `audit_png_webp.rs` keyword test, `audit_png_webp_oracle.rs` (`category_of_printed_name`, `by_hand`), `strip_png_live.rs` (`AUTHORSHIP_TAGS` split, `RIGHTS_TAGS` removed by preset >= 3), `strip_webp_live.rs` judge, `fuzz_layout.rs` PNG keyword counts (Authorship 3 to 2, Rights 1), `policy_preview.rs` grid, `report_formats.rs` name lists and by_category keys.
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** 37156982 (input 289, cache creation 315875, cache read 36773945, output 66873)
+- **Estimated USD:** null (I do not have Sonnet 5.5 list rates; price the four components above)
+- **Duration (minutes):** 55
+- **Source of the number:** session transcript, measured per docs/cost-tracking.md; re-summed after the last tool call
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
+- **New decisions emitted:** none.
 - **Deviations from spec:**
-  - [list]
-- **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - `strip_records::policies()` gained `rights` as the spec says, so all 33 shape and exif records got a `## rights` section, not only the exif-* ones. The diff has no deletions.
+  - `exiftool-inventory/seed-audit.txt` changed (new seed). Expected, not in the spec's list.
+  - The two committed full-house inputs and their golden reports were left as they were (adding Copyright would change both). Their "carry every category" tests now exempt `Rights`, which `audit-copyright-only-le` carries (asserted in `fuzz_layout.rs`). The `tests/policy_preview.rs` full-house TIFF, which is local to that file, does carry Copyright. Golden JSON changed only by the new `"rights":0` key in `by_category`.
+  - `tests/release_layout.rs` `changelog_and_readme_carry_the_release` required `[Unreleased]` to be empty, which contradicts the spec's required CHANGELOG entry. I relaxed it to check only that `[Unreleased]` sits above the release heading.
+  - `fuzz/Cargo.lock` is changed by cargo on every fuzz build (`exif-core` 0.0.0 to 0.1.0-alpha.1); I left it out of the commit.
+  - No DEC amendment edited. No preset disposition other than Copyright's changed; `plan_block` refused nothing unexpected.
+  - `cost.sessions` of the spec not touched (`just handback-sync` does it); `task.cycle` set to `verify`.
+- **Follow-up work identified:** none.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — The full-house inputs: the spec lists no change to them, but two tests assert they carry every category. I chose to exempt `Rights` rather than change committed seeds and goldens; say if you want the other choice. Also the `release_layout` test, which conflicted with the CHANGELOG requirement.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — No.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Write the integration tests before the code too, instead of showing them red by a mutation afterwards.
