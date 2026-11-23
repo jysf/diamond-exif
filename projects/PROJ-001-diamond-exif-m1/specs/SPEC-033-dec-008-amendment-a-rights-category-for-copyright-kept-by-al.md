@@ -9,7 +9,7 @@ task:
   cycle: design                    # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
-  complexity: S                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
+  complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
   complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
@@ -36,14 +36,14 @@ handoff:
   created_at: null
 
 references:
-  decisions: [DEC-008, DEC-009, DEC-010, DEC-012, DEC-013]
+  decisions: [DEC-008, DEC-009, DEC-010, DEC-012, DEC-013, DEC-020, DEC-021, DEC-022]
   constraints: []                  # [constraint-id-1, constraint-id-2]
-  related_specs: [SPEC-014, SPEC-021, SPEC-023, SPEC-027]
+  related_specs: [SPEC-014, SPEC-021, SPEC-023, SPEC-027, SPEC-032, SPEC-037]
 
 # Blocking dependencies: specs that must SHIP before this one can start.
 # Distinct from references.related_specs (informational). Feeds the ready-set
 # (`just ready`) and safe fan-out. Optional; [] = no blockers.
-depends_on: []                     # e.g. [SPEC-002]
+depends_on: [SPEC-038]             # WebP strip (PR #55) adds more EXIF9 copies; build after it ships
 
 # Fan-out lease — who/what holds this spec now (`just claim` / `just unclaim`).
 # Advisory; null = free. The hard lock for parallel agents is the worktree/branch.
@@ -67,7 +67,7 @@ cost:
   # design. Never a gate — its only job is to be compared with the actual
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
-  tokens_estimate: 350000
+  tokens_estimate: 500000
   sessions: []
   totals:
     tokens_total: 0
@@ -91,7 +91,24 @@ the moved row), **DEC-009** (the preset row, the departure from design section 5
 **DEC-013** (EXIF9 becomes EXIF10). Read those three amendments first. They are normative; this spec turns them
 into code and tests.
 
-Governing code, all verified on `origin/main` at 368c9f1:
+**Revision (2026-11-22): PNG and WebP.** This spec was designed on 368c9f1. Since then STAGE-008 and STAGE-010 added
+PNG and WebP audit (SPEC-032, DEC-020), the PNG strip (SPEC-037, DEC-021, merged at fd94d4f) and the WebP strip
+(SPEC-038, DEC-022, PR #55, merged at 9133727). They change this spec in three ways:
+
+- **A second Copyright source.** A PNG text chunk keyed `Copyright` (or `copyright`, by the measured first-letter
+  rule) is `Authorship` through the `TEXT_KEYWORDS` table in `src/audit/category.rs`, a row the SPEC-032 build
+  left for this spec to re-home. It moves to `Rights` too (DEC-020 and DEC-021 amendments, 2026-11-22). WebP has
+  no keyword table: its `LIST/INFO` Copyright is inside an opaque carrier, removed whole by every preset.
+- **More copies of the Exif set.** `src/write/png.rs` calls `exif9()` (carrier rule and whole-removal category),
+  `src/write/webp.rs` does the same (and reuses `png::removes_carriers`), `verify.rs` has a WebP `exif_set()` user, and hand-typed
+  `EXIF9` copies in `fuzz/shared/rewrite_png_invariants.rs`, `fuzz/shared/rewrite_webp_invariants.rs`,
+  `tests/strip_png.rs` and `tests/strip_webp.rs`. Every one becomes the ten-category set.
+- **Ordering.** `depends_on: [SPEC-038]`, now shipped: the build branches from current `main`, which holds every
+  WebP site. The builder greps for `exif9`, `EXIF9`, `exif_set`, `all9` and `Authorship` over
+  `src`, `fuzz/shared` and `tests` first and treats every hit as in scope; the lists below are the known sites,
+  not a cap.
+
+Governing code, verified on `origin/main` at 368c9f1 and re-checked at fd94d4f (line numbers unchanged):
 
 - `src/audit/category.rs`: `Category` (15 variants, `#[non_exhaustive]`), `Category::ALL: [Category; 15]`,
   `severity`, `is_block`, `name`, `categorize(kind, tag)` (line 158) and its private `by_id(tag)` (line 169; line
@@ -103,6 +120,17 @@ Governing code, all verified on `origin/main` at 368c9f1:
 - `src/write/exif.rs`: `exif9()` (line 781) and `mode` (line 799). `src/write/jpeg.rs` line 191 uses
   `exif9()`. `src/write/verify.rs` line 50 holds its own hand-typed nine-category list for `exif_gone`.
 - `src/audit/preview.rs` tests (line 272).
+- PNG and WebP (verified at 9133727): `src/audit/category.rs` `TEXT_KEYWORDS` (the `Copyright` row) and
+  its unit test `text_keywords_match_the_measured_rule_row_by_row` (`Copyright`, `copyright` rows);
+  `src/write/png.rs` (`removes_carriers` line 59, the `Mode::Whole` arm line 328); `src/write/webp.rs` (`exif9()` line 225, `all9` line 239;
+  carriers through `png::removes_carriers`); `src/write/verify.rs` (`exif_set()` line 381 and its PNG/WebP callers). Models and tests:
+  `fuzz/shared/audit_invariants.rs` (keyword model line 513), `fuzz/shared/rewrite_png_invariants.rs` (`EXIF9`
+  line 58, keyword table line 494), `fuzz/shared/rewrite_webp_invariants.rs` (`EXIF9`), `tests/strip_png.rs`
+  (`EXIF9` line 61, the `copyright` text part line 222), `tests/strip_webp.rs` (`EXIF9`),
+  `tests/strip_png_live.rs` (`AUTHORSHIP_TAGS` line 55, which pins `Copyright` as removed by `AllPii`),
+  `tests/strip_webp_live.rs` (its live judge maps ExifTool's `Copyright` to `Authorship`, line 253, and its doc
+  comment line 27 says so), `tests/audit_png_webp.rs` (line 157),
+  `tests/audit_png_webp_oracle.rs` (`by_hand` line 554 and its assertion line 698).
 - Fuzz models, each an independent hand-typed copy: `fuzz/shared/audit_invariants.rs` (tag table line 232,
   severity line 277, category list line 443, may-hold rows from line 967), `fuzz/shared/render_invariants.rs`
   (name table line 57), `fuzz/shared/rewrite_invariants.rs` (`EXIF9` line 251, categorize line 1038).
@@ -118,7 +146,8 @@ Governing code, all verified on `origin/main` at 368c9f1:
 ## Goal
 
 `AllPii` (and any set without `Rights`) keeps the Exif Copyright entry byte-identical, and ExifTool agrees.
-`All` and `Everything` still remove it, with `All` still removing every Exif segment whole. Every report names
+`All` and `Everything` still remove it, with `All` still removing every Exif segment whole. The same holds for
+a JPEG, a TIFF, a PNG (`eXIf` entry and `Copyright` text chunk) and a WebP (`EXIF` entry). Every report names
 the Copyright finding `rights`, and no audit's severity changes.
 
 ## Decisions made here
@@ -141,6 +170,14 @@ Everything normative is in the three DEC amendments. The implementation choices 
    integer. Do not widen it in this spec.
 5. `strip_records::policies()` gains `("rights", Custom([Rights]))`. The existing `all_pii` and `authorship`
    sections are re-recorded, not hand-edited.
+6. `TEXT_KEYWORDS`: the `Copyright` row becomes `(b"Copyright", Category::Rights)`; the match rule is unchanged.
+   Update the SPEC-032 comment above the table (it says SPEC-033 may re-home the row) to say it did.
+7. `png.rs` and `webp.rs` call `exif10()`; rename their local `all9`. `removes_carriers` therefore also fires on a
+   `Custom` set holding only `Rights`: a carrier may hold a Copyright (DEC-021 amendment). No preset changes,
+   because every preset already holds a tag category.
+8. Under `Mode::Whole` (only `All`, `Everything` and supersets), an Exif block whose first Exif-set finding is
+   Copyright is now recorded as removed under `Rights`, not `Authorship`, on every container. Models that compute
+   that recorded category take the ten-category set.
 
 ## Inputs
 
@@ -152,19 +189,22 @@ Everything normative is in the three DEC amendments. The implementation choices 
 ## Outputs
 
 - **Modified (src):** `src/audit/category.rs`, `src/policy.rs`, `src/write/exif.rs`, `src/write/jpeg.rs`,
-  `src/write/verify.rs`, `src/audit/preview.rs` (tests only).
-- **Modified (fuzz):** the three `fuzz/shared/*_invariants.rs` models listed in Context.
+  `src/write/png.rs`, `src/write/webp.rs`, `src/write/verify.rs`, `src/audit/preview.rs` (tests only).
+- **Modified (fuzz):** every `fuzz/shared/*_invariants.rs` model listed in Context (audit, render, rewrite,
+  rewrite_png, rewrite_webp).
 - **Modified (tests):** the files listed in Context, plus the new tests below.
 - **Seeds:** one audit seed `audit-copyright-only-le` (a TIFF with IFD0 holding only 0x8298 and the structural
-  minimum) and one `rewrite_jpeg` seed with Artist and Copyright in IFD0, both through `examples/fuzz_seeds.rs`.
+  minimum), one `rewrite_jpeg` seed with Artist and Copyright in IFD0, and one `rewrite_png` seed with an `eXIf`
+  holding Artist and Copyright plus a `tEXt` keyed `Copyright`, all through `examples/fuzz_seeds.rs`.
   Update every seed-count pin the new seeds move, and name the moved pins in the handback.
 - **Records:** re-recorded `tests/oracle-fixtures/exiftool-strip/*.txt`. The diff must touch only the
   `## all_pii` and `## authorship` sections (a Copyright line appears) and add the new `## rights` sections.
   Any other change in the diff is a finding to report, not something to commit.
 - **Docs:** `CHANGELOG.md` `[Unreleased]` gets a `### Changed` entry. It says that for a 0.1.0-alpha.1 user, the
   Copyright finding is now category `rights` in text, JSON and CSV; that the `all-pii` preview now shows it as
-  kept; and that the library's `AllPii` strip keeps it. `README.md` line 59 adds "copyright notices" to the
-  list of what the scan reports.
+  kept (for a PNG `Copyright` text chunk too); and that the library's `AllPii` strip keeps it. `README.md`: the
+  "Using exif-audit" paragraph adds "copyright notices" to the list of what the scan reports, and the PNG
+  paragraph (line 19) says `Artist` and `Author` are authorship and `Copyright` is rights.
 - **No new dependency, no new public function.** `Category::Rights` is the only new public item (the enum is
   `#[non_exhaustive]`, so this is not a breaking change).
 
@@ -192,12 +232,20 @@ Everything normative is in the three DEC amendments. The implementation choices 
 - [ ] ExifTool on the `all_pii` and `authorship` outputs prints `IFD0:Copyright` with the canary value, and
       no `IFD0:Artist`. On `all`, `everything` and `rights` it prints no Copyright.
 - [ ] JSON, CSV and text reports of a Copyright-only file name the category `rights`.
+- [ ] PNG: `text_keyword_category(b"Copyright")` and `(b"copyright")` are `Rights`; `COPYRIGHT` stays `FreeText`;
+      `Artist`, `Author` stay `Authorship`. `strip(png, AllPii)` keeps a `Copyright` text chunk byte-identical
+      and removes an `Author` one; `All` removes both. An `eXIf` holding Artist and Copyright under `AllPii` keeps
+      Copyright (entry deleted in place for Artist, CRC patched) and the self-check passes.
+- [ ] WebP: an `EXIF` chunk holding Artist and Copyright under `AllPii` keeps Copyright and the self-check
+      passes; `All` removes the chunk whole. A `LIST/INFO` carrier is still removed by every preset.
+- [ ] `strip_png_live` moves `Copyright` out of the `AllPii` list into an `All`/`Everything` list, and
+      `strip_webp_live`'s judge maps `Copyright` to `Rights`; run live with `DIAMOND_EXIF_REQUIRE_ORACLE=1` and paste the summary.
 - [ ] TIFF writer: `strip(tiff with Artist and Copyright in IFD0, AllPii)` keeps Copyright and deletes Artist.
 - [ ] Every existing test passes. Any test that asserted Copyright under `Authorship`, or removed under
       `AllPii`, is changed in this spec and named in the handback.
-- [ ] Fuzz smokes (60 s each) clean on **all four** targets whose harness models categories or EXIF9: `audit`,
-      `audit_render`, `rewrite_jpeg`, `rewrite_tiff` (the SPEC-023 lesson: run every smoke whose model the
-      change touches, not only one).
+- [ ] Fuzz smokes (60 s each) clean on **all six** targets whose harness models categories, keywords or EXIF9:
+      `audit`, `audit_render`, `rewrite_jpeg`, `rewrite_tiff`, `rewrite_png`, `rewrite_webp` (the SPEC-023
+      lesson: run every smoke whose model the change touches, not only one).
 
 ## Failing Tests
 
@@ -239,6 +287,16 @@ from the code under test.
 - **`tests/report_formats.rs`**
   - Add `"rights"` to both category-name lists. Add `"copyright finding renders as rights"` across the three
     formats.
+- **PNG and WebP tests**
+  - `src/audit/category.rs` `text_keywords_match_the_measured_rule_row_by_row`: `Copyright`, `copyright` rows to
+    `Rights`.
+  - `tests/strip_png.rs`: the `copyright` text part's role to `Rights`; `EXIF10`; add `"png all_pii keeps the
+    copyright text chunk and the exif copyright"`.
+  - `tests/strip_webp.rs`: `EXIF10`; add `"webp all_pii keeps the exif copyright"`.
+  - `tests/audit_png_webp.rs` line 157 and `tests/audit_png_webp_oracle.rs` `by_hand`: `Copyright` to `Rights`
+    (the oracle test then shows ExifTool's printed `Copyright` lands in `rights`).
+  - `tests/strip_png_live.rs`: split `AUTHORSHIP_TAGS`; its red check (`the_check_goes_red_on_an_unstripped_file`)
+    must still require violations for every file.
 - **`tests/fuzz_layout.rs`**
   - Update the category rows. Add the two new seeds to whatever seed-set assertions exist.
 
@@ -258,13 +316,15 @@ from the code under test.
   in a category the policy holds**, through the existing entry-deletion path. Do not special-case 0x8298 in the
   writer. If `plan_block` refuses something unexpected on the fixtures under `AllPii`, report it in the handback;
   do not work around it.
-- The three fuzz models and `verify.rs`'s list are deliberately independent copies. Update each by hand from the
+- The fuzz models and `verify.rs`'s list are deliberately independent copies. Update each by hand from the
   DEC amendments, not by calling the library's function.
 - Zero panics on untrusted input. Keep the five-lint deny set and `forbid(unsafe_code)`. Use `<<`-free bit
   literals (the lint set forbids `<<` on integers, which is why `bit` is a literal table).
 - Re-recording needs ExifTool 13.55 on PATH. If it is missing, stop and say so in the handback. Never hand-edit
   a record.
-- Budget: one builder, sonnet, about 80 tool calls. Cold verify on opus, one round; a second round only for
+- Branch from current `main` (PR #55 is merged), then run the grep in Context and list every
+  hit in the handback with what you did to it.
+- Budget: one builder, sonnet, about 120 tool calls. Cold verify on opus, one round; a second round only for
   High or Medium findings.
 
 ---
