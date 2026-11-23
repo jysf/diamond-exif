@@ -203,3 +203,6 @@ transcribes it via `just handback-sync`, it does not estimate it.
 
 3. **If you did this task again, what would you do differently?**
    — <answer>
+
+
+Orchestrator note (SPEC-037 verify L4): the builder left this prose section unfilled; its report (carrier table, reader and audit extension, planner, self-check, tests, judgement calls) is summarised in HANDOFF-078's context and in DEC-021's clarifications.
