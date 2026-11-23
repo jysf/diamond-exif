@@ -11,15 +11,40 @@
 //! siblings). ExifTool is run (`-a -u -G1 -H -s`, 8 s limit), never read or
 //! linked.
 //!
-//! The pinned tag list, per preset (DEC-009 columns, DEC-022 clauses 3 and 4):
+//! The pinned judge is the complete preset table of DEC-009 (SPEC-038 fix
+//! round, verify M2): every printed tag is classified into a category by the
+//! lists in [`category_of`] (typed here from DEC-008, not read from the
+//! library), and per preset the judge asserts BOTH directions: every tag of a
+//! category the preset removes is gone from the output, and every tag of a
+//! category it keeps is still printed (a strip that over-removes is a failure;
+//! the one documented exception is the carrier rule, which removes a `LIST`
+//! and its `RIFF`-group tags under every preset). The categories a WebP can
+//! hold, and the tags that stand for each:
+//!
+//! * `Gps`: any tag in the `GPS` group and any `Composite` tag named `GPS*`;
+//! * `DeviceId`: `SerialNumber`, `BodySerialNumber`, `InternalSerialNumber`,
+//!   `LensSerialNumber`, `ImageUniqueID`;
+//! * `Authorship`: `Author`, `Artist`, `Copyright`, `OwnerName`,
+//!   `CameraOwnerName` (which also covers the `LIST` `INFO` personal tags);
+//! * `FreeText`: `ImageDescription`, `UserComment`;
+//! * `Timestamps`: `ModifyDate`, `DateTimeOriginal`, `CreateDate`;
+//! * `CameraModel`: `Make`, `Model`, `LensModel`;
+//! * `Thumbnail`: `ThumbnailImage`, `ThumbnailOffset`, `ThumbnailLength`;
+//! * `MakerNote`: any tag named `MakerNote*`;
+//! * `Software`: `Software`;
+//! * `Xmp`: any tag in an `XMP*` group; `Icc`: any tag in an `ICC*` group;
+//!   `Jumbf`: any tag in the `JUMBF` or `JSON` group (a `C2PA` chunk);
+//! * `Iptc` has no WebP carrier and is not judged.
+//!
+//! Presets (DEC-009): `Gps` removes `Gps`; `GpsAndDevice` adds `DeviceId`;
+//! `AllPii` adds `Authorship`, `FreeText`, `Timestamps`, `CameraModel`,
+//! `Thumbnail`, `MakerNote`; `All` adds `Software`, `Xmp`, `Iptc`;
+//! `Everything` adds `Icc`, `Jumbf`.
+//!
+//! The older lists, kept as the statement of the first build:
 //!
 //! * every preset: any tag in the `GPS` group and any `Composite` tag whose name
 //!   starts with `GPS` (`GPSPosition`, `GPSLatitude`, ...);
-//! * `GpsAndDevice` and up: `SerialNumber`, `BodySerialNumber`,
-//!   `InternalSerialNumber`, `LensSerialNumber` (DeviceId);
-//! * `AllPii`, `All`, `Everything` (Authorship): `Author`, `Artist`,
-//!   `Copyright`, `OwnerName`, `CameraOwnerName`, which also covers the `LIST`
-//!   `INFO` personal tags (`Artist`, `Copyright`, ...);
 //! * the carriers (the 20 measured carrier rows and the text `JUNK`): every tag
 //!   a carrier file prints that the same file without the chunk does not print,
 //!   under every preset; the opaque chunks (`CSET`, `fmt `, ...) and `C2PA`
@@ -61,21 +86,6 @@ const REQUIRE_VAR: &str = "DIAMOND_EXIF_REQUIRE_ORACLE";
 
 /// The `-a -u -G1 -H -s` run, the same arguments as the audit oracle.
 const ARGS: [&str; 5] = ["-a", "-u", "-G1", "-H", "-s"];
-
-const DEVICE_TAGS: [&str; 4] = [
-    "SerialNumber",
-    "BodySerialNumber",
-    "InternalSerialNumber",
-    "LensSerialNumber",
-];
-// The library files the camera owner under Authorship (`category.rs`, 0xA430).
-const AUTHORSHIP_TAGS: [&str; 5] = [
-    "Author",
-    "Artist",
-    "Copyright",
-    "OwnerName",
-    "CameraOwnerName",
-];
 
 /// Representative `oracle_webp` fixtures (names are the committed ones): EXIF
 /// with GPS in several orders, with a prefix, odd and with a lying size, XMP,
@@ -158,22 +168,140 @@ fn has_error(tags: &[Tag]) -> bool {
     tags.iter().any(|t| t.name == "Error")
 }
 
-/// The pinned list: does `preset` (index into `StripPolicy::PRESETS`) remove
-/// this tag?
-fn removed_by(preset: usize, tag: &Tag) -> bool {
-    let gps = tag.group == "GPS" || (tag.group == "Composite" && tag.name.starts_with("GPS"));
-    let device = preset >= 1 && DEVICE_TAGS.contains(&tag.name.as_str());
-    let authorship = preset >= 2 && AUTHORSHIP_TAGS.contains(&tag.name.as_str());
-    gps || device || authorship
+/// The DEC-008 categories a WebP can hold and this judge classifies.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Cat {
+    Gps,
+    DeviceId,
+    Authorship,
+    FreeText,
+    Timestamps,
+    CameraModel,
+    Thumbnail,
+    MakerNote,
+    Software,
+    Xmp,
+    Icc,
+    Jumbf,
 }
 
-/// The tags of `listing` the preset must have removed.
+const ALL_CATS: [Cat; 12] = [
+    Cat::Gps,
+    Cat::DeviceId,
+    Cat::Authorship,
+    Cat::FreeText,
+    Cat::Timestamps,
+    Cat::CameraModel,
+    Cat::Thumbnail,
+    Cat::MakerNote,
+    Cat::Software,
+    Cat::Xmp,
+    Cat::Icc,
+    Cat::Jumbf,
+];
+
+/// DEC-009: the categories each preset (index into `StripPolicy::PRESETS`)
+/// removes, typed here, not read from the library. `Iptc` is left out (no WebP
+/// chunk carries it).
+fn preset_removes(preset: usize, cat: Cat) -> bool {
+    let first = match cat {
+        Cat::Gps => 0,
+        Cat::DeviceId => 1,
+        Cat::Authorship
+        | Cat::FreeText
+        | Cat::Timestamps
+        | Cat::CameraModel
+        | Cat::Thumbnail
+        | Cat::MakerNote => 2,
+        Cat::Software | Cat::Xmp => 3,
+        Cat::Icc | Cat::Jumbf => 4,
+    };
+    preset >= first
+}
+
+/// The category a printed tag stands for, or `None` for a tag the judge does
+/// not classify (structure, pixel tags, `Unknown_*`, the tags of a chunk that
+/// only the carrier rule decides).
+fn category_of(tag: &Tag) -> Option<Cat> {
+    let (g, n) = (tag.group.as_str(), tag.name.as_str());
+    if g == "GPS" || (g == "Composite" && n.starts_with("GPS")) {
+        return Some(Cat::Gps);
+    }
+    if g.starts_with("XMP") {
+        return Some(Cat::Xmp);
+    }
+    if g.starts_with("ICC") {
+        return Some(Cat::Icc);
+    }
+    if g == "JUMBF" || g == "JSON" {
+        return Some(Cat::Jumbf);
+    }
+    if n.starts_with("MakerNote") {
+        return Some(Cat::MakerNote);
+    }
+    // The tags of an `EXIF` chunk's TIFF: not those a `RIFF`-group carrier
+    // prints under the same name (`RIFF:Artist` from a `LIST`).
+    if g == "RIFF" {
+        return None;
+    }
+    match n {
+        "SerialNumber"
+        | "BodySerialNumber"
+        | "InternalSerialNumber"
+        | "LensSerialNumber"
+        | "ImageUniqueID" => Some(Cat::DeviceId),
+        "Author" | "Artist" | "Copyright" | "OwnerName" | "CameraOwnerName" => {
+            Some(Cat::Authorship)
+        }
+        "ImageDescription" | "UserComment" => Some(Cat::FreeText),
+        "ModifyDate" | "DateTimeOriginal" | "CreateDate" => Some(Cat::Timestamps),
+        "Make" | "Model" | "LensModel" => Some(Cat::CameraModel),
+        "ThumbnailImage" | "ThumbnailOffset" | "ThumbnailLength" => Some(Cat::Thumbnail),
+        "Software" => Some(Cat::Software),
+        _ => None,
+    }
+}
+
+/// The classified tags of `listing`, by category.
+fn by_category(listing: &[Tag]) -> std::collections::BTreeMap<Cat, BTreeSet<String>> {
+    let mut out: std::collections::BTreeMap<Cat, BTreeSet<String>> = Default::default();
+    for t in listing {
+        if let Some(c) = category_of(t) {
+            out.entry(c).or_default().insert(t.key());
+        }
+    }
+    out
+}
+
+/// What is wrong with `after` (the listing of the output) under `preset`, given
+/// `before` (the listing of the input): a tag of a removed category still
+/// printed, or a tag of a kept category that is no longer printed.
+/// A `RIFF`-group tag (what a `LIST` prints) is not classified, so the carrier
+/// rule's over-removal of a `LIST` is not judged here.
+fn judge(preset: usize, before: &[Tag], after: &[Tag]) -> Vec<String> {
+    let (b, a) = (by_category(before), by_category(after));
+    let mut bad = Vec::new();
+    for cat in ALL_CATS {
+        let (was, now) = (b.get(&cat), a.get(&cat));
+        if preset_removes(preset, cat) {
+            if let Some(now) = now {
+                bad.extend(now.iter().map(|k| format!("{k} ({cat:?}) not removed")));
+            }
+        } else if let Some(was) = was {
+            for k in was {
+                if !now.is_some_and(|n| n.contains(k)) {
+                    bad.push(format!("{k} ({cat:?}) over-removed"));
+                }
+            }
+        }
+    }
+    bad
+}
+
+/// The tags of `listing` a preset must have removed (for the red proof and the
+/// non-vacuity counts).
 fn violations(preset: usize, listing: &[Tag]) -> Vec<String> {
-    listing
-        .iter()
-        .filter(|t| removed_by(preset, t))
-        .map(Tag::key)
-        .collect()
+    judge(preset, listing, listing)
 }
 
 // ── the pixel chunks ────────────────────────────────────────────────────────
@@ -298,21 +426,21 @@ fn check(case: &Case, tally: &mut Tally) {
                 let residual = |k: &String| {
                     *xmp_gps && i < 3 && (k.starts_with("Composite:GPS") || k.contains(":GPS"))
                 };
-                let had: Vec<String> = violations(i, &before)
-                    .into_iter()
-                    .filter(|k| !residual(k))
-                    .collect();
                 let after = listing(out.bytes(), name);
-                let left: Vec<String> = violations(i, &after)
+                let bad: Vec<String> = judge(i, &before, &after)
                     .into_iter()
                     .filter(|k| !residual(k))
                     .collect();
-                tally.checked += had.len();
-                if !left.is_empty() {
-                    tally.failures.push(format!(
-                        "{name} under {}: still prints {left:?}",
-                        policy.name()
-                    ));
+                // Every classified tag of the input is a check: removed if its
+                // category goes, still there if it stays.
+                tally.checked += by_category(&before)
+                    .values()
+                    .map(BTreeSet::len)
+                    .sum::<usize>();
+                if !bad.is_empty() {
+                    tally
+                        .failures
+                        .push(format!("{name} under {}: {bad:?}", policy.name()));
                 }
                 if has_error(&after) && !has_error(&before) {
                     tally
@@ -539,6 +667,64 @@ fn case_grid_cases() -> Vec<Case> {
     out
 }
 
+/// A TIFF holding one tag of every Exif-set category in its three IFDs plus an
+/// IFD1 thumbnail (a real JPEG after the IFDs): free text, camera model,
+/// software, timestamps, authorship, device identity, a maker note, GPS.
+fn all_categories_tiff() -> Vec<u8> {
+    let big = false;
+    let thumb = [0xFFu8, 0xD8, 0xFF, 0xE0, 0, 4, 0, 0, 0xFF, 0xD9];
+    let build = |thumb_at: u32| {
+        let ifd0 = t::ifd_next(
+            vec![
+                t::ascii(0x010E, b"A free description\0"),
+                t::ascii(0x010F, b"MakeCorp\0"),
+                t::ascii(0x0110, b"ModelX\0"),
+                t::ascii(0x0131, b"SoftTool 1.0\0"),
+                t::ascii(0x0132, b"2024:01:02 03:04:05\0"),
+                t::ascii(0x013B, b"Artist Zed\0"),
+                t::ascii(0x8298, b"Copy Zed\0"),
+                t::ptr(0x8769, 1),
+                t::ptr(0x8825, 2),
+            ],
+            3,
+        );
+        let exif = t::ifd(vec![
+            t::ascii(0x9003, b"2024:01:02 03:04:05\0"),
+            t::ascii(0x9004, b"2024:01:02 03:04:06\0"),
+            t::undef(0x9286, b"ASCII\0\0\0A user comment"),
+            t::ascii(0xA420, b"UNIQUEID123456\0"),
+            t::ascii(0xA430, b"Owner Zed\0"),
+            t::ascii(0xA431, b"SN123456\0"),
+            t::ascii(0xA434, b"LensModelZ\0"),
+            t::undef(0x927C, b"Unknown maker note bytes 0123456789"),
+        ]);
+        let gps = t::ifd(vec![
+            t::ascii(0x0001, b"N\0"),
+            t::rational(big, 0x0002, &[(51, 1), (30, 1), (0, 1)]),
+            t::ascii(0x0003, b"E\0"),
+            t::rational(big, 0x0004, &[(0, 1), (7, 1), (0, 1)]),
+        ]);
+        let ifd1 = t::ifd(vec![
+            t::short(big, 0x0103, 6),
+            t::ptr_raw(0x0201, thumb_at),
+            t::long(big, 0x0202, thumb.len() as u32),
+        ]);
+        t::assemble(big, &[ifd0, exif, gps, ifd1])
+    };
+    let len = build(0).len() as u32;
+    let mut out = build(len);
+    out.extend_from_slice(&thumb);
+    out
+}
+
+/// A `C2PA` chunk: a JUMBF manifest with a GPS and a creator assertion.
+fn c2pa_chunk() -> Vec<u8> {
+    webp_shapes::chunk(
+        b"C2PA",
+        &webp_carriers::payload(webp_carriers::Payload::Jumbf),
+    )
+}
+
 /// A WebP holding only the rich TIFF in an `EXIF` chunk (the main type).
 fn exif_file(n: usize, flags: u8) -> Vec<u8> {
     let mut parts = vec![webp_shapes::vp8x(flags, 8, 8), webp_shapes::vp8l()];
@@ -600,6 +786,21 @@ fn pinned_cases() -> Vec<Case> {
             webp_shapes::exif_chunk(&rich_tiff()),
             chunk(b"XMP ", &xmp_plain()),
             webp_carriers::row_chunk(b"LIST", webp_carriers::Payload::ListInfo),
+        ]),
+        false,
+        false,
+    );
+    // Every category a WebP can hold, at once (the complete DEC-009 table):
+    // Exif of all nine Exif-set categories, plain XMP, ICC and a C2PA manifest.
+    add(
+        "all-categories",
+        riff(&[
+            vp8x(FLAG_ICC | FLAG_EXIF | FLAG_XMP, 8, 8),
+            chunk(b"ICCP", &oracle_png::icc_profile()),
+            vp8l(),
+            webp_shapes::exif_chunk(&all_categories_tiff()),
+            chunk(b"XMP ", &xmp_plain()),
+            c2pa_chunk(),
         ]),
         false,
         false,
@@ -730,9 +931,9 @@ fn the_check_goes_red_on_an_unstripped_file() {
     }
     assert!(violations(1, &tags)
         .iter()
-        .any(|t| t.ends_with("SerialNumber")));
-    assert!(violations(2, &tags).iter().any(|t| t.ends_with("Artist")));
-    assert!(!violations(1, &tags).iter().any(|t| t.ends_with("Artist")));
+        .any(|t| t.contains("SerialNumber")));
+    assert!(violations(2, &tags).iter().any(|t| t.contains("Artist")));
+    assert!(!violations(1, &tags).iter().any(|t| t.contains("Artist")));
     // A carrier file unstripped prints tags the bare file does not (the leak
     // check of `check`), for a carrier and an opaque chunk.
     let base = keys(&listing(&bare(), "red-base"));
@@ -761,4 +962,92 @@ fn the_check_goes_red_on_an_unstripped_file() {
     };
     let before = listing(&case.input, "red-noop");
     assert!(!violations(0, &before).is_empty());
+}
+
+/// The complete judge, shown red both ways on the all-categories file: it holds
+/// a tag of every one of the twelve categories (never vacuous), a strip that
+/// removed nothing fails every preset, and a strip that removed too much
+/// (`Everything`'s output judged as a `Gps` strip) is an over-removal failure.
+#[test]
+fn the_complete_judge_goes_red_when_a_strip_removes_too_little_or_too_much() {
+    if !live_gate("the_complete_judge_goes_red_when_a_strip_removes_too_little_or_too_much") {
+        return;
+    }
+    use webp_shapes::{chunk, riff, vp8l, vp8x, FLAG_EXIF, FLAG_ICC, FLAG_XMP};
+    let input = riff(&[
+        vp8x(FLAG_ICC | FLAG_EXIF | FLAG_XMP, 8, 8),
+        chunk(b"ICCP", &oracle_png::icc_profile()),
+        vp8l(),
+        webp_shapes::exif_chunk(&all_categories_tiff()),
+        chunk(b"XMP ", &xmp_plain()),
+        c2pa_chunk(),
+    ]);
+    let before = listing(&input, "judge-before");
+    let present = by_category(&before);
+    for cat in ALL_CATS {
+        assert!(present.contains_key(&cat), "{cat:?} is not in the file");
+    }
+    // Nothing removed: every preset has something left to complain about, and
+    // each removes at least the category it adds.
+    for preset in 0..5 {
+        assert!(!judge(preset, &before, &before).is_empty(), "{preset}");
+    }
+    // Everything removed, judged as `Gps`: the kept categories are gone.
+    let everything = strip(&input, StripPolicy::Everything).unwrap();
+    let after = listing(everything.bytes(), "judge-everything");
+    assert!(judge(4, &before, &after).is_empty());
+    let over = judge(0, &before, &after);
+    assert!(over.iter().any(|m| m.contains("over-removed")), "{over:?}");
+    // And the honest `Gps` strip passes its own preset but not a higher one.
+    let gps = strip(&input, StripPolicy::Gps).unwrap();
+    let after = listing(gps.bytes(), "judge-gps");
+    assert!(judge(0, &before, &after).is_empty());
+    assert!(!judge(1, &before, &after).is_empty());
+}
+
+/// SPEC-038 fix round (verify L1): ExifTool prints the flags of every `VP8X`
+/// with 4 or more data bytes, wherever it lies, and the last one wins. After
+/// `Everything` none of them may still announce ICC, Exif or XMP; before the
+/// strip each did (never vacuous).
+#[test]
+fn no_vp8x_prints_a_flag_for_a_chunk_the_strip_removed() {
+    if !live_gate("no_vp8x_prints_a_flag_for_a_chunk_the_strip_removed") {
+        return;
+    }
+    use webp_shapes::{chunk, riff, vp8l, vp8x, FLAG_EXIF, FLAG_ICC, FLAG_XMP};
+    let all = FLAG_ICC | FLAG_EXIF | FLAG_XMP;
+    let input = riff(&[
+        vp8x(all | 0x10, 1, 1),
+        chunk(b"VP8X", &[all, 0, 0, 0, 0, 0, 0, 0]),
+        chunk(b"VP8X", &[all, 0, 0, 0]),
+        chunk(b"ICCP", &oracle_png::icc_profile()),
+        vp8l(),
+        webp_shapes::exif_chunk(&rich_tiff()),
+        chunk(b"XMP ", &xmp_plain()),
+        vp8x(all, 1, 1),
+    ]);
+    let flags = |bytes: &[u8], label: &str| -> Vec<u32> {
+        let path = tools::temp_file_with_ext(label, "webp", bytes).expect("temp file");
+        let args: Vec<String> = ["-a", "-n", "-s3", "-RIFF:WebP_Flags"]
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        let out = tools::run_tool_with_limit("exiftool", &args, &path, Duration::from_secs(8))
+            .expect("exiftool");
+        let _ = std::fs::remove_file(&path);
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter_map(|l| l.trim().parse().ok())
+            .collect()
+    };
+    let before = flags(&input, "flags-before");
+    assert_eq!(before.len(), 4, "{before:?}");
+    assert!(before.iter().all(|f| f & u32::from(all) == u32::from(all)));
+    let out = strip(&input, StripPolicy::Everything).unwrap();
+    let after = flags(out.bytes(), "flags-after");
+    assert_eq!(after.len(), 4, "{after:?}");
+    assert!(
+        after.iter().all(|f| f & u32::from(all) == 0),
+        "a flag survives: {after:?}"
+    );
 }

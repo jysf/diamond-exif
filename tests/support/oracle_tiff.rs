@@ -121,6 +121,11 @@ pub fn ascii(tag: u16, bytes: &[u8]) -> Ent {
     ent(tag, pack(ASCII, bytes.len() as u32, bytes.to_vec()))
 }
 
+/// `UNDEFINED` entry (type 7); `bytes` is stored verbatim.
+pub fn undef(tag: u16, bytes: &[u8]) -> Ent {
+    ent(tag, pack(7, bytes.len() as u32, bytes.to_vec()))
+}
+
 /// `SHORT` entry (tag values are encoded for the byte order later).
 pub fn short(big: bool, tag: u16, v: u16) -> Ent {
     ent(tag, pack(SHORT, 1, put(big, u32::from(v), 2)))
