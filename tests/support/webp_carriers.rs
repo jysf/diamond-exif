@@ -385,7 +385,8 @@ pub fn payload(p: Payload) -> Vec<u8> {
             jbox(b"jumb", &manifest)
         }
         Payload::Id3 => {
-            let frame = b"TPE1\0\0\0\x0d\0\0\0Jane Artist";
+            // The frame size counts the encoding byte and the 11 text bytes.
+            let frame = b"TPE1\0\0\0\x0c\0\0\0Jane Artist";
             let n = frame.len();
             let mut v = b"ID3\x03\0\0".to_vec();
             v.extend_from_slice(&[

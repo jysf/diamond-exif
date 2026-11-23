@@ -50,6 +50,64 @@ tags:
 9. **The self-check (DEC-013 part 7) for WebP:** (a) the output's audit has no finding in a removed category and no opaque carrier the policy removes; (b) the multiset of findings in the kept categories equals the input's; (c) every kept chunk is byte-identical and in order, and the image chunks (`VP8 `, `VP8L`, `ALPH`, `ANIM`, `ANMF`, `VP8X` apart from the flag bits) are unchanged; (d) the output walks with no new issue kind; (e) stripping the output again changes nothing; (f) the declared size relation of rule 6 holds and the `VP8X` flags agree with the chunks present; (g) the entry inventory equals the input's minus the deleted entries; (h) zeroed ranges read zero.
 10. **Dispatch and honesty.** `strip` accepts `Sniffed::Webp`; `ContainerKind::strippable()` stays false for WebP until SPEC-039 shows ExifTool agrees and flips it.
 
+## The measured table (SPEC-038, ExifTool 13.55, `-a -u -G1 -H -s`)
+
+One chunk per file in a minimal WebP, the chunk before the image data, after it, beyond the declared RIFF size and in a file with no `VP8X`. Every row printed at least one tag from its chunk in every position but after an empty null chunk (ExifTool stops reading there; the strip reads on and removes more, never less). The data is `tests/support/webp_carriers.rs`; the fuzz harness types its own copy and a test compares the two row by row.
+
+| Chunk type | Located as | Category | Removed by | A tag ExifTool 13.55 printed from it |
+|---|---|---|---|---|
+| `LIST` | Carrier region | OtherSegment | every preset (any tag category, `Xmp`, `Iptc` or `OtherSegment`) | `RIFF:Artist` |
+| `IDIT` | Carrier region | OtherSegment | every preset (any tag category, `Xmp`, `Iptc` or `OtherSegment`) | `RIFF:DateTimeOriginal` |
+| `JUNK` (only when its data is text) | Carrier region | OtherSegment | every preset (any tag category, `Xmp`, `Iptc` or `OtherSegment`) | `RIFF:TextJunk` |
+| `JUNQ` | Carrier region | OtherSegment | every preset (any tag category, `Xmp`, `Iptc` or `OtherSegment`) | `RIFF:OldXMP` |
+| `SEAL` | Carrier region | OtherSegment | every preset (any tag category, `Xmp`, `Iptc` or `OtherSegment`) | `XML-dc:Creator` |
+| `_PMX` | Carrier region | OtherSegment | every preset (any tag category, `Xmp`, `Iptc` or `OtherSegment`) | `XMP-dc:Creator` |
+| `aXML` | Carrier region | OtherSegment | every preset (any tag category, `Xmp`, `Iptc` or `OtherSegment`) | `XML-dc:Creator` |
+| `iXML` | Carrier region | OtherSegment | every preset (any tag category, `Xmp`, `Iptc` or `OtherSegment`) | `XML-dc:Creator` |
+| `afsp` | Carrier region | OtherSegment | every preset (any tag category, `Xmp`, `Iptc` or `OtherSegment`) | `RIFF:Afsp` |
+| `bext` | Carrier region | OtherSegment | every preset (any tag category, `Xmp`, `Iptc` or `OtherSegment`) | `RIFF:Description` |
+| `guan` | Carrier region | OtherSegment | every preset (any tag category, `Xmp`, `Iptc` or `OtherSegment`) | `RIFF:Guano` |
+| `list` | Carrier region | OtherSegment | every preset (any tag category, `Xmp`, `Iptc` or `OtherSegment`) | `RIFF:ListType` |
+| `labl` | Carrier region | OtherSegment | every preset (any tag category, `Xmp`, `Iptc` or `OtherSegment`) | `RIFF:CuePointLabel` |
+| `note` | Carrier region | OtherSegment | every preset (any tag category, `Xmp`, `Iptc` or `OtherSegment`) | `RIFF:CuePointNote` |
+| `ltxt` | Carrier region | OtherSegment | every preset (any tag category, `Xmp`, `Iptc` or `OtherSegment`) | `RIFF:LabeledText` |
+| `olym` | Carrier region | OtherSegment | every preset (any tag category, `Xmp`, `Iptc` or `OtherSegment`) | `Olympus:FileNumber` |
+| `ID3 ` | Carrier region | OtherSegment | every preset (any tag category, `Xmp`, `Iptc` or `OtherSegment`) | `ID3v2_3:Artist` |
+| `id3 ` | Carrier region | OtherSegment | every preset (any tag category, `Xmp`, `Iptc` or `OtherSegment`) | `ID3v2_3:Artist` |
+| `gps0` | Carrier region | OtherSegment | every preset (any tag category, `Xmp`, `Iptc` or `OtherSegment`) | `RIFF:GPSLatitude` |
+| `SGLT` | Carrier region | OtherSegment | every preset (any tag category, `Xmp`, `Iptc` or `OtherSegment`) | `RIFF:Accelerometer` |
+| `SLLT` | Carrier region | OtherSegment | every preset (any tag category, `Xmp`, `Iptc` or `OtherSegment`) | `RIFF:GPSLatitude` |
+| `C2PA` | Jumbf region | Jumbf | `Jumbf` only (`Everything`) | `JSON:Exif_GPSLatitude` |
+| `CSET` | OtherChunk region | OtherSegment | `OtherSegment` only (`Everything`) | `RIFF:CodePage` |
+| `acid` | OtherChunk region | OtherSegment | `OtherSegment` only (`Everything`) | `RIFF:AcidizerFlags` |
+| `ds64` | OtherChunk region | OtherSegment | `OtherSegment` only (`Everything`) | `RIFF:RIFFSize64` |
+| `fact` | OtherChunk region | OtherSegment | `OtherSegment` only (`Everything`) | `RIFF:NumberOfSamples` |
+| `fmt ` | OtherChunk region | OtherSegment | `OtherSegment` only (`Everything`) | `RIFF:Encoding` |
+| `inst` | OtherChunk region | OtherSegment | `OtherSegment` only (`Everything`) | `RIFF:UnshiftedNote` |
+| `smpl` | OtherChunk region | OtherSegment | `OtherSegment` only (`Everything`) | `RIFF:Manufacturer` |
+| `cue ` | OtherChunk region | OtherSegment | `OtherSegment` only (`Everything`) | `RIFF:CuePoints` |
+| `plst` | OtherChunk region | OtherSegment | `OtherSegment` only (`Everything`) | `RIFF:Playlist` |
+| `gsen` | OtherChunk region | OtherSegment | `OtherSegment` only (`Everything`) | `RIFF:Accelerometer` |
+
+Chunk types that printed only an `Unknown_<code>` binary dump under `-u`, or nothing, are not metadata, are never located and are never removed: `PAD `, `strd`, `strn`, `PrmL`, `Cr8r`, `wavl`, `slnt`, `DISP`, `avih`, `strh`, `strf`, `vedt`, `ISFT`, `IART`, `INAM`, `ICMT`, `ICOP`, `TEXT`, `COMM`, `umid`, `regn`, `link`, `axml`, `junk`, `pad `, `Junk`, `exif`, `xmp `, `iccp`, `Exif` (`junk` and `Junk` are case spellings of `JUNK`; `exif`, `xmp `, `iccp` and `Exif` of types with a rule).
+
+**Case.** Measured for all 16 ASCII-case spellings of every row's code: no type folds case. Only the exact code decodes (and `ID3 ` and `id3 `, two codes ExifTool knows); the other spellings print only `Unknown_*` tags and are kept. The live test `tests/strip_webp_live.rs` repeats this against the installed ExifTool for every spelling (400 files) and for every row in four positions.
+
+**`JUNK`.** A `JUNK` chunk is a carrier only when its data is printable ASCII (0x20 to 0x7E) followed by zero or more NULs and holds at least one text byte (ExifTool printed `TextJunk`); empty data, all zeros, a NUL before or inside the text and any control or high byte print nothing and the chunk is kept. `junk`, `Junk` are not `JUNK`.
+
+**Two payload notes for the record.** `LIST` of any list type prints tags for the sub-chunks it knows (`INFO`, `INF0`, `adtl`, `exif`, `hdrl` were measured), so every `LIST` is a carrier (below). The committed `ID3 ` fixture declared a frame one byte too large (13 declared, 12 present), for which ExifTool 13.55 printed only `File:ID3Size`; the live test found it, the fixture was corrected (SPEC-038 Part B) and now prints `ID3v2_3:Artist`. The strip's rule (the chunk is a carrier) never depended on it.
+
+## Clarifications (SPEC-038 build)
+
+1. **Every `LIST` is a carrier.** The strip does not parse list types: a `LIST` may hold personal `INFO` tags (`Artist`, `Copyright`, `Comment`, `DateCreated`) or `adtl` labels, and a list type the audit does not know today may be decoded by a later ExifTool. Over-removal of a `LIST` that holds nothing personal is a stated residual (README), the same stance as PNG raw profiles.
+2. **`JUNK` is a carrier by the text rule only** (above), because the common `JUNK` is zero padding and must be kept for a WebP written by tools that pad; a text `JUNK` is where ExifTool finds a string.
+3. **`C2PA` is a `Jumbf` region** with the same stated residual as a PNG `caBX` (DEC-021 clarifications): `AllPii` and `All` keep it, and a manifest can carry personal assertions (a measured `exif:GPSLatitude` assertion printed `JSON:Exif_GPSLatitude`); only `Everything` removes it.
+4. **Grouping.** `SGLT`, `SLLT` and `gps0` are carriers (GPS-sensor chunks; `gps0` and `SLLT` print `GPSLatitude`). `gsen` prints the same `Accelerometer` tag as `SGLT` but holds no position, so it is an opaque `OtherChunk` (`Everything` only); `SGLT` stays with the GPS family. `CSET`, `acid`, `ds64`, `fact`, `fmt `, `inst`, `smpl`, `cue `, `plst` print technical tags of an audio chunk and are `OtherChunk`.
+5. **Self-check failures reuse `Check::MpfFields`.** The size relation (clause 9 f) and the flag agreement are the "recorded fields agree with the bytes" check class of DEC-013 part 7; no new `Check` variant was added. A plan whose `apply` fails reports the same.
+6. **A shorter tail is not a chunk.** Fewer than 8 bytes after the last chunk halt the walk without an issue the writer refuses; the bytes are kept as they are. A chunk whose declared size runs past the end of the input is refused (`ChunkPastEnd`), at the chunk's offset.
+7. **Only the `VP8X` the reader reports is patched** (the first `VP8X`, when it has 10 bytes or more); a later `VP8X`, or one that is not first, is a malformed file and is kept byte for byte.
+8. **Overlap cannot occur** on a WebP (chunks never overlap and the header is never a chunk); the fuzz harness treats an `Overlap` answer as a failure.
+
 ## Context
 
 PNG strip (DEC-021) showed that a strip built from the audit's lists and a model typed from the same measurements leaves what the tool decodes and the audit does not list, and that chunk-type case folding must be measured per type. WebP adds two things PNG does not have: a size field and flag bits that must stay consistent after a removal.

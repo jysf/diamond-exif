@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-22
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-038
@@ -46,18 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                # completed | blocked | rejected
+  agent: claude-sonnet-5-5         # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
   basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
-  branch: null
+  branch: claude/spec-038-part-b
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-22
+  notes: "tokens_total is null: the implementer harness reports no token count to the agent; the orchestrator fills it from the harness result"
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -204,10 +204,10 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `claude/spec-038-part-b` (from `claude/spec-038-design`), no PR
+- **Completed at:** 2026-11-22
+- **All acceptance criteria met?** yes (Part B items; see the commit message for the live test findings)
+- **For `verify`:** not applicable
 
 ### Cost self-report
 
@@ -215,27 +215,26 @@ Mirror what you put in the `handback:` front-matter, and say where the number
 came from. **This is the number that lands in the spec** — the orchestrator
 transcribes it via `just handback-sync`, it does not estimate it.
 
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null (the harness gives the agent no count)
+- **Estimated USD:** null
+- **Duration (minutes):** not measured
+- **Source of the number:** none available
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
+- **New decisions emitted:** none (DEC-022 filled: measured table, eight clarifications)
 - **Deviations from spec:**
-  - [list]
-- **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - The ID3 fixture in `tests/support/webp_carriers.rs` declared a frame size one byte too large, so ExifTool printed only `File:ID3Size`; corrected (the live test found it).
+  - The live test's XMP-with-GPS file is judged with the stated residual (a preset without `Xmp` keeps the XMP packet and its GPS), the other XMP files carry no GPS.
+- **Follow-up work identified:** none for the writer; no bug found in `src/write/webp.rs` or the reader.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — Nothing blocking. The shell sandbox refuses heredocs and multi-command lines for worktree agents; files were written with the editor tool.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — Whether the live test should treat GPS from a kept XMP packet as a failure (it is the stated residual, so it does not).
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Run the live test against a fixture's measured `prints` tag first; that is how the wrong ID3 payload was found only at the end.

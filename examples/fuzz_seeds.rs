@@ -30,6 +30,9 @@ mod png_shapes;
 mod real_shapes;
 #[path = "../tests/support/webp_shapes.rs"]
 mod webp_shapes;
+// SPEC-038: the measured carrier rows become the `rewrite_webp` shapes.
+#[path = "../tests/support/webp_carriers.rs"]
+mod webp_carriers;
 // SPEC-020: the strip fixtures.
 #[path = "../tests/support/strip_shapes.rs"]
 mod strip_shapes;
@@ -2190,6 +2193,578 @@ fn rewrite_png_seeds() -> Vec<(String, Vec<u8>)> {
     out
 }
 
+/// SPEC-038: a TIFF with the tag families the presets name: Make, Artist and
+/// Copyright in IFD0, a body serial and a camera owner in the Exif IFD, a GPS
+/// latitude reference.
+fn tiff_pii(w: &Writer) -> Vec<u8> {
+    let ifds = vec![
+        Ifd {
+            entries: vec![
+                entry(271, ASCII, 11, Val::Ext(b"DiamondCam\0".to_vec())),
+                entry(315, ASCII, 9, Val::Ext(b"Jane Doe\0".to_vec())),
+                entry(33432, ASCII, 10, Val::Ext(b"Acme 2024\0".to_vec())),
+                entry(EXIF_IFD, LONG, 1, Val::Refs(vec![1])),
+                entry(GPS_INFO, LONG, 1, Val::Refs(vec![2])),
+            ],
+            next: Next::End,
+        },
+        Ifd {
+            entries: vec![
+                entry(42032, ASCII, 9, Val::Ext(b"Jane Doe\0".to_vec())),
+                entry(42033, ASCII, 9, Val::Ext(b"SN123456\0".to_vec())),
+            ],
+            next: Next::End,
+        },
+        Ifd {
+            entries: vec![entry(1, ASCII, 2, inline_bytes(b"N\0"))],
+            next: Next::End,
+        },
+    ];
+    w.build(&ifds)
+}
+
+/// Whether `code` is a measured row or a type with a rule of its own.
+fn webp_code_has_a_rule(code: &[u8; 4]) -> bool {
+    webp_carriers::ROWS.iter().any(|r| &r.code == code)
+        || matches!(
+            code,
+            b"EXIF"
+                | b"ICCP"
+                | b"XMP "
+                | b"JUNK"
+                | b"VP8X"
+                | b"VP8 "
+                | b"VP8L"
+                | b"ALPH"
+                | b"ANIM"
+                | b"ANMF"
+        )
+}
+
+/// SPEC-038: the WebP shapes of `rewrite_webp`, one per DEC-022 rule: `EXIF`
+/// (all, none and a partial edit; with and without the `Exif\0\0` prefix; empty,
+/// unparseable, three places, 16 and 17 chunks), `XMP `, `XMP\0`, `ICCP`, every
+/// measured carrier class (LIST, IDIT, text JUNK, the XML and audio and ID3 and
+/// GPS carriers), `C2PA`, the opaque chunks, chunks that are not metadata and
+/// the wrong-case spellings, empty chunks, chunks before and after the image
+/// data, beyond the declared size and after a null chunk, the RIFF size too
+/// small, too large, zero and ending inside a removed chunk, the `VP8X` flags
+/// set, unset, mixed and for an animation, a missing pad, trailing bytes and
+/// halted walks.
+fn rewrite_webp_shapes() -> Vec<(&'static str, Vec<u8>)> {
+    use webp_shapes::{
+        chunk, chunk_unpadded, exif_chunk, raw_chunk, riff, riff_with_size, vp8l, vp8x,
+        with_exif_prefix, FLAG_ALPHA, FLAG_ANIM, FLAG_EXIF, FLAG_ICC, FLAG_XMP,
+    };
+    let w = Writer { big: false };
+    let gps = tiff_gps_and_thumbnail(&w);
+    let pii = tiff_pii(&w);
+    let make = webp_shapes::exif_with_make();
+    let all = FLAG_ICC | FLAG_EXIF | FLAG_XMP;
+    let xmp = chunk(b"XMP ", b"<x:xmpmeta/>");
+    let icc = chunk(b"ICCP", b"icc profile");
+    let row = |code: &[u8; 4]| -> Vec<u8> {
+        let r = webp_carriers::ROWS
+            .iter()
+            .find(|r| &r.code == code)
+            .expect("a measured row");
+        webp_carriers::row_chunk(code, r.payload)
+    };
+    let junk_text = chunk(b"JUNK", b"Jane Doe Springfield");
+    let junk_zero = chunk(b"JUNK", &[0u8; 8]);
+    let list_adtl = chunk(
+        b"LIST",
+        &webp_carriers::payload(webp_carriers::Payload::ListAdtl),
+    );
+    // `parts` with `extra` appended after the declared RIFF size.
+    let beyond = |parts: &[Vec<u8>], extra: &[Vec<u8>]| {
+        let mut v = riff(parts);
+        for e in extra {
+            v.extend_from_slice(e);
+        }
+        v
+    };
+    // A `VP8X` with `flags`, then `parts`.
+    let with = |flags: u8, parts: &[Vec<u8>]| {
+        let mut all_parts = vec![vp8x(flags, 8, 8)];
+        all_parts.extend_from_slice(parts);
+        riff(&all_parts)
+    };
+    let sink_parts = |tiff: &[u8]| -> Vec<Vec<u8>> {
+        vec![
+            vp8x(all | FLAG_ALPHA, 8, 8),
+            icc.clone(),
+            vp8l(),
+            exif_chunk(tiff),
+            xmp.clone(),
+            row(b"LIST"),
+            row(b"IDIT"),
+            junk_text.clone(),
+            row(b"C2PA"),
+            row(b"CSET"),
+            chunk(b"PAD ", b"pad"),
+        ]
+    };
+    let every_row: Vec<Vec<u8>> = webp_carriers::ROWS
+        .iter()
+        .map(|r| webp_carriers::row_chunk(&r.code, r.payload))
+        .collect();
+    let seventeen: Vec<Vec<u8>> = std::iter::once(vp8x(FLAG_EXIF, 1, 1))
+        .chain((0..17).map(|_| exif_chunk(&make)))
+        .collect();
+    let sixteen: Vec<Vec<u8>> = std::iter::once(vp8x(FLAG_EXIF, 1, 1))
+        .chain((0..16).map(|_| exif_chunk(&make)))
+        .collect();
+    let past_end = {
+        let mut d = riff(&[vp8x(FLAG_EXIF, 1, 1), exif_chunk(&gps)]);
+        d.extend_from_slice(&raw_chunk(b"XMP ", 1000, b"abc"));
+        d
+    };
+    let tail = |n: usize| {
+        let mut d = riff(&[vp8x(FLAG_EXIF, 1, 1), exif_chunk(&gps), row(b"LIST")]);
+        d.extend_from_slice(&vec![b'A'; n]);
+        d
+    };
+    let many_xmp_nul: Vec<Vec<u8>> = std::iter::once(vp8x(FLAG_XMP, 1, 1))
+        .chain((0..1100).map(|_| chunk(b"XMP\0", b"")))
+        .collect();
+    // Every case spelling of a code with a rule, other than its own and other
+    // than a measured row, is kept.
+    let spelled: Vec<Vec<u8>> = ["LIST", "IDIT", "C2PA", "CSET", "ICCP", "EXIF", "XMP "]
+        .iter()
+        .flat_map(|c| {
+            let code: [u8; 4] = c.as_bytes().try_into().expect("four bytes");
+            webp_carriers::spellings(code)
+                .into_iter()
+                .filter(move |s| *s != code && !webp_code_has_a_rule(s))
+                .map(|s| chunk(&s, b"Jane Doe"))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    vec![
+        // EXIF.
+        ("exif-gps", with(FLAG_EXIF, &[vp8l(), exif_chunk(&gps)])),
+        (
+            "exif-gps-prefix",
+            with(FLAG_EXIF, &[vp8l(), exif_chunk(&with_exif_prefix(&gps))]),
+        ),
+        ("exif-make", with(FLAG_EXIF, &[vp8l(), exif_chunk(&make)])),
+        (
+            "exif-make-prefix",
+            with(FLAG_EXIF, &[vp8l(), exif_chunk(&with_exif_prefix(&make))]),
+        ),
+        ("exif-pii", with(FLAG_EXIF, &[vp8l(), exif_chunk(&pii)])),
+        (
+            "exif-no-entries",
+            with(FLAG_EXIF, &[vp8l(), exif_chunk(&webp_shapes::tiff_empty())]),
+        ),
+        (
+            "exif-unparseable",
+            with(FLAG_EXIF, &[vp8l(), exif_chunk(b"not a tiff")]),
+        ),
+        (
+            "exif-empty-chunk",
+            with(FLAG_EXIF, &[vp8l(), exif_chunk(&[])]),
+        ),
+        (
+            "exif-three-places",
+            beyond(
+                &[
+                    vp8x(FLAG_EXIF, 8, 8),
+                    exif_chunk(&gps),
+                    vp8l(),
+                    exif_chunk(&make),
+                ],
+                &[exif_chunk(&gps)],
+            ),
+        ),
+        ("exif-sixteen", riff(&sixteen)),
+        ("exif-seventeen", riff(&seventeen)),
+        // XMP and ICC.
+        ("xmp", with(FLAG_XMP, &[vp8l(), xmp.clone()])),
+        (
+            "xmp-nul-id",
+            with(FLAG_XMP, &[vp8l(), chunk(b"XMP\0", b"<x/>")]),
+        ),
+        (
+            "xmp-two",
+            with(
+                FLAG_XMP,
+                &[chunk(b"XMP ", b"<a/>"), vp8l(), chunk(b"XMP ", b"<b/>")],
+            ),
+        ),
+        ("xmp-empty", with(FLAG_XMP, &[vp8l(), chunk(b"XMP ", b"")])),
+        ("iccp", with(FLAG_ICC, &[icc.clone(), vp8l()])),
+        ("iccp-empty", with(FLAG_ICC, &[chunk(b"ICCP", b""), vp8l()])),
+        (
+            "all-three",
+            with(all, &[icc.clone(), vp8l(), exif_chunk(&gps), xmp.clone()]),
+        ),
+        // The carriers, by class.
+        ("carrier-list-info", with(0, &[row(b"LIST"), vp8l()])),
+        ("carrier-list-adtl", with(0, &[vp8l(), list_adtl])),
+        ("carrier-idit", with(0, &[vp8l(), row(b"IDIT")])),
+        ("carrier-junk-text", with(0, &[vp8l(), junk_text.clone()])),
+        (
+            "carrier-junk-not-text",
+            with(0, &[vp8l(), junk_zero, chunk(b"JUNK", b"")]),
+        ),
+        ("carrier-junq", with(0, &[vp8l(), row(b"JUNQ")])),
+        (
+            "carrier-xml",
+            with(
+                0,
+                &[
+                    vp8l(),
+                    row(b"SEAL"),
+                    row(b"_PMX"),
+                    row(b"aXML"),
+                    row(b"iXML"),
+                ],
+            ),
+        ),
+        (
+            "carrier-audio",
+            with(
+                0,
+                &[
+                    vp8l(),
+                    row(b"afsp"),
+                    row(b"bext"),
+                    row(b"guan"),
+                    row(b"list"),
+                    row(b"labl"),
+                    row(b"note"),
+                    row(b"ltxt"),
+                    row(b"olym"),
+                ],
+            ),
+        ),
+        (
+            "carrier-id3",
+            with(0, &[vp8l(), row(b"ID3 "), row(b"id3 ")]),
+        ),
+        (
+            "carrier-gps",
+            with(0, &[vp8l(), row(b"gps0"), row(b"SGLT"), row(b"SLLT")]),
+        ),
+        ("c2pa", with(0, &[vp8l(), row(b"C2PA")])),
+        (
+            "other-chunks",
+            with(
+                0,
+                &[
+                    vp8l(),
+                    row(b"CSET"),
+                    row(b"acid"),
+                    row(b"ds64"),
+                    row(b"fact"),
+                    row(b"fmt "),
+                    row(b"inst"),
+                    row(b"smpl"),
+                    row(b"cue "),
+                    row(b"plst"),
+                    row(b"gsen"),
+                ],
+            ),
+        ),
+        (
+            "not-metadata",
+            with(
+                0,
+                &[
+                    vp8l(),
+                    chunk(b"PAD ", b"pad"),
+                    chunk(b"strd", b"strd"),
+                    chunk(b"IART", b"Jane Doe\0"),
+                    chunk(b"ICMT", b"comment\0"),
+                    chunk(b"junk", b"Jane Doe"),
+                    chunk(b"axml", b"<x/>"),
+                ],
+            ),
+        ),
+        (
+            "wrong-case-kept",
+            with(
+                0,
+                &[
+                    vp8l(),
+                    chunk(b"exif", &gps),
+                    chunk(b"Exif", &gps),
+                    chunk(b"xmp ", b"<x/>"),
+                    chunk(b"iccp", b"icc"),
+                    chunk(b"idit", b"Jane"),
+                    chunk(b"Idit", b"Jane"),
+                    chunk(b"c2pa", b"x"),
+                    chunk(b"Cset", &[0u8; 8]),
+                ],
+            ),
+        ),
+        (
+            "case-spellings-kept",
+            riff(&[vec![vp8l()], spelled].concat()),
+        ),
+        // Positions.
+        (
+            "carrier-before-image",
+            with(0, &[row(b"LIST"), row(b"IDIT"), vp8l()]),
+        ),
+        (
+            "carrier-beyond-declared",
+            beyond(&[vp8x(0, 8, 8), vp8l()], &[row(b"LIST"), row(b"C2PA")]),
+        ),
+        (
+            "carrier-after-null-chunk",
+            with(
+                0,
+                &[
+                    vp8l(),
+                    raw_chunk(b"\0\0\0\0", 0, b""),
+                    row(b"LIST"),
+                    chunk(b"XMP ", b"<x/>"),
+                ],
+            ),
+        ),
+        (
+            "empty-chunks",
+            with(
+                all,
+                &[
+                    chunk(b"ICCP", b""),
+                    vp8l(),
+                    chunk(b"EXIF", b""),
+                    chunk(b"XMP ", b""),
+                    chunk(b"LIST", b""),
+                    chunk(b"IDIT", b""),
+                    chunk(b"C2PA", b""),
+                    chunk(b"CSET", b""),
+                ],
+            ),
+        ),
+        // The RIFF size.
+        (
+            "size-too-small",
+            riff_with_size(
+                4,
+                &[
+                    vp8x(FLAG_EXIF, 8, 8),
+                    vp8l(),
+                    exif_chunk(&gps),
+                    row(b"LIST"),
+                ],
+            ),
+        ),
+        (
+            "size-too-large",
+            riff_with_size(
+                0xFFFF_FFF0,
+                &[
+                    vp8x(FLAG_EXIF, 8, 8),
+                    vp8l(),
+                    exif_chunk(&gps),
+                    row(b"LIST"),
+                ],
+            ),
+        ),
+        (
+            "size-zero",
+            riff_with_size(0, &[vp8x(FLAG_XMP, 8, 8), xmp.clone(), vp8l()]),
+        ),
+        // The declared range ends 10 bytes into the `LIST` chunk (offset 44).
+        (
+            "size-ends-inside-removed-chunk",
+            riff_with_size(
+                46,
+                &[vp8x(FLAG_XMP, 8, 8), vp8l(), row(b"LIST"), xmp.clone()],
+            ),
+        ),
+        (
+            "size-odd",
+            riff_with_size(7, &[vp8x(FLAG_XMP, 8, 8), xmp.clone(), vp8l()]),
+        ),
+        // The VP8X flags.
+        (
+            "flags-unset-with-chunks",
+            with(0, &[icc.clone(), vp8l(), exif_chunk(&gps), xmp.clone()]),
+        ),
+        (
+            "flags-set-no-chunks",
+            with(all | FLAG_ALPHA, &[vp8l(), row(b"LIST")]),
+        ),
+        (
+            "flags-mixed",
+            with(
+                all | FLAG_ALPHA,
+                &[icc.clone(), vp8l(), exif_chunk(&make), xmp.clone()],
+            ),
+        ),
+        (
+            "flags-only-xmp-set",
+            with(
+                FLAG_XMP,
+                &[icc.clone(), vp8l(), exif_chunk(&make), xmp.clone()],
+            ),
+        ),
+        (
+            "animated",
+            riff(&[
+                vp8x(FLAG_ANIM | FLAG_EXIF | FLAG_XMP | FLAG_ALPHA, 4, 4),
+                chunk(b"ANIM", &[0, 0, 0, 0, 0, 0]),
+                chunk(
+                    b"ANMF",
+                    &[exif_chunk(&gps), xmp.clone(), row(b"LIST")].concat(),
+                ),
+                chunk(b"ANMF", &[0u8; 16]),
+                exif_chunk(&gps),
+                xmp.clone(),
+            ]),
+        ),
+        (
+            "vp8x-nine-bytes",
+            riff(&[
+                chunk(b"VP8X", &[FLAG_EXIF, 0, 0, 0, 0, 0, 0, 0, 0]),
+                exif_chunk(&make),
+                xmp.clone(),
+            ]),
+        ),
+        (
+            "vp8x-after-carrier",
+            riff(&[
+                row(b"LIST"),
+                vp8x(all, 8, 8),
+                icc.clone(),
+                exif_chunk(&make),
+                xmp.clone(),
+            ]),
+        ),
+        (
+            "vp8x-twice",
+            riff(&[
+                vp8x(0, 8, 8),
+                vp8x(all, 8, 8),
+                icc.clone(),
+                exif_chunk(&make),
+                xmp.clone(),
+            ]),
+        ),
+        (
+            "no-vp8x-with-metadata",
+            riff(&[
+                vp8l(),
+                exif_chunk(&gps),
+                xmp.clone(),
+                icc.clone(),
+                row(b"LIST"),
+            ]),
+        ),
+        // The pad byte and the tail.
+        (
+            "pad-missing-last",
+            riff(&[vp8x(0, 8, 8), vp8l(), chunk_unpadded(b"IDIT", b"abc")]),
+        ),
+        (
+            "pad-missing-middle",
+            riff(&[vp8x(0, 8, 8), chunk_unpadded(b"IDIT", b"abc"), vp8l()]),
+        ),
+        ("trailing-bytes-1", tail(1)),
+        ("trailing-bytes-7", tail(7)),
+        // Halted walks.
+        ("walk-chunk-past-end", past_end),
+        ("walk-tail-8-garbage", tail(8)),
+        (
+            "walk-length-ffffffff",
+            beyond(
+                &[vp8x(FLAG_EXIF, 8, 8), exif_chunk(&gps)],
+                &[raw_chunk(b"LIST", 0xFFFF_FFFF, b"")],
+            ),
+        ),
+        (
+            "walk-halted-mid",
+            beyond(
+                &[vp8x(FLAG_EXIF, 8, 8), exif_chunk(&gps), row(b"LIST")],
+                &[raw_chunk(b"C2PA", 100, b"short")],
+            ),
+        ),
+        ("walk-too-many-issues", riff(&many_xmp_nul)),
+        ("walk-stub", riff(&[])),
+        ("walk-stub-11-bytes", webp_shapes::header(4)[..11].to_vec()),
+        // The whole.
+        ("every-row", riff(&every_row)),
+        ("kitchen-sink", riff(&sink_parts(&gps))),
+        ("kitchen-sink-pii", riff(&sink_parts(&pii))),
+        (
+            "kitchen-sink-everywhere",
+            beyond(
+                &sink_parts(&gps),
+                &[
+                    exif_chunk(&pii),
+                    xmp.clone(),
+                    icc.clone(),
+                    row(b"LIST"),
+                    row(b"C2PA"),
+                    row(b"CSET"),
+                ],
+            ),
+        ),
+    ]
+}
+
+/// SPEC-038: the seeds of `rewrite_webp`. Byte 0 selects the policy (see
+/// `fuzz/shared/rewrite_webp_invariants.rs`): 4 `Everything`, 3 `All`, 0 `Gps`,
+/// 1 `GpsAndDevice`, 2 `AllPii`, 8 `Custom(OtherSegment)`, 9 `Custom(Icc)`,
+/// 11 `Custom(Gps)` for every shape; three shapes also under the seven other
+/// policy bytes and a mask.
+fn rewrite_webp_seeds() -> Vec<(String, Vec<u8>)> {
+    let mut out = Vec::new();
+    let policies: [(&str, u8); 8] = [
+        ("everything", 4),
+        ("gps-and-device", 1),
+        ("all-pii", 2),
+        ("all", 3),
+        ("gps", 0),
+        ("other-segment", 8),
+        ("icc", 9),
+        ("gps-only", 11),
+    ];
+    let shapes = rewrite_webp_shapes();
+    for (name, bytes) in &shapes {
+        for (label, head) in policies {
+            let mut v = vec![head];
+            v.extend_from_slice(bytes);
+            out.push((format!("{label}-{name}"), v));
+        }
+    }
+    let rest: [(&str, u8); 7] = [
+        ("none", 5),
+        ("xmp", 10),
+        ("jumbf", 12),
+        ("freetext", 13),
+        ("timestamps", 14),
+        ("software", 15),
+        ("default", 16),
+    ];
+    for sink in [
+        "kitchen-sink",
+        "kitchen-sink-pii",
+        "kitchen-sink-everywhere",
+    ] {
+        let bytes = &shapes.iter().find(|(n, _)| *n == sink).expect("a shape").1;
+        for (label, head) in rest {
+            let mut v = vec![head];
+            v.extend_from_slice(bytes);
+            out.push((format!("{label}-{sink}"), v));
+        }
+        // A mask: bits 2, 3 and 14 of `Category::ALL`.
+        let mut v = vec![6, 0x0C, 0x40];
+        v.extend_from_slice(bytes);
+        out.push((format!("mask-{sink}"), v));
+    }
+    // Degenerate: a policy byte alone, a mask cut short.
+    out.push(("policy-byte-only".to_string(), vec![7]));
+    out.push(("mask-cut-short".to_string(), vec![6, 0x40]));
+    out
+}
+
 fn main() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/tiff_ifd");
     fs::create_dir_all(&dir).expect("create seeds dir");
@@ -2315,6 +2890,14 @@ fn main() {
         fs::write(ndir.join(name), bytes).expect("write seed");
     }
     println!("wrote {} seeds to {}", nseeds.len(), ndir.display());
+
+    let mdir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/rewrite_webp");
+    fs::create_dir_all(&mdir).expect("create seeds dir");
+    let mseeds = rewrite_webp_seeds();
+    for (name, bytes) in &mseeds {
+        fs::write(mdir.join(name), bytes).expect("write seed");
+    }
+    println!("wrote {} seeds to {}", mseeds.len(), mdir.display());
 
     let cdir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/cli_args");
     fs::create_dir_all(&cdir).expect("create seeds dir");
