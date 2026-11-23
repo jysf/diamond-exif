@@ -77,10 +77,11 @@ fn part(name: &str, bytes: Vec<u8>, role: Role, flag: Flag) -> Part {
     }
 }
 
-const EXIF9: [Category; 9] = [
+const EXIF10: [Category; 10] = [
     Category::Gps,
     Category::DeviceId,
     Category::Authorship,
+    Category::Rights,
     Category::FreeText,
     Category::Timestamps,
     Category::CameraModel,
@@ -96,7 +97,7 @@ fn spec_of(cats: &[Category]) -> StripSpec {
 /// DEC-022 clause 4: a carrier goes with any tag category, `Xmp` or `Iptc`, and
 /// with its own category `OtherSegment`.
 fn carrier_removed(spec: StripSpec) -> bool {
-    EXIF9
+    EXIF10
         .iter()
         .chain([Category::Xmp, Category::Iptc].iter())
         .any(|c| spec.contains(*c))
@@ -112,9 +113,9 @@ enum ExifMode {
 
 /// DEC-022 clause 3.
 fn exif_mode(spec: StripSpec) -> ExifMode {
-    if EXIF9.iter().all(|c| spec.contains(*c)) {
+    if EXIF10.iter().all(|c| spec.contains(*c)) {
         ExifMode::Whole
-    } else if EXIF9
+    } else if EXIF10
         .iter()
         .chain([Category::Xmp, Category::Iptc, Category::Icc].iter())
         .any(|c| spec.contains(*c))
@@ -362,6 +363,7 @@ fn specs() -> Vec<(String, StripPolicy)> {
         ("other-segment", vec![Category::OtherSegment]),
         ("xmp", vec![Category::Xmp]),
         ("authorship", vec![Category::Authorship]),
+        ("rights", vec![Category::Rights]),
         ("none", vec![]),
         ("xmp+icc", vec![Category::Xmp, Category::Icc]),
         ("iptc", vec![Category::Iptc]),
@@ -919,6 +921,51 @@ fn a_partial_policy_deletes_exif_entries_in_place_with_and_without_the_prefix() 
         // The audit's own policy view of the output: no Gps finding left.
         assert_eq!(audit(out.bytes()).findings_in(Category::Gps).count(), 0);
     }
+}
+
+#[test]
+fn webp_all_pii_keeps_the_exif_copyright() {
+    // SPEC-033 (DEC-022 follows EXIF10): IFD0 holds Artist and Copyright.
+    let mut tiff = b"MM\x00\x2A\x00\x00\x00\x08".to_vec();
+    tiff.extend_from_slice(&[0, 2]);
+    tiff.extend_from_slice(&[0x01, 0x3B, 0, 2, 0, 0, 0, 4]);
+    tiff.extend_from_slice(b"Ann\0");
+    tiff.extend_from_slice(&[0x82, 0x98, 0, 2, 0, 0, 0, 4]);
+    tiff.extend_from_slice(b"(c)\0");
+    tiff.extend_from_slice(&[0, 0, 0, 0]);
+    let fx = Fixture {
+        name: "artist-and-copyright".into(),
+        parts: vec![
+            keep("VP8X", vp8x(FLAG_EXIF, 1, 1)),
+            keep("VP8L", vp8l()),
+            part("EXIF", exif_chunk(&tiff), Role::Exif, Flag::Exif),
+        ],
+        declared: Declared::Exact,
+    };
+    let input = fx.bytes();
+    let before = audit(&input);
+    assert_eq!(before.findings_in(Category::Authorship).count(), 1);
+    assert_eq!(before.findings_in(Category::Rights).count(), 1);
+    // `AllPii`: Artist goes in place, Copyright stays, and the chunk stays.
+    let out = strip(&input, StripPolicy::AllPii).unwrap();
+    assert_eq!(out.bytes().len(), input.len(), "an in-place edit");
+    assert!(out.removals().is_empty());
+    let after = audit(out.bytes());
+    assert_eq!(after.findings_in(Category::Authorship).count(), 0);
+    assert_eq!(after.findings_in(Category::Rights).count(), 1);
+    assert!(tags(out.bytes()).iter().any(|t| t.1 == 0x8298));
+    assert!(!tags(out.bytes()).iter().any(|t| t.1 == 0x013B));
+    assert_eq!(flags_of(out.bytes()), FLAG_EXIF);
+    let again = strip(out.bytes(), StripPolicy::AllPii).unwrap();
+    assert_eq!(again.bytes(), out.bytes(), "idempotent");
+    // `All` removes the chunk whole, Copyright with it.
+    let all = strip(&input, StripPolicy::All).unwrap();
+    assert!(tags(all.bytes()).is_empty());
+    assert_eq!(audit(all.bytes()).findings_in(Category::Rights).count(), 0);
+    // `Custom([Rights])` deletes Copyright and nothing else.
+    let only = strip(&input, StripPolicy::Custom(spec_of(&[Category::Rights]))).unwrap();
+    let t = tags(only.bytes());
+    assert!(t.iter().any(|t| t.1 == 0x013B) && !t.iter().any(|t| t.1 == 0x8298));
 }
 
 #[test]

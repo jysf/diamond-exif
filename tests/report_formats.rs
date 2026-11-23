@@ -198,6 +198,7 @@ fn json_has_the_pinned_key_order_at_every_level() {
             "icc",
             "embedded_image",
             "other_segment",
+            "rights",
         ],
         "by_category",
     );
@@ -1131,8 +1132,9 @@ fn excerpt_content_is_the_expected_escaped_text_in_every_format() {
 
 // ── SPEC-019 / DEC-012: schema 2, the `embedded` object, the new names ──────
 
-/// The names, typed by hand from DEC-012 section 4 and 7.
-const CATEGORY_NAMES_15: [&str; 15] = [
+/// The names, typed by hand from DEC-012 section 4 and 7 and the SPEC-033
+/// amendment of DEC-008 (`rights`, last).
+const CATEGORY_NAMES_16: [&str; 16] = [
     "gps",
     "device_id",
     "authorship",
@@ -1148,6 +1150,7 @@ const CATEGORY_NAMES_15: [&str; 15] = [
     "icc",
     "embedded_image",
     "other_segment",
+    "rights",
 ];
 
 fn one_file<'a>(bytes: &'a [u8]) -> Vec<FileEntry<'a>> {
@@ -1189,7 +1192,7 @@ fn schema_version_is_two_and_the_embedded_key_is_pinned() {
                 .map(|h| h.as_str().unwrap())
                 .collect();
             // In Category::ALL order, names from DEC-012.
-            let order = |n: &str| CATEGORY_NAMES_15.iter().position(|c| *c == n).unwrap();
+            let order = |n: &str| CATEGORY_NAMES_16.iter().position(|c| *c == n).unwrap();
             assert!(holds.windows(2).all(|w| order(w[0]) < order(w[1])));
             embedded += 1;
         } else {
@@ -1200,13 +1203,13 @@ fn schema_version_is_two_and_the_embedded_key_is_pinned() {
 }
 
 #[test]
-fn by_category_has_fifteen_keys_in_order() {
+fn by_category_has_sixteen_keys_in_order() {
     let mpo = real_shapes::mpo_two(true);
     let files = one_file(&mpo);
     let j = json(&files, &opts(None, false, false));
     keys_are(
         j.get("summary").unwrap().get("by_category").unwrap(),
-        &CATEGORY_NAMES_15,
+        &CATEGORY_NAMES_16,
         "by_category",
     );
     // The two new counts are the findings of the file.
@@ -1256,11 +1259,11 @@ fn new_region_and_category_names_are_pinned_in_every_format() {
     let com = real_shapes::com_segment();
     let files = one_file(&com);
     assert!(render_text(&files, &on).contains("comment"));
-    // Every category name, from the 15-key summary.
+    // Every category name, from the 16-key summary.
     let j = json(&one_file(&com), &on);
     keys_are(
         j.get("summary").unwrap().get("by_category").unwrap(),
-        &CATEGORY_NAMES_15,
+        &CATEGORY_NAMES_16,
         "by_category",
     );
 }
@@ -1279,4 +1282,43 @@ fn text_prints_holds() {
     assert!(text.contains("holds=[xmp,icc]"), "{text}");
     assert!(text.contains("holds=[timestamps,camera_model]"), "{text}");
     assert!(text.contains("starts_with_ffd8=true"), "{text}");
+}
+
+// ── SPEC-033: a Copyright finding is `rights` in every format ───────────────
+
+#[test]
+fn copyright_finding_renders_as_rights() {
+    // A TIFF whose IFD0 holds only Copyright (0x8298).
+    let mut t = b"II\x2A\x00\x08\x00\x00\x00".to_vec();
+    t.extend_from_slice(&[1, 0]); // one entry
+    t.extend_from_slice(&0x8298u16.to_le_bytes());
+    t.extend_from_slice(&2u16.to_le_bytes()); // ASCII
+    t.extend_from_slice(&2u32.to_le_bytes()); // count: "c\0"
+    t.extend_from_slice(&[b'c', 0, 0, 0]); // inline value
+    t.extend_from_slice(&0u32.to_le_bytes()); // no next IFD
+    let files = one_file(&t);
+    let on = opts(Some(StripPolicy::AllPii), true, false);
+    // Text: the finding line and the summary line.
+    let text = render_text(&files, &on);
+    assert!(text.contains("rights [medium] tag 0x8298"), "{text}");
+    assert!(!text.contains("authorship ["), "{text}");
+    assert!(text.contains("category rights: 1"), "{text}");
+    // `AllPii` keeps it.
+    assert!(text.contains("kept"), "{text}");
+    // JSON: the finding and the summary key.
+    let j = json(&files, &on);
+    let f = &j.get("files").unwrap().as_arr().unwrap()[0];
+    let findings = f.get("findings").unwrap().as_arr().unwrap();
+    assert_eq!(findings.len(), 1);
+    assert_eq!(
+        findings[0].get("category").unwrap().as_str(),
+        Some("rights")
+    );
+    let bc = j.get("summary").unwrap().get("by_category").unwrap();
+    assert_eq!(bc.get("rights").unwrap().as_uint(), Some(1));
+    assert_eq!(bc.get("authorship").unwrap().as_uint(), Some(0));
+    // CSV: the category column of the one finding row.
+    let rows = csv(&files, &on);
+    let col = rows[0].iter().position(|h| h == "category").unwrap();
+    assert!(rows[1..].iter().any(|r| r[col] == "rights"), "{rows:?}");
 }

@@ -19,7 +19,7 @@ use crate::jpeg::{self, JpegMetadata, Region, SegmentKind};
 use crate::policy::StripSpec;
 use crate::tiff::{Container, Ifd};
 
-use super::exif::{exif9, mode, plan_entries, ExifEdits, Mode};
+use super::exif::{exif10, mode, plan_entries, ExifEdits, Mode};
 use super::plan::{merge_ranges, removed_in};
 use super::{
     Check, EditPlan, EntryRecord, PatchKind, Removal, RemovalKind, ScrubReason, StripError,
@@ -188,9 +188,9 @@ fn exif_targets(
     if exif_segments.is_empty() {
         return Ok(ExifEdits::default());
     }
-    let all9 = exif9();
+    let all10 = exif10();
     let audited = audit(data);
-    // The category a removed block is recorded under: the first EXIF9 finding
+    // The category a removed block is recorded under: the first EXIF10 finding
     // the audit made in it, `Thumbnail` if it made none.
     let block_category = |segment: usize| -> Category {
         let block = meta
@@ -200,7 +200,7 @@ fn exif_targets(
         audited
             .findings()
             .iter()
-            .find(|f| block.is_some() && f.at.origin().block == block && all9.contains(f.category))
+            .find(|f| block.is_some() && f.at.origin().block == block && all10.contains(f.category))
             .map_or(Category::Thumbnail, |f| f.category)
     };
 

@@ -482,16 +482,13 @@ fn changelog_and_readme_carry_the_release() {
         log.contains(&format!("## [{VERSION}] - ")),
         "CHANGELOG.md has no [{VERSION}] heading"
     );
-    let unreleased: Vec<&str> = log
-        .lines()
-        .skip_while(|l| !l.starts_with("## [Unreleased]"))
-        .skip(1)
-        .take_while(|l| !l.starts_with("## "))
-        .filter(|l| !l.trim().is_empty())
-        .collect();
+    // The cut left `[Unreleased]` empty (SPEC-024 release); later changes file
+    // their entries there again (SPEC-033), so it is only required to exist and
+    // to sit above the release heading.
+    let at = |h: &str| log.find(h);
     assert!(
-        unreleased.is_empty(),
-        "[Unreleased] must be empty after the cut: {unreleased:?}"
+        at("## [Unreleased]") < at(&format!("## [{VERSION}]")) && at("## [Unreleased]").is_some(),
+        "[Unreleased] must sit above the [{VERSION}] heading"
     );
     let section: Vec<&str> = log
         .lines()

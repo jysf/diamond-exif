@@ -293,6 +293,7 @@ mod tests {
             Gps,
             DeviceId,
             Authorship,
+            Rights,
             FreeText,
             Timestamps,
             CameraModel,
@@ -322,11 +323,11 @@ mod tests {
             p.counts(),
             Counts {
                 removed: 0,
-                kept: 15,
+                kept: 16,
                 kept_unread: 0
             }
         );
-        assert_eq!(p.residual_findings(), 15);
+        assert_eq!(p.residual_findings(), 16);
     }
 
     #[test]
@@ -347,11 +348,11 @@ mod tests {
         let want: [(usize, usize, usize); 5] = [
             // (removed, kept, kept_unread) per preset, derived by hand from
             // DEC-009 and DEC-012 over one finding per category.
-            (1, 8, 6),
-            (2, 7, 6),
-            (8, 2, 5),
-            (11, 1, 3),
-            (15, 0, 0),
+            (1, 9, 6),
+            (2, 8, 6),
+            (8, 3, 5),
+            (12, 1, 3),
+            (16, 0, 0),
         ];
         for (preset, (r, k, u)) in StripPolicy::PRESETS.iter().zip(want) {
             let p = preview(&a, *preset);
@@ -433,7 +434,7 @@ mod tests {
             preview(&a, StripPolicy::Custom(StripSpec::all())).residual_severity(),
             None
         );
-        // Not all(): every other category set, even 14 of 15, is conservative.
+        // Not all(): every other category set, even 15 of 16, is conservative.
         let almost = StripSpec::all().exclude(Icc);
         assert_eq!(
             preview(&a, StripPolicy::Custom(almost)).residual_severity(),
@@ -492,8 +493,8 @@ mod tests {
         assert_eq!(preview(&a, StripPolicy::All).policy(), StripPolicy::All);
         let p = preview(&a, StripPolicy::Gps);
         assert_eq!(p.disposition(0), Some(Removed));
-        assert_eq!(p.disposition(14), p.dispositions().last().copied());
-        assert_eq!(p.disposition(15), None);
+        assert_eq!(p.disposition(15), p.dispositions().last().copied());
+        assert_eq!(p.disposition(16), None);
     }
 
     #[test]

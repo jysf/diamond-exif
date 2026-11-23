@@ -232,7 +232,7 @@ mod audit_invariants {
             (0x0131, "Software"),
             (0x0132, "Timestamps"),
             (0x013B, "Authorship"),
-            (0x8298, "Authorship"),
+            (0x8298, "Rights"),
             (0x9003, "Timestamps"),
             (0x9004, "Timestamps"),
             (0x9010, "Timestamps"),
@@ -277,8 +277,8 @@ mod audit_invariants {
     pub fn severity_of(category: &str) -> &'static str {
         match category {
             "Gps" | "DeviceId" => "High",
-            "Authorship" | "FreeText" | "Thumbnail" | "MakerNote" | "Xmp" | "Iptc" | "Jumbf"
-            | "EmbeddedImage" | "OtherSegment" => "Medium",
+            "Authorship" | "Rights" | "FreeText" | "Thumbnail" | "MakerNote" | "Xmp" | "Iptc"
+            | "Jumbf" | "EmbeddedImage" | "OtherSegment" => "Medium",
             _ => "Low",
         }
     }
@@ -440,7 +440,7 @@ mod audit_invariants {
     }
 
     /// Every category by `Debug` name, in table order, typed again.
-    const ORDER_15: [&str; 15] = [
+    const ORDER_16: [&str; 16] = [
         "Gps",
         "DeviceId",
         "Authorship",
@@ -456,6 +456,7 @@ mod audit_invariants {
         "Icc",
         "EmbeddedImage",
         "OtherSegment",
+        "Rights",
     ];
 
     /// DEC-012 section 3, re-derived: the categories of the ordinary audit of an
@@ -471,7 +472,7 @@ mod audit_invariants {
                 .iter()
                 .any(|s| s.marker() == 0xE2 && s.payload().starts_with(b"MPF\0"))
         });
-        ORDER_15
+        ORDER_16
             .iter()
             .filter(|name| {
                 tick(1);
@@ -510,7 +511,8 @@ mod audit_invariants {
             *first = first.to_ascii_uppercase();
         }
         match k.as_slice() {
-            b"Author" | b"Artist" | b"Copyright" => "Authorship",
+            b"Author" | b"Artist" => "Authorship",
+            b"Copyright" => "Rights",
             b"Creation Time" => "Timestamps",
             b"Software" => "Software",
             _ => "FreeText",
@@ -955,7 +957,7 @@ mod audit_invariants {
                         // A text chunk is categorised by its keyword: any of
                         // these four, never a block category.
                         "Text" => match f.category.as_str() {
-                            "FreeText" | "Authorship" | "Timestamps" | "Software" => {
+                            "FreeText" | "Authorship" | "Rights" | "Timestamps" | "Software" => {
                                 f.category.as_str()
                             }
                             _ => "FreeText",
@@ -1160,7 +1162,7 @@ mod audit_invariants {
                     {
                         return Err(format!("finding {n}: embedded length is not the item's"));
                     }
-                    let pos = |name: &String| ORDER_15.iter().position(|c| c == name);
+                    let pos = |name: &String| ORDER_16.iter().position(|c| c == name);
                     let mut last: Option<usize> = None;
                     for h in &e.holds {
                         tick(1);
@@ -1273,6 +1275,7 @@ mod audit_invariants {
                 "Software",
                 "Xmp",
                 "Iptc",
+                "Rights",
             ],
         ),
         (
@@ -1293,12 +1296,13 @@ mod audit_invariants {
                 "Jumbf",
                 "EmbeddedImage",
                 "OtherSegment",
+                "Rights",
             ],
         ),
     ];
 
     /// Every category, by `Debug` name.
-    pub const H_ALL: [&str; 15] = [
+    pub const H_ALL: [&str; 16] = [
         "Gps",
         "DeviceId",
         "Authorship",
@@ -1314,6 +1318,7 @@ mod audit_invariants {
         "Jumbf",
         "EmbeddedImage",
         "OtherSegment",
+        "Rights",
     ];
 
     /// The eight block categories (DEC-009 and DEC-012).
@@ -1347,6 +1352,7 @@ mod audit_invariants {
                 "Icc",
                 "Jumbf",
                 "OtherSegment",
+                "Rights",
             ],
             "OtherSegment" => &[
                 "Gps",
@@ -1363,11 +1369,13 @@ mod audit_invariants {
                 "Icc",
                 "Jumbf",
                 "EmbeddedImage",
+                "Rights",
             ],
             "Thumbnail" | "Xmp" | "Jumbf" => &[
                 "Gps",
                 "DeviceId",
                 "Authorship",
+                "Rights",
                 "FreeText",
                 "Timestamps",
                 "CameraModel",
@@ -1381,7 +1389,7 @@ mod audit_invariants {
                 "Software",
                 "EmbeddedImage",
             ],
-            "Iptc" => &["Authorship", "FreeText", "Timestamps"],
+            "Iptc" => &["Authorship", "Rights", "FreeText", "Timestamps"],
             _ => &[],
         }
     }

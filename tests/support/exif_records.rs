@@ -76,6 +76,7 @@ pub fn category_of(name: Cat) -> Category {
         "gps" => Category::Gps,
         "device_id" => Category::DeviceId,
         "authorship" => Category::Authorship,
+        "rights" => Category::Rights,
         "free_text" => Category::FreeText,
         "timestamps" => Category::Timestamps,
         "camera_model" => Category::CameraModel,
@@ -132,6 +133,8 @@ pub fn exif_policies() -> Vec<(&'static str, &'static [Cat], StripPolicy)> {
             custom(&["camera_model"]),
         ),
         ("authorship", &["authorship"][..], custom(&["authorship"])),
+        // SPEC-033: Copyright alone.
+        ("rights", &["rights"][..], custom(&["rights"])),
         (
             "free_text+device",
             &["free_text", "device_id"][..],

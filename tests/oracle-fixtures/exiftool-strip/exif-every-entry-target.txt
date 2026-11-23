@@ -127,6 +127,18 @@ JFIF	XResolution	1
 JFIF	YResolution	1
 IFD0	Make	CANARY-MAKE-0001
 IFD0	Model	CANARY-MODEL-0002
+## rights
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Model	CANARY-MODEL-0002
+IFD0	Artist	CANARY-ARTIST-0004
 ## free_text+device
 File	FileType	JPEG
 File	FileTypeExtension	JPG

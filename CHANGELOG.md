@@ -8,6 +8,10 @@ the patch lane files fixes here (`[Unreleased] → Fixed`), and a release spec
 
 ## [Unreleased]
 
+### Changed
+
+- Copyright is now its own category, `rights` (SPEC-033, DEC-008 amendment of 2026-11-21): the Exif Copyright tag (0x8298) and a PNG `Copyright` text chunk moved from `authorship` to `rights`. Severity is unchanged (medium), so no `--fail-on` result changes. For a 0.1.0-alpha.1 user, the finding's category is `rights` in text, JSON and CSV, and the JSON summary's `by_category` gains a `rights` key (last). The `all-pii` preview now shows a Copyright finding, in an Exif block or a PNG text chunk, as kept (it was removed), and the library's `AllPii` strip keeps it while still deleting Artist. `All` and `Everything` still remove it, and still remove every Exif segment whole. Still not covered: XMP `dc:rights` and the IPTC copyright notice, which follow their packets. `Category::Rights` is a new variant of a `#[non_exhaustive]` enum, and `StripSpec` is now full (16 categories in its `u16`).
+
 ## [0.1.0-alpha.1] - 2026-11-20
 
 First public pre-release: the `exif-audit` binary. It is a read-only privacy scan for image metadata: point it at files or folders of JPEG, TIFF or DNG and it reports GPS, device serial numbers, authorship, free text, thumbnails, MakerNotes, XMP, IPTC and ICC, with exit codes a CI job can act on. Alpha: the CLI contract (DEC-011) is intended but not frozen.

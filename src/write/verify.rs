@@ -57,6 +57,7 @@ pub(super) fn verify(
         Category::Gps,
         Category::DeviceId,
         Category::Authorship,
+        Category::Rights,
         Category::FreeText,
         Category::Timestamps,
         Category::CameraModel,
@@ -595,12 +596,13 @@ pub(super) fn verify_webp(
     }
 }
 
-/// The nine categories an Exif block can hold (DEC-013 part 4), by hand.
-fn exif_set() -> [Category; 9] {
+/// The ten categories an Exif block can hold (DEC-013 part 4), by hand.
+fn exif_set() -> [Category; 10] {
     [
         Category::Gps,
         Category::DeviceId,
         Category::Authorship,
+        Category::Rights,
         Category::FreeText,
         Category::Timestamps,
         Category::CameraModel,

@@ -26,7 +26,7 @@ use crate::png::{
 use crate::policy::StripSpec;
 use crate::tiff::Container;
 
-use super::exif::{exif9, mode, plan_block, select, Mode};
+use super::exif::{exif10, mode, plan_block, select, Mode};
 use super::jpeg::Planned;
 use super::plan::merge_ranges;
 use super::{
@@ -61,7 +61,7 @@ impl ChunkRef {
 pub(super) fn removes_carriers(spec: StripSpec) -> bool {
     let reach = [Category::Xmp, Category::Iptc]
         .iter()
-        .fold(exif9(), |s, c| s.include(*c));
+        .fold(exif10(), |s, c| s.include(*c));
     spec.intersects(reach) || spec.contains(Category::OtherSegment)
 }
 
@@ -325,7 +325,7 @@ fn exif_chunks(
     match mode(spec) {
         Mode::Untouched => Ok(Edits::default()),
         Mode::Whole => {
-            let all9 = exif9();
+            let all10 = exif10();
             let audited = audit(data);
             for c in exif_chunks {
                 // The category a removed block is recorded under: the first
@@ -338,7 +338,9 @@ fn exif_chunks(
                     .findings()
                     .iter()
                     .find(|f| {
-                        block.is_some() && f.at.origin().block == block && all9.contains(f.category)
+                        block.is_some()
+                            && f.at.origin().block == block
+                            && all10.contains(f.category)
                     })
                     .map_or(Category::Thumbnail, |f| f.category);
                 out.push(Target {

@@ -174,6 +174,35 @@ fn the_dng_subifd_gps_and_artist_are_removed_and_the_raw_data_kept() {
 }
 
 #[test]
+fn tiff_all_pii_keeps_copyright_and_deletes_artist() {
+    // SPEC-033: IFD0 holds Artist and Copyright, both inline (big-endian).
+    let mut t = b"MM\x00\x2A\x00\x00\x00\x08".to_vec();
+    t.extend_from_slice(&[0, 2]);
+    t.extend_from_slice(&[0x01, 0x3B, 0, 2, 0, 0, 0, 4]);
+    t.extend_from_slice(b"Ann\0");
+    t.extend_from_slice(&[0x82, 0x98, 0, 2, 0, 0, 0, 4]);
+    t.extend_from_slice(b"(c)\0");
+    t.extend_from_slice(&[0, 0, 0, 0]);
+    let before = audit(&t);
+    assert_eq!(before.findings_in(Category::Authorship).count(), 1);
+    assert_eq!(before.findings_in(Category::Rights).count(), 1);
+    let out = sanitize(&t, StripPolicy::AllPii).unwrap();
+    let after = audit(&out);
+    assert_eq!(after.findings_in(Category::Authorship).count(), 0);
+    assert_eq!(after.findings_in(Category::Rights).count(), 1);
+    assert!(contains(&out, &[0x82, 0x98, 0, 2, 0, 0, 0, 4]));
+    assert!(contains(&out, b"(c)\0"));
+    assert!(!contains(&out, b"Ann\0"));
+    // `All` removes both, and `Custom([Rights])` only Copyright.
+    let all = sanitize(&t, StripPolicy::All).unwrap();
+    assert_eq!(audit(&all).findings_in(Category::Rights).count(), 0);
+    let only = sanitize(&t, StripPolicy::Custom(spec_of(&[Category::Rights]))).unwrap();
+    let after = audit(&only);
+    assert_eq!(after.findings_in(Category::Rights).count(), 0);
+    assert_eq!(after.findings_in(Category::Authorship).count(), 1);
+}
+
+#[test]
 fn a_page_ifd1_is_never_removed_and_a_jpeg_thumbnail_is() {
     let page = tiff_shapes::multipage(false);
     // Policies without Thumbnail keep every page and delete only entries.

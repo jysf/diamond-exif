@@ -216,6 +216,8 @@ fn existing_records_and_seeds_are_byte_identical() {
         "audit-png-empty-regions",
         "audit-webp-exif-xmp-icc",
         "audit-webp-empty-regions",
+        // SPEC-033: Copyright alone.
+        "audit-copyright-only-le",
     ];
     new_audit.extend(shape_refs.iter().copied());
     check_dir("fuzz/seeds/audit", &OLD_AUDIT_SEEDS, &new_audit);

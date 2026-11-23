@@ -70,3 +70,12 @@ JFIF	JFIFVersion	1 1
 JFIF	ResolutionUnit	0
 JFIF	XResolution	1
 JFIF	YResolution	1
+## rights
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	Comment	CANARY-COMMENT-ONE
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1

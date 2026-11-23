@@ -174,7 +174,8 @@ fn png_text_keyword_rule_applies_through_the_audit() {
         vec![
             Category::Authorship,
             Category::FreeText,
-            Category::Authorship,
+            // Copyright is rights, not authorship (DEC-020 amendment).
+            Category::Rights,
             // Artist, artist: Authorship; create-date, modify-date: Timestamps;
             // Create-date, ARTIST: their own tags in ExifTool, free text here.
             Category::Authorship,

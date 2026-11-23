@@ -24,8 +24,9 @@
 //! * `Gps`: any tag in the `GPS` group and any `Composite` tag named `GPS*`;
 //! * `DeviceId`: `SerialNumber`, `BodySerialNumber`, `InternalSerialNumber`,
 //!   `LensSerialNumber`, `ImageUniqueID`;
-//! * `Authorship`: `Author`, `Artist`, `Copyright`, `OwnerName`,
-//!   `CameraOwnerName` (which also covers the `LIST` `INFO` personal tags);
+//! * `Authorship`: `Author`, `Artist`, `OwnerName`, `CameraOwnerName` (which
+//!   also covers the `LIST` `INFO` personal tags);
+//! * `Rights` (SPEC-033): `Copyright`;
 //! * `FreeText`: `ImageDescription`, `UserComment`;
 //! * `Timestamps`: `ModifyDate`, `DateTimeOriginal`, `CreateDate`;
 //! * `CameraModel`: `Make`, `Model`, `LensModel`;
@@ -38,7 +39,7 @@
 //!
 //! Presets (DEC-009): `Gps` removes `Gps`; `GpsAndDevice` adds `DeviceId`;
 //! `AllPii` adds `Authorship`, `FreeText`, `Timestamps`, `CameraModel`,
-//! `Thumbnail`, `MakerNote`; `All` adds `Software`, `Xmp`, `Iptc`;
+//! `Thumbnail`, `MakerNote`; `All` adds `Software`, `Xmp`, `Iptc`, `Rights`;
 //! `Everything` adds `Icc`, `Jumbf`.
 //!
 //! The older lists, kept as the statement of the first build:
@@ -174,6 +175,7 @@ enum Cat {
     Gps,
     DeviceId,
     Authorship,
+    Rights,
     FreeText,
     Timestamps,
     CameraModel,
@@ -185,10 +187,11 @@ enum Cat {
     Jumbf,
 }
 
-const ALL_CATS: [Cat; 12] = [
+const ALL_CATS: [Cat; 13] = [
     Cat::Gps,
     Cat::DeviceId,
     Cat::Authorship,
+    Cat::Rights,
     Cat::FreeText,
     Cat::Timestamps,
     Cat::CameraModel,
@@ -213,7 +216,7 @@ fn preset_removes(preset: usize, cat: Cat) -> bool {
         | Cat::CameraModel
         | Cat::Thumbnail
         | Cat::MakerNote => 2,
-        Cat::Software | Cat::Xmp => 3,
+        Cat::Software | Cat::Xmp | Cat::Rights => 3,
         Cat::Icc | Cat::Jumbf => 4,
     };
     preset >= first
@@ -250,9 +253,8 @@ fn category_of(tag: &Tag) -> Option<Cat> {
         | "InternalSerialNumber"
         | "LensSerialNumber"
         | "ImageUniqueID" => Some(Cat::DeviceId),
-        "Author" | "Artist" | "Copyright" | "OwnerName" | "CameraOwnerName" => {
-            Some(Cat::Authorship)
-        }
+        "Author" | "Artist" | "OwnerName" | "CameraOwnerName" => Some(Cat::Authorship),
+        "Copyright" => Some(Cat::Rights),
         "ImageDescription" | "UserComment" => Some(Cat::FreeText),
         "ModifyDate" | "DateTimeOriginal" | "CreateDate" => Some(Cat::Timestamps),
         "Make" | "Model" | "LensModel" => Some(Cat::CameraModel),
@@ -791,7 +793,7 @@ fn pinned_cases() -> Vec<Case> {
         false,
     );
     // Every category a WebP can hold, at once (the complete DEC-009 table):
-    // Exif of all nine Exif-set categories, plain XMP, ICC and a C2PA manifest.
+    // Exif of all ten Exif-set categories, plain XMP, ICC and a C2PA manifest.
     add(
         "all-categories",
         riff(&[

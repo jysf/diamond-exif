@@ -473,19 +473,19 @@ fn theirs_parser_maps_region_groups_by_prefix() {
 #[test]
 fn distinct_inputs_are_counted_once_across_seed_directories() {
     let all = all_inputs();
-    assert_eq!(all.len(), 254, "inputs over the five corpora");
+    assert_eq!(all.len(), 255, "inputs over the five corpora");
     let per_corpus: Vec<usize> = inventory_corpus::CORPORA
         .iter()
         .map(|c| all.iter().filter(|i| i.corpus == *c).count())
         .collect();
     // 63 hand-built (12 + 2 TIFF, 44 + 5 JPEG; SPEC-035 added two), 41 DEC-008 ids, and the seeds
-    // (32 TIFF, 37 JPEG, 81 audit).
-    assert_eq!(per_corpus, vec![63, 41, 32, 37, 81]);
+    // (32 TIFF, 37 JPEG, 82 audit; SPEC-033 added `audit-copyright-only-le`).
+    assert_eq!(per_corpus, vec![63, 41, 32, 37, 82]);
     let keys: BTreeSet<String> = all.iter().map(Input::key).collect();
     assert_eq!(keys.len(), all.len(), "keys are unique");
 
     let distinct = inventory_corpus::distinct(&all);
-    assert_eq!(distinct.len(), 185, "distinct inputs by content");
+    assert_eq!(distinct.len(), 186, "distinct inputs by content");
     let members: usize = distinct.iter().map(|d| d.keys.len()).sum();
     assert_eq!(members, all.len(), "every input belongs to one group");
 
@@ -509,7 +509,7 @@ fn distinct_inputs_are_counted_once_across_seed_directories() {
         .iter()
         .filter(|d| d.canonical.corpus == "seed-audit")
         .count();
-    assert_eq!(audit_canonical, 12, "the twelve audit-only shapes");
+    assert_eq!(audit_canonical, 13, "the thirteen audit-only shapes");
     // A canonical key is the first corpus's: fixtures before audit-tags before
     // the seed directories.
     for d in &distinct {
@@ -691,8 +691,8 @@ fn live_inventory_parity_on_the_seed_corpora() {
         return;
     }
     let n = live_parity(|d| d.canonical.corpus.starts_with("seed-"));
-    // 81 distinct seeds, minus the one ExifTool never returns on.
-    assert_eq!(n, 80);
+    // 82 distinct seeds (SPEC-033 added one), minus the one ExifTool never returns on.
+    assert_eq!(n, 81);
 }
 
 // ── the classes ─────────────────────────────────────────────────────────────
@@ -1745,8 +1745,8 @@ fn class_s_region_kinds_are_excluded_exactly_and_the_existing_pins_are_unchanged
     );
     // The five old corpora are the five old corpora, with their old counts.
     assert_eq!(inventory_corpus::CORPORA.len(), 5);
-    assert_eq!(all_inputs().len(), 254);
-    assert_eq!(distinct_inputs().len(), 185);
+    assert_eq!(all_inputs().len(), 255);
+    assert_eq!(distinct_inputs().len(), 186);
     // The pinned table: the same rows as before plus DEC-012's one new row
     // (`fixtures/jpeg-iptc-without-0404`); the seed row that gained `Iptc` is
     // the other change. Counted by class.

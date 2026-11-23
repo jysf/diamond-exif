@@ -1245,6 +1245,9 @@ fn audit_seeds(
         ("audit-png-empty-regions", png_empty_regions()),
         ("audit-webp-exif-xmp-icc", webp_exif_xmp_icc(&le)),
         ("audit-webp-empty-regions", webp_empty_regions()),
+        // SPEC-033: a Copyright and nothing else, so the `Rights` category is
+        // alone in an audit seed.
+        ("audit-copyright-only-le", copyright_only(&le)),
     ];
     out.extend(new.into_iter().map(|(n, b)| (n.to_string(), b)));
     out
@@ -1829,6 +1832,20 @@ fn rewrite_seeds() -> Vec<(String, Vec<u8>)> {
     ));
     out.push(("policy-byte-only".to_string(), vec![7]));
     out.push(("mask-cut-short".to_string(), vec![6, 0x40]));
+    // SPEC-033: Artist and Copyright in IFD0 under `AllPii` (policy byte 2):
+    // the Artist entry goes, the Copyright entry stays.
+    {
+        let le = Writer { big: false };
+        let mut v = vec![2u8];
+        v.extend(jcat(&[
+            &JSOI,
+            &japp(0xE1, b"Exif\0\0", &tiff_pii(&le)),
+            &jsos(),
+            &[0x12, 0x34],
+            &JEOI,
+        ]));
+        out.push(("all-pii-artist-and-copyright".to_string(), v));
+    }
     // SPEC-021: the Exif entry editor. Every fixture and leak input under the
     // three narrow presets and five custom masks; the leaks under `All` too.
     out.extend(exif_records::entry_seeds());
@@ -2187,6 +2204,17 @@ fn rewrite_png_seeds() -> Vec<(String, Vec<u8>)> {
         v.extend_from_slice(bytes);
         out.push((format!("mask-{sink}"), v));
     }
+    // SPEC-033: an `eXIf` holding Artist and Copyright plus a `tEXt` keyed
+    // `Copyright` under `AllPii` (policy byte 2): both Copyrights stay.
+    {
+        let mut v = vec![2u8];
+        v.extend(png_around(&[
+            png_shapes::exif_chunk(&tiff_pii(&Writer { big: false })),
+            png_shapes::text(b"Copyright", b"CANARY-RIGHTS"),
+            png_shapes::text(b"Author", b"CANARY-AUTHOR"),
+        ]));
+        out.push(("all-pii-exif-artist-copyright-text".to_string(), v));
+    }
     // Degenerate: a policy byte alone, a mask cut short.
     out.push(("policy-byte-only".to_string(), vec![7]));
     out.push(("mask-cut-short".to_string(), vec![6, 0x40]));
@@ -2221,6 +2249,20 @@ fn tiff_pii(w: &Writer) -> Vec<u8> {
         },
     ];
     w.build(&ifds)
+}
+
+/// SPEC-033: a TIFF whose IFD0 holds only Copyright (0x8298).
+fn copyright_only(w: &Writer) -> Vec<u8> {
+    let ifd = Ifd {
+        entries: vec![entry(
+            33432,
+            ASCII,
+            14,
+            Val::Ext(b"CANARY-RIGHTS\0".to_vec()),
+        )],
+        next: Next::End,
+    };
+    w.build(&[ifd])
 }
 
 /// Whether `code` is a measured row or a type with a rule of its own.

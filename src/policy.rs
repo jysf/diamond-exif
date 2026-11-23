@@ -22,7 +22,8 @@ use crate::audit::Category;
 pub struct StripSpec(u16);
 
 /// The bit of one category: a literal per category (the library's lint set
-/// forbids `<<` on integers), in [`Category::ALL`] order.
+/// forbids `<<` on integers), in [`Category::ALL`] order. The `u16` is full
+/// (SPEC-033 took the last bit): a 17th category needs a wider integer.
 fn bit(c: Category) -> u16 {
     match c {
         Category::Gps => 0x0001,
@@ -40,6 +41,7 @@ fn bit(c: Category) -> u16 {
         Category::Icc => 0x1000,
         Category::EmbeddedImage => 0x2000,
         Category::OtherSegment => 0x4000,
+        Category::Rights => 0x8000,
     }
 }
 
@@ -114,7 +116,8 @@ pub enum StripPolicy {
     /// GPS plus device identification.
     GpsAndDevice,
     /// Everything that can name a person or a device, including the thumbnail
-    /// and the MakerNote; keeps XMP, IPTC, ICC, JUMBF and `Software`.
+    /// and the MakerNote; keeps XMP, IPTC, ICC, JUMBF, `Software` and the copyright
+    /// notice (`Rights`, SPEC-033). Artist is still removed.
     AllPii,
     /// All Exif, XMP and IPTC; keeps ICC and JUMBF.
     All,
@@ -161,6 +164,7 @@ impl StripPolicy {
                 Category::Software,
                 Category::Xmp,
                 Category::Iptc,
+                Category::Rights,
             ]),
             StripPolicy::Everything => StripSpec::all(),
             StripPolicy::Custom(s) => s,
@@ -184,10 +188,11 @@ impl StripPolicy {
 /// without the library being able to see them. Empty for the tag categories
 /// and for [`Category::Icc`].
 pub fn may_hold(block: Category) -> StripSpec {
-    const TAGS_AND_SOFTWARE: [Category; 7] = [
+    const TAG_CATEGORIES: [Category; 8] = [
         Category::Gps,
         Category::DeviceId,
         Category::Authorship,
+        Category::Rights,
         Category::FreeText,
         Category::Timestamps,
         Category::CameraModel,
@@ -195,7 +200,7 @@ pub fn may_hold(block: Category) -> StripSpec {
     ];
     match block {
         // A thumbnail JPEG may carry its own Exif.
-        Category::Thumbnail => StripSpec::of(&TAGS_AND_SOFTWARE),
+        Category::Thumbnail => StripSpec::of(&TAG_CATEGORIES),
         // DEC-012: a MakerNote may also hold an embedded preview image.
         Category::MakerNote => StripSpec::of(&[
             Category::Gps,
@@ -205,14 +210,15 @@ pub fn may_hold(block: Category) -> StripSpec {
             Category::Software,
             Category::EmbeddedImage,
         ]),
-        Category::Xmp => StripSpec::of(&TAGS_AND_SOFTWARE),
+        Category::Xmp => StripSpec::of(&TAG_CATEGORIES),
         Category::Iptc => StripSpec::of(&[
             Category::Authorship,
+            Category::Rights,
             Category::FreeText,
             Category::Timestamps,
         ]),
         // A C2PA manifest carries assertions, including Exif ones.
-        Category::Jumbf => StripSpec::of(&TAGS_AND_SOFTWARE),
+        Category::Jumbf => StripSpec::of(&TAG_CATEGORIES),
         // DEC-008: an ICC profile is "a fingerprint at most".
         Category::Icc => StripSpec::none(),
         // DEC-012: an embedded image can hold anything the primary can; an
@@ -224,6 +230,7 @@ pub fn may_hold(block: Category) -> StripSpec {
         Category::Gps
         | Category::DeviceId
         | Category::Authorship
+        | Category::Rights
         | Category::FreeText
         | Category::Timestamps
         | Category::CameraModel
@@ -246,7 +253,7 @@ mod tests {
     /// DEC-009's preset table, typed by hand: for each category (DEC-009 row
     /// order) the cells `[Gps, GpsAndDevice, AllPii, All, Everything]`, `true`
     /// meaning "removed". Not generated from `StripPolicy::spec`.
-    const REMOVED: [(Category, [bool; 5]); 15] = [
+    const REMOVED: [(Category, [bool; 5]); 16] = [
         (Gps, [true, true, true, true, true]),
         (DeviceId, [false, true, true, true, true]),
         (Authorship, [false, false, true, true, true]),
@@ -263,6 +270,8 @@ mod tests {
         // DEC-012 amendment: removed only by Everything.
         (EmbeddedImage, [false, false, false, false, true]),
         (OtherSegment, [false, false, false, false, true]),
+        // DEC-009 amendment (SPEC-033): kept by AllPii, removed by All.
+        (Rights, [false, false, false, true, true]),
     ];
 
     /// DEC-009's may-hold table as amended by DEC-012, typed by hand: the eight
@@ -275,6 +284,7 @@ mod tests {
                     Gps,
                     DeviceId,
                     Authorship,
+                    Rights,
                     FreeText,
                     Timestamps,
                     CameraModel,
@@ -298,19 +308,21 @@ mod tests {
                     Gps,
                     DeviceId,
                     Authorship,
+                    Rights,
                     FreeText,
                     Timestamps,
                     CameraModel,
                     Software,
                 ],
             ),
-            (Iptc, vec![Authorship, FreeText, Timestamps]),
+            (Iptc, vec![Authorship, Rights, FreeText, Timestamps]),
             (
                 Jumbf,
                 vec![
                     Gps,
                     DeviceId,
                     Authorship,
+                    Rights,
                     FreeText,
                     Timestamps,
                     CameraModel,
@@ -325,6 +337,7 @@ mod tests {
                     Gps,
                     DeviceId,
                     Authorship,
+                    Rights,
                     FreeText,
                     Thumbnail,
                     MakerNote,
@@ -344,6 +357,7 @@ mod tests {
                     Gps,
                     DeviceId,
                     Authorship,
+                    Rights,
                     FreeText,
                     Thumbnail,
                     MakerNote,
@@ -374,7 +388,7 @@ mod tests {
             assert!(!seen.contains(&s), "{c:?} shares a bit");
             seen.push(s);
         }
-        assert_eq!(seen.len(), 15, "15 distinct bits");
+        assert_eq!(seen.len(), 16, "16 distinct bits");
         // All the singletons together are all().
         let union = seen.iter().fold(StripSpec::none(), |a, s| {
             s.categories().fold(a, |a, c| a.include(c))
@@ -383,11 +397,20 @@ mod tests {
     }
 
     #[test]
-    fn bit_set_uses_fifteen_of_sixteen_bits() {
-        assert!(Category::ALL.len() <= 16);
-        assert_eq!(Category::ALL.len(), 15);
-        // The 16th bit is spare: no spec built from categories reaches it.
-        assert_eq!(StripSpec::all().0, 0x7FFF);
+    fn rights_bit_is_distinct_and_the_set_is_full() {
+        // SPEC-033: the sixteenth category takes the last bit of the u16.
+        assert_eq!(Category::ALL.len(), 16);
+        assert_eq!(StripSpec::all().len(), 16);
+        assert_eq!(StripSpec::all().0, 0xFFFF);
+        assert_eq!(StripSpec::none().include(Rights).0, 0x8000);
+        for c in Category::ALL {
+            if c != Rights {
+                assert_ne!(
+                    StripSpec::none().include(c),
+                    StripSpec::none().include(Rights)
+                );
+            }
+        }
     }
 
     #[test]
@@ -401,7 +424,7 @@ mod tests {
         }
         let all = StripSpec::all();
         assert!(!all.is_empty());
-        assert_eq!(all.len(), 15);
+        assert_eq!(all.len(), 16);
         for c in Category::ALL {
             assert!(all.contains(c));
         }
@@ -416,7 +439,7 @@ mod tests {
         assert_eq!(t.len(), 1);
         assert_eq!(t.exclude(Gps), t);
         assert_eq!(t.exclude(Xmp), none);
-        assert_eq!(all.exclude(Jumbf).len(), 14);
+        assert_eq!(all.exclude(Jumbf).len(), 15);
         assert!(!all.exclude(Jumbf).contains(Jumbf));
         assert!(all.exclude(Jumbf).contains(Icc));
     }
@@ -491,12 +514,12 @@ mod tests {
             assert!(small.len() < big.len(), "strictly nested");
         }
         assert_eq!(StripPolicy::Everything.spec(), StripSpec::all());
-        assert_eq!(StripPolicy::Everything.spec().len(), 15);
+        assert_eq!(StripPolicy::Everything.spec().len(), 16);
         let lens: Vec<usize> = StripPolicy::PRESETS
             .iter()
             .map(|p| p.spec().len())
             .collect();
-        assert_eq!(lens, vec![1, 2, 8, 11, 15]);
+        assert_eq!(lens, vec![1, 2, 8, 12, 16]);
     }
 
     #[test]
@@ -529,6 +552,7 @@ mod tests {
             Gps,
             DeviceId,
             Authorship,
+            Rights,
             FreeText,
             Timestamps,
             CameraModel,
