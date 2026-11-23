@@ -7634,7 +7634,7 @@ fn rewrite_png_seeds_are_committed_and_cover_every_rule_and_refusal() {
         "carrier-zxif",
         "carrier-txmp",
         "carrier-meta-seal",
-        "carrier-case-sensitive",
+        "carrier-case-folding",
         "other-dsig",
         "other-gifx",
         "structure",

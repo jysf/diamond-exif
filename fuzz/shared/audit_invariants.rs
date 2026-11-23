@@ -593,10 +593,9 @@ mod audit_invariants {
                 ..
             } = r
             {
-                let opaque = matches!(
-                    ty,
-                    b"zxIf" | b"zxif" | b"exif" | b"tXMP" | b"meTa" | b"seAl"
-                );
+                let opaque = ty.eq_ignore_ascii_case(b"zxif")
+                    || ty.eq_ignore_ascii_case(b"exif")
+                    || matches!(ty, b"tXMP" | b"meTa" | b"seAl");
                 if opaque && !data.is_empty() {
                     *failed += 1;
                 }
@@ -609,9 +608,10 @@ mod audit_invariants {
                 // The class by type bytes, typed again from DEC-021 clause 4.
                 PngRegion::Chunk { chunk_type, .. } => match chunk_type {
                     b"tIME" => ("Time", "Timestamps"),
-                    b"zxIf" | b"zxif" | b"exif" | b"tXMP" | b"meTa" | b"seAl" => {
+                    t if t.eq_ignore_ascii_case(b"zxif") || t.eq_ignore_ascii_case(b"exif") => {
                         ("Carrier", "OtherSegment")
                     }
+                    b"tXMP" | b"meTa" | b"seAl" => ("Carrier", "OtherSegment"),
                     b"caBX" => ("Jumbf", "Jumbf"),
                     _ => ("OtherChunk", "OtherSegment"),
                 },

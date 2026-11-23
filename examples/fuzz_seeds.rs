@@ -2001,7 +2001,17 @@ fn rewrite_png_shapes() -> Vec<(&'static str, Vec<u8>)> {
             "carrier-meta-seal",
             around(&[c(b"meTa", xmp), c(b"seAl", xmp)]),
         ),
-        ("carrier-case-sensitive", around(&[c(b"txmp", xmp)])),
+        // ExifTool matches `zxIf` and `eXIf` in any case and no other type:
+        // `txmp` is nothing, `EXIF` and `Zxif` are carriers (SPEC-037 H1).
+        (
+            "carrier-case-folding",
+            around(&[
+                c(b"txmp", xmp),
+                c(b"EXIF", b"canary"),
+                c(b"Zxif", b"canary"),
+                c(b"eXiF", b"canary"),
+            ]),
+        ),
         (
             "other-dsig",
             around(&[c(b"dSIG", b"canary"), c(b"cpIp", b"c"), c(b"fRAc", b"f")]),

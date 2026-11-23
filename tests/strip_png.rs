@@ -282,8 +282,8 @@ fn text_parts() -> Vec<Part> {
 
 /// The carriers measured on ExifTool 13.55 (SPEC-037 Part A step 1): the chunk
 /// types ExifTool decodes into Exif or XMP tags that the audit does not list.
-const CARRIER_TYPES: [&[u8; 4]; 7] = [
-    b"zxIf", b"zxif", b"exif", b"tXMP", b"meTa", b"seAl", b"eXIf",
+const CARRIER_TYPES: [&[u8; 4]; 9] = [
+    b"zxIf", b"zxif", b"exif", b"ZXIF", b"EXIF", b"tXMP", b"meTa", b"seAl", b"eXIf",
 ];
 
 /// The non-metadata carriers: `OtherSegment`, removed only with that category.
@@ -903,6 +903,129 @@ fn carriers_follow_the_clause_4_rule_for_every_policy() {
             );
         }
     }
+}
+
+/// Adler-32, for a zlib stream built by hand.
+fn adler32(data: &[u8]) -> u32 {
+    let (mut a, mut b) = (1u32, 0u32);
+    for &x in data {
+        a = (a + u32::from(x)) % 65521;
+        b = (b + a) % 65521;
+    }
+    (b << 16) | a
+}
+
+/// `\0`, a 4-byte length and a zlib stream (stored block) around `tiff`: the
+/// second encoding ExifTool decodes in a `zxIf` chunk.
+fn zlib_wrapped(tiff: &[u8]) -> Vec<u8> {
+    let mut z = vec![0x78, 0x01, 0x01];
+    z.extend_from_slice(&(tiff.len() as u16).to_le_bytes());
+    z.extend_from_slice(&(!(tiff.len() as u16)).to_le_bytes());
+    z.extend_from_slice(tiff);
+    z.extend_from_slice(&adler32(tiff).to_be_bytes());
+    let mut d = vec![0];
+    d.extend_from_slice(&(tiff.len() as u32).to_be_bytes());
+    d.extend_from_slice(&z);
+    d
+}
+
+/// Every chunk type of a PNG, in order (framing only; the output of a strip is
+/// well formed).
+fn chunk_types(png: &[u8]) -> Vec<[u8; 4]> {
+    let mut out = Vec::new();
+    let mut at = 8;
+    while at + 12 <= png.len() {
+        let len = u32::from_be_bytes(png[at..at + 4].try_into().unwrap()) as usize;
+        out.push(png[at + 4..at + 8].try_into().unwrap());
+        at += 12 + len;
+    }
+    out
+}
+
+/// The 16 ASCII-case spellings of a four-letter chunk type.
+fn case_spellings(base: [u8; 4]) -> Vec<[u8; 4]> {
+    (0..16u8)
+        .map(|mask| {
+            let mut ty = base;
+            for (i, b) in ty.iter_mut().enumerate() {
+                if (mask >> i) & 1 == 1 {
+                    *b ^= 0x20;
+                }
+            }
+            ty
+        })
+        .collect()
+}
+
+/// H1 (SPEC-037 verify): ExifTool 13.55 matches the chunk types `eXIf` and
+/// `zxIf` in any ASCII case (every spelling decodes, as a bare TIFF or as `\0`,
+/// a length and a zlib stream), so every spelling but the exact `eXIf` (the
+/// walked Exif chunk, covered by its own tests) is a carrier, removed by every
+/// preset and reported as such. Types other than those two stay case-sensitive.
+#[test]
+fn every_case_spelling_of_exif_and_zxif_is_a_carrier_removed_by_every_preset() {
+    let tiff = exif_gps();
+    let encodings: [(&str, Vec<u8>); 2] = [("bare", tiff.clone()), ("zlib", zlib_wrapped(&tiff))];
+    let mut spellings = 0;
+    for base in [*b"eXIf", *b"zxIf"] {
+        for ty in case_spellings(base) {
+            if &ty == b"eXIf" {
+                continue;
+            }
+            spellings += 1;
+            for (enc, data) in &encodings {
+                let name = format!("{}-{enc}", String::from_utf8_lossy(&ty));
+                let parts = shape(
+                    &[part(&name, chunk(&ty, data), Role::Carrier)],
+                    &[],
+                    &[],
+                    b"",
+                );
+                let input = assemble(&parts);
+                assert!(
+                    audit(&input).items().iter().any(|i| matches!(
+                        i.kind(),
+                        ItemKind::Region {
+                            kind: RegionKind::Carrier,
+                            ..
+                        }
+                    )),
+                    "{name} is not a Carrier region"
+                );
+                for policy in StripPolicy::PRESETS {
+                    let out = strip(&input, policy).unwrap();
+                    assert_eq!(
+                        out.bytes(),
+                        expected(&parts, policy.spec()).as_slice(),
+                        "{name} under {policy:?}"
+                    );
+                    assert!(
+                        !chunk_types(out.bytes()).iter().any(|t| {
+                            t.eq_ignore_ascii_case(b"exif") || t.eq_ignore_ascii_case(b"zxif")
+                        }),
+                        "{name} survives {policy:?}"
+                    );
+                    assert!(out
+                        .removals()
+                        .iter()
+                        .any(|r| matches!(r.kind, RemovalKind::Carrier)));
+                }
+            }
+        }
+    }
+    // 2 types x 16 spellings, less the exact `eXIf`.
+    assert_eq!(spellings, 31);
+    // Case stays significant for every other type.
+    let lower = assemble(&shape(
+        &[part("txmp", chunk(b"txmp", b"x"), Role::Keep)],
+        &[],
+        &[],
+        b"",
+    ));
+    assert_eq!(
+        strip(&lower, StripPolicy::Everything).unwrap().bytes(),
+        lower
+    );
 }
 
 /// The self-check exempts a removed carrier from the category rule: the output

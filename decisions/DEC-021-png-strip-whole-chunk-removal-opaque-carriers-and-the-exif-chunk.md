@@ -75,10 +75,10 @@ Unit tests per rule; the self-check on every fixture; I1 recomputation test; `re
 | Chunk type | ExifTool prints | Located as | Audit category | Removed by |
 |---|---|---|---|---|
 | `eXIf` | `IFD0:Make`, `GPS:GPSLatitudeRef` | Exif block (`eXIf`) | by entry (the nine Exif categories, `Icc` for 0x8773) | clause 3 |
-| `zxIf`, `zxif`, `exif` | `IFD0:Make`, `GPS:GPSLatitudeRef` (zlib-wrapped TIFF; `zxif` and `exif` add a `[minor]` warning) | `Chunk` (`ExifCarrier`, `RegionKind::Carrier`) | `OtherSegment` | every preset (clause 4) |
+| `zxIf` and `eXIf` in any other ASCII case (`zxif`, `exif`, `EXIF`, `ZxIf`, ... 31 spellings; the exact `eXIf` is the Exif chunk, rule 3) | `IFD0:Make`, `GPS:GPSLatitudeRef` (a bare TIFF, or `\0`, a 4-byte length and a zlib stream; every spelling but the exact one adds a `[minor]` warning "chunk should be eXIf" or "zxIf") | `Chunk` (`ExifCarrier`, `RegionKind::Carrier`) | `OtherSegment` | every preset (clause 4) |
 | `tXMP` | `XMP-dc:Creator` | `Chunk` (`XmlCarrier`, `Carrier`) | `OtherSegment` | every preset |
 | `meTa`, `seAl` | `XML-dc:Creator` | `Chunk` (`XmlCarrier`, `Carrier`) | `OtherSegment` | every preset |
-| `txmp` (lower case) | nothing | not located (type bytes are case-sensitive) | none | never |
+| `txmp` (lower case), and every other case spelling of any other type (`CABX`, `Time`, `dsig`, `TEXT`, ...) | nothing | not located (type bytes are case-sensitive EXCEPT `zxIf` and `eXIf`, re-measured for every metadata type in the SPEC-037 fix round) | none | never |
 | `Raw profile type exif`, `...xmp`, `...iptc`, ... (`tEXt`, `zTXt`, `iTXt`; also `raw profile type ...`) | the profile's tags when its payload decodes (the minimal sample here is malformed and prints only a warning) | `RawProfile` | `OtherSegment` | every preset |
 | `caBX` | group `JUMBF` for a valid box (Part A; the minimal box in this sample prints only a warning) | `Chunk` (`Jumbf`) | `Jumbf` | policies with `Jumbf` (`Everything`) |
 | `dSIG` | `PNG:DigitalSignature` | `Chunk` (`Other`, `RegionKind::OtherChunk`) | `OtherSegment` | `OtherSegment` only (`Everything`) |
@@ -102,3 +102,7 @@ Chunks ExifTool prints that are structure or rendering data (`pHYs`, `gAMA`, `sR
 ## References
 
 DEC-001, DEC-006, DEC-008, DEC-009, DEC-013, DEC-017, DEC-018, DEC-020; SPEC-037.
+
+## Clarifications from the SPEC-037 fix round (2026-11-22)
+
+1. **Chunk-type case (H1).** The verify measured, and the fix round re-measured on ExifTool 13.55 with all 16 ASCII-case spellings of every metadata chunk type (`eXIf`, `zxIf`, `tXMP`, `meTa`, `seAl`, `caBX`, `tIME`, `iCCP`, `tEXt`, `zTXt`, `iTXt`, `dSIG`, `cpIp`, `gIFx`, `gIFg`, `gIFt`, `fRAc`): only `eXIf` and `zxIf` fold. Every spelling of those two decodes, so a mixed-case `EXIF` or `ZxIf` chunk is a carrier like `zxif`: `chunk_class` folds the four bytes, every preset removes it, the audit reports `Carrier`. Every other type stays case-sensitive. (This corrects the earlier "type bytes are case-sensitive" rule in the table above and in DEC-020 clause 5.)

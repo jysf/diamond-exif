@@ -140,9 +140,9 @@ pub enum ChunkClass {
     /// `PNG:ModifyDate`, also for a `tIME` after `IEND`).
     Time,
     /// A chunk whose data ExifTool reads as a TIFF/Exif block: `zxIf` (a
-    /// `\0`, a 4-byte length and a zlib stream, or a bare TIFF) and the
-    /// lower-case spellings `exif` and `zxif`, which ExifTool maps to the same
-    /// readers.
+    /// `\0`, a 4-byte length and a zlib stream, or a bare TIFF) and every
+    /// other ASCII case of `zxIf` and of `eXIf` (ExifTool matches those two
+    /// types case-insensitively; the exact `eXIf` is the walked Exif chunk).
     ExifCarrier,
     /// A chunk whose data ExifTool reads as XMP or XML tags: `tXMP` (raw XMP),
     /// `meTa` (XML, also UTF-16) and `seAl`.
@@ -157,11 +157,18 @@ pub enum ChunkClass {
 
 /// The class of a chunk type, or `None` for every other type (including the
 /// image-structure chunks ExifTool also prints, such as `pHYs` or `gAMA`).
-/// Case matters: `tXMP` is XMP and `txmp` is nothing (measured).
+/// Case matters for every type but two: `tXMP` is XMP and `txmp` is nothing
+/// (measured), but ExifTool matches `zxIf` and `eXIf` case-insensitively (all
+/// 32 spellings decode, with a "chunk should be eXIf" or "should be zxIf"
+/// warning), so any ASCII case of those two is an [`ChunkClass::ExifCarrier`].
+/// The exact `eXIf` is the walked Exif chunk and is never classified here.
 pub fn chunk_class(ty: [u8; 4]) -> Option<ChunkClass> {
+    let folded = ty.map(|b| b.to_ascii_lowercase());
+    if &folded == b"zxif" || &folded == b"exif" {
+        return Some(ChunkClass::ExifCarrier);
+    }
     match &ty {
         b"tIME" => Some(ChunkClass::Time),
-        b"zxIf" | b"zxif" | b"exif" => Some(ChunkClass::ExifCarrier),
         b"tXMP" | b"meTa" | b"seAl" => Some(ChunkClass::XmlCarrier),
         b"caBX" => Some(ChunkClass::Jumbf),
         b"dSIG" | b"cpIp" | b"gIFx" | b"gIFg" | b"gIFt" | b"fRAc" => Some(ChunkClass::Other),
