@@ -1,0 +1,72 @@
+---
+insight:
+  id: DEC-021
+  type: decision
+  confidence: 0.65
+  audience:
+    - developer
+    - agent
+
+agent:
+  id: claude-opus-5-5
+  session_id: null
+
+project:
+  id: PROJ-001
+repo:
+  id: diamond-exif
+
+created_at: 2026-11-22
+supersedes: null
+superseded_by: null
+status: accepted
+deciders: [jysf, claude]
+affected_scope:
+  - "src/write/**"
+  - "src/png/**"
+  - "src/audit/**"
+  - "fuzz/**"
+
+tags:
+  - writer
+  - png
+  - policy
+---
+
+# DEC-021: PNG strip: whole-chunk removal, opaque carriers and the eXIf chunk
+
+## Decision
+
+`write::strip` of a PNG follows DEC-013 unchanged (a pure function; `Remove` and same-length `Patch` only; never longer than the input; fail closed with typed refusals; the output re-audited). The PNG-specific rules:
+
+1. **The unit of removal is the chunk** (length, type, data, CRC), found by the chunk walk, never by the library's lists alone. Every `eXIf`, text, `iCCP` and `tIME` chunk the walk finds is considered, wherever it lies (before `IDAT`, after `IDAT`, after `IEND`). Kept chunks are byte-identical, so their CRCs stay valid, including a kept chunk whose stored CRC was already wrong.
+2. **Which chunks go, by the audit's category (DEC-020):** `eXIf` by its entries (rule 3); a text chunk by its keyword (`Author`, `Copyright` Authorship; `Creation Time` Timestamps; `Software` Software; `XML:com.adobe.xmp` Xmp; everything else FreeText), compressed or not; `iCCP` Icc; `tIME` of any length Timestamps; bytes after `IEND` that are not a chunk (the audit's `Trailer`) OtherSegment. A category the policy does not contain is left (so `Gps`, `GpsAndDevice`, `AllPii` keep XMP and ICC, as for JPEG; the preview's `KeptUnread` says so).
+3. **`eXIf` is the JPEG Exif rule applied to the chunk's TIFF data (DEC-013 part 4 and amendment B).** A policy containing every Exif-set category removes every `eXIf` chunk whole (Orientation goes with it; documented consequence, as for JPEG). A policy containing none leaves them. A policy containing some deletes the matching entries in place with the existing Exif editor (`src/write/exif.rs`), then **patches the chunk CRC** (the one net-new patch: CRC-32 over the chunk type and the edited data, computed from the planned bytes), or refuses with the existing `Uneditable` reasons.
+4. **Opaque carriers.** Some chunks carry metadata the library cannot read, and a kept one would leave what the policy asked to remove: ImageMagick raw profiles (`Raw profile type exif`/`APP1`/`xmp`/`iptc`/`icc`, DEC-018, DEC-020 clause 5) and any other chunk type ExifTool 13.55 decodes into Exif or XMP tags that the audit does not list (the SPEC-037 build measures the grid: at least `zxIf`, `tXMP`, `meTa`; and lists what it finds in this DEC). An opaque carrier is removed whenever the policy contains any tag category, `Xmp` or `Iptc` (that is, by every preset; a `Custom` policy with only `Icc` or `OtherSegment` leaves it). Carriers that are not metadata for any preset (`dSIG`, `cpIp`, `gIFx`, `fRAc`, ...) are `OtherSegment` and go only with `Everything`. Where the audit does not yet locate such a chunk the build extends the reader and audit (`src/png`, `src/audit`, DEC-020 amended) so the output re-audit sees it, rather than letting the strip leave it silently.
+5. **Refusals (typed, no bytes):** the walk was halted by a cap (`MAX_PNG_CHUNKS`, `MAX_PNG_ISSUES`) or a chunk's length runs past the end of the input, so the bytes after it were never audited (`Unstrippable`, with the input offset); an `eXIf` edit that cannot be made exactly (the existing `Uneditable` reasons); a removal that would cut a kept byte (`Overlap`); the self-check failing (`VerifyFailed`). A missing `IEND`, a bad CRC on a removed chunk, an unparseable `eXIf` that the policy removes whole, are not refusals. An unparseable `eXIf` that a partial policy would need to edit is `Uneditable`.
+6. **The self-check (DEC-013 part 7) for PNG:** (a) the output's audit has no finding in a removed category and no opaque carrier the policy removes; (b) the multiset of findings in the kept categories equals the input's; (c) `IHDR`, `PLTE`, `IDAT` and every other kept chunk are byte-identical and in order (the I1 pixel-integrity statement for PNG); (d) the output walks with no new issue kind; (e) stripping the output again changes nothing; (g) the entry inventory equals the input's minus the deleted entries; (h) zeroed ranges read zero.
+7. **Dispatch and honesty.** `strip` accepts `Sniffed::Png`; WebP stays `Unsupported` until SPEC-038. `ContainerKind::strippable()` (DEC-020 clause 6) stays false for PNG until SPEC-039 shows ExifTool agrees (I3) and flips it, so no report claims a removal before then.
+
+## Context
+
+STAGE-008 shipped the reader and the audit for PNG (DEC-017, DEC-018, DEC-020). The SPEC-036 verify showed that ExifTool decodes more PNG chunk types than the audit lists (`zxIf`, `tXMP`, `meTa`, ... printed as their own tags) and that a raw profile is a real Exif carrier, which is why rule 4 exists: a strip that works from the audit's lists alone would leave GPS behind.
+
+## Alternatives considered
+
+- Refuse when a raw profile would remain: rejected, it would make every ImageMagick or GIMP PNG unstrippable by any preset but `Everything`.
+- Leave a raw profile under a partial policy (the XMP precedent): rejected, an XMP block is declared kept by the preset's design and shown `KeptUnread`; a raw profile is a positively identified Exif carrier.
+- Whole-chunk `eXIf` removal only (no in-place edit): rejected, JPEG already has the entry editor (SPEC-021) and a PNG that keeps Orientation under `Gps` is the common case.
+
+## Consequences
+
+- A PNG strip under any preset also removes raw-profile and other opaque-carrier chunks, including the tags in them that the policy would have kept (documented, like Orientation under `All`).
+- The writer is the first place that computes a PNG CRC; `src/png/crc.rs` is reused.
+- `rewrite_png` becomes the fuzz target of this writer.
+
+## Validation
+
+Unit tests per rule; the self-check on every fixture; I1 recomputation test; `rewrite_png` 60 s smoke; ExifTool agreement is SPEC-039 (I3).
+
+## References
+
+DEC-001, DEC-006, DEC-008, DEC-009, DEC-013, DEC-017, DEC-018, DEC-020; SPEC-037.
