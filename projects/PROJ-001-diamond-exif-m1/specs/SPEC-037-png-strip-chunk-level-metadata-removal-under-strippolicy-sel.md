@@ -6,7 +6,7 @@
 task:
   id: SPEC-037
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: verify  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -68,11 +68,31 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: 800000
-  sessions: []
+  sessions:
+    - cycle: build
+      handoff: HANDOFF-077
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 408716
+      estimated_usd: 2.70
+      duration_minutes: null
+      recorded_at: 2026-11-22
+      notes: "transcribed from HANDOFF-077 by handback-sync"
+    - cycle: build
+      handoff: HANDOFF-078
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 293335
+      estimated_usd: 1.94
+      duration_minutes: null
+      recorded_at: 2026-11-22
+      notes: "Tokens left null: the delegated run has no transcript access. Part B only; src/write/png.rs and the reader/audit untouched."
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 702051
+    estimated_usd: 4.64
+    session_count: 2
 ---
 
 # SPEC-037: PNG strip: chunk-level metadata removal under StripPolicy, self-verify, rewrite_png fuzz

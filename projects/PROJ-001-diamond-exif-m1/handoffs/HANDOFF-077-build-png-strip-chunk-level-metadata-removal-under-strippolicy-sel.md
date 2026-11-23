@@ -58,7 +58,7 @@ handback:
   pr: null
   completed_at: 2026-11-23               # YYYY-MM-DD
   notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-22
 ---
 
 # HANDOFF-077: PNG strip, PART A (carrier measurement, reader/audit extension, planner, self-check)

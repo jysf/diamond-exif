@@ -50,15 +50,15 @@ handback:
   agent: claude-sonnet-5-5         # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # not measured by the delegated run; the orchestrator fills it
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  basis: agent-result                      # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 293335               # not measured by the delegated run; the orchestrator fills it
+  estimated_usd: 1.94              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
   branch: claude/spec-037-part-b
   pr: null
   completed_at: 2026-11-22
   notes: "Tokens left null: the delegated run has no transcript access. Part B only; src/write/png.rs and the reader/audit untouched."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-22
 ---
 
 # HANDOFF-078: PNG strip, PART B (rewrite_png fuzz target, seeds, pins, CI job, README, DEC fill)
@@ -188,8 +188,8 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Cost self-report
 
-- **Tokens (total):** null (not measured by the delegated run)
-- **Estimated USD:** null
+- **Tokens (total):** 293335 (harness subagent_tokens)
+- **Estimated USD:** 1.94
 - **Duration (minutes):** null
 - **Source of the number:** none available
 
