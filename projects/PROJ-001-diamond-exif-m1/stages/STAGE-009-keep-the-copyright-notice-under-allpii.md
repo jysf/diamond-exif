@@ -5,7 +5,7 @@
 
 stage:
   id: STAGE-009                     # stable, zero-padded, continuous across the repo
-  status: active                    # proposed | active | shipped | cancelled | on_hold
+  status: shipped                   # proposed | active | shipped | cancelled | on_hold
   priority: medium                  # critical | high | medium | low
   target_complete: null             # optional: YYYY-MM-DD
 
@@ -15,7 +15,7 @@ repo:
   id: diamond-exif
 
 created_at: 2026-11-21
-shipped_at: null
+shipped_at: 2026-11-23
 
 # What part of the project's value thesis this stage advances.
 # If you can't articulate value_contribution, the stage may be
@@ -41,7 +41,12 @@ value_contribution:
 # that is a division you cannot observe, so any per-spec number is invented.
 # Warn-only, never a gate. A null here is honest; a guess is not. (DEC-013 §5)
 orchestration_cost:
-  sessions: []                      # - tokens_total: N
+  sessions:
+    - tokens_total: 21945199
+      estimated_usd: null
+      recorded_at: 2026-11-23
+      notes: "Measured by the orchestrator from this session's transcript (98ad32cb), live at ship, so a floor (docs/cost-tracking.md rule 6): 136 messages, each counted once with its largest output, model claude-opus-5-5; input 292, cache creation 610605, cache read 21245238, output 89064 (input + cache creation + cache read + output, the current rule). Covers the question that started the stage, design, the PNG/WebP revision and its merge conflict, both handoffs, routing the build and verify sessions, the re-sum of their transcripts and the ship fixes. estimated_usd is null: Opus 5.5 list rates are not on record in this repo."
+                                    # - tokens_total: N
                                     #   estimated_usd: N
                                     #   recorded_at: YYYY-MM-DD
                                     #   notes: "framing + spec breakdown"
@@ -75,9 +80,9 @@ A one-spec stage that takes the Exif Copyright tag (0x8298) out of the `Authorsh
 
 ## Spec Backlog
 
-- [ ] SPEC-033 (design) — DEC-008 amendment: a `Rights` category for Copyright, kept by `AllPii` [S]
+- [x] SPEC-033 (shipped on 2026-11-23) — DEC-008 amendment: a `Rights` category for Copyright, kept by `AllPii` [S → M at the PNG/WebP revision; actual M]
 
-**Count:** 0 shipped / 1 active / 0 pending
+**Count:** 1 shipped / 0 active / 0 pending
 
 ## Design Notes
 
@@ -94,21 +99,23 @@ The category is appended after `OtherSegment` in `Category::ALL` (as DEC-012 app
 
 ## Stage-Level Reflection
 
-*Filled in when status moves to shipped. Run Prompt 1c (Stage Ship) in
-FIRST_SESSION_PROMPTS.md to draft this.*
-
-- **Did we deliver the outcome in "What This Stage Is"?** <yes/no + notes>
-- **How many specs did it actually take?** <number vs. plan>
-- **How many outlines survived unchanged?** <n of m — only if this stage was
-  framed with `just frame-stage`. Counts outlines whose scope held from frame to
-  ship. A low number means framing ran ahead of what was knowable; a high one
-  means it's paying for itself.>
-- **What changed between starting and shipping?** <one sentence>
+- **Did we deliver the outcome in "What This Stage Is"?** Yes. `AllPii` keeps the Exif Copyright in JPEG, TIFF,
+  PNG and WebP and a PNG `Copyright` text chunk, byte-identical, while still deleting Artist and Author; `All` and
+  `Everything` remove it, and `All` still removes Exif blocks whole. ExifTool 13.55 agrees on the recorded strip
+  outputs, and the verifier's independent probe found no mismatches across 64 outputs. Reports name it `rights`.
+- **How many specs did it actually take?** One, as planned.
+- **How many outlines survived unchanged?** Not framed with `just frame-stage`; n/a.
+- **What changed between starting and shipping?** The PNG and WebP strips landed while the spec waited, so it
+  was revised to cover them (DEC-020 and DEC-021 amended) and built after SPEC-038 shipped; the size moved from
+  S to M.
 - **Lessons that should update AGENTS.md, templates, or constraints?**
-  - <one-line updates>
-- **Signals dispositioned at this close?** (Prompt 1d step 7) Every
-  `type: lesson` signal in `/guidance/signals.yaml` owned by this stage close
-  was walked — codified (at its bar), left `watch`, or dropped. No silent carry.
-  - <note what codified / what's still watch + its N>
+  - None codified. Below the bar: a user-facing claim about a preview should be checked against the
+    container's `strippable` flag (verify L1).
+- **Signals dispositioned at this close?** No `type: lesson` signal in `guidance/signals.yaml` is owned by this
+  stage.
 - **Should any spec-level reflections be promoted to stage-level lessons?**
-  - <one-line items — record below-bar ones as `watch` signals; don't codify yet>
+  - Not yet. "Design against the tree it will be built on" recurs (STAGE-010 noted parallel sessions touching
+    `src/write`); left for the next close that sees it again.
+- **Cost.** SPEC-033: 51,458,448 tokens (build 39,367,460; verify 12,090,988), transcript basis with cache reads
+  included, against a 500,000 estimate made under the older convention that left cache reads out, so the two are
+  not comparable. Orchestration: at least 21,945,199 (a floor). USD not priced: no 5.5 list rates are on record.

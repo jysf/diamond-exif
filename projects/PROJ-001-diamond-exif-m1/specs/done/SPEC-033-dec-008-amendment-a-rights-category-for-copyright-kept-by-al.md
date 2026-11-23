@@ -6,19 +6,19 @@
 task:
   id: SPEC-033
   type: story                      # epic | story | task | bug | chore
-  cycle: verify                    # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
-  complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
+  complexity_actual: M             # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: approved  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
                                    #   rejects anything" stops being a hunch and becomes a number.
-  verify_rounds: []                # every verify outcome, oldest first, appended by
+  verify_rounds: [approved]  # every verify outcome, oldest first, appended by
                                    #   `just advance-cycle` each time the spec leaves verify.
                                    #   verify_verdict keeps only the LAST one, so a spec sent
                                    #   back and then approved read as "approved": irradiance's
@@ -68,11 +68,32 @@ cost:
   # below (`just calibration`), so you learn whether you systematically
   # under- or over-estimate. null = didn't predict.
   tokens_estimate: 500000
-  sessions: []
+  sessions:
+    - cycle: build
+      handoff: HANDOFF-053
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: transcript
+      tokens_total: 39367460
+      estimated_usd: null
+      duration_minutes: 55
+      recorded_at: 2026-11-23
+      notes: "Re-summed by the orchestrator at ship from transcript 70a30ebe after the session ended (docs/cost-tracking.md rule 6): 149 messages, each counted once with its largest output, model claude-sonnet-5-5, no subagents; input 301, cache creation 322652, cache read 38971459, output 73048. The builder's live figure was 37156982 (143 messages). estimated_usd is null: Sonnet 5.5 list rates are not on record in this repo; price the four components when they are."
+    - cycle: verify
+      handoff: HANDOFF-085
+      agent: claude-opus-5-5
+      interface: other
+      basis: transcript
+      tokens_total: 12090988
+      estimated_usd: null
+      duration_minutes: 9
+      recorded_at: 2026-11-23
+      notes: "Approved at 43eb634 with three Low findings (CHANGELOG PNG preview clause, a vacuous kept assertion, no PNG Custom(Rights) carrier row). Re-summed by the orchestrator at ship from transcript c67f6675 after the session ended: 66 messages, each counted once with its largest output, model claude-opus-5-5, no subagents; input 133, cache creation 189645, cache read 11867329, output 33881. The verifier's live floor was 10909378 (61 messages). estimated_usd is null: Opus 5.5 list rates are not on record in this repo."
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 51458448
+    estimated_usd: 0.00
+    session_count: 2
+shipped_at: 2026-11-23
 ---
 
 # SPEC-033: DEC-008 amendment: a `Rights` category for Copyright, kept by `AllPii`
@@ -331,19 +352,25 @@ from the code under test.
 
 ## Reflection
 
-*Appended during **ship**. Three questions, short answers.*
+*Appended during **ship** (2026-11-23).*
 
 1. **What would I do differently next time?**
-   — <answer>
+   — Check the container's `strippable` flag before writing a user-facing claim about its preview. The spec's
+   CHANGELOG sentence promised a PNG preview change that cannot happen until SPEC-039 (verify L1). Design the
+   spec against the tree it will be built on: this one was designed before the PNG and WebP strips landed and
+   needed a revision and a `depends_on` on SPEC-038 before it could build.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer>
+   — No decision changes. The `new-handoff verify` scaffold left the title as a template placeholder (the
+   verifier noted it). `just advance-cycle … ship` did not recompute `cost.totals`; it was set by hand.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — None required. `StripSpec` is full at 16 categories, so the next new category needs a wider integer and its
+   own DEC first. XMP `dc:rights` and the IPTC copyright notice still follow their packets (a non-goal here).
 
-4. **Where was the worst defect caught?** — one of `design` | `build` | `verify` | `ship` | `escaped` | `none`.
-   — <answer>
+4. **Where was the worst defect caught?** — `verify` (L1, a wrong CHANGELOG clause carried from the spec; fixed at
+   ship with L2 and L3).
 
-5. **What can a user do now that they couldn't before?** — before → after, one sentence.
-   — <answer>
+5. **What can a user do now that they couldn't before?** — Before, the default `AllPii` strip removed the owner's
+   copyright notice along with the photographer's name; now it keeps the Exif Copyright (JPEG, TIFF, PNG, WebP) and
+   a PNG `Copyright` text chunk, and reports them as `rights`.

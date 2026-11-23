@@ -448,6 +448,7 @@ fn policies() -> Vec<(&'static str, StripPolicy)> {
         ("everything", StripPolicy::Everything),
         ("none", StripPolicy::Custom(StripSpec::none())),
         ("icc", StripPolicy::Custom(spec_of(&[Category::Icc]))),
+        ("rights", StripPolicy::Custom(spec_of(&[Category::Rights]))),
         ("xmp", StripPolicy::Custom(spec_of(&[Category::Xmp]))),
         ("jumbf", StripPolicy::Custom(spec_of(&[Category::Jumbf]))),
         (
@@ -946,6 +947,8 @@ fn carriers_follow_the_clause_4_rule_for_every_policy() {
             (vec![Category::Icc], false),
             (vec![Category::Jumbf], false),
             (vec![Category::Thumbnail], true),
+            // DEC-021 amendment clause 3: `Rights` is a tag category.
+            (vec![Category::Rights], true),
             (vec![Category::Iptc], true),
             (vec![Category::Xmp], true),
             (vec![Category::OtherSegment], true),

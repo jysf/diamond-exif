@@ -58,7 +58,7 @@ handback:
   pr: https://github.com/jysf/diamond-exif/pull/57
   completed_at: 2026-11-23         # YYYY-MM-DD
   notes: "Approved at 43eb634 with three Low findings (CHANGELOG PNG preview clause, a vacuous kept assertion, no PNG Custom(Rights) carrier row). tokens_total measured from this session's transcript just before the commit (61 messages, each counted once, largest output; no subagents): input 123, cache creation 186056, cache read 10692996, output 30203; a floor by the last few messages. estimated_usd is null because I do not have Opus 5.5 list rates; price the four components."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-23
 ---
 
 # HANDOFF-085: <Task Title — same as the spec's title>
