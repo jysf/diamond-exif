@@ -51,8 +51,8 @@ handback:
                                    #   to_agent above is a prediction from tier_map
   verdict: punch-list              # verify handoffs: approved | punch-list | rejected
   basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
-  estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
+  tokens_total: 261175               # REAL combined count — what cost-audit reads
+  estimated_usd: 1.72              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
   branch: claude/spec-038-verify
   pr: null
@@ -214,8 +214,8 @@ Mirror what you put in the `handback:` front-matter, and say where the number
 came from. **This is the number that lands in the spec** — the orchestrator
 transcribes it via `just handback-sync`, it does not estimate it.
 
-- **Tokens (total):** null: the verifier harness reports no token count to the agent; the orchestrator records the harness figure.
-- **Estimated USD:** null
+- **Tokens (total):** 261175 (harness subagent_tokens)
+- **Estimated USD:** 1.72
 - **Duration (minutes):** null
 - **Source of the number:** harness report (filled by the orchestrator)
 
