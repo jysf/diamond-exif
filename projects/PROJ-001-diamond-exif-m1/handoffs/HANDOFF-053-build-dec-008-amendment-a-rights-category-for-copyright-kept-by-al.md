@@ -57,7 +57,7 @@ handback:
   pr: https://github.com/jysf/diamond-exif/pull/57
   completed_at: 2026-11-23
   notes: "Measured from the session transcript at the end of the build (143 messages, each counted once, largest output): input 289, cache creation 315875, cache read 36773945, output 66873. estimated_usd is null because I do not have Sonnet 5.5 list rates; the architect can price these four components."
-  synced_at: null
+  synced_at: 2026-11-23
 ---
 
 # HANDOFF-053: DEC-008 amendment: a `Rights` category for Copyright, kept by `AllPii`

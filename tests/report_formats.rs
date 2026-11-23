@@ -1303,8 +1303,13 @@ fn copyright_finding_renders_as_rights() {
     assert!(text.contains("rights [medium] tag 0x8298"), "{text}");
     assert!(!text.contains("authorship ["), "{text}");
     assert!(text.contains("category rights: 1"), "{text}");
-    // `AllPii` keeps it.
-    assert!(text.contains("kept"), "{text}");
+    // `AllPii` keeps it: the finding's own disposition, and the summary count
+    // (`kept` alone would match the summary line under any disposition).
+    assert!(
+        text.contains("kept (not targeted by this policy)"),
+        "{text}"
+    );
+    assert!(text.contains("removed 0, kept 1,"), "{text}");
     // JSON: the finding and the summary key.
     let j = json(&files, &on);
     let f = &j.get("files").unwrap().as_arr().unwrap()[0];
