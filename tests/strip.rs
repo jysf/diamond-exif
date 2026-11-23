@@ -103,28 +103,38 @@ fn removal_ranges(e: &Expect) -> Vec<Range<usize>> {
 // ── dispatch and refusals ───────────────────────────────────────────────────
 
 #[test]
-fn png_webp_heic_are_unsupported_naming_the_container() {
-    // (TIFF moved to SPEC-022, `tests/strip_tiff.rs`.)
-    let mut png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
-    png.extend_from_slice(&[0; 16]);
+fn webp_and_heic_are_unsupported_naming_the_container() {
+    // (TIFF moved to SPEC-022, `tests/strip_tiff.rs`; PNG to SPEC-037,
+    // `tests/strip_png.rs`: a PNG now strips.)
     let mut webp = b"RIFF\x10\0\0\0WEBPVP8 ".to_vec();
     webp.extend_from_slice(&[0; 16]);
     let mut heic = vec![0, 0, 0, 0x18];
     heic.extend_from_slice(b"ftypheic");
     heic.extend_from_slice(&[0; 16]);
     for (bytes, want) in [
-        (png, ContainerKind::Png),
         (webp, ContainerKind::Webp),
         (heic, ContainerKind::Unsupported(Sniffed::Heic)),
     ] {
-        assert_eq!(
-            strip(&bytes, StripPolicy::Everything).unwrap_err(),
-            StripError::Unsupported { kind: want }
-        );
-        assert_eq!(
-            sanitize(&bytes, StripPolicy::Everything).unwrap_err(),
-            StripError::Unsupported { kind: want }
-        );
+        for (_, policy) in policies() {
+            assert_eq!(
+                strip(&bytes, policy).unwrap_err(),
+                StripError::Unsupported { kind: want }
+            );
+            assert_eq!(
+                sanitize(&bytes, policy).unwrap_err(),
+                StripError::Unsupported { kind: want }
+            );
+        }
+    }
+}
+
+#[test]
+fn a_png_is_no_longer_refused() {
+    // The smallest PNG: a signature and an IEND. It strips (to itself).
+    let mut png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    png.extend_from_slice(&[0, 0, 0, 0, b'I', b'E', b'N', b'D', 0xAE, 0x42, 0x60, 0x82]);
+    for (_, policy) in policies() {
+        assert_eq!(sanitize(&png, policy).unwrap(), png);
     }
 }
 

@@ -548,19 +548,21 @@ fn jpeg_and_tiff_previews_are_strippable_and_unchanged() {
 }
 
 #[test]
-fn strip_refuses_png_and_webp_for_every_policy() {
+fn strip_refuses_webp_for_every_policy_and_png_strips_while_not_strippable() {
     for policy in StripPolicy::PRESETS {
-        match strip(&rich_png(), policy) {
-            Err(StripError::Unsupported { kind }) => assert_eq!(kind, ContainerKind::Png),
-            other => panic!("png under {}: {other:?}", policy.name()),
-        }
+        // SPEC-037: a PNG strips now (DEC-021); the audit still says it is not
+        // strippable until SPEC-039 shows ExifTool agrees (DEC-020 clause 6).
+        let out = strip(&rich_png(), policy)
+            .unwrap_or_else(|e| panic!("png under {}: {e:?}", policy.name()));
+        assert!(out.bytes().len() <= rich_png().len());
+        assert!(!preview(&audit(&rich_png()), policy).strippable());
         match strip(&rich_webp(), policy) {
             Err(StripError::Unsupported { kind }) => assert_eq!(kind, ContainerKind::Webp),
             other => panic!("webp under {}: {other:?}", policy.name()),
         }
-        // Even a minimal file and a truncated one: no bytes.
-        assert!(strip(&p::minimal(), policy).is_err());
+        // Even a minimal WebP: no bytes.
         assert!(strip(&webp_shapes::minimal(), policy).is_err());
+        assert!(strip(&p::minimal(), policy).is_ok());
     }
 }
 

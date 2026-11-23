@@ -1956,8 +1956,9 @@ fn inventory_mutant_p1_text_region_counted_twice_is_named() {
     assert!(d.ours_only.is_empty() && d.theirs_only.is_empty());
 }
 
-// Mutant p2. Needle (src/audit/mod.rs, `audit_png`):
-//   if &chunk.chunk_type() == b"tIME" {
+// Mutant p2. Needle (src/png/metadata.rs, `chunk_class`; since SPEC-037 the
+// reader locates `tIME`, it is no longer a loop in `audit_png`):
+//   b"tIME" => Some(ChunkClass::Time),
 // `tIME` chunks are no longer found: the time tags ExifTool prints are
 // theirs-only, one per chunk.
 #[test]
@@ -1968,9 +1969,9 @@ fn inventory_mutant_p2_time_items_dropped_is_named() {
     ];
     let inject = |src: &Path| {
         probe::inject_replace(
-            &src.join("audit/mod.rs"),
-            "if &chunk.chunk_type() == b\"tIME\" {",
-            &marked("if false && &chunk.chunk_type() == b\"tIME\" {"),
+            &src.join("png/metadata.rs"),
+            "b\"tIME\" => Some(ChunkClass::Time),",
+            &marked("b\"tIME\" => None,"),
         );
     };
     let all = inventory_control_then_mutant("inventory-p2", &keys, &inject);

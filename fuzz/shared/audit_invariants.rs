@@ -585,11 +585,36 @@ mod audit_invariants {
             if matches!(r, PngRegion::RawProfile { .. }) && !r.data().is_empty() {
                 *failed += 1;
             }
+            // SPEC-037: a chunk whose Exif or XMP the library cannot read is
+            // as opaque as a raw profile.
+            if let PngRegion::Chunk {
+                chunk_type: ty,
+                data,
+                ..
+            } = r
+            {
+                let opaque = ty.eq_ignore_ascii_case(b"zxif")
+                    || ty.eq_ignore_ascii_case(b"exif")
+                    || matches!(ty, b"tXMP" | b"meTa" | b"seAl");
+                if opaque && !data.is_empty() {
+                    *failed += 1;
+                }
+            }
             let (name, category) = match r {
                 PngRegion::Xmp { .. } => ("Xmp", "Xmp"),
                 PngRegion::Icc { .. } => ("Icc", "Icc"),
                 PngRegion::RawProfile { .. } => ("RawProfile", "OtherSegment"),
                 PngRegion::Text { keyword, .. } => ("Text", png_keyword_category(keyword)),
+                // The class by type bytes, typed again from DEC-021 clause 4.
+                PngRegion::Chunk { chunk_type, .. } => match chunk_type {
+                    b"tIME" => ("Time", "Timestamps"),
+                    t if t.eq_ignore_ascii_case(b"zxif") || t.eq_ignore_ascii_case(b"exif") => {
+                        ("Carrier", "OtherSegment")
+                    }
+                    b"tXMP" | b"meTa" | b"seAl" => ("Carrier", "OtherSegment"),
+                    b"caBX" => ("Jumbf", "Jumbf"),
+                    _ => ("OtherChunk", "OtherSegment"),
+                },
                 _ => panic!("a PngRegion variant the harness does not know"),
             };
             let segment = segment_of(r.offset());
@@ -598,18 +623,6 @@ mod audit_invariants {
                 at: region_at(name, segment, r.data().len(), after(segment)),
                 category: Some(category),
             });
-        }
-        // A `tIME` chunk of ANY length is a time (ExifTool 13.55 prints
-        // `PNG:ModifyDate` for every length 0 to 12, measured).
-        for (i, c) in chunks.iter().enumerate() {
-            tick(1);
-            if &c.chunk_type() == b"tIME" {
-                located.push(Located {
-                    offset: c.offset(),
-                    at: region_at("Time", i, c.data().len(), after(i)),
-                    category: Some("Timestamps"),
-                });
-            }
         }
         // The bytes after `IEND`.
         let trailer = meta.png().trailer();
@@ -918,7 +931,9 @@ mod audit_invariants {
                         "Jumbf" => "Jumbf",
                         "EmbeddedImage" => "EmbeddedImage",
                         "Comment" => "FreeText",
-                        "OtherApp" | "Trailer" | "RawProfile" => "OtherSegment",
+                        "OtherApp" | "Trailer" | "RawProfile" | "Carrier" | "OtherChunk" => {
+                            "OtherSegment"
+                        }
                         "Time" => "Timestamps",
                         // A text chunk is categorised by its keyword: any of
                         // these four, never a block category.

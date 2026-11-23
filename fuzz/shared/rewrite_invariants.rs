@@ -2073,11 +2073,12 @@ mod rewrite_invariants {
     }
 
     pub fn check_input(jpeg: &[u8], policy: StripPolicy) {
-        // A classic TIFF is stripped in place since SPEC-022; that surface has
-        // its own target (`rewrite_tiff`), so this JPEG harness leaves it out.
+        // A classic TIFF is stripped in place since SPEC-022 and a PNG since
+        // SPEC-037; those surfaces have their own targets (`rewrite_tiff`,
+        // `rewrite_png`), so this JPEG harness leaves them out.
         if matches!(
             exif_core::audit::sniff(jpeg),
-            exif_core::audit::Sniffed::Tiff
+            exif_core::audit::Sniffed::Tiff | exif_core::audit::Sniffed::Png
         ) {
             return;
         }

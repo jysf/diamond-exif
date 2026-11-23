@@ -21,11 +21,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::audit::{audit, Category, FileAudit, ItemKind, RegionKind};
 use crate::error::Error;
 use crate::jpeg::{self, Jpeg, Region};
+use crate::png;
 use crate::policy::StripSpec;
 use crate::tiff::{Container, IfdKind};
 
 use super::exif::protected_ranges;
 use super::jpeg::plan;
+use super::png as png_plan;
 use super::tiff;
 use super::Check;
 
@@ -96,7 +98,7 @@ pub(super) fn verify(
     // every Exif category is removed the segments are gone whole (nothing to
     // compare).
     if !exif_gone {
-        entries(input, spec, &before, &after, false)?;
+        entries(input, spec, &before, &after, Source::Jpeg)?;
     }
 
     // (h) Every range the plan zeroed reads zero in the output.
@@ -185,7 +187,7 @@ pub(super) fn verify_tiff(
     if !kinds(&cout).iter().all(|k| old.contains(k)) {
         return Err(Check::Walk);
     }
-    entries(input, spec, &before, &after, true)?;
+    entries(input, spec, &before, &after, Source::Tiff)?;
     for &(offset, len) in scrubs {
         let zero = offset
             .checked_add(len)
@@ -199,6 +201,204 @@ pub(super) fn verify_tiff(
         Ok(p) if p.plan.is_empty() => Ok(()),
         _ => Err(Check::Idempotent),
     }
+}
+
+/// The chunk types whose chunks a PNG strip may remove or edit: `eXIf`, text,
+/// `iCCP` and everything the reader locates by type. Every other chunk (image
+/// header, palette, image data, structure, unknown types) must come out
+/// byte for byte as it went in.
+fn removable_type(ty: &[u8; 4]) -> bool {
+    matches!(ty, b"eXIf" | b"tEXt" | b"zTXt" | b"iTXt" | b"iCCP") || png::chunk_class(*ty).is_some()
+}
+
+/// Every chunk of a PNG as `(type, bytes, crc ok)`: the walked ones, then the
+/// ones framed after `IEND` (when `trailer`), and the bytes after the last of
+/// them that frames.
+type PngChunks<'a> = (Vec<([u8; 4], &'a [u8], bool)>, &'a [u8]);
+
+fn png_chunks(data: &[u8], trailer: bool) -> Option<PngChunks<'_>> {
+    let meta = png::read(data).ok()?;
+    let mut out: Vec<([u8; 4], &[u8], bool)> = meta
+        .png()
+        .chunks()
+        .iter()
+        .map(|c| Some((c.chunk_type(), data.get(c.range())?, c.crc_ok())))
+        .collect::<Option<_>>()?;
+    let start = png_plan::trailer_start(data, &meta);
+    if !trailer {
+        return Some((out, &[]));
+    }
+    let (framed, stop, _) = png_plan::trailer_chunks(data, start);
+    for (a, b, ty) in framed {
+        out.push((ty, data.get(a..b)?, true));
+    }
+    let tail = data.get(stop.max(start)..)?;
+    Some((out, tail))
+}
+
+/// The self-check of a PNG strip (SPEC-037, DEC-021 clause 6). Like the JPEG
+/// one it reads the input, the output and the policy; the byte ranges the plan
+/// removed are used only to account for the bytes after `IEND`.
+///
+/// (a) no finding in a removed category, and none of the opaque carriers the
+/// policy removes (a raw profile or carrier chunk has category `OtherSegment`,
+/// which most presets do not remove, yet every preset removes it: DEC-021
+/// clause 4); (b) the kept categories have the same findings (the kept bytes
+/// after `IEND` by count, less what was removed from them); (c) every chunk
+/// that is not removable is byte-identical and in order, the removable ones
+/// that are left are the input's (an `eXIf` may differ in its bytes, never in
+/// its length) in order, no chunk has a worse CRC than it had, and the kept
+/// non-chunk tail is the input's; (d) the output walks with no new kind of
+/// issue; (g) the Exif entry inventory is the input's minus the deleted
+/// entries; (h) zeroed ranges read zero; (e) stripping again changes nothing.
+pub(super) fn verify_png(
+    input: &[u8],
+    output: &[u8],
+    spec: StripSpec,
+    scrubs: &[(usize, usize)],
+    removed: &[core::ops::Range<usize>],
+) -> Result<(), Check> {
+    let before = audit(input);
+    let after = audit(output);
+    let carriers = png_plan::removes_carriers(spec);
+    let is_carrier =
+        |kind: RegionKind| matches!(kind, RegionKind::RawProfile | RegionKind::Carrier);
+
+    // (a) Nothing the policy removes is left.
+    if after.findings().iter().any(|f| spec.contains(f.category)) {
+        return Err(Check::Preview);
+    }
+    if carriers
+        && after
+            .items()
+            .iter()
+            .any(|i| matches!(i.kind(), ItemKind::Region { kind, .. } if is_carrier(kind)))
+    {
+        return Err(Check::Preview);
+    }
+
+    // (b) Everything it keeps is still there.
+    let exif_gone = exif_set().iter().all(|c| spec.contains(*c));
+    let (mut kept_before, trailer_before) = kept_findings(&before, spec, exif_gone);
+    let (mut kept_after, trailer_after) = kept_findings(&after, spec, false);
+    if carriers {
+        // Removed although their category stays: leave them out of both sides.
+        kept_before.retain(|k| k.1 != "RawProfile" && k.1 != "Carrier");
+        kept_after.retain(|k| k.1 != "RawProfile" && k.1 != "Carrier");
+    }
+    let trailer_removed = match png::read(input) {
+        Ok(meta) => {
+            let start = png_plan::trailer_start(input, &meta);
+            super::plan::removed_in(removed, start..input.len())
+        }
+        Err(_) => return Err(Check::Walk),
+    };
+    if kept_before != kept_after || trailer_before.saturating_sub(trailer_removed) != trailer_after
+    {
+        return Err(Check::Kept);
+    }
+
+    // (c) The chunks the strip does not target are untouched.
+    // With `OtherSegment` the bytes after `IEND` go whole (check (a) shows none
+    // is left), so only the walked chunks are compared.
+    let trailer_kept = !spec.contains(Category::OtherSegment);
+    let (Some((cin, tail_in)), Some((cout, tail_out))) = (
+        png_chunks(input, trailer_kept),
+        png_chunks(output, trailer_kept),
+    ) else {
+        return Err(Check::Walk);
+    };
+    let fixed = |list: &[([u8; 4], &[u8], bool)]| -> Vec<Vec<u8>> {
+        list.iter()
+            .filter(|c| !removable_type(&c.0))
+            .map(|c| c.1.to_vec())
+            .collect()
+    };
+    if fixed(&cin) != fixed(&cout) {
+        return Err(Check::Scan);
+    }
+    // The removable chunks that are left are a subsequence of the input's.
+    let mut at = 0usize;
+    for (ty, bytes, _) in cout.iter().filter(|c| removable_type(&c.0)) {
+        let found = cin.iter().skip(at).position(|(t, b, _)| {
+            removable_type(t)
+                && t == ty
+                && (b == bytes || (ty == b"eXIf" && b.len() == bytes.len()))
+        });
+        match found {
+            Some(n) => at = at.saturating_add(n).saturating_add(1),
+            None => return Err(Check::Scan),
+        }
+    }
+    // No chunk is left with a worse CRC than it had.
+    let bad_crc = |list: &[([u8; 4], &[u8], bool)]| list.iter().filter(|c| !c.2).count();
+    if bad_crc(&cout) > bad_crc(&cin) {
+        return Err(Check::Scan);
+    }
+    if trailer_kept && tail_in != tail_out {
+        return Err(Check::Scan);
+    }
+
+    // (d) The output walks, with no new kind of issue.
+    let kinds = |data: &[u8]| -> Option<Vec<Discriminant<Error>>> {
+        let meta = png::read(data).ok()?;
+        Some(
+            meta.png_issues()
+                .iter()
+                .map(|i| discriminant(i.error()))
+                .collect(),
+        )
+    };
+    match (kinds(input), kinds(output)) {
+        (Some(old), Some(new)) if new.iter().all(|k| old.contains(k)) => {}
+        _ => return Err(Check::Walk),
+    }
+
+    // (g) The Exif tag inventory is the input's minus the deleted entries.
+    if !exif_gone {
+        entries(input, spec, &before, &after, Source::Png)?;
+    }
+
+    // (h) Every range the plan zeroed reads zero in the output.
+    for &(offset, len) in scrubs {
+        let zero = offset
+            .checked_add(len)
+            .and_then(|end| output.get(offset..end))
+            .is_some_and(|bytes| bytes.iter().all(|b| *b == 0));
+        if !zero {
+            return Err(Check::Scrubbed);
+        }
+    }
+
+    // (e) Idempotence: the plan for the output is empty.
+    match png_plan::plan(output, spec) {
+        Ok(p) if p.plan.is_empty() => Ok(()),
+        _ => Err(Check::Idempotent),
+    }
+}
+
+/// The nine categories an Exif block can hold (DEC-013 part 4), by hand.
+fn exif_set() -> [Category; 9] {
+    [
+        Category::Gps,
+        Category::DeviceId,
+        Category::Authorship,
+        Category::FreeText,
+        Category::Timestamps,
+        Category::CameraModel,
+        Category::Thumbnail,
+        Category::MakerNote,
+        Category::Software,
+    ]
+}
+
+/// Where the Exif blocks of a file live, for the one place that needs to read
+/// them again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Source {
+    Jpeg,
+    Tiff,
+    Png,
 }
 
 /// One tag of the inventory, as compared: its block, the IFD kind, the tag, the
@@ -245,7 +445,7 @@ fn entries(
     spec: StripSpec,
     before: &FileAudit<'_>,
     after: &FileAudit<'_>,
-    tiff: bool,
+    source: Source,
 ) -> Result<(), Check> {
     let items = tag_items(before);
     let mut gone: BTreeSet<Place> = BTreeSet::new();
@@ -275,16 +475,28 @@ fn entries(
         }
     }
     if spec.contains(Category::Gps) {
-        if tiff {
-            let container = Container::parse(input).map_err(|_| Check::Entries)?;
-            gps_pointers(&container, None, &mut gone)?;
-        } else {
-            let meta = jpeg::read(input).map_err(|_| Check::Entries)?;
-            for (b, block) in meta.exif_blocks().iter().enumerate() {
-                let Ok(container) = block.container() else {
-                    continue;
-                };
-                gps_pointers(container, Some(b), &mut gone)?;
+        match source {
+            Source::Tiff => {
+                let container = Container::parse(input).map_err(|_| Check::Entries)?;
+                gps_pointers(&container, None, &mut gone)?;
+            }
+            Source::Jpeg => {
+                let meta = jpeg::read(input).map_err(|_| Check::Entries)?;
+                for (b, block) in meta.exif_blocks().iter().enumerate() {
+                    let Ok(container) = block.container() else {
+                        continue;
+                    };
+                    gps_pointers(container, Some(b), &mut gone)?;
+                }
+            }
+            Source::Png => {
+                let meta = png::read(input).map_err(|_| Check::Entries)?;
+                for (b, block) in meta.exif_blocks().iter().enumerate() {
+                    let Ok(container) = block.container() else {
+                        continue;
+                    };
+                    gps_pointers(container, Some(b), &mut gone)?;
+                }
             }
         }
     }

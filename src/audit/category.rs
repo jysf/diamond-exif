@@ -214,6 +214,9 @@ pub fn region_category(kind: RegionKind) -> Category {
         // Exif (DEC-020).
         RegionKind::RawProfile => Category::OtherSegment,
         RegionKind::Time => Category::Timestamps,
+        // A chunk whose Exif or XMP the library does not decode, and an opaque
+        // binary chunk: present, not parsed (SPEC-037).
+        RegionKind::Carrier | RegionKind::OtherChunk => Category::OtherSegment,
         // A text chunk is categorised by its keyword: the audit calls
         // `text_keyword_category`; this is the keyword-less default.
         RegionKind::Text => Category::FreeText,

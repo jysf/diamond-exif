@@ -60,7 +60,7 @@ pub use preview::{preview, Counts, Disposition, Preview};
 pub use sniff::{sniff, Sniffed};
 
 use crate::jpeg::{self, Region};
-use crate::png::{self, PngRegion};
+use crate::png::{self, ChunkClass, PngRegion};
 use crate::policy::StripSpec;
 use crate::tiff::{Container, Ifd, IfdKind};
 use crate::webp::{self, WebpRegion};
@@ -136,6 +136,13 @@ pub enum RegionKind {
     RawProfile,
     /// A PNG `tIME` chunk (a modification time).
     Time,
+    /// A PNG chunk whose data ExifTool reads as Exif or XMP/XML tags and this
+    /// library does not decode (`zxIf`, `tXMP`, `meTa`, ...; SPEC-037, DEC-020
+    /// clarification). Present, not parsed, may hold GPS.
+    Carrier,
+    /// A PNG chunk ExifTool prints as an opaque binary tag that is neither
+    /// Exif nor XMP nor image structure (`dSIG`, `cpIp`, `gIFx`, ...).
+    OtherChunk,
 }
 
 /// Where an inventory item came from.
@@ -554,10 +561,19 @@ fn audit_png(data: &[u8]) -> FileAudit<'_> {
     }
     let mut regions = Vec::new();
     for region in meta.regions() {
-        // A non-empty raw profile can hold Exif (with GPS) that ExifTool decodes
-        // and this audit does not: it counts as a failed block, so the file is
-        // never clean and its status is `unreadable` (DEC-020 clause 5).
-        if matches!(region, PngRegion::RawProfile { .. }) && !region.data().is_empty() {
+        // A non-empty raw profile, or a chunk of another type that ExifTool
+        // decodes into Exif or XMP tags, can hold GPS that the audit does not
+        // see: it counts as a failed block, so the file is never clean and its
+        // status is `unreadable` (DEC-020 clause 5, extended in SPEC-037).
+        let opaque = matches!(region, PngRegion::RawProfile { .. })
+            || matches!(
+                region,
+                PngRegion::Chunk {
+                    class: ChunkClass::ExifCarrier | ChunkClass::XmlCarrier,
+                    ..
+                }
+            );
+        if opaque && !region.data().is_empty() {
             failed = failed.saturating_add(1);
         }
         let (kind, category) = match *region {
@@ -568,6 +584,15 @@ fn audit_png(data: &[u8]) -> FileAudit<'_> {
                 region_category(RegionKind::RawProfile),
             ),
             PngRegion::Text { keyword, .. } => (RegionKind::Text, text_keyword_category(keyword)),
+            PngRegion::Chunk { class, .. } => {
+                let kind = match class {
+                    ChunkClass::Time => RegionKind::Time,
+                    ChunkClass::ExifCarrier | ChunkClass::XmlCarrier => RegionKind::Carrier,
+                    ChunkClass::Jumbf => RegionKind::Jumbf,
+                    _ => RegionKind::OtherChunk,
+                };
+                (kind, region_category(kind))
+            }
         };
         let len = region.data().len();
         regions.push(ChunkRegion {
@@ -579,26 +604,15 @@ fn audit_png(data: &[u8]) -> FileAudit<'_> {
             // tag for an empty `iCCP` with a name, an empty iTXt XMP and an
             // empty text value (measured 13.55, SPEC-032 fix round; DEC-020
             // clause 3). Only a WebP region is dropped when empty.
+            //
+            // `tIME` is located by the reader, in the walk and after `IEND`
+            // (SPEC-037: ExifTool 13.55 prints `PNG:ModifyDate` for a `tIME`
+            // after `IEND` too), and a `tIME` of ANY length is a time: it
+            // prints for every length 0 to 12 (SPEC-032 fix round; DEC-020
+            // clause 3).
             category: Some(category),
             after_scan: region.after_idat() || region.after_iend(),
         });
-    }
-    // `tIME` is not a region of `png::read`: find it in the walk. A `tIME` of
-    // ANY length is a time: ExifTool 13.55 prints `PNG:ModifyDate` for every
-    // length 0 to 12 (measured in the SPEC-032 fix round: 0 gives
-    // `0000:00:00 00:00:00`, shorter forms fill the missing fields with zero,
-    // longer ones read the first 7 bytes; DEC-020 clause 3).
-    for (index, chunk) in chunks.iter().enumerate() {
-        if &chunk.chunk_type() == b"tIME" {
-            regions.push(ChunkRegion {
-                offset: chunk.offset(),
-                kind: RegionKind::Time,
-                segment: index,
-                len: chunk.data().len(),
-                category: Some(region_category(RegionKind::Time)),
-                after_scan: chunk.after_idat(),
-            });
-        }
     }
     let trailer = meta.png().trailer();
     if !trailer.is_empty() {

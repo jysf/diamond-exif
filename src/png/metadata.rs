@@ -129,6 +129,53 @@ impl<'a> PngExifBlock<'a> {
     }
 }
 
+/// What a chunk located by type alone is (SPEC-037, DEC-021 clause 4, measured
+/// on ExifTool 13.55). These are the chunk types besides `eXIf`, text and `iCCP`
+/// that ExifTool reads as metadata or as a personal string; the library locates
+/// them and decodes none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ChunkClass {
+    /// `tIME`, a modification time of any length (ExifTool prints
+    /// `PNG:ModifyDate`, also for a `tIME` after `IEND`).
+    Time,
+    /// A chunk whose data ExifTool reads as a TIFF/Exif block: `zxIf` (a
+    /// `\0`, a 4-byte length and a zlib stream, or a bare TIFF) and every
+    /// other ASCII case of `zxIf` and of `eXIf` (ExifTool matches those two
+    /// types case-insensitively; the exact `eXIf` is the walked Exif chunk).
+    ExifCarrier,
+    /// A chunk whose data ExifTool reads as XMP or XML tags: `tXMP` (raw XMP),
+    /// `meTa` (XML, also UTF-16) and `seAl`.
+    XmlCarrier,
+    /// `caBX`, a JUMBF (C2PA) box.
+    Jumbf,
+    /// A chunk ExifTool prints as a binary tag that is not Exif or XMP and not
+    /// image structure: `dSIG`, `cpIp` (OLE information), `gIFx`, `gIFg`,
+    /// `gIFt`, `fRAc`.
+    Other,
+}
+
+/// The class of a chunk type, or `None` for every other type (including the
+/// image-structure chunks ExifTool also prints, such as `pHYs` or `gAMA`).
+/// Case matters for every type but two: `tXMP` is XMP and `txmp` is nothing
+/// (measured), but ExifTool matches `zxIf` and `eXIf` case-insensitively (all
+/// 32 spellings decode, with a "chunk should be eXIf" or "should be zxIf"
+/// warning), so any ASCII case of those two is an [`ChunkClass::ExifCarrier`].
+/// The exact `eXIf` is the walked Exif chunk and is never classified here.
+pub fn chunk_class(ty: [u8; 4]) -> Option<ChunkClass> {
+    let folded = ty.map(|b| b.to_ascii_lowercase());
+    if &folded == b"zxif" || &folded == b"exif" {
+        return Some(ChunkClass::ExifCarrier);
+    }
+    match &ty {
+        b"tIME" => Some(ChunkClass::Time),
+        b"tXMP" | b"meTa" | b"seAl" => Some(ChunkClass::XmlCarrier),
+        b"caBX" => Some(ChunkClass::Jumbf),
+        b"dSIG" | b"cpIp" | b"gIFx" | b"gIFg" | b"gIFt" | b"fRAc" => Some(ChunkClass::Other),
+        _ => None,
+    }
+}
+
 /// A located, not decoded, metadata region. Borrowed; never interpreted.
 ///
 /// `offset` is the input offset of the chunk's length field. `data` starts
@@ -189,6 +236,23 @@ pub enum PngRegion<'a> {
         /// The chunk is after `IEND`.
         after_iend: bool,
     },
+    /// A chunk located by its type alone (see [`ChunkClass`]): `tIME` and the
+    /// carriers of metadata the library cannot read. `data` is the whole chunk
+    /// data, possibly empty.
+    Chunk {
+        /// Input offset of the chunk.
+        offset: usize,
+        /// The four type bytes.
+        chunk_type: [u8; 4],
+        /// What the type is.
+        class: ChunkClass,
+        /// The chunk's data.
+        data: &'a [u8],
+        /// The chunk is after the first `IDAT`.
+        after_idat: bool,
+        /// The chunk is after `IEND`.
+        after_iend: bool,
+    },
     /// Any other `tEXt`, `zTXt` or `iTXt` chunk.
     Text {
         /// Input offset of the chunk.
@@ -214,6 +278,7 @@ impl<'a> PngRegion<'a> {
             PngRegion::Xmp { offset, .. }
             | PngRegion::Icc { offset, .. }
             | PngRegion::RawProfile { offset, .. }
+            | PngRegion::Chunk { offset, .. }
             | PngRegion::Text { offset, .. } => offset,
         }
     }
@@ -224,6 +289,7 @@ impl<'a> PngRegion<'a> {
             PngRegion::Xmp { data, .. }
             | PngRegion::Icc { data, .. }
             | PngRegion::RawProfile { data, .. }
+            | PngRegion::Chunk { data, .. }
             | PngRegion::Text { data, .. } => data,
         }
     }
@@ -234,6 +300,7 @@ impl<'a> PngRegion<'a> {
             PngRegion::Xmp { after_idat, .. }
             | PngRegion::Icc { after_idat, .. }
             | PngRegion::RawProfile { after_idat, .. }
+            | PngRegion::Chunk { after_idat, .. }
             | PngRegion::Text { after_idat, .. } => after_idat,
         }
     }
@@ -244,6 +311,7 @@ impl<'a> PngRegion<'a> {
             PngRegion::Xmp { after_iend, .. }
             | PngRegion::Icc { after_iend, .. }
             | PngRegion::RawProfile { after_iend, .. }
+            | PngRegion::Chunk { after_iend, .. }
             | PngRegion::Text { after_iend, .. } => after_iend,
         }
     }
@@ -452,7 +520,7 @@ impl<'a> Extract<'a> {
     }
 
     /// Extract from one chunk, by its kind. Other kinds are ignored.
-    fn chunk(&mut self, kind: ChunkKind, data: &'a [u8], place: Place) {
+    fn chunk(&mut self, kind: ChunkKind, ty: [u8; 4], data: &'a [u8], place: Place) {
         let Place {
             offset,
             after_idat,
@@ -561,7 +629,21 @@ impl<'a> Extract<'a> {
                     offset,
                 );
             }
-            _ => {}
+            _ => {
+                if let Some(class) = chunk_class(ty) {
+                    self.push_region(
+                        PngRegion::Chunk {
+                            offset,
+                            chunk_type: ty,
+                            class,
+                            data,
+                            after_idat,
+                            after_iend,
+                        },
+                        offset,
+                    );
+                }
+            }
         }
     }
 }
@@ -582,6 +664,7 @@ fn extract<'a>(png: Png<'a>, data: &'a [u8]) -> PngMetadata<'a> {
         }
         ex.chunk(
             c.kind(),
+            c.chunk_type(),
             c.data(),
             Place {
                 offset: c.offset(),
@@ -605,6 +688,7 @@ fn extract<'a>(png: Png<'a>, data: &'a [u8]) -> PngMetadata<'a> {
         let kind = kind_of(framed.ty);
         ex.chunk(
             kind,
+            framed.ty,
             framed.payload,
             Place {
                 offset: at,
