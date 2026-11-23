@@ -42,8 +42,10 @@ const SIZE_AT: usize = 4;
 /// Bytes of chunk framing before the data.
 const CHUNK_HEAD: usize = 8;
 
-/// Bytes a `VP8X` chunk needs for its flags and canvas size.
-const VP8X_LEN: usize = 10;
+/// Bytes of data a `VP8X` chunk needs for ExifTool 13.55 to print its flags
+/// (measured: 4 or more; 3 or fewer print nothing). The reader's `vp8x` wants
+/// the full 10 and is not used for the flags (DEC-022 clause 7).
+const VP8X_FLAGS_LEN: usize = 4;
 
 /// The `VP8X` flag bits the strip may clear (DEC-022 clause 7): ICC profile,
 /// Exif, XMP.
@@ -117,8 +119,9 @@ pub(super) fn plan(data: &[u8], spec: StripSpec) -> Result<Planned, StripError> 
         plan.patch(SIZE_AT, &new_size.to_le_bytes());
         patches.push((SIZE_AT, 4, PatchKind::RiffSize));
     }
-    // Rule 7: a `VP8X` flag whose chunks are all gone is cleared.
-    if let Some((at, flags)) = flags_after(&meta, &targets) {
+    // Rule 7: a `VP8X` flag whose chunks are all gone is cleared, in every
+    // `VP8X` that has a flag byte ExifTool reads.
+    for (at, flags) in flags_after(&meta, &targets) {
         plan.patch(at, &[flags]);
         patches.push((at, 1, PatchKind::Vp8xFlags));
     }
@@ -324,39 +327,50 @@ fn riff_size_after(
     declared.checked_sub(inside).map(Some).ok_or_else(refuse)
 }
 
-/// Rule 7: the offset of the `VP8X` flag byte and its new value, when the
-/// strip removes every chunk of a kind the flags announce (ICC, Exif, XMP) and
-/// a flag is still set. Only the `VP8X` the reader reports is patched.
-fn flags_after(meta: &WebpMetadata<'_>, targets: &[Target]) -> Option<(usize, u8)> {
-    let v = meta.webp().vp8x()?;
-    let at = meta
-        .webp()
-        .chunks()
-        .iter()
-        .find(|c| c.kind() == ChunkKind::Vp8x && c.data().len() >= VP8X_LEN)?
-        .offset()
-        .checked_add(CHUNK_HEAD)?;
+/// Rule 7: the flag byte offset and new value of every `VP8X` chunk whose data
+/// holds a flag byte ExifTool reads (4 bytes or more, wherever it lies), when
+/// the strip removes every chunk of a kind the flags announce (ICC, Exif, XMP)
+/// and the byte still has the bit set. ExifTool prints the flags of each such
+/// chunk and reports the last, so all are cleared.
+fn flags_after(meta: &WebpMetadata<'_>, targets: &[Target]) -> Vec<(usize, u8)> {
     let gone = |kind: ChunkKind| {
-        let mut all = meta.webp().chunks().iter().filter(|c| c.kind() == kind);
         let mut any = false;
-        let all_removed = all.all(|c| {
-            any = true;
-            let r = c.range();
-            targets.iter().any(|t| t.range == r)
-        });
+        let all_removed = meta
+            .webp()
+            .chunks()
+            .iter()
+            .filter(|c| c.kind() == kind)
+            .all(|c| {
+                any = true;
+                let r = c.range();
+                targets.iter().any(|t| t.range == r)
+            });
         any && all_removed
     };
-    let mut flags = v.flags();
+    let mut clear = 0u8;
     for (bit, kind) in [
         (FLAG_ICC, ChunkKind::Iccp),
         (FLAG_EXIF, ChunkKind::Exif),
         (FLAG_XMP, ChunkKind::Xmp),
     ] {
         if gone(kind) {
-            flags &= !bit;
+            clear |= bit;
         }
     }
-    (flags != v.flags()).then_some((at, flags))
+    if clear == 0 {
+        return Vec::new();
+    }
+    meta.webp()
+        .chunks()
+        .iter()
+        .filter(|c| c.kind() == ChunkKind::Vp8x && c.data().len() >= VP8X_FLAGS_LEN)
+        .filter_map(|c| {
+            let was = *c.data().first()?;
+            let now = was & !clear;
+            let at = c.offset().checked_add(CHUNK_HEAD)?;
+            (now != was).then_some((at, now))
+        })
+        .collect()
 }
 
 /// Rule 8, `Overlap`: no removed range may intersect the header or a kept

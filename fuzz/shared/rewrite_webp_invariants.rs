@@ -408,9 +408,10 @@ mod rewrite_webp_invariants {
         chunks: Vec<NChunk>,
         /// The first fault the writer refuses: its reason and input offset.
         halt: Option<(&'static str, usize)>,
-        /// Index into `chunks` of the first `VP8X` when it has 10 bytes or more
-        /// (the one whose flags the file declares).
-        vp8x: Option<usize>,
+        /// Indices into `chunks` of every `VP8X` with 4 data bytes or more:
+        /// each has a flag byte ExifTool reads and the strip clears (DEC-022
+        /// clause 7, SPEC-038 fix round).
+        flagged: Vec<usize>,
     }
 
     /// The issue counter and the stop flag of the walk.
@@ -549,10 +550,16 @@ mod rewrite_webp_invariants {
                 }
             }
         }
+        let flagged = chunks
+            .iter()
+            .enumerate()
+            .filter(|(_, k)| &k.ty == b"VP8X" && k.data_end - k.data_start >= 4)
+            .map(|(i, _)| i)
+            .collect();
         NWalk {
             chunks,
             halt: c.halt,
-            vp8x,
+            flagged,
         }
     }
 
@@ -682,11 +689,12 @@ mod rewrite_webp_invariants {
             /// Whether the size is patched (something inside the declared
             /// range was removed).
             size_patched: bool,
-            /// The output offset of the `VP8X` flag byte and the value it must
-            /// hold, when the file has a `VP8X` of 10 bytes or more first.
-            flag: Option<(usize, u8)>,
-            /// Whether the flag byte is patched.
-            flag_patched: bool,
+            /// The output offset of every flagged `VP8X`'s flag byte (a `VP8X`
+            /// with 4 data bytes or more, wherever it lies) and the value it
+            /// must hold.
+            flags: Vec<(usize, u8)>,
+            /// How many of those flag bytes are patched.
+            flags_patched: usize,
             /// The chunks that stay, in order.
             kept: Vec<Kept>,
         },
@@ -744,30 +752,33 @@ mod rewrite_webp_invariants {
         let riff_size = declared - inside as u32;
         let size_patched = inside > 0;
         // DEC-022 clause 7: a flag whose chunks all go is cleared.
-        let mut flag: Option<(usize, u8)> = None;
-        let mut flag_patched = false;
-        if let Some(i) = w.vp8x {
+        let mut flags: Vec<(usize, u8)> = Vec::new();
+        let mut flags_patched = 0usize;
+        let of_kind = |kind: usize, c: &NChunk| match kind {
+            0 => &c.ty == b"ICCP",
+            1 => &c.ty == b"EXIF",
+            _ => is_xmp(&c.ty),
+        };
+        let mut clear = 0u8;
+        for (bit, kind) in [(BIT_ICC, 0), (BIT_EXIF, 1), (BIT_XMP, 2)] {
+            let any = w.chunks.iter().any(|c| of_kind(kind, c));
+            let all_removed = w
+                .chunks
+                .iter()
+                .filter(|c| of_kind(kind, c))
+                .all(|c| removals.iter().any(|r| r.start == c.start));
+            if any && all_removed {
+                clear |= bit;
+            }
+        }
+        for &i in &w.flagged {
             let v = &w.chunks[i];
             let was = d[v.data_start];
-            let mut now = was;
-            for (bit, kind) in [(BIT_ICC, 0), (BIT_EXIF, 1), (BIT_XMP, 2)] {
-                let of_kind = |c: &&NChunk| match kind {
-                    0 => &c.ty == b"ICCP",
-                    1 => &c.ty == b"EXIF",
-                    _ => is_xmp(&c.ty),
-                };
-                let any = w.chunks.iter().filter(of_kind).count() > 0;
-                let all_removed = w
-                    .chunks
-                    .iter()
-                    .filter(of_kind)
-                    .all(|c| removals.iter().any(|r| r.start == c.start));
-                if any && all_removed {
-                    now &= !bit;
-                }
+            let now = was & !clear;
+            if now != was {
+                flags_patched += 1;
             }
-            flag_patched = now != was;
-            flag = Some((v.data_start - removed_before(v.start), now));
+            flags.push((v.data_start - removed_before(v.start), now));
         }
         // The output: the input less the removed ranges, patched.
         let mut bytes = Vec::with_capacity(d.len());
@@ -780,7 +791,7 @@ mod rewrite_webp_invariants {
         if size_patched {
             bytes[4..8].copy_from_slice(&riff_size.to_le_bytes());
         }
-        if let Some((fat, value)) = flag {
+        for &(fat, value) in &flags {
             bytes[fat] = value;
         }
         let live_exif = mode == NMode::Partial && !exif_chunks.is_empty();
@@ -794,7 +805,7 @@ mod rewrite_webp_invariants {
                 let off = removed_before(c.start);
                 edited.push(c.data_start - off..c.data_end - off);
                 Lenient::Data
-            } else if w.vp8x == Some(i) {
+            } else if w.flagged.contains(&i) {
                 Lenient::FirstByte
             } else {
                 Lenient::No
@@ -812,8 +823,8 @@ mod rewrite_webp_invariants {
             may_refuse: live_exif,
             riff_size,
             size_patched,
-            flag,
-            flag_patched,
+            flags,
+            flags_patched,
             kept,
         }
     }
@@ -927,13 +938,13 @@ mod rewrite_webp_invariants {
                         removals,
                         edited,
                         size_patched,
-                        flag,
-                        flag_patched,
+                        flags,
+                        flags_patched,
                         ..
                     },
                 ) => {
                     let sizes = ok.patches.iter().filter(|p| p.2 == "riff-size").count();
-                    let flags = ok.patches.iter().filter(|p| p.2 == "vp8x-flags").count();
+                    let flag_patches = ok.patches.iter().filter(|p| p.2 == "vp8x-flags").count();
                     ok.removals.len() == removals.len()
                         && ok.removals.iter().zip(removals).all(|(a, b)| {
                             a.offset == b.start
@@ -945,10 +956,10 @@ mod rewrite_webp_invariants {
                                 }
                         })
                         && sizes == usize::from(*size_patched)
-                        && flags == usize::from(*flag_patched)
+                        && flag_patches == *flags_patched
                         && ok.patches.iter().all(|&(at, len, kind)| match kind {
                             "riff-size" => (at, len) == (4, 4),
-                            "vp8x-flags" => len == 1 && flag.is_some_and(|(fat, _)| fat == at),
+                            "vp8x-flags" => len == 1 && flags.iter().any(|&(fat, _)| fat == at),
                             _ => edited.iter().any(|r| at >= r.start && at + len <= r.end),
                         })
                 }
@@ -972,10 +983,9 @@ mod rewrite_webp_invariants {
                 (Err(_), _) => true,
             },
             Guard::Vp8xFlags => match (&f.result, pred) {
-                (Ok(ok), Pred::Ok { flag, .. }) => match flag {
-                    None => true,
-                    Some((at, value)) => ok.bytes.get(*at) == Some(value),
-                },
+                (Ok(ok), Pred::Ok { flags, .. }) => flags
+                    .iter()
+                    .all(|(at, value)| ok.bytes.get(*at) == Some(value)),
                 (Ok(_), _) => false,
                 (Err(_), _) => true,
             },
@@ -1077,11 +1087,11 @@ mod rewrite_webp_invariants {
                 edited,
                 may_refuse,
                 riff_size,
-                flag,
+                flags,
                 ..
             } => format!(
                 "Ok len {} removals {removals:?} edited {edited:?} may_refuse {may_refuse} \
-                 riff_size {riff_size} flag {flag:?}",
+                 riff_size {riff_size} flags {flags:?}",
                 bytes.len()
             ),
             other => format!("{other:?}"),

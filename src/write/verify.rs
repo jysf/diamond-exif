@@ -400,8 +400,8 @@ fn webp_chunks(data: &[u8]) -> Option<WebpChunks<'_>> {
 /// Bytes of the RIFF header: `RIFF`, the size field, `WEBP`.
 const WEBP_HEADER: usize = 12;
 
-/// Bytes of a `VP8X` chunk's data that hold its flags and canvas size.
-const WEBP_VP8X_DATA: usize = 10;
+/// Bytes of a `VP8X` chunk's data ExifTool needs to read its flag byte.
+const WEBP_VP8X_FLAGS: usize = 4;
 
 /// How many chunks of `kind` a walk framed.
 fn count_kind(list: &[WebpChunk<'_>], kind: ChunkKind) -> usize {
@@ -481,20 +481,14 @@ pub(super) fn verify_webp(
     if words(input) != words(output) {
         return Err(Check::Scan);
     }
-    // The `VP8X` the reader reports: the first one, when it has a full header.
-    let reported = |list: &[WebpChunk<'_>]| {
-        list.iter()
-            .position(|c| c.0 == ChunkKind::Vp8x)
-            .filter(|&i| list.get(i).is_some_and(|c| c.3.len() >= WEBP_VP8X_DATA))
-    };
+    // Every `VP8X` with a flag byte ExifTool reads has its three bits compared
+    // in check (f), not here.
     let fixed = |list: &[WebpChunk<'_>]| -> Vec<Vec<u8>> {
-        let flagged = reported(list);
         list.iter()
-            .enumerate()
-            .filter(|(_, c)| !webp_removable(c))
-            .map(|(i, c)| {
+            .filter(|c| !webp_removable(c))
+            .map(|c| {
                 let mut bytes = c.2.to_vec();
-                if Some(i) == flagged {
+                if c.0 == ChunkKind::Vp8x && c.3.len() >= WEBP_VP8X_FLAGS {
                     // The flag byte is the first byte of the data, after the
                     // 8-byte frame; the three bits the strip may clear are
                     // compared in check (f).
@@ -557,20 +551,24 @@ pub(super) fn verify_webp(
     if expected_size != Some(wout.declared_size()) {
         return Err(Check::MpfFields);
     }
-    let expected_flags = win.vp8x().map(|v| {
-        let mut flags = v.flags();
-        for (bit, kind) in [
-            (webp_plan::FLAG_ICC, ChunkKind::Iccp),
-            (webp_plan::FLAG_EXIF, ChunkKind::Exif),
-            (webp_plan::FLAG_XMP, ChunkKind::Xmp),
-        ] {
-            if count_kind(&cin, kind) > 0 && count_kind(&cout, kind) == 0 {
-                flags &= !bit;
-            }
+    let mut clear = 0u8;
+    for (bit, kind) in [
+        (webp_plan::FLAG_ICC, ChunkKind::Iccp),
+        (webp_plan::FLAG_EXIF, ChunkKind::Exif),
+        (webp_plan::FLAG_XMP, ChunkKind::Xmp),
+    ] {
+        if count_kind(&cin, kind) > 0 && count_kind(&cout, kind) == 0 {
+            clear |= bit;
         }
-        flags
-    });
-    if expected_flags != wout.vp8x().map(|v| v.flags()) {
+    }
+    let flag_bytes = |list: &[WebpChunk<'_>]| -> Vec<u8> {
+        list.iter()
+            .filter(|c| c.0 == ChunkKind::Vp8x && c.3.len() >= WEBP_VP8X_FLAGS)
+            .filter_map(|c| c.3.first().copied())
+            .collect()
+    };
+    let expected_flags: Vec<u8> = flag_bytes(&cin).iter().map(|f| f & !clear).collect();
+    if expected_flags != flag_bytes(&cout) {
         return Err(Check::MpfFields);
     }
 

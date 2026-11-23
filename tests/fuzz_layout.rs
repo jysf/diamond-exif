@@ -8159,7 +8159,7 @@ include!("../fuzz/shared/rewrite_webp_invariants.rs");
 /// The committed `rewrite_webp` seed count, pinned: 66 shapes under eight
 /// policy bytes (all five presets, three customs), three shapes under seven
 /// more and a mask each, and two degenerate seeds.
-const REWRITE_WEBP_SEEDS: usize = 586;
+const REWRITE_WEBP_SEEDS: usize = 594;
 
 fn rewrite_webp_seed_files() -> Vec<(String, Vec<u8>)> {
     let dir = root().join("fuzz/seeds/rewrite_webp");
@@ -8565,6 +8565,14 @@ fn webp_plant_input(name: &str) -> Vec<u8> {
             exif_chunk(&webp_shapes::exif_with_make()),
             xmp,
         ]),
+        // Several `VP8X` with a flag byte ExifTool reads (SPEC-038 fix round).
+        "vp8x-several" => riff(&[
+            vp8x(all, 8, 8),
+            chunk(b"VP8X", &[all, 0, 0, 0, 0, 0, 0, 0]),
+            icc,
+            vp8l(),
+            vp8x(all, 8, 8),
+        ]),
         // Nothing to strip.
         "ok" => riff(&[vp8x(0, 8, 8), vp8l()]),
         other => panic!("no plant input {other}"),
@@ -8789,6 +8797,42 @@ fn rewrite_webp_plants() -> Vec<WebpPlant> {
             },
         },
         WebpPlant {
+            name: "the ICC flag of the last VP8X stays set (only the first is cleared)",
+            input: "vp8x-several",
+            head: &[9],
+            guard: Guard::Vp8xFlags,
+            apply: |f, input| {
+                let at = input.windows(4).rposition(|w| w == b"VP8X").unwrap() + 8;
+                let out = webp_ok(f);
+                let last = out.bytes.windows(4).rposition(|w| w == b"VP8X").unwrap() + 8;
+                out.bytes[last] = input[at];
+            },
+        },
+        WebpPlant {
+            name: "an 8-byte VP8X keeps its ICC flag",
+            input: "vp8x-several",
+            head: &[9],
+            guard: Guard::Vp8xFlags,
+            apply: |f, input| {
+                let at = input.windows(4).position(|w| w == b"VP8X").unwrap();
+                let second = at
+                    + 18
+                    + input[at + 18..]
+                        .windows(4)
+                        .position(|w| w == b"VP8X")
+                        .unwrap();
+                let out = webp_ok(f);
+                let o = out.bytes.windows(4).position(|w| w == b"VP8X").unwrap();
+                let o2 = o
+                    + 18
+                    + out.bytes[o + 18..]
+                        .windows(4)
+                        .position(|w| w == b"VP8X")
+                        .unwrap();
+                out.bytes[o2 + 8] = input[second + 8];
+            },
+        },
+        WebpPlant {
             name: "the XMP flag is cleared though the XMP chunk stays",
             input: "flags-mixed",
             head: &[9],
@@ -8996,14 +9040,14 @@ fn the_rewrite_webp_prediction_is_the_library_answer_on_the_plant_inputs() {
             bytes,
             removals,
             size_patched,
-            flag_patched,
+            flags_patched,
             ..
         } => {
             let got = exif_core::strip(&sink, exif_core::StripPolicy::Everything).unwrap();
             assert_eq!(got.bytes(), &bytes[..]);
             assert_eq!(removals.len(), got.removals().len());
             assert!(bytes.len() < sink.len());
-            assert!(size_patched && flag_patched);
+            assert!(size_patched && flags_patched > 0);
         }
         other => panic!("{other:?}"),
     }

@@ -749,47 +749,99 @@ fn a_flag_bit_that_was_never_set_is_not_invented_and_a_stray_flag_stays() {
         .all(|p| p.kind != PatchKind::Vp8xFlags));
 }
 
+/// SPEC-038 fix round (verify L1), measured on ExifTool 13.55: it prints the
+/// flags of every `VP8X` chunk whose data holds 4 bytes or more (an 8-byte and a
+/// 4-byte one print, a 3-byte one prints nothing), wherever it lies, and reports
+/// the last. So the strip clears the matching bit in every such chunk, and in
+/// none that ExifTool does not read.
 #[test]
-fn only_the_vp8x_the_reader_reports_is_patched() {
+fn every_vp8x_whose_flag_byte_exiftool_reads_loses_the_bit() {
     let image = keep("VP8L", vp8l());
     let by = |n: &str| rows().into_iter().find(|p| p.name == n).unwrap();
-    // A short first `VP8X` (3 data bytes): the reader reports none, nothing is
-    // patched, no refusal.
-    let short = keep("VP8X3", chunk(b"VP8X", &[FLAG_XMP, 0, 0]));
-    let fx = Fixture {
-        name: "short".into(),
-        parts: vec![short.clone(), image.clone(), by("XMP ")],
-        declared: Declared::Exact,
+    let flag_at = |out: &[u8], name: &[u8]| -> Vec<u8> {
+        // The flag byte of every `VP8X` chunk found by a naive walk.
+        let mut v = Vec::new();
+        let mut p = 12usize;
+        while p + 8 <= out.len() {
+            let size = u32::from_le_bytes(out[p + 4..p + 8].try_into().unwrap()) as usize;
+            if &out[p..p + 4] == name && size >= 4 {
+                v.push(out[p + 8]);
+            }
+            p += 8 + size + (size & 1);
+        }
+        v
     };
-    let stripped = strip(&fx.bytes(), StripPolicy::All).unwrap();
-    assert_eq!(stripped.bytes()[20], FLAG_XMP);
-    assert!(stripped
-        .patches()
-        .iter()
-        .all(|p| p.kind != PatchKind::Vp8xFlags));
-    // A second, misplaced `VP8X` is never patched; the first full one is.
-    let second = keep("VP8X2", vp8x(FLAG_XMP, 1, 1));
+    let both = FLAG_XMP | 0x10;
+    let cases: Vec<(&str, Vec<Part>, Vec<u8>)> = vec![
+        // The reported 10-byte one, then a second, then one after the image,
+        // an 8-byte one and a 4-byte one: all lose the XMP bit.
+        (
+            "several",
+            vec![
+                keep("VP8X", vp8x(both, 1, 1)),
+                keep("VP8X b", vp8x(both, 1, 1)),
+                keep("VP8X 8", chunk(b"VP8X", &[both, 0, 0, 0, 0, 0, 0, 0])),
+                keep("VP8X 4", chunk(b"VP8X", &[both, 0, 0, 0])),
+                image.clone(),
+                keep("VP8X late", vp8x(both, 1, 1)),
+                by("XMP "),
+            ],
+            vec![0x10; 5],
+        ),
+        // 3 data bytes: ExifTool prints no flags, so it is left as it was.
+        (
+            "short",
+            vec![
+                keep("VP8X3", chunk(b"VP8X", &[both, 0, 0])),
+                image.clone(),
+                by("XMP "),
+            ],
+            vec![],
+        ),
+        // Only a short and an 8-byte one: the 8-byte one is cleared.
+        (
+            "eight only",
+            vec![
+                keep("VP8X8", chunk(b"VP8X", &[both, 0, 0, 0, 0, 0, 0, 0])),
+                image.clone(),
+                by("XMP "),
+            ],
+            vec![0x10],
+        ),
+    ];
+    for (name, parts, want) in cases {
+        let fx = Fixture {
+            name: name.into(),
+            parts,
+            declared: Declared::Exact,
+        };
+        let input = fx.bytes();
+        let out = sanitize(&input, StripPolicy::All).unwrap();
+        assert_eq!(flag_at(&out, b"VP8X"), want, "{name}");
+        assert!(
+            !out.windows(4).any(|w| w == b"XMP "),
+            "{name}: the XMP chunk is gone"
+        );
+        // The three-byte one is untouched, byte for byte.
+        if name == "short" {
+            assert_eq!(&out[20..21], &[both]);
+        }
+        // Idempotent.
+        assert_eq!(sanitize(&out, StripPolicy::All).unwrap(), out, "{name}");
+    }
+    // A kind that is only partly removed keeps its bit in every `VP8X`.
     let fx = Fixture {
-        name: "second".into(),
+        name: "kept".into(),
         parts: vec![
-            keep("VP8X", vp8x(FLAG_XMP, 1, 1)),
+            keep("VP8X", vp8x(both, 1, 1)),
+            keep("VP8X b", vp8x(both, 1, 1)),
             image,
-            second.clone(),
             by("XMP "),
         ],
         declared: Declared::Exact,
     };
-    let out = sanitize(&fx.bytes(), StripPolicy::All).unwrap();
-    assert_eq!(flags_of(&out) & FLAG_XMP, 0);
-    let again = out
-        .windows(18)
-        .position(|w| w == second.bytes.as_slice())
-        .unwrap();
-    assert_eq!(
-        out[again + 8] & FLAG_XMP,
-        FLAG_XMP,
-        "the second VP8X is untouched"
-    );
+    let out = sanitize(&fx.bytes(), StripPolicy::Gps).unwrap();
+    assert_eq!(flag_at(&out, b"VP8X"), vec![both, both]);
 }
 
 // ── EXIF ────────────────────────────────────────────────────────────────────
@@ -1162,4 +1214,38 @@ fn a_riff_chunk_is_an_opaque_carrier_wherever_it_lies_and_however_deep() {
         let out = strip(&input, StripPolicy::Everything).unwrap();
         assert_eq!(out.bytes(), input.as_slice(), "{code:?} must be kept");
     }
+}
+
+/// SPEC-038 fix round (verify L4 and L2), pinned: a RIFF file that is not a
+/// `WEBP` is refused as `NotJpeg` (an old error name), and an odd chunk without
+/// its pad byte followed by more chunks is refused as `ChunkPastEnd`.
+#[test]
+fn other_riff_forms_and_a_missing_pad_with_more_chunks_are_refused() {
+    for form in [b"WAVE", b"AVI ", b"RIFX", b"webp"] {
+        let mut v = riff_of(&[vp8l()]);
+        v[8..12].copy_from_slice(form);
+        if form == b"RIFX" {
+            v[0..4].copy_from_slice(b"RIFX");
+        }
+        assert!(
+            matches!(strip(&v, StripPolicy::Everything), Err(StripError::NotJpeg)),
+            "{form:?}"
+        );
+    }
+    // `IDIT` of 3 bytes with no pad, then a whole `VP8L` chunk: the walk reads
+    // the next header one byte early and finds a chunk that runs off the end.
+    let mut v = riff_of(&[chunk_unpadded_for_test(b"IDIT", b"abc"), vp8l()]);
+    let declared = u32::try_from(v.len() - 8).unwrap();
+    v[4..8].copy_from_slice(&declared.to_le_bytes());
+    assert!(matches!(
+        strip(&v, StripPolicy::Everything),
+        Err(StripError::Unstrippable {
+            reason: UnstrippableReason::ChunkPastEnd,
+            ..
+        })
+    ));
+}
+
+fn chunk_unpadded_for_test(code: &[u8; 4], data: &[u8]) -> Vec<u8> {
+    webp_shapes::chunk_unpadded(code, data)
 }

@@ -2670,6 +2670,22 @@ fn rewrite_webp_shapes() -> Vec<(&'static str, Vec<u8>)> {
                 xmp.clone(),
             ]),
         ),
+        // SPEC-038 fix round: ExifTool prints the flags of every `VP8X` with 4
+        // data bytes or more, wherever it lies; the strip clears them all.
+        (
+            "vp8x-several-flagged",
+            riff(&[
+                vp8x(all, 8, 8),
+                chunk(b"VP8X", &[all, 0, 0, 0, 0, 0, 0, 0]),
+                chunk(b"VP8X", &[all, 0, 0, 0]),
+                chunk(b"VP8X", &[all, 0, 0]),
+                icc.clone(),
+                vp8l(),
+                exif_chunk(&make),
+                xmp.clone(),
+                vp8x(all, 8, 8),
+            ]),
+        ),
         (
             "no-vp8x-with-metadata",
             riff(&[
