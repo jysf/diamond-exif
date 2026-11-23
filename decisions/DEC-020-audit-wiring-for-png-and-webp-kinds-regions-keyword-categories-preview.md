@@ -82,3 +82,7 @@ Measured on ExifTool 13.55 (`-a -u -G1 -H -s`, one chunk per file, GPS-bearing c
 4. **Opaque binary chunks** that are not metadata for any preset (`RegionKind::OtherChunk`, `OtherSegment`): `dSIG`, `cpIp`, `gIFx`, `gIFg`, `gIFt`, `fRAc`. Chunks ExifTool prints that are image structure or rendering data (`pHYs`, `gAMA`, `sRGB`, `cHRM`, `bKGD`, `tRNS`, `sBIT`, `oFFs`, `sCAL`, `sTER`, `vpAg`, `acTL`, `cICP`, `pCAL`, `sPLT`, `hIST`, `iDOT`, `gdAT`) are not located and are never removed.
 5. Type bytes are case-sensitive: `txmp` is nothing (measured), with two exceptions: ExifTool matches `zxIf` and `eXIf` in any ASCII case, so every other spelling of them (`exif`, `ZXIF`, `ExIf`, ...) is an `ExifCarrier` (corrected in the SPEC-037 fix round after a re-measure of every metadata type; see DEC-021).
 6. `RegionKind` gains `Carrier` and `OtherChunk` (report names `carrier`, `other_chunk`).
+
+## Amendment (2026-11-22, SPEC-033): the `Copyright` keyword is `Rights`
+
+Clause 4's `Copyright` row moves to `Rights` (DEC-008 amendment, 2026-11-21): a PNG text chunk keyed `Copyright` or `copyright` (the measured first-letter rule, unchanged) is a `Rights` finding, severity Medium as before. `Artist` and `Author` stay `Authorship`. `COPYRIGHT` and other spellings ExifTool prints as their own tag stay `FreeText`. No other row changes and no category is added for PNG or WebP. A WebP has no keyword table: ExifTool's `RIFF:Copyright` comes from a `LIST/INFO` chunk, which is an opaque carrier (DEC-022 clause 4) and is unaffected.

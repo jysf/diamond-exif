@@ -80,6 +80,11 @@ You share no memory with the architect. Everything you need is in the files belo
   - `./decisions/DEC-008-audit-categories-and-severity.md`
   - `./decisions/DEC-009-strip-policy-presets-and-the-preview.md`
   - `./decisions/DEC-013-writer-foundation-fail-closed-removal-and-patch-plan.md`
+- **The two PNG amendments, dated 2026-11-22**, at the bottom of `./decisions/DEC-020-…md` (the `Copyright`
+  text keyword is `Rights`) and `./decisions/DEC-021-…md` (PNG strip keeps it under `AllPii`). Read the spec's
+  "Revision (2026-11-22): PNG and WebP" paragraph with them.
+- **Precondition:** PR #55 (SPEC-038, WebP strip) is merged into `main`. If `src/write/webp.rs` is not on
+  `origin/main`, stop and report it; do not branch from PR #55's branch.
 - **Stage:** `./projects/PROJ-001-diamond-exif-m1/stages/STAGE-009-keep-the-copyright-notice-under-allpii.md`
 - **Project brief:** `./projects/PROJ-001-diamond-exif-m1/brief.md`
 - **Toolchain brief:** `./guidance/toolchain-brief.md`. Read it for the pinned toolchain, the
@@ -91,7 +96,8 @@ Exif Copyright (0x8298) moves from category `Authorship` to a new category `Righ
 and a tag category, not a block. It is removed by the `All` and `Everything` presets only, so `AllPii` (the
 default privacy preset) now keeps the copyright notice while still deleting Artist. The writer's "every Exif
 category" set (EXIF9) gains `Rights` and is renamed EXIF10, so `All` still removes Exif segments whole. Nothing
-else moves.
+else moves. The same applies on every container: a PNG `Copyright` text chunk moves to `Rights` too, and the
+PNG and WebP writers' Exif-set copies become EXIF10.
 
 ### Decisions that apply
 
@@ -101,6 +107,8 @@ else moves.
 - `DEC-010`: reports use `Category::name`, so the new name `rights` flows to text, JSON and CSV.
 - `DEC-012`: precedent for appending categories after the existing ones.
 - `DEC-013`: EXIF9 becomes EXIF10. A kept Copyright that shares bytes with a deleted Artist is `SharedBytes`.
+- `DEC-020`, `DEC-021`: the PNG keyword row and the PNG strip (amended 2026-11-22). `DEC-022`: the WebP strip
+  applies DEC-013's Exif rule to the `EXIF` chunk, so it follows EXIF10 with no amendment of its own.
 
 ### Constraints that apply
 
@@ -110,7 +118,7 @@ Full text in `./guidance/constraints.yaml`:
 - `panic-free-library`, `forbid-unsafe-code`: the five-lint deny set; no `<<` on integers (hence the literal bit
   table).
 - `oracle-must-be-shown-red`: the new strip-oracle comparator red-proof.
-- `fuzz-target-per-surface`: no new target, but the four category-modelling smokes must stay clean.
+- `fuzz-target-per-surface`: no new target, but the six category-modelling smokes must stay clean.
 - `exiftool-never-linked`: re-record by running it, never reading or linking it.
 - `no-new-top-level-deps-without-decision`: no new dependency.
 - `one-spec-per-pr`.
@@ -121,6 +129,9 @@ Full text in `./guidance/constraints.yaml`:
   Its reflection names the trap this spec guards against: a model in `fuzz/shared/rewrite_invariants.rs` was
   not updated and only CI's `rewrite_jpeg` smoke caught it.
 - `SPEC-014`: presets and preview. `SPEC-021`: entry-level deletion and `SharedBytes`.
+- `SPEC-032` (PNG/WebP audit, keyword table), `SPEC-037` (PNG strip, `strip_png_live`), `SPEC-038` (WebP
+  strip): each added its own hand-typed copy of the Exif set or the keyword table. The grep in the spec's Notes
+  finds them; list every hit in the handback.
 
 ## Expected Deliverables
 
@@ -134,10 +145,12 @@ Full text in `./guidance/constraints.yaml`:
   - `just mutation-oracle`
   - `just oracle-record` followed by `git diff --stat tests/oracle-fixtures`. Only the `all_pii`, `authorship`
     and new `rights` sections may change.
-  - `just fuzz-smoke audit`, `just fuzz-smoke audit_render`, `just fuzz-smoke rewrite_jpeg` and
-    `just fuzz-smoke rewrite_tiff`, 60 s each.
+  - `just fuzz-smoke` for `audit`, `audit_render`, `rewrite_jpeg`, `rewrite_tiff`, `rewrite_png` and
+    `rewrite_webp`, 60 s each.
+  - `DIAMOND_EXIF_REQUIRE_ORACLE=1 cargo test --test strip_png_live` (and `strip_webp_live` if you changed it),
+    summary pasted.
 - Branch `feat/spec-033-rights-category` from `origin/main`, and one PR against `main`. The PR description
-  names PROJ-001, STAGE-009, SPEC-033, HANDOFF-053, DEC-008/009/010/012/013 and the constraints above.
+  names PROJ-001, STAGE-009, SPEC-033, HANDOFF-053, DEC-008/009/010/012/013/020/021 and the constraints above.
   Its body ends with the line `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
 - Commits are Conventional (`feat(audit): …`), cite SPEC-033 in the body, and end with
   `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>` (or the model that actually ran).

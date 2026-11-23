@@ -87,6 +87,7 @@ The category is appended after `OtherSegment` in `Category::ALL` (as DEC-012 app
 
 ### Depends on
 - STAGE-005 (shipped): the category table and the writer's category-driven entry deletion.
+- STAGE-010 SPEC-038 (WebP strip, PR #55): adds WebP copies of the Exif set; SPEC-033 builds after it ships (revision 2026-11-22). The PNG strip (SPEC-037) is already on main and is in SPEC-033's scope.
 
 ### Enables
 - STAGE-007 SPEC-027: presets while building the Exif block read the amended DEC-009 (no `depends_on`; SPEC-027 is still an outline).
