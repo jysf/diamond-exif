@@ -2140,12 +2140,15 @@ fn rewrite_png_shapes() -> Vec<(&'static str, Vec<u8>)> {
 
 /// SPEC-037: the seeds of `rewrite_png`. Byte 0 selects the policy (see
 /// `fuzz/shared/rewrite_png_invariants.rs`): 4 `Everything`, 3 `All`, 0 `Gps`,
-/// 8 `Custom(OtherSegment)`, 9 `Custom(Icc)`, 11 `Custom(Gps)` for every
-/// shape; three shapes also under every other policy byte and a mask.
+/// 1 `GpsAndDevice`, 2 `AllPii`, 8 `Custom(OtherSegment)`, 9 `Custom(Icc)`,
+/// 11 `Custom(Gps)` for every shape; three shapes also under the seven other
+/// policy bytes and a mask.
 fn rewrite_png_seeds() -> Vec<(String, Vec<u8>)> {
     let mut out = Vec::new();
-    let policies: [(&str, u8); 6] = [
+    let policies: [(&str, u8); 8] = [
         ("everything", 4),
+        ("gps-and-device", 1),
+        ("all-pii", 2),
         ("all", 3),
         ("gps", 0),
         ("other-segment", 8),
@@ -2160,9 +2163,7 @@ fn rewrite_png_seeds() -> Vec<(String, Vec<u8>)> {
             out.push((format!("{label}-{name}"), v));
         }
     }
-    let rest: [(&str, u8); 9] = [
-        ("gps-and-device", 1),
-        ("all-pii", 2),
+    let rest: [(&str, u8); 7] = [
         ("none", 5),
         ("xmp", 10),
         ("jumbf", 12),

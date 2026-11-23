@@ -7483,9 +7483,10 @@ fn webp_metadata_model_red_proofs() {
 
 include!("../fuzz/shared/rewrite_png_invariants.rs");
 
-/// The committed `rewrite_png` seed count, pinned: 56 shapes under six policy
-/// bytes, three shapes under ten more, and two degenerate seeds.
-const REWRITE_PNG_SEEDS: usize = 338;
+/// The committed `rewrite_png` seed count, pinned: 51 shapes under eight policy
+/// bytes (all five presets, three customs), three shapes under seven more and a
+/// mask each, and two degenerate seeds.
+const REWRITE_PNG_SEEDS: usize = 434;
 
 fn rewrite_png_seed_files() -> Vec<(String, Vec<u8>)> {
     let dir = root().join("fuzz/seeds/rewrite_png");
@@ -7606,7 +7607,7 @@ fn rewrite_png_harness_holds_on_every_seed_and_every_policy_byte() {
 fn rewrite_png_seeds_are_committed_and_cover_every_rule_and_refusal() {
     let seeds = rewrite_png_seed_files();
     let names: Vec<&str> = seeds.iter().map(|(n, _)| n.as_str()).collect();
-    // One seed per DEC-021 rule (and per spelling), under the six policy bytes.
+    // One seed per DEC-021 rule (and per spelling), under the eight policy bytes.
     let rules = [
         "text-authorship",
         "text-timestamps",

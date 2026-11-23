@@ -10,7 +10,7 @@ file: photos/shot.png
     - xmp [medium] region xmp len=12 block=- segment=4: kept (not strippable)
     - timestamps [low] region time len=7 block=- segment=5: kept (not strippable)
     - other_segment [medium] region trailer len=7 block=- segment=8 after_scan: kept (not strippable)
-  preview (all_pii): not strippable: the writer refuses this container, so nothing would be removed; every finding is kept
+  preview (all_pii): not strippable: the PNG strip exists but has not been checked against ExifTool yet, so no removal is claimed; every finding is kept
   inventory: 7 items
     - tag 0x8825 ifd=ifd0#0 type=4 count=1 block=0 segment=1 value="\x00\x00\x00\x1a"
     - tag 0x0001 ifd=gps#1 type=2 count=2 block=0 segment=1 category=gps value="N"

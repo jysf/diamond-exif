@@ -61,6 +61,7 @@ STAGE-008 shipped the reader and the audit for PNG (DEC-017, DEC-018, DEC-020). 
 ## Consequences
 
 - A PNG strip under any preset also removes raw-profile and other opaque-carrier chunks, including the tags in them that the policy would have kept (documented, like Orientation under `All`).
+- Over-removal: a raw profile that ExifTool prints only as text or that holds no GPS (`Raw profile type icc`, `... unknownthing`) is removed by every preset too; the safe direction, and not tightened (SPEC-037 verify L1).
 - The writer is the first place that computes a PNG CRC; `src/png/crc.rs` is reused.
 - `rewrite_png` becomes the fuzz target of this writer.
 
@@ -106,3 +107,5 @@ DEC-001, DEC-006, DEC-008, DEC-009, DEC-013, DEC-017, DEC-018, DEC-020; SPEC-037
 ## Clarifications from the SPEC-037 fix round (2026-11-22)
 
 1. **Chunk-type case (H1).** The verify measured, and the fix round re-measured on ExifTool 13.55 with all 16 ASCII-case spellings of every metadata chunk type (`eXIf`, `zxIf`, `tXMP`, `meTa`, `seAl`, `caBX`, `tIME`, `iCCP`, `tEXt`, `zTXt`, `iTXt`, `dSIG`, `cpIp`, `gIFx`, `gIFg`, `gIFt`, `fRAc`): only `eXIf` and `zxIf` fold. Every spelling of those two decodes, so a mixed-case `EXIF` or `ZxIf` chunk is a carrier like `zxif`: `chunk_class` folds the four bytes, every preset removes it, the audit reports `Carrier`. Every other type stays case-sensitive. (This corrects the earlier "type bytes are case-sensitive" rule in the table above and in DEC-020 clause 5.)
+2. **Over-removal (L1) is the safe direction.** A raw profile with a spelling ExifTool prints only as text (`Raw profile type  exif` with a double space, `Raw profile type unknownthing`) and a raw profile that holds no GPS (`icc`, `icm`) are removed by every preset, because the rule is by keyword prefix and not by what ExifTool decodes. The strip removes a little too much, never too little; it is not tightened.
+3. **`caBX` residual (M2).** `caBX` is `Jumbf`, kept by `AllPii` and `All` and removed by `Everything`, as the JPEG JUMBF precedent. A C2PA manifest can carry Exif and creator assertions (measured: an `stds.exif` JSON assertion prints GPS and `dc:creator` from a `caBX`), and those survive every preset except `Everything`. The preview shows a PNG `caBX` as `Kept` with `strippable: false` until SPEC-039 flips it (a JPEG block of the category shows `KeptUnread`, and a PNG one will after the flip). Stated here and in the README so no preset is read as removing C2PA-borne personal data. `tests/strip_png.rs` pins the keep and remove behaviour.

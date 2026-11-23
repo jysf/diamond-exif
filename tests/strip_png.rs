@@ -3,12 +3,18 @@
 //! to it is computed here from DEC-021 clauses 1 to 4, never from the library),
 //! and the expected output is the concatenation of the parts the model keeps.
 
+#[path = "support/oracle_png.rs"]
+mod oracle_png;
+#[path = "support/oracle_tiff.rs"]
+mod oracle_tiff;
 #[path = "support/png_shapes.rs"]
 mod png_shapes;
 
 use std::ops::Range;
 
-use exif_core::audit::{audit, Category, ContainerKind, ItemKind, RegionKind};
+use exif_core::audit::{
+    audit, preview, Category, ContainerKind, Disposition, ItemKind, RegionKind,
+};
 use exif_core::policy::{StripPolicy, StripSpec};
 use exif_core::write::{Check, PatchKind, RemovalKind, UneditableReason, UnstrippableReason};
 use exif_core::{sanitize, strip, StripError};
@@ -1258,4 +1264,124 @@ fn strip_works_while_strippable_is_still_false_for_png() {
 fn unused_check_variants_compile() {
     // Keeps the `Check` import honest: the typed self-check names exist.
     let _ = Check::Preview;
+}
+
+// ── SPEC-037 verify punch list: M2 (`caBX`) and L2 (every oracle fixture) ───
+
+fn jumbf_box(ty: &[u8; 4], body: &[u8]) -> Vec<u8> {
+    let mut v = ((body.len() + 8) as u32).to_be_bytes().to_vec();
+    v.extend_from_slice(ty);
+    v.extend_from_slice(body);
+    v
+}
+
+/// A C2PA-style `caBX`: a `c2pa` manifest box holding an `stds.exif` JSON
+/// assertion with a GPS position and a creator (measured on ExifTool 13.55: it
+/// prints the GPS and `dc:creator` from such a chunk).
+fn c2pa_cabx() -> Vec<u8> {
+    let description = |uuid: [u8; 16], label: &[u8]| {
+        let mut body = uuid.to_vec();
+        body.push(3);
+        body.extend_from_slice(label);
+        body.push(0);
+        jumbf_box(b"jumd", &body)
+    };
+    let json_uuid = *b"json\0\x11\0\x10\x80\0\0\xAA\0\x38\x9B\x71";
+    let c2pa_uuid = *b"c2pa\0\x11\0\x10\x80\0\0\xAA\0\x38\x9B\x71";
+    let json = br#"{"exif:GPSLatitude":"51,30.0N","exif:GPSLongitude":"0,7.0W","dc:creator":["Jane Jumbf Secret"]}"#;
+    let assertion = [
+        description(json_uuid, b"stds.exif"),
+        jumbf_box(b"json", json),
+    ]
+    .concat();
+    let manifest = [
+        description(c2pa_uuid, b"c2pa"),
+        jumbf_box(b"jumb", &assertion),
+    ]
+    .concat();
+    chunk(b"caBX", &jumbf_box(b"jumb", &manifest))
+}
+
+/// M2 (SPEC-037 verify), the stated residual: `caBX` is `Jumbf`, as in a JPEG
+/// (C2PA provenance). Every preset but `Everything` keeps it, so a C2PA
+/// manifest that carries Exif or creator assertions survives them. The preview
+/// claims no removal for a PNG yet (`strippable` is false).
+#[test]
+fn a_cabx_with_exif_assertions_is_kept_by_the_presets_and_removed_by_everything() {
+    let parts = shape(
+        &[part("c2pa", c2pa_cabx(), Role::Cat(Category::Jumbf))],
+        &[],
+        &[],
+        b"",
+    );
+    let input = assemble(&parts);
+    let a = audit(&input);
+    let finding = a
+        .findings()
+        .iter()
+        .position(|f| f.category == Category::Jumbf)
+        .expect("a Jumbf finding");
+    let want = [
+        (StripPolicy::Gps, false),
+        (StripPolicy::GpsAndDevice, false),
+        (StripPolicy::AllPii, false),
+        (StripPolicy::All, false),
+        (StripPolicy::Everything, true),
+    ];
+    for (policy, goes) in want {
+        let out = strip(&input, policy).unwrap();
+        let has = out.bytes().windows(4).any(|w| w == b"caBX");
+        assert_eq!(!has, goes, "{policy:?}");
+        // While `strippable` is false for PNG (until SPEC-039) the preview
+        // describes no removal at all: `Kept`, and not reliable. The
+        // `KeptUnread` a JPEG `caBX`-like block gets applies once it flips; the
+        // JPEG grid in `tests/policy_preview.rs` pins that disposition.
+        let p = preview(&a, policy);
+        assert_eq!(
+            p.disposition(finding),
+            Some(Disposition::Kept),
+            "{policy:?}"
+        );
+        assert!(!p.strippable() && !p.reliable(), "{policy:?}");
+        if !goes {
+            assert_eq!(out.bytes(), input.as_slice(), "{policy:?} keeps it whole");
+        }
+    }
+}
+
+/// L2: every `oracle_png` fixture (61 at the time of writing: the wrapped TIFFs,
+/// the shapes and the hostile ones) under the five presets. A typed refusal is
+/// allowed; a panic or `VerifyFailed` (the writer's own self-check failing) is
+/// not. Every output is a fixed point: stripping it again changes nothing.
+#[test]
+fn every_oracle_png_fixture_strips_or_refuses_under_every_preset_and_is_a_fixed_point() {
+    let fixtures = oracle_png::fixtures();
+    assert!(fixtures.len() >= 61, "{} fixtures", fixtures.len());
+    let (mut ok, mut refused) = (0, 0);
+    for (name, input) in &fixtures {
+        for policy in StripPolicy::PRESETS {
+            match strip(input, policy) {
+                Ok(out) => {
+                    ok += 1;
+                    assert!(out.bytes().len() <= input.len(), "{name} {policy:?}");
+                    let again = strip(out.bytes(), policy)
+                        .unwrap_or_else(|e| panic!("{name} {policy:?} twice: {e:?}"));
+                    assert_eq!(
+                        again.bytes(),
+                        out.bytes(),
+                        "{name} {policy:?} not idempotent"
+                    );
+                }
+                Err(StripError::VerifyFailed { check }) => {
+                    panic!("{name} {policy:?}: self-check failed ({check:?})")
+                }
+                Err(_) => refused += 1,
+            }
+        }
+    }
+    println!(
+        "{} fixtures: {ok} stripped, {refused} refused",
+        fixtures.len()
+    );
+    assert!(ok > refused, "most strip ({ok} ok, {refused} refused)");
 }
