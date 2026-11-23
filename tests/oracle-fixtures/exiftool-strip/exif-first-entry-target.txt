@@ -131,6 +131,18 @@ JFIF	YResolution	1
 IFD0	Make	CANARY-MAKE-0001
 IFD0	Orientation	6
 IFD0	ResolutionUnit	2
+## rights
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Orientation	6
+IFD0	ResolutionUnit	2
 ## free_text+device
 File	FileType	JPEG
 File	FileTypeExtension	JPG

@@ -2,6 +2,8 @@
 # exiftool-version: 13.55
 # corpus: seed-audit
 ## audit-bigtiff-magic
+## audit-copyright-only-le
+IFD0	0x8298	Copyright
 ## audit-dng-identity-be
 IFD0	0x010f	Make
 IFD0	0x0111	StripOffsets

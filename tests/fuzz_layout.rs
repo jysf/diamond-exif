@@ -1405,7 +1405,7 @@ fn audit_seed(name: &str) -> Vec<u8> {
     fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
-const AUDIT_NEW_SEEDS: [&str; 17] = [
+const AUDIT_NEW_SEEDS: [&str; 18] = [
     "audit-png-magic",
     "audit-bigtiff-magic",
     "audit-empty-marker",
@@ -1427,6 +1427,8 @@ const AUDIT_NEW_SEEDS: [&str; 17] = [
     "audit-png-empty-regions",
     "audit-webp-exif-xmp-icc",
     "audit-webp-empty-regions",
+    // SPEC-033: Copyright alone, so `Rights` is in an audit seed.
+    "audit-copyright-only-le",
 ];
 
 #[test]
@@ -1506,9 +1508,11 @@ fn audit_seeds_are_committed_and_have_the_shapes_they_claim() {
             assert!(regions.iter().any(|r| r == k), "{k} in {regions:?}");
         }
         // Author, author, Copyright, Creation Time, Software: the keyword rule's
-        // positive side; AUTHOR, Title, Comment stay free text.
+        // positive side; AUTHOR, Title, Comment stay free text. Copyright is
+        // `Rights` since SPEC-033; Author and author stay authorship.
         let cats = |c: Category| au.findings().iter().filter(|f| f.category == c).count();
-        assert_eq!(cats(Category::Authorship), 3);
+        assert_eq!(cats(Category::Authorship), 2);
+        assert_eq!(cats(Category::Rights), 1);
         assert_eq!(cats(Category::Software), 1);
         // One `tIME` is the 7-byte form, the other is short; both are times
         // (ExifTool prints `PNG:ModifyDate` for a `tIME` of any length).
@@ -1545,6 +1549,12 @@ fn audit_seeds_are_committed_and_have_the_shapes_they_claim() {
         assert_eq!(au.items().len(), 2);
         assert!(au.findings().is_empty());
     }
+    // SPEC-033: one finding, Copyright, and it is `Rights`.
+    let c = audit_seed("audit-copyright-only-le");
+    let au = audit(&c);
+    assert_eq!(kind(&c), "Tiff");
+    assert_eq!(au.findings().len(), 1);
+    assert_eq!(au.findings_in(Category::Rights).count(), 1);
     let empty = audit_seed("audit-empty-marker");
     assert!(empty.is_empty(), "a zero-byte seed (libFuzzer accepts it)");
     assert_eq!(kind(&empty), "Unsupported(Empty)");
@@ -1648,8 +1658,8 @@ fn audit_harness_holds_on_every_seed_and_degenerate_inputs() {
     }
     assert_eq!(
         seen,
-        86 + 17 + 72 + 56,
-        "32 TIFF + 37 JPEG + 17 new + 17 SPEC-019 shapes + 72 PNG + 56 WebP"
+        87 + 17 + 72 + 56,
+        "32 TIFF + 37 JPEG + 18 new + 17 SPEC-019 shapes + 72 PNG + 56 WebP"
     );
     for data in audit_degenerate_inputs() {
         audit_invariants::check(&data);
@@ -2736,7 +2746,7 @@ fn tiff_harness_entry_budget_invariants_hold_on_every_seed() {
             seen += 1;
         }
     }
-    assert_eq!(seen, 32 + 86 + 17 + 72 + 56);
+    assert_eq!(seen, 32 + 87 + 17 + 72 + 56);
     // The degenerate inputs too, and the generated big inventory.
     for data in audit_degenerate_inputs() {
         entry_budget_invariants::check_input(&data);
@@ -3108,7 +3118,7 @@ fn le_ifd(entries: &[(u16, u16, u32, u32)], next: u32) -> Vec<u8> {
     v
 }
 
-/// A TIFF with a tag of each of the seven tag categories (IFD0, ExifIFD, GPS,
+/// A TIFF with a tag of each of the seven older tag categories (IFD0, ExifIFD, GPS,
 /// IFD1), a MakerNote and an IFD1 thumbnail; every value is inline.
 fn full_house_tiff_bytes() -> Vec<u8> {
     const A: u32 = 0x0000_0061; // "a\0" as an inline ASCII value
@@ -3187,9 +3197,14 @@ fn the_full_house_inputs_carry_every_category() {
     let a = audit(&jpeg);
     let have: Vec<Category> = a.findings().iter().map(|f| f.category).collect();
     // The 13 DEC-008 categories; the two DEC-012 categories are carried by the
-    // shape seeds (`shape_seeds_carry_the_two_dec_012_categories`).
+    // shape seeds (`shape_seeds_carry_the_two_dec_012_categories`) and `Rights`
+    // (SPEC-033) by the `audit-copyright-only-le` seed, so the committed
+    // full-house inputs and their golden reports stay as they were.
     for c in Category::ALL {
-        if matches!(c, Category::EmbeddedImage | Category::OtherSegment) {
+        if matches!(
+            c,
+            Category::EmbeddedImage | Category::OtherSegment | Category::Rights
+        ) {
             continue;
         }
         assert!(have.contains(&c), "jpeg lacks {c:?}");
@@ -3210,7 +3225,7 @@ fn preview_guards_hold_on_every_seed_and_degenerate_inputs() {
             inputs.push((path.display().to_string(), data));
         }
     }
-    assert_eq!(inputs.len(), 32 + 37 + 86 + 17 + 17 + 72 + 56);
+    assert_eq!(inputs.len(), 32 + 37 + 87 + 17 + 17 + 72 + 56);
     for (i, d) in audit_degenerate_inputs().into_iter().enumerate() {
         inputs.push((format!("degenerate {i}"), d));
     }
@@ -3695,9 +3710,12 @@ fn the_two_full_house_inputs_are_audit_seeds() {
     let jpeg = audit_seed("audit-full-house-jpeg");
     let a = exif_core::audit::audit(&jpeg);
     for c in exif_core::audit::Category::ALL {
+        // `Rights` is carried by `audit-copyright-only-le` (SPEC-033).
         if matches!(
             c,
-            exif_core::audit::Category::EmbeddedImage | exif_core::audit::Category::OtherSegment
+            exif_core::audit::Category::EmbeddedImage
+                | exif_core::audit::Category::OtherSegment
+                | exif_core::audit::Category::Rights
         ) {
             continue;
         }
@@ -6043,8 +6061,8 @@ fn rewrite_jpeg_harness_holds_on_every_seed_including_the_entry_seeds() {
             v.extend_from_slice(&d);
             rewrite_invariants::check(&v);
         }
-        // Every custom set of the 15 single categories.
-        for bit in 0..15u16 {
+        // Every custom set of the 16 single categories.
+        for bit in 0..16u16 {
             let m = (1u16 << bit).to_le_bytes();
             let mut v = vec![6, m[0], m[1]];
             v.extend_from_slice(&d);
@@ -6840,10 +6858,10 @@ fn a_removal_that_joins_stray_bytes_into_a_marker_is_refused_and_excused_exactly
 }
 
 /// SPEC-020's 186 seeds plus SPEC-021's 198 entry seeds plus the two
-/// joined-stray seeds, the nothing-to-edit crash and the 180 seeds of the
+/// joined-stray seeds, SPEC-033's one Artist-and-Copyright seed, the nothing-to-edit crash and the 180 seeds of the
 /// round-4 leak inputs (HANDOFF-045) and the 144 seeds of the round-5 ones
 /// (HANDOFF-046).
-const REWRITE_SEEDS: usize = 1038;
+const REWRITE_SEEDS: usize = 1039;
 
 #[test]
 fn seed_count_is_pinned() {
@@ -6865,8 +6883,8 @@ fn seed_count_is_pinned() {
     assert_eq!(want.len(), entry, "every generated entry seed is committed");
     assert_eq!(
         entry,
-        REWRITE_SEEDS - 187,
-        "SPEC-020's 186, SPEC-023's one CI crash seed, plus the entry seeds"
+        REWRITE_SEEDS - 188,
+        "SPEC-020's 186, SPEC-023's one CI crash seed, SPEC-033's one Rights seed, plus the entry seeds"
     );
 }
 
@@ -7488,8 +7506,8 @@ include!("../fuzz/shared/rewrite_png_invariants.rs");
 
 /// The committed `rewrite_png` seed count, pinned: 51 shapes under eight policy
 /// bytes (all five presets, three customs), three shapes under seven more and a
-/// mask each, and two degenerate seeds.
-const REWRITE_PNG_SEEDS: usize = 434;
+/// mask each, SPEC-033's `Rights` seed, and two degenerate seeds.
+const REWRITE_PNG_SEEDS: usize = 435;
 
 fn rewrite_png_seed_files() -> Vec<(String, Vec<u8>)> {
     let dir = root().join("fuzz/seeds/rewrite_png");
@@ -7584,8 +7602,8 @@ fn rewrite_png_harness_holds_on_every_seed_and_every_policy_byte() {
             v.extend_from_slice(&d);
             rewrite_png_invariants::check(&v);
         }
-        // Every custom set of the 15 single categories.
-        for bit in 0..15u16 {
+        // Every custom set of the 16 single categories.
+        for bit in 0..16u16 {
             let m = (1u16 << bit).to_le_bytes();
             let mut v = vec![6, m[0], m[1]];
             v.extend_from_slice(&d);
@@ -8138,7 +8156,7 @@ fn the_rewrite_png_harness_does_not_read_the_writer() {
         "write::png",
         "src/write/png",
         "plan_block",
-        "exif9",
+        "exif10",
         "removes_carriers",
     ] {
         let uses = h
@@ -8236,8 +8254,8 @@ fn rewrite_webp_harness_holds_on_every_seed_and_every_policy_byte() {
             v.extend_from_slice(&d);
             rewrite_webp_invariants::check(&v);
         }
-        // Every custom set of the 15 single categories.
-        for bit in 0..15u16 {
+        // Every custom set of the 16 single categories.
+        for bit in 0..16u16 {
             let m = (1u16 << bit).to_le_bytes();
             let mut v = vec![6, m[0], m[1]];
             v.extend_from_slice(&d);
@@ -9101,7 +9119,7 @@ fn the_rewrite_webp_harness_does_not_read_the_writer() {
         "write::webp",
         "src/write/webp",
         "plan_block",
-        "exif9",
+        "exif10",
         "removes_carriers",
         "chunk_class",
         "ChunkClass",

@@ -18,7 +18,7 @@ use Disposition::{Kept, KeptUnread, Removed};
 
 /// DEC-009's preset table as amended by DEC-012, typed by hand: `[Gps,
 /// GpsAndDevice, AllPii, All, Everything]`, `true` = removed.
-const REMOVED: [(Category, [bool; 5]); 15] = [
+const REMOVED: [(Category, [bool; 5]); 16] = [
     (Gps, [true, true, true, true, true]),
     (DeviceId, [false, true, true, true, true]),
     (Authorship, [false, false, true, true, true]),
@@ -34,6 +34,8 @@ const REMOVED: [(Category, [bool; 5]); 15] = [
     (Jumbf, [false, false, false, false, true]),
     (EmbeddedImage, [false, false, false, false, true]),
     (OtherSegment, [false, false, false, false, true]),
+    // DEC-009 amendment (SPEC-033): kept by AllPii, removed by All.
+    (Rights, [false, false, false, true, true]),
 ];
 
 /// The SPEC-014 kept-block table as amended by DEC-012, typed by hand (same
@@ -84,7 +86,7 @@ fn expected(col: usize, c: Category) -> Disposition {
 
 // ── fixtures ────────────────────────────────────────────────────────────────
 
-/// The full-house Exif TIFF: one tag of each of the seven tag categories across
+/// The full-house Exif TIFF: one tag of each of the eight tag categories across
 /// IFD0, ExifIFD, GPS and IFD1, plus a MakerNote and an IFD1 thumbnail.
 fn full_house_tiff() -> Vec<u8> {
     t::assemble(
@@ -98,6 +100,7 @@ fn full_house_tiff() -> Vec<u8> {
                     t::ascii(t::T_SOFTWARE, b"Editor 1.0\0"),           // Software
                     t::ascii(t::T_DATE_TIME, b"2024:05:06 07:08:09\0"), // Timestamps
                     t::ascii(t::T_ARTIST, b"A. Person\0"),              // Authorship
+                    t::ascii(0x8298, b"(c) A. Person\0"),               // Rights
                     t::ptr(t::T_EXIF_IFD, 1),
                     t::ptr(t::T_GPS_IFD, 2),
                 ],
@@ -242,6 +245,27 @@ fn real_shape_fixtures_match_dec_009_as_amended_for_every_preset() {
     for c in [EmbeddedImage, OtherSegment, FreeText] {
         assert!(seen.contains(&c), "the fixtures lack {c:?}");
     }
+}
+
+#[test]
+fn all_pii_keeps_a_copyright_finding() {
+    // SPEC-033: Artist and Copyright in IFD0; the default privacy preset
+    // removes the person's name and keeps the notice the owner attached.
+    let bytes = t::assemble(
+        false,
+        &[t::ifd(vec![
+            t::ascii(t::T_ARTIST, b"A. Person\0"),
+            t::ascii(0x8298, b"(c) A. Person\0"),
+        ])],
+    );
+    let a = audit(&bytes);
+    let cats = categories_of(&a);
+    assert_eq!(cats, vec![Authorship, Rights]);
+    let under = |p: StripPolicy| preview(&a, p).dispositions().to_vec();
+    assert_eq!(under(StripPolicy::AllPii), vec![Removed, Kept]);
+    assert_eq!(under(StripPolicy::All), vec![Removed, Removed]);
+    assert_eq!(under(StripPolicy::Everything), vec![Removed, Removed]);
+    assert_eq!(under(StripPolicy::Gps), vec![Kept, Kept]);
 }
 
 #[test]
@@ -450,7 +474,7 @@ fn nesting_holds_on_every_committed_seed_for_every_preset() {
     // The same counts audit_model.rs asserts (32 TIFF, 37 JPEG, 81 audit),
     // plus the 17 SPEC-019 `shape-*` seeds in each of the last two.
     // SPEC-032 adds the 72 PNG and 53 WebP copies and five new audit shapes.
-    assert_eq!(seen, [32, 37 + 17, 86 + 17 + 72 + 56]);
+    assert_eq!(seen, [32, 37 + 17, 87 + 17 + 72 + 56]);
     let mut with_findings = 0usize;
     for (name, data) in &seeds {
         let a = audit(data);

@@ -17,8 +17,8 @@
 //! 2. **Text keywords.** `png-text-keywords` carries one `tEXt` chunk per
 //!    keyword; its record (`-a -G1 -s -n`, the `[PNG]` group) maps each keyword
 //!    to the tag name ExifTool printed. The audit's category for a keyword must
-//!    agree with the printed name (`Artist`, `Author`, `Copyright` to
-//!    Authorship, `CreationTime`, `CreateDate`, `ModDate` to Timestamps,
+//!    agree with the printed name (`Artist`, `Author` to Authorship,
+//!    `Copyright` to Rights (SPEC-033), `CreationTime`, `CreateDate`, `ModDate` to Timestamps,
 //!    `Software` to Software, the rest FreeText),
 //!    except for the keywords in [`KEYWORD_DIVERGENCES`].
 //!
@@ -547,11 +547,12 @@ fn every_difference_has_a_question_a_reason_and_is_an_input_of_the_check() {
 // ── text keywords ───────────────────────────────────────────────────────────
 
 /// The category the ExifTool tag name implies, written out here (not taken
-/// from the library): `Author` and `Copyright` are authorship, `CreationTime`
-/// a timestamp, `Software` software, every other name free text.
+/// from the library): `Artist` and `Author` are authorship, `Copyright` is
+/// rights (SPEC-033), `CreationTime` a timestamp, `Software` software, every other name free text.
 fn category_of_printed_name(name: &str) -> Category {
     match name {
-        "Artist" | "Author" | "Copyright" => Category::Authorship,
+        "Artist" | "Author" => Category::Authorship,
+        "Copyright" => Category::Rights,
         "CreationTime" | "CreateDate" | "ModDate" => Category::Timestamps,
         "Software" => Category::Software,
         _ => Category::FreeText,
@@ -695,7 +696,7 @@ fn the_audit_of_the_keyword_fixture_applies_the_table_in_chunk_order() {
     assert_eq!(by_hand("author"), Authorship);
     assert_eq!(by_hand("AUTHOR"), FreeText);
     assert_eq!(by_hand("aUTHOR"), FreeText);
-    assert_eq!(by_hand("Copyright"), Authorship);
+    assert_eq!(by_hand("Copyright"), Rights);
     assert_eq!(by_hand("Creation Time"), Timestamps);
     assert_eq!(by_hand("Software"), Software);
     // L1 rows: ExifTool 13.55 prints `Artist`, `CreateDate`, `ModDate`.

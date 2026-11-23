@@ -172,7 +172,7 @@ pub struct Summary {
     /// Findings over every audited file.
     pub findings: usize,
     /// Findings per category, in [`Category::ALL`] order.
-    pub by_category: [(Category, usize); 15],
+    pub by_category: [(Category, usize); 16],
     /// The highest severity over every audited file's findings.
     pub max_severity: Option<Severity>,
     /// With a policy and at least one reliable file: the findings that would

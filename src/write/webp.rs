@@ -24,7 +24,7 @@ use crate::policy::StripSpec;
 use crate::tiff::Container;
 use crate::webp::{self, chunk_class, ChunkClass, ChunkKind, WebpMetadata};
 
-use super::exif::{exif9, mode, plan_block, select, Mode};
+use super::exif::{exif10, mode, plan_block, select, Mode};
 use super::jpeg::Planned;
 use super::plan::{merge_ranges, removed_in};
 use super::png::removes_carriers;
@@ -222,7 +222,7 @@ fn exif_chunks(
     match mode(spec) {
         Mode::Untouched => Ok(Edits::default()),
         Mode::Whole => {
-            let all9 = exif9();
+            let all10 = exif10();
             let audited = audit(data);
             for c in exif_chunks {
                 // The category a removed block is recorded under: the first
@@ -236,7 +236,9 @@ fn exif_chunks(
                     .findings()
                     .iter()
                     .find(|f| {
-                        block.is_some() && f.at.origin().block == block && all9.contains(f.category)
+                        block.is_some()
+                            && f.at.origin().block == block
+                            && all10.contains(f.category)
                     })
                     .map_or(Category::Thumbnail, |f| f.category);
                 out.push(Target {

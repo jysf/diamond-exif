@@ -58,10 +58,11 @@ fn part(name: &str, bytes: Vec<u8>, role: Role) -> Part {
     }
 }
 
-const EXIF9: [Category; 9] = [
+const EXIF10: [Category; 10] = [
     Category::Gps,
     Category::DeviceId,
     Category::Authorship,
+    Category::Rights,
     Category::FreeText,
     Category::Timestamps,
     Category::CameraModel,
@@ -77,7 +78,7 @@ fn spec_of(cats: &[Category]) -> StripSpec {
 /// DEC-021 clause 4: a carrier goes with any tag category, `Xmp` or `Iptc`, and
 /// with its own category `OtherSegment`.
 fn carrier_removed(spec: StripSpec) -> bool {
-    EXIF9
+    EXIF10
         .iter()
         .chain([Category::Xmp, Category::Iptc].iter())
         .any(|c| spec.contains(*c))
@@ -93,9 +94,9 @@ enum ExifMode {
 
 /// DEC-021 clause 3.
 fn exif_mode(spec: StripSpec) -> ExifMode {
-    if EXIF9.iter().all(|c| spec.contains(*c)) {
+    if EXIF10.iter().all(|c| spec.contains(*c)) {
         ExifMode::Whole
-    } else if EXIF9
+    } else if EXIF10
         .iter()
         .chain([Category::Xmp, Category::Iptc, Category::Icc].iter())
         .any(|c| spec.contains(*c))
@@ -221,7 +222,7 @@ fn text_parts() -> Vec<Part> {
         part(
             "copyright",
             text(b"Copyright", b"canary"),
-            Role::Cat(C::Authorship),
+            Role::Cat(C::Rights),
         ),
         part(
             "creation",
@@ -733,6 +734,65 @@ fn a_partial_policy_edits_the_entries_and_patches_the_crc() {
         let again = strip(out.bytes(), policy).unwrap();
         assert_eq!(again.bytes(), out.bytes(), "{policy:?}: idempotent");
     }
+}
+
+/// A big-endian TIFF whose IFD0 holds Artist and Copyright, both inline.
+fn exif_artist_and_copyright() -> Vec<u8> {
+    let mut d = b"MM\x00\x2A\x00\x00\x00\x08".to_vec();
+    d.extend_from_slice(&[0, 2]);
+    d.extend_from_slice(&[0x01, 0x3B, 0, 2, 0, 0, 0, 4]);
+    d.extend_from_slice(b"Ann\0");
+    d.extend_from_slice(&[0x82, 0x98, 0, 2, 0, 0, 0, 4]);
+    d.extend_from_slice(b"(c)\0");
+    d.extend_from_slice(&[0, 0, 0, 0]);
+    d
+}
+
+fn contains(hay: &[u8], needle: &[u8]) -> bool {
+    hay.windows(needle.len()).any(|w| w == needle)
+}
+
+#[test]
+fn png_all_pii_keeps_the_copyright_text_chunk_and_the_exif_copyright() {
+    // SPEC-033 (DEC-020 and DEC-021 amendments of 2026-11-22).
+    let exif = exif_artist_and_copyright();
+    let copyright = text(b"Copyright", b"canary-rights");
+    let author = text(b"Author", b"canary-author");
+    let parts = shape(
+        &[
+            part("exif", exif_chunk(&exif), Role::Exif),
+            part("author", author.clone(), Role::Cat(Category::Authorship)),
+            part("copyright", copyright.clone(), Role::Cat(Category::Rights)),
+        ],
+        &[],
+        &[],
+        b"",
+    );
+    let input = assemble(&parts);
+    let out = strip(&input, StripPolicy::AllPii).unwrap();
+    // The text chunks: Copyright byte for byte, Author gone.
+    assert!(contains(out.bytes(), &copyright));
+    assert!(!contains(out.bytes(), &author));
+    // The eXIf chunk is edited, not removed: Artist is deleted in place,
+    // Copyright stays with its entry and value, and the CRC is patched.
+    let chunks = exif_chunks_of(out.bytes());
+    assert_eq!(chunks.len(), 1);
+    assert!(chunks[0].1, "the chunk CRC is valid");
+    assert!(contains(&chunks[0].0, &[0x82, 0x98, 0, 2, 0, 0, 0, 4]));
+    assert!(contains(&chunks[0].0, b"(c)\0"));
+    assert!(!contains(&chunks[0].0, &[0x01, 0x3B]));
+    assert!(!contains(&chunks[0].0, b"Ann\0"));
+    assert!(out.patches().iter().any(|p| p.kind == PatchKind::ChunkCrc));
+    // The audit of the output: two Rights findings, no Authorship.
+    let after = audit(out.bytes());
+    assert_eq!(after.findings_in(Category::Rights).count(), 2);
+    assert_eq!(after.findings_in(Category::Authorship).count(), 0);
+    // `All` removes the eXIf chunk and both text chunks.
+    let all = strip(&input, StripPolicy::All).unwrap();
+    assert!(exif_chunks_of(all.bytes()).is_empty());
+    assert!(!contains(all.bytes(), &copyright));
+    assert!(!contains(all.bytes(), &author));
+    assert_eq!(audit(all.bytes()).findings_in(Category::Rights).count(), 0);
 }
 
 #[test]

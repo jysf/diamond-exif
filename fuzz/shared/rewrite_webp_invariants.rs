@@ -62,11 +62,12 @@ mod rewrite_webp_invariants {
     use exif_core::write::{PatchKind, RemovalKind, UneditableReason, UnstrippableReason};
     use exif_core::{strip, StripError};
 
-    /// The nine Exif-set categories (DEC-013 amendment B).
-    const EXIF9: [Category; 9] = [
+    /// The ten Exif-set categories (DEC-013 amendment B).
+    const EXIF10: [Category; 10] = [
         Category::Gps,
         Category::DeviceId,
         Category::Authorship,
+        Category::Rights,
         Category::FreeText,
         Category::Timestamps,
         Category::CameraModel,
@@ -568,7 +569,7 @@ mod rewrite_webp_invariants {
     /// DEC-022 clause 4: a carrier goes with any tag category, `Xmp` or `Iptc`,
     /// and with its own category `OtherSegment`.
     fn carriers_removed(spec: StripSpec) -> bool {
-        EXIF9
+        EXIF10
             .iter()
             .chain([Category::Xmp, Category::Iptc].iter())
             .any(|c| spec.contains(*c))
@@ -584,9 +585,9 @@ mod rewrite_webp_invariants {
 
     /// DEC-022 clause 3 (DEC-013 part 4 and amendment B).
     fn exif_mode(spec: StripSpec) -> NMode {
-        if EXIF9.iter().all(|c| spec.contains(*c)) {
+        if EXIF10.iter().all(|c| spec.contains(*c)) {
             NMode::Whole
-        } else if EXIF9
+        } else if EXIF10
             .iter()
             .chain([Category::Xmp, Category::Iptc, Category::Icc].iter())
             .any(|c| spec.contains(*c))
@@ -952,7 +953,7 @@ mod rewrite_webp_invariants {
                                 && a.kind == b.kind
                                 && match b.category {
                                     Some(c) => a.category == c,
-                                    None => EXIF9.contains(&a.category),
+                                    None => EXIF10.contains(&a.category),
                                 }
                         })
                         && sizes == usize::from(*size_patched)

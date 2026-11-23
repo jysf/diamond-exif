@@ -400,7 +400,8 @@ pub fn category(role: &str, tag: u16, ifd1_has_jpeg: bool) -> Option<Cat> {
         0x0132 | 0x9003 | 0x9004 | 0x9010 | 0x9011 | 0x9012 | 0x9290 | 0x9291 | 0x9292 => {
             Some("timestamps")
         }
-        0x013B | 0x8298 | 0xA430 | 0x9C9D | 0xA437 | 0xA438 => Some("authorship"),
+        0x013B | 0xA430 | 0x9C9D | 0xA437 | 0xA438 => Some("authorship"),
+        0x8298 => Some("rights"),
         0x927C => Some("maker_note"),
         0xA420 | 0xA431 | 0xA435 | 0xC62F => Some("device_id"),
         0x02BC => Some("xmp"),
@@ -695,6 +696,30 @@ fn only_ifd0(be: bool, ents: Vec<Ent>) -> Build {
         thumb: None,
         pad_to: None,
     }
+}
+
+/// IFD0 holds Artist and Copyright, each with its own out-of-line value
+/// (SPEC-033).
+pub fn artist_and_copyright() -> Build {
+    only_ifd0(
+        false,
+        vec![ascii(0x013B, K_ARTIST), ascii(0x8298, K_COPYRIGHT)],
+    )
+}
+
+/// Artist and Copyright point at the same out-of-line bytes (SPEC-033): under
+/// `AllPii` one is deleted and the other kept, so the library refuses.
+pub fn artist_and_copyright_sharing_bytes() -> Build {
+    let mut b = artist_and_copyright();
+    let count = b.ifds[0].ents[0].count;
+    b.ifds[0].ents[1] = Ent {
+        tag: 0x8298,
+        ty: ASCII,
+        count,
+        val: Val::SameAs("ifd0", 0x013B),
+        canary: None,
+    };
+    b
 }
 
 /// The first entry of IFD0 is a target for `CameraModel` and nothing else is.

@@ -22,7 +22,7 @@ use exif_core::write::{
     Check, PatchKind, RemovalKind, ScrubReason, UneditableReason, UnstrippableReason,
 };
 use exif_core::{sanitize, strip, StripError, Stripped};
-use strip_shapes::{expected_bytes, model, spec_of, Expect, Shape, EXIF9, K, REMOVED_CANARIES};
+use strip_shapes::{expected_bytes, model, spec_of, Expect, Shape, EXIF10, K, REMOVED_CANARIES};
 
 // ── policies ────────────────────────────────────────────────────────────────
 
@@ -276,7 +276,7 @@ fn everything_keeps_only_structure_and_the_scan() {
 
 /// Whether the policy removes every Exif category (so the Exif tags go).
 fn exif_gone(p: StripPolicy) -> bool {
-    EXIF9.iter().all(|c| p.spec().contains(*c))
+    EXIF10.iter().all(|c| p.spec().contains(*c))
 }
 
 #[test]
@@ -1084,7 +1084,7 @@ fn kept_findings_survive_by_category_and_kind() {
             v.sort();
             v
         };
-        let gone = EXIF9.iter().all(|c| spec.contains(*c));
+        let gone = EXIF10.iter().all(|c| spec.contains(*c));
         assert_eq!(
             key(&audit(&s.bytes), gone),
             key(&audit(out.bytes()), false),
@@ -1538,6 +1538,115 @@ fn only(cats: &'static [Cat]) -> StripPolicy {
         cats.iter()
             .fold(StripSpec::none(), |s, c| s.include(category_of(c))),
     )
+}
+
+#[test]
+fn all_pii_keeps_copyright_byte_identical() {
+    // SPEC-033: the default privacy preset deletes Artist and keeps the
+    // copyright notice, entry and value, in both byte orders.
+    for be in [false, true] {
+        let l = exif_layout::full(be).layout();
+        let j = jpeg_of(std::slice::from_ref(&l), false);
+        let out = strip(&j.bytes, StripPolicy::AllPii).unwrap();
+        let ifd0 = l.ifd("ifd0");
+        let c = ifd0.ents.iter().find(|e| e.tag == 0x8298).unwrap();
+        let entry = &j.bytes[j.blobs[0] + c.at..][..12];
+        assert!(
+            contains(out.bytes(), entry),
+            "be={be}: the entry moved or changed"
+        );
+        let v = c.value.clone().unwrap();
+        let (vs, ve) = (j.blobs[0] + v.start, j.blobs[0] + v.end);
+        assert_eq!(&out.bytes()[vs..ve], &j.bytes[vs..ve], "be={be}: value");
+        assert!(contains(out.bytes(), exif_layout::K_COPYRIGHT));
+        assert!(out.entries().iter().all(|e| e.tag != 0x8298));
+        // Artist (0x013B) is deleted and its value zeroed.
+        let a = ifd0.ents.iter().find(|e| e.tag == 0x013B).unwrap();
+        assert!(out.entries().iter().any(|e| e.tag == 0x013B));
+        let av = a.value.clone().unwrap();
+        assert!(out.bytes()[j.blobs[0] + av.start..j.blobs[0] + av.end]
+            .iter()
+            .all(|b| *b == 0));
+        assert!(!contains(out.bytes(), exif_layout::K_ARTIST));
+        // The same holds for `Custom([Authorship])`.
+        let only_a = strip(&j.bytes, only(&["authorship"])).unwrap();
+        assert!(contains(only_a.bytes(), exif_layout::K_COPYRIGHT));
+        assert!(!contains(only_a.bytes(), exif_layout::K_ARTIST));
+        assert!(only_a.entries().iter().all(|e| e.tag != 0x8298));
+        // The audit of the output still reports it, as `Rights`.
+        assert_eq!(audit(out.bytes()).findings_in(Category::Rights).count(), 1);
+    }
+}
+
+#[test]
+fn custom_rights_removes_only_copyright() {
+    let l = exif_layout::full_le().layout();
+    let j = jpeg_of(std::slice::from_ref(&l), false);
+    let out = strip(&j.bytes, only(&["rights"])).unwrap();
+    assert!(!contains(out.bytes(), exif_layout::K_COPYRIGHT));
+    for c in [
+        exif_layout::K_ARTIST,
+        exif_layout::K_MAKE,
+        exif_layout::K_GPSAREA,
+        exif_layout::K_NOTE,
+        exif_layout::K_THUMB,
+    ] {
+        assert!(contains(out.bytes(), c));
+    }
+    // Partial: the segment is kept, one entry is deleted.
+    assert!(out.removals().is_empty());
+    assert_eq!(out.entries().len(), 1);
+    assert_eq!(out.entries()[0].tag, 0x8298);
+}
+
+#[test]
+fn old_exif9_custom_set_is_now_partial_and_keeps_copyright() {
+    // The nine categories DEC-013 named before SPEC-033: whole before, partial
+    // now, so the segment stays and Copyright with it.
+    let old_nine = spec_of(&[
+        Category::Gps,
+        Category::DeviceId,
+        Category::Authorship,
+        Category::FreeText,
+        Category::Timestamps,
+        Category::CameraModel,
+        Category::Thumbnail,
+        Category::MakerNote,
+        Category::Software,
+    ]);
+    let l = exif_layout::full_le().layout();
+    let j = jpeg_of(std::slice::from_ref(&l), false);
+    let out = strip(&j.bytes, StripPolicy::Custom(old_nine)).unwrap();
+    assert!(out.removals().is_empty(), "the Exif segment is kept");
+    assert!(contains(out.bytes(), exif_layout::K_COPYRIGHT));
+    assert!(!contains(out.bytes(), exif_layout::K_ARTIST));
+    // With Rights added it is whole again.
+    let ten = old_nine.include(Category::Rights);
+    let whole = strip(&j.bytes, StripPolicy::Custom(ten)).unwrap();
+    assert_eq!(whole.removals().len(), 1);
+    assert!(!contains(whole.bytes(), exif_layout::K_COPYRIGHT));
+}
+
+#[test]
+fn artist_and_copyright_sharing_bytes_is_refused_under_all_pii() {
+    let l = exif_layout::artist_and_copyright_sharing_bytes().layout();
+    let j = jpeg_of(std::slice::from_ref(&l), false);
+    // Both entries share one value; AllPii deletes one and keeps the other.
+    let err = strip(&j.bytes, StripPolicy::AllPii).unwrap_err();
+    assert!(
+        matches!(
+            err,
+            StripError::Uneditable {
+                reason: UneditableReason::SharedBytes,
+                ..
+            }
+        ),
+        "{err:?}"
+    );
+    // `All` removes the segment whole, so there is nothing to share.
+    let out = strip(&j.bytes, StripPolicy::All).unwrap();
+    assert_eq!(out.removals().len(), 1);
+    assert!(out.entries().is_empty());
 }
 
 #[test]

@@ -54,11 +54,12 @@ mod rewrite_png_invariants {
 
     const MAX_LEN: u32 = 0x7FFF_FFFF;
 
-    /// The nine Exif-set categories (DEC-013 amendment B).
-    const EXIF9: [Category; 9] = [
+    /// The ten Exif-set categories (DEC-013 amendment B).
+    const EXIF10: [Category; 10] = [
         Category::Gps,
         Category::DeviceId,
         Category::Authorship,
+        Category::Rights,
         Category::FreeText,
         Category::Timestamps,
         Category::CameraModel,
@@ -456,7 +457,7 @@ mod rewrite_png_invariants {
     /// DEC-021 clause 4: a carrier goes with any tag category, `Xmp` or `Iptc`,
     /// and with its own category `OtherSegment`.
     fn carriers_removed(spec: StripSpec) -> bool {
-        EXIF9
+        EXIF10
             .iter()
             .chain([Category::Xmp, Category::Iptc].iter())
             .any(|c| spec.contains(*c))
@@ -472,9 +473,9 @@ mod rewrite_png_invariants {
 
     /// DEC-021 clause 3.
     fn exif_mode(spec: StripSpec) -> NMode {
-        if EXIF9.iter().all(|c| spec.contains(*c)) {
+        if EXIF10.iter().all(|c| spec.contains(*c)) {
             NMode::Whole
-        } else if EXIF9
+        } else if EXIF10
             .iter()
             .chain([Category::Xmp, Category::Iptc, Category::Icc].iter())
             .any(|c| spec.contains(*c))
@@ -491,7 +492,7 @@ mod rewrite_png_invariants {
         const ROWS: [(&[u8], Category); 7] = [
             (b"Artist", Category::Authorship),
             (b"Author", Category::Authorship),
-            (b"Copyright", Category::Authorship),
+            (b"Copyright", Category::Rights),
             (b"Creation Time", Category::Timestamps),
             (b"create-date", Category::Timestamps),
             (b"modify-date", Category::Timestamps),
@@ -805,7 +806,7 @@ mod rewrite_png_invariants {
                                 && a.kind == b.kind
                                 && match b.category {
                                     Some(c) => a.category == c,
-                                    None => EXIF9.contains(&a.category),
+                                    None => EXIF10.contains(&a.category),
                                 }
                         })
                         && ok.patches.iter().all(|&(at, len)| {

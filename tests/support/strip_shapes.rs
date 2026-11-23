@@ -104,7 +104,7 @@ pub struct ExifFacts {
     pub blocks: usize,
     /// Every Exif segment's TIFF parses (IFD0 readable).
     pub readable: bool,
-    /// EXIF9 category names present in them (`"gps"`, `"timestamps"`, ...).
+    /// EXIF10 category names present in them (`"gps"`, `"timestamps"`, ...).
     pub cats: Vec<&'static str>,
 }
 
@@ -406,6 +406,7 @@ const FULL_CATS: &[&str] = &[
     "gps",
     "device_id",
     "authorship",
+    "rights",
     "free_text",
     "timestamps",
     "camera_model",
@@ -1167,11 +1168,12 @@ pub fn expected_bytes(
 use exif_core::audit::Category;
 use exif_core::policy::StripSpec;
 
-/// The nine categories an Exif segment can hold, typed by hand.
-pub const EXIF9: [Category; 9] = [
+/// The ten categories an Exif segment can hold, typed by hand.
+pub const EXIF10: [Category; 10] = [
     Category::Gps,
     Category::DeviceId,
     Category::Authorship,
+    Category::Rights,
     Category::FreeText,
     Category::Timestamps,
     Category::CameraModel,
@@ -1185,6 +1187,7 @@ pub fn cat_name(c: Category) -> &'static str {
         Category::Gps => "gps",
         Category::DeviceId => "device_id",
         Category::Authorship => "authorship",
+        Category::Rights => "rights",
         Category::FreeText => "free_text",
         Category::Timestamps => "timestamps",
         Category::CameraModel => "camera_model",
@@ -1241,7 +1244,7 @@ pub fn part_category(kind: K) -> Option<Category> {
 }
 
 /// The category the audit gives a removed Exif block of `shape`: the first
-/// EXIF9 finding of the block (IFD order), `Thumbnail` when it has none.
+/// EXIF10 finding of the block (IFD order), `Thumbnail` when it has none.
 pub fn exif_block_category(shape: &Shape, block: usize) -> Category {
     match (shape.name, block) {
         ("two-exif-blocks", 1) | ("unreadable-exif", _) | ("exif-orientation-only", _) => {
@@ -1263,14 +1266,14 @@ pub fn model(shape: &Shape, spec: StripSpec) -> Expect {
     if shape.refused {
         return Expect::Unstrippable;
     }
-    let exif9 = spec_of(&EXIF9);
+    let exif10 = spec_of(&EXIF10);
     let mut targets: Vec<(usize, Rem)> = Vec::new();
     let mut exif_block = 0usize;
     for (i, p) in shape.parts.iter().enumerate() {
         if p.kind == K::Exif {
             let block = exif_block;
             exif_block += 1;
-            if exif9.is_subset_of(spec) {
+            if exif10.is_subset_of(spec) {
                 targets.push((
                     i,
                     Rem {
@@ -1298,8 +1301,8 @@ pub fn model(shape: &Shape, spec: StripSpec) -> Expect {
     // Exif: all, none, or the entry edit (a partial policy: some Exif category,
     // or a category an Exif tag can have: Xmp, Iptc, Icc).
     let can_occur = spec_of(&[Category::Xmp, Category::Iptc, Category::Icc]);
-    let partial = !exif9.is_subset_of(spec)
-        && (spec.intersects(exif9) || spec.intersects(can_occur))
+    let partial = !exif10.is_subset_of(spec)
+        && (spec.intersects(exif10) || spec.intersects(can_occur))
         && shape.exif.blocks > 0;
     if partial {
         if !shape.exif.readable {
@@ -1311,7 +1314,7 @@ pub fn model(shape: &Shape, spec: StripSpec) -> Expect {
             return Expect::Uneditable(first);
         }
         let in_spec = |name: &&str| {
-            EXIF9
+            EXIF10
                 .iter()
                 .any(|c| cat_name(*c) == *name && spec.contains(*c))
         };

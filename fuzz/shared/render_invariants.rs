@@ -53,7 +53,7 @@ mod render_invariants {
     // ── DEC-010 and the SPEC-015 schema, typed again ────────────────────────
 
     /// `Debug` name and report name of every category, in `Category::ALL` order.
-    pub const CATS: [(&str, &str); 15] = [
+    pub const CATS: [(&str, &str); 16] = [
         ("Gps", "gps"),
         ("DeviceId", "device_id"),
         ("Authorship", "authorship"),
@@ -69,6 +69,7 @@ mod render_invariants {
         ("Icc", "icc"),
         ("EmbeddedImage", "embedded_image"),
         ("OtherSegment", "other_segment"),
+        ("Rights", "rights"),
     ];
 
     pub const STATUSES: [&str; 5] = ["failed", "unsupported", "unreadable", "issues", "ok"];

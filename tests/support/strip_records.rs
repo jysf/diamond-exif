@@ -38,6 +38,8 @@ pub fn policies() -> Vec<(&'static str, StripPolicy)> {
             "iptc+free_text",
             StripPolicy::Custom(spec_of(&[Category::Iptc, Category::FreeText])),
         ),
+        // SPEC-033: Copyright alone.
+        ("rights", StripPolicy::Custom(spec_of(&[Category::Rights]))),
     ]
 }
 

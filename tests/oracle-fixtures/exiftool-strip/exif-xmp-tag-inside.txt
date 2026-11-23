@@ -130,6 +130,18 @@ JFIF	XResolution	1
 JFIF	YResolution	1
 IFD0	Make	CANARY-MAKE-0001
 IFD0	Orientation	6
+## rights
+ExifTool	Warning	[minor] Empty XMP
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Make	CANARY-MAKE-0001
+IFD0	Orientation	6
 ## free_text+device
 ExifTool	Warning	[minor] Empty XMP
 File	FileType	JPEG

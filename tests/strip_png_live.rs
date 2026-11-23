@@ -16,7 +16,9 @@
 //! * `GpsAndDevice` and up: `SerialNumber`, `BodySerialNumber`,
 //!   `InternalSerialNumber`, `LensSerialNumber` (DeviceId);
 //! * `AllPii`, `All`, `Everything` (Authorship): `Author`, `Artist`,
-//!   `Copyright`, `OwnerName`, `CameraOwnerName`;
+//!   `OwnerName`, `CameraOwnerName`;
+//! * `All`, `Everything` only (Rights, SPEC-033): `Copyright`, which `AllPii`
+//!   keeps;
 //! * the carriers (every preset): any tag from a decoded carrier chunk, that is
 //!   any tag in the groups `IFD0`, `IFD1`, `ExifIFD`, `GPS`, `InteropIFD` or one
 //!   starting `XMP`, `XML` or `SEAL` (the carrier files hold nothing else).
@@ -53,13 +55,10 @@ const DEVICE_TAGS: [&str; 4] = [
     "LensSerialNumber",
 ];
 // The library files the camera owner under Authorship (`category.rs`, 0xA430).
-const AUTHORSHIP_TAGS: [&str; 5] = [
-    "Author",
-    "Artist",
-    "Copyright",
-    "OwnerName",
-    "CameraOwnerName",
-];
+const AUTHORSHIP_TAGS: [&str; 4] = ["Author", "Artist", "OwnerName", "CameraOwnerName"];
+// Copyright is `Rights` (DEC-008 amendment, SPEC-033): removed by `All` and
+// `Everything`, kept by `AllPii`.
+const RIGHTS_TAGS: [&str; 1] = ["Copyright"];
 const CARRIER_GROUPS: [&str; 5] = ["IFD0", "IFD1", "ExifIFD", "GPS", "InteropIFD"];
 
 /// The representative `oracle_png` fixtures (names are the committed ones).
@@ -131,7 +130,8 @@ fn removed_by(preset: usize, tag: &Tag) -> bool {
     let gps = tag.group == "GPS" || (tag.group == "Composite" && tag.name.starts_with("GPS"));
     let device = preset >= 1 && DEVICE_TAGS.contains(&tag.name.as_str());
     let authorship = preset >= 2 && AUTHORSHIP_TAGS.contains(&tag.name.as_str());
-    gps || device || authorship
+    let rights = preset >= 3 && RIGHTS_TAGS.contains(&tag.name.as_str());
+    gps || device || authorship || rights
 }
 
 fn is_carrier_tag(tag: &Tag) -> bool {

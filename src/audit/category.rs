@@ -17,7 +17,7 @@ pub enum Category {
     Gps,
     /// Identifies one physical device: serial numbers, `ImageUniqueID`.
     DeviceId,
-    /// Names a person or rights holder.
+    /// Names a person.
     Authorship,
     /// Free text the author typed.
     FreeText,
@@ -45,6 +45,9 @@ pub enum Category {
     /// Data the library does not understand (DEC-012): an unrecognised APPn
     /// segment or trailing bytes.
     OtherSegment,
+    /// A copyright or rights notice the owner attached (DEC-008 amendment,
+    /// SPEC-033). Kept by `AllPii`, removed by `All` and `Everything`.
+    Rights,
 }
 
 /// How much a finding matters (DEC-008). `Low < Medium < High`.
@@ -60,7 +63,7 @@ pub enum Severity {
 
 impl Category {
     /// Every category, in DEC-008 table order.
-    pub const ALL: [Category; 15] = [
+    pub const ALL: [Category; 16] = [
         Category::Gps,
         Category::DeviceId,
         Category::Authorship,
@@ -76,6 +79,7 @@ impl Category {
         Category::Icc,
         Category::EmbeddedImage,
         Category::OtherSegment,
+        Category::Rights,
     ];
 
     /// The category's severity (DEC-008).
@@ -90,7 +94,8 @@ impl Category {
             | Category::Iptc
             | Category::Jumbf
             | Category::EmbeddedImage
-            | Category::OtherSegment => Severity::Medium,
+            | Category::OtherSegment
+            | Category::Rights => Severity::Medium,
             Category::Timestamps | Category::CameraModel | Category::Software | Category::Icc => {
                 Severity::Low
             }
@@ -132,6 +137,7 @@ impl Category {
             Category::Icc => "icc",
             Category::EmbeddedImage => "embedded_image",
             Category::OtherSegment => "other_segment",
+            Category::Rights => "rights",
         }
     }
 }
@@ -185,8 +191,10 @@ fn by_id(tag: u16) -> Option<Category> {
         0x0132 | 0x9003 | 0x9004 | 0x9010 | 0x9011 | 0x9012 | 0x9290 | 0x9291 | 0x9292 => {
             Some(Category::Timestamps)
         }
-        // Authorship: Artist, Copyright, CameraOwnerName, XPAuthor, ImageEditor.
-        0x013B | 0x8298 | 0xA430 | 0x9C9D | 0xA437 | 0xA438 => Some(Category::Authorship),
+        // Authorship: Artist, CameraOwnerName, XPAuthor, Photographer, ImageEditor.
+        0x013B | 0xA430 | 0x9C9D | 0xA437 | 0xA438 => Some(Category::Authorship),
+        // Rights: Copyright (DEC-008 amendment, SPEC-033).
+        0x8298 => Some(Category::Rights),
         // MakerNote; DNGPrivateData (Adobe MakN) is a copy of it.
         0x927C | 0xC634 => Some(Category::MakerNote),
         // DeviceId: ImageUniqueID, BodySerialNumber, LensSerialNumber,
@@ -224,12 +232,12 @@ pub fn region_category(kind: RegionKind) -> Category {
 }
 
 /// The PNG text keywords that are not free text (DEC-020), as data: one row per
-/// keyword, in ExifTool's standard spelling. SPEC-033 may re-home `Copyright`
-/// by editing its row.
+/// keyword, in ExifTool's standard spelling. SPEC-033 re-homed `Copyright` to
+/// `Rights` by editing its row (DEC-020 amendment).
 const TEXT_KEYWORDS: [(&[u8], Category); 7] = [
     (b"Artist", Category::Authorship),
     (b"Author", Category::Authorship),
-    (b"Copyright", Category::Authorship),
+    (b"Copyright", Category::Rights),
     (b"Creation Time", Category::Timestamps),
     // ExifTool's two lowercase-spelled keywords (`PNG:CreateDate`,
     // `PNG:ModDate`): only the exact spelling names them (see the match rule).
@@ -298,7 +306,7 @@ mod tests {
             (0x0131, "Software", Software),
             (0x0132, "DateTime", Timestamps),
             (0x013B, "Artist", Authorship),
-            (0x8298, "Copyright", Authorship),
+            (0x8298, "Copyright", Rights),
             (0x9003, "DateTimeOriginal", Timestamps),
             (0x9004, "DateTimeDigitized", Timestamps),
             (0x9010, "OffsetTime", Timestamps),
@@ -449,6 +457,7 @@ mod tests {
             (Icc, Low),
             (EmbeddedImage, Medium),
             (OtherSegment, Medium),
+            (Rights, Medium),
         ];
         assert_eq!(want.len(), Category::ALL.len());
         for (c, s) in want {
@@ -484,6 +493,7 @@ mod tests {
             Timestamps,
             CameraModel,
             Software,
+            Rights,
         ];
         assert_eq!(blocks.len() + tags.len(), Category::ALL.len());
         for c in blocks {
@@ -498,6 +508,25 @@ mod tests {
                 "{c:?} in one list"
             );
         }
+    }
+
+    #[test]
+    fn copyright_is_rights_and_artist_stays_authorship() {
+        for kind in [IfdKind::Ifd0, IfdKind::Sub, IfdKind::Exif] {
+            assert_eq!(categorize(kind, 0x8298), Some(Category::Rights), "{kind:?}");
+            for id in [0x013B, 0xA430, 0x9C9D, 0xA437, 0xA438] {
+                assert_eq!(
+                    categorize(kind, id),
+                    Some(Category::Authorship),
+                    "0x{id:04X} in {kind:?}"
+                );
+            }
+        }
+        assert_eq!(Category::Rights.severity(), Severity::Medium);
+        assert_eq!(Category::Rights.name(), "rights");
+        assert!(!Category::Rights.is_block());
+        assert_eq!(Category::ALL.len(), 16);
+        assert_eq!(Category::ALL.last(), Some(&Category::Rights));
     }
 
     #[test]
@@ -558,7 +587,7 @@ mod tests {
     #[test]
     fn category_all_has_fifteen_entries_and_the_two_new_names_are_pinned() {
         use Category::*;
-        // The whole order, typed by hand: the two new entries come last.
+        // The whole order, typed by hand: the newest entries come last.
         let order = [
             Gps,
             DeviceId,
@@ -575,11 +604,13 @@ mod tests {
             Icc,
             EmbeddedImage,
             OtherSegment,
+            Rights,
         ];
-        assert_eq!(Category::ALL.len(), 15);
+        assert_eq!(Category::ALL.len(), 16);
         assert_eq!(Category::ALL, order);
         assert_eq!(EmbeddedImage.name(), "embedded_image");
         assert_eq!(OtherSegment.name(), "other_segment");
+        assert_eq!(Rights.name(), "rights");
     }
 
     #[test]
@@ -611,7 +642,7 @@ mod tests {
         let rows: [(&[u8], Category); 43] = [
             // Standard spellings.
             (b"Author", Authorship),
-            (b"Copyright", Authorship),
+            (b"Copyright", Rights),
             (b"Creation Time", Timestamps),
             (b"Software", Software),
             // L1 rows (measured 13.55, tEXt, iTXt and zTXt): `PNG:Artist`,
@@ -640,7 +671,7 @@ mod tests {
             // tags (`author` printed `Author`, `warning` printed `PNGWarning`,
             // `creation Time` was reformatted by `-d`).
             (b"author", Authorship),
-            (b"copyright", Authorship),
+            (b"copyright", Rights),
             (b"software", Software),
             (b"creation Time", Timestamps),
             (b"title", FreeText),

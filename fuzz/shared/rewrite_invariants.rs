@@ -248,10 +248,11 @@ mod rewrite_invariants {
         (keys, trailer)
     }
 
-    const EXIF9: [Category; 9] = [
+    const EXIF10: [Category; 10] = [
         Category::Gps,
         Category::DeviceId,
         Category::Authorship,
+        Category::Rights,
         Category::FreeText,
         Category::Timestamps,
         Category::CameraModel,
@@ -261,14 +262,14 @@ mod rewrite_invariants {
     ];
 
     fn all_exif_removed(spec: StripSpec) -> bool {
-        EXIF9.iter().all(|c| spec.contains(*c))
+        EXIF10.iter().all(|c| spec.contains(*c))
     }
 
-    /// Whether a policy names a category an Exif entry can have: the nine Exif
+    /// Whether a policy names a category an Exif entry can have: the ten Exif
     /// categories and the three the DEC-008 table files under `Xmp`, `Iptc` and
     /// `Icc`.
     fn exif_may_hold(spec: StripSpec) -> bool {
-        EXIF9
+        EXIF10
             .iter()
             .chain([Category::Xmp, Category::Iptc, Category::Icc].iter())
             .any(|c| spec.contains(*c))
@@ -1035,7 +1036,8 @@ mod rewrite_invariants {
             0x0132 | 0x9003 | 0x9004 | 0x9010 | 0x9011 | 0x9012 | 0x9290 | 0x9291 | 0x9292 => {
                 Some(Category::Timestamps)
             }
-            0x013B | 0x8298 | 0xA430 | 0x9C9D | 0xA437 | 0xA438 => Some(Category::Authorship),
+            0x013B | 0xA430 | 0x9C9D | 0xA437 | 0xA438 => Some(Category::Authorship),
+            0x8298 => Some(Category::Rights),
             0x927C => Some(Category::MakerNote),
             0xA420 | 0xA431 | 0xA435 | 0xC62F => Some(Category::DeviceId),
             0x02BC => Some(Category::Xmp),
@@ -1527,11 +1529,11 @@ mod rewrite_invariants {
             let a = audit(d);
             if all_exif_removed(spec) {
                 for (n, &i) in exif_idx.iter().enumerate() {
-                    // The category: the first EXIF9 finding of that block.
+                    // The category: the first EXIF10 finding of that block.
                     let cat = a
                         .findings()
                         .iter()
-                        .find(|f| f.at.origin().block == Some(n) && EXIF9.contains(&f.category))
+                        .find(|f| f.at.origin().block == Some(n) && EXIF10.contains(&f.category))
                         .map_or(Category::Thumbnail, |f| f.category);
                     kept_segment[i] = false;
                     targets.push(NTarget {

@@ -557,6 +557,19 @@ fn comparator_is_red_when_a_deleted_tag_is_left() {
 }
 
 #[test]
+fn comparator_is_red_when_copyright_is_removed_under_all_pii() {
+    // SPEC-033: `AllPii` keeps Copyright, so ExifTool must still print it. A
+    // record with the line dropped is what a library that removed it yields.
+    let e = red_proof("all_pii", exif_records::ALL_PII, &|out, _| {
+        let before = out.lines.len();
+        out.lines
+            .retain(|l| !(l.group == "IFD0" && l.tag == "Copyright"));
+        assert_eq!(out.lines.len(), before - 1, "the record carries Copyright");
+    });
+    assert!(e.contains("missing") && e.contains("Copyright"), "{e}");
+}
+
+#[test]
 fn comparator_is_red_when_a_kept_tag_is_missing() {
     let e = red_proof("gps", &["gps"], &|out, _| {
         out.lines

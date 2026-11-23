@@ -776,14 +776,15 @@ pub(super) enum Mode {
     Partial,
 }
 
-/// The nine categories an Exif segment can hold (DEC-013 part 4), typed here by
+/// The ten categories an Exif segment can hold (DEC-013 part 4), typed here by
 /// hand from the decision.
-pub(super) fn exif9() -> StripSpec {
+pub(super) fn exif10() -> StripSpec {
     use crate::audit::Category as C;
     [
         C::Gps,
         C::DeviceId,
         C::Authorship,
+        C::Rights,
         C::FreeText,
         C::Timestamps,
         C::CameraModel,
@@ -798,13 +799,13 @@ pub(super) fn exif9() -> StripSpec {
 /// The mode of a policy (SPEC-021 rules, DEC-013 amendment B).
 pub(super) fn mode(spec: StripSpec) -> Mode {
     use crate::audit::Category as C;
-    let all9 = exif9();
-    if all9.is_subset_of(spec) {
+    let all10 = exif10();
+    if all10.is_subset_of(spec) {
         return Mode::Whole;
     }
     let can_occur = [C::Xmp, C::Iptc, C::Icc]
         .iter()
-        .fold(all9, |s, c| s.include(*c));
+        .fold(all10, |s, c| s.include(*c));
     if spec.intersects(can_occur) {
         Mode::Partial
     } else {
