@@ -54,7 +54,7 @@ handback:
   estimated_usd: null
   duration_minutes: 55
   branch: feat/spec-033-rights-category
-  pr: PR_URL
+  pr: https://github.com/jysf/diamond-exif/pull/57
   completed_at: 2026-11-23
   notes: "Measured from the session transcript at the end of the build (143 messages, each counted once, largest output): input 289, cache creation 315875, cache read 36773945, output 66873. estimated_usd is null because I do not have Sonnet 5.5 list rates; the architect can price these four components."
   synced_at: null
@@ -190,7 +190,7 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** `feat/spec-033-rights-category`, PR_URL
+- **Branch / PR:** `feat/spec-033-rights-category`, https://github.com/jysf/diamond-exif/pull/57
 - **Completed at:** 2026-11-23
 - **All acceptance criteria met?** yes. Gates (all run on the final tree): `just test` 1036 passed, 0 failed; `RUSTUP_TOOLCHAIN=1.90.0 just lint` clean; `just lint-fuzz` clean; `just deny` and `just deny-fuzz` "licenses ok"; `just mutation-oracle` 67 passed, 1 ignored; `just oracle-record` run twice, identical diff (see below); six fuzz smokes 60 s each, no crash: audit 149208 runs, audit_render 39570, rewrite_jpeg 106546, rewrite_tiff 403846, rewrite_png 653361, rewrite_webp 1106689; `DIAMOND_EXIF_REQUIRE_ORACLE=1 cargo test --test strip_png_live --test strip_webp_live`: strip_png_live 21 passed, 0 failed, 1 ignored; strip_webp_live 23 passed, 0 failed, 1 ignored. ExifTool 13.55 and the nightly toolchain were present.
 - **Red first:** the `category.rs` and `policy.rs` unit tests (and `preview.rs` pins) were written first and were red as a compile failure (21 errors, `Rights` did not exist). The integration tests (`strip`, `strip_tiff`, `strip_png`, `strip_webp`, `policy_preview`, `report_formats`, the strip-oracle comparator test) were written after the code. I then showed them red by reverting the `by_id` row (0x8298 back to `Authorship`) in a scratch edit: 20 tests failed, including every new SPEC-033 test and the replay `exiftool_tag_sets_equal_the_declared_tables_per_policy_and_fixture`. The row was restored.
