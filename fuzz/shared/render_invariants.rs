@@ -110,6 +110,8 @@ mod render_invariants {
             "Text" => "text",
             "RawProfile" => "raw_profile",
             "Time" => "time",
+            "Carrier" => "carrier",
+            "OtherChunk" => "other_chunk",
             other => return format!("?{other}"),
         }
         .to_string()

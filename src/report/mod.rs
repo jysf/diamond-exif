@@ -446,6 +446,8 @@ pub(crate) fn region_name(kind: crate::audit::RegionKind) -> &'static str {
         RegionKind::Text => "text",
         RegionKind::RawProfile => "raw_profile",
         RegionKind::Time => "time",
+        RegionKind::Carrier => "carrier",
+        RegionKind::OtherChunk => "other_chunk",
     }
 }
 

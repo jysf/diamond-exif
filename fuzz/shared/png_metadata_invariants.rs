@@ -16,7 +16,7 @@
 
 mod png_metadata_invariants {
     use exif_core::png::{
-        read, AnyPngIssue, Png, PngRegion, MAX_PNG_EXIF_BLOCKS, MAX_PNG_REGIONS,
+        read, AnyPngIssue, ChunkClass, Png, PngRegion, MAX_PNG_EXIF_BLOCKS, MAX_PNG_REGIONS,
         MAX_PNG_TRAILER_CHUNKS,
     };
     use exif_core::tiff::Container;
@@ -24,7 +24,9 @@ mod png_metadata_invariants {
 
     /// One region, as plain data: (variant, chunk offset, compressed, name or
     /// keyword range, icc method, data range, after_idat, after_iend). The
-    /// variant is 0 Xmp, 1 Icc, 2 RawProfile, 3 Text.
+    /// variant is 0 Xmp, 1 Icc, 2 RawProfile, 3 Text, 4 Chunk (the
+    /// icc-method slot then holds the class: 0 Time, 1 ExifCarrier, 2
+    /// XmlCarrier, 3 Jumbf, 4 Other).
     pub(super) type RegionT = (
         u8,
         usize,
@@ -250,7 +252,19 @@ mod png_metadata_invariants {
                         after_iend,
                     ));
                 }
-                _ => {}
+                other => {
+                    // The chunk types ExifTool 13.55 reads as metadata and the
+                    // library locates by type (SPEC-037), typed again here.
+                    let class = match other {
+                        b"tIME" => 0,
+                        b"zxIf" | b"zxif" | b"exif" => 1,
+                        b"tXMP" | b"meTa" | b"seAl" => 2,
+                        b"caBX" => 3,
+                        b"dSIG" | b"cpIp" | b"gIFx" | b"gIFg" | b"gIFt" | b"fRAc" => 4,
+                        _ => return,
+                    };
+                    self.add_region((4, off, false, (0, 0), class, (s, e), after_idat, after_iend));
+                }
             }
         }
     }
@@ -325,6 +339,30 @@ mod png_metadata_invariants {
                     compressed,
                     range_of(d, profile),
                     0,
+                    range_of(d, data),
+                    after_idat,
+                    after_iend,
+                ),
+                PngRegion::Chunk {
+                    offset,
+                    class,
+                    data,
+                    after_idat,
+                    after_iend,
+                    ..
+                } => (
+                    4,
+                    offset,
+                    false,
+                    (0, 0),
+                    match class {
+                        ChunkClass::Time => 0,
+                        ChunkClass::ExifCarrier => 1,
+                        ChunkClass::XmlCarrier => 2,
+                        ChunkClass::Jumbf => 3,
+                        ChunkClass::Other => 4,
+                        _ => panic!("a ChunkClass the harness does not know"),
+                    },
                     range_of(d, data),
                     after_idat,
                     after_iend,

@@ -30,9 +30,10 @@ use core::ops::Range;
 
 pub use issue::PngIssue;
 pub use metadata::{
-    read, AnyPngIssue, PngExifBlock, PngMetadata, PngRegion, MAX_PNG_EXIF_BLOCKS, MAX_PNG_REGIONS,
-    MAX_PNG_TRAILER_CHUNKS,
+    chunk_class, read, AnyPngIssue, ChunkClass, PngExifBlock, PngMetadata, PngRegion,
+    MAX_PNG_EXIF_BLOCKS, MAX_PNG_REGIONS, MAX_PNG_TRAILER_CHUNKS,
 };
+
 
 use crate::error::Error;
 

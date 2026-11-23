@@ -71,3 +71,14 @@ STAGE-008 SPEC-028 to SPEC-031, SPEC-034 built and oracle-checked the two reader
 ## References
 
 DEC-001, DEC-006, DEC-008, DEC-009, DEC-010, DEC-017, DEC-018, DEC-019; SPEC-032.
+
+## Clarifications from the SPEC-037 design (2026-11-22)
+
+Measured on ExifTool 13.55 (`-a -u -G1 -H -s`, one chunk per file, GPS-bearing content where the chunk can carry Exif or XMP; the full table is in DEC-021). The audit located only `eXIf`, text, `iCCP`, `tIME` and the raw profiles; ExifTool decodes more. The reader (`PngRegion::Chunk`, `ChunkClass`, `chunk_class`) now locates, by type bytes and in the walk and after `IEND`:
+
+1. **`tIME` after `IEND`.** ExifTool prints `Trailer:ModifyDate` for it. The audit used to look for `tIME` only in the walked chunks; the reader now locates it in both, so a `tIME` after `IEND` is a `Time` region, `Timestamps` (clause 3 holds for every position).
+2. **Carriers of Exif or XMP the library does not decode** (`RegionKind::Carrier`, `OtherSegment`): `zxIf`, and the lower-case `zxif` and `exif`, which ExifTool reads as Exif (the data is a TIFF, or `\0`, a 4-byte length and a zlib stream); `tXMP` (raw XMP), `meTa` (XML, also UTF-16) and `seAl` (XML), which ExifTool reads into XMP or XML groups. Like a raw profile (clause 5) a non-empty one counts as a failed block, so the file is never `ok` while one is present.
+3. **`caBX`** (a JUMBF box, ExifTool group `JUMBF`) is a `Jumbf` region, `Jumbf` category, as in a JPEG: kept by `AllPii` and `All`, removed by `Everything`.
+4. **Opaque binary chunks** that are not metadata for any preset (`RegionKind::OtherChunk`, `OtherSegment`): `dSIG`, `cpIp`, `gIFx`, `gIFg`, `gIFt`, `fRAc`. Chunks ExifTool prints that are image structure or rendering data (`pHYs`, `gAMA`, `sRGB`, `cHRM`, `bKGD`, `tRNS`, `sBIT`, `oFFs`, `sCAL`, `sTER`, `vpAg`, `acTL`, `cICP`, `pCAL`, `sPLT`, `hIST`, `iDOT`, `gdAT`) are not located and are never removed.
+5. Type bytes are case-sensitive: `txmp` is nothing (measured).
+6. `RegionKind` gains `Carrier` and `OtherChunk` (report names `carrier`, `other_chunk`).

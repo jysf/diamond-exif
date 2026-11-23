@@ -251,7 +251,18 @@ pub fn ours_of(bytes: &[u8], a: &FileAudit<'_>) -> Inventory {
             let after = meta
                 .regions()
                 .iter()
-                .filter(|r| matches!(r, exif_core::png::PngRegion::Text { .. }) && r.after_iend())
+                .filter(|r| {
+                    // A `tIME` after `IEND` is a `Trailer:ModifyDate` line too
+                    // (SPEC-037, measured 13.55).
+                    matches!(
+                        r,
+                        exif_core::png::PngRegion::Text { .. }
+                            | exif_core::png::PngRegion::Chunk {
+                                class: exif_core::png::ChunkClass::Time,
+                                ..
+                            }
+                    ) && r.after_iend()
+                })
                 .count();
             inv.text_tags = inv.text_tags.saturating_sub(after);
             inv.trailer_text_tags = after;
@@ -332,6 +343,9 @@ pub fn ours_png(a: &FileAudit<'_>, first_ok_block: Option<usize>) -> Inventory {
                         continue;
                     }
                     LibRegionKind::RawProfile => continue,
+                    // SPEC-037: a chunk whose Exif or XMP the audit does not
+                    // decode, and an opaque binary chunk, are located only.
+                    LibRegionKind::Carrier | LibRegionKind::OtherChunk => continue,
                     _ => {}
                 }
                 let k = match kind {
