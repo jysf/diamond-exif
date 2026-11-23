@@ -257,7 +257,9 @@ mod png_metadata_invariants {
                     // library locates by type (SPEC-037), typed again here.
                     let class = match other {
                         b"tIME" => 0,
-                        t if t.eq_ignore_ascii_case(b"zxif") || t.eq_ignore_ascii_case(b"exif") => 1,
+                        t if t.eq_ignore_ascii_case(b"zxif") || t.eq_ignore_ascii_case(b"exif") => {
+                            1
+                        }
                         b"tXMP" | b"meTa" | b"seAl" => 2,
                         b"caBX" => 3,
                         b"dSIG" | b"cpIp" | b"gIFx" | b"gIFg" | b"gIFt" | b"fRAc" => 4,

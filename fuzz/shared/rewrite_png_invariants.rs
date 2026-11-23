@@ -587,7 +587,11 @@ mod rewrite_png_invariants {
             b"caBX" => by_cat(Category::Jumbf, "jumbf", true),
             // ExifTool matches the types zxIf and eXIf in any ASCII case (the
             // exact eXIf is not a carrier and never reaches here).
-            t if (t.eq_ignore_ascii_case(b"zxif") || t.eq_ignore_ascii_case(b"exif")) && t != b"eXIf" => carrier("carrier"),
+            t if (t.eq_ignore_ascii_case(b"zxif") || t.eq_ignore_ascii_case(b"exif"))
+                && t != b"eXIf" =>
+            {
+                carrier("carrier")
+            }
             b"tXMP" | b"meTa" | b"seAl" => carrier("carrier"),
             b"dSIG" | b"cpIp" | b"gIFx" | b"gIFg" | b"gIFt" | b"fRAc" => {
                 by_cat(Category::OtherSegment, "other-chunk", true)
@@ -891,7 +895,11 @@ mod rewrite_png_invariants {
     /// by its type and keyword alone.
     fn is_carrier(ty: &[u8; 4], data: &[u8]) -> bool {
         match ty {
-            t if (t.eq_ignore_ascii_case(b"zxif") || t.eq_ignore_ascii_case(b"exif")) && t != b"eXIf" => true,
+            t if (t.eq_ignore_ascii_case(b"zxif") || t.eq_ignore_ascii_case(b"exif"))
+                && t != b"eXIf" =>
+            {
+                true
+            }
             b"tXMP" | b"meTa" | b"seAl" => true,
             b"tEXt" | b"zTXt" | b"iTXt" => text_parts(ty, data).is_some_and(|(kw, _)| {
                 kw.starts_with(b"Raw profile type ") || kw.starts_with(b"raw profile type ")
