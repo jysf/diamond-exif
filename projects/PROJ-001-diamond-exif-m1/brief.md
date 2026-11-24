@@ -79,12 +79,15 @@ The design and porting brief are complete and carry named failure modes. The fir
 - [x] STAGE-004 (shipped on 2026-11-10) — M1c JPEG and TIFF writer: audit coverage of writer-relevant structures, segment-level strip, in-place IFD strip, TIFF/DNG strip (SPIKE-001 is the evidence); 4 specs, 4,921,119 tokens, 32.47 USD
 - [x] STAGE-005 (shipped on 2026-11-19) — DEC-008 audit gaps: DNG identity tag categories and a container-aware TIFF page rule; 1 spec, 561,674 tokens, 3.71 USD
 - [x] STAGE-006 (shipped on 2026-11-21) — First public alpha: `exif-audit` v0.1.0-alpha.1, a public GitHub pre-release with binaries for Linux x86_64, macOS arm64 and macOS Intel; 1 spec, 1,186,445 tokens, 7.83 USD
+- [x] STAGE-009 (shipped on 2026-11-23) — Keep the copyright notice under AllPii: the Rights category (SPEC-033)
+- [x] STAGE-011 (shipped on 2026-11-24) — M1 hardening from an external review: the JFIF APP0 thumbnail fix (SPEC-040)
 - [ ] STAGE-007 (proposed) — Relocatable Exif block for another TIFF writer (requested by monorail-000; consumer decision monorail-000/DEC-075): Exif, GPS and Interop IFDs rebuilt at a caller-given base, MakerNote left out, ExifTool parity, optional presets; DEC-014, DEC-015; 3 specs framed
 - [ ] (not yet defined) — exif-core crates.io pre-release once STAGE-007 ships and SPEC-025 and SPEC-026 are verified, before M1f, for monorail-000 to pin exactly (monorail-000/DEC-077 item 2); a release spec with the DEC-006 pre-flight
-- [ ] STAGE-010 (proposed) — M1d PNG and WebP strip: tag-level inventory parity (SPEC-036), PNG strip (SPEC-037), WebP strip (SPEC-038), ExifTool write parity and audit switch-over (SPEC-039); `set` operations and MakerNote rules stay out
+- [ ] STAGE-010 (proposed; 3 of 4 specs shipped) — M1d PNG and WebP strip: tag-level inventory parity (SPEC-036, shipped 2026-11-22), PNG strip (SPEC-037, shipped 2026-11-23), WebP strip (SPEC-038, shipped 2026-11-23), ExifTool write parity and audit switch-over (SPEC-039, pending); `set` operations and MakerNote rules stay out
 - [ ] (not yet defined) — M1e/M1f: HEIC read, IPTC/ICC passthrough, 24 h fuzz gate, publish
+- [ ] STAGE-012 (proposed, priority low) — In-browser EXIF viewer and stripper: exif-core compiled to wasm behind a thin bindings crate, a static page that shows the audit and hands back a stripped file, Pages deploy gated on a browser smoke test checked by ExifTool; starts after SPEC-039, and its first spec is the DEC that admits it to M1 or moves it to M2 (the site is out of scope above)
 
-**Count:** 7 shipped / 0 active / 5 pending
+**Count:** 9 shipped / 0 active / 5 pending
 
 ## Dependencies
 
