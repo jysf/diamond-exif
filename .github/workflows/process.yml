@@ -1,0 +1,48 @@
+name: Process
+
+# The spec-driven process gates: front matter, cost capture, the decisions index and
+# the gate-audit, each beside its red-proof. Split out of ci.yml so it runs on EVERY
+# change, including docs-only ones: specs, stages, briefs and DECs are Markdown, and
+# these are exactly the gates that check them. ci.yml's Rust jobs skip a change that
+# touches only Markdown; this workflow never skips.
+on:
+  push:
+  pull_request:
+
+jobs:
+  cost-data:
+    name: cost-capture audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: cost-audit (shipped specs have build/verify cost; AGENTS §4)
+        run: ./scripts/cost-audit.sh
+
+      # A gate that has never failed cannot be told from one that never ran, so each
+      # gate's red-proof runs in CI beside it.
+      - name: cost-audit goes red on an unfilled stage orchestration_cost
+        run: ./scripts/cost-audit-red-proof.sh
+
+      # Opt-in by existence: passes quietly until `just decisions-index` has been run
+      # once and committed; after that it fails if the index falls behind.
+      - name: decisions-index is not stale
+        run: ./scripts/decisions-index.sh --check
+
+      # validate PARSES every artifact's front matter with a real YAML parser (ruby's
+      # Psych, present on the runner image). It fails loudly if ruby is absent rather
+      # than reporting green on an unrun check.
+      - name: validate parses every artifact's front matter
+        run: ./scripts/validate.sh
+
+      - name: validate parse gate goes red on unparseable front matter
+        run: ./scripts/validate-red-proof.sh
+
+      # The gate over the gates: scans verdict-bearing scripts for the mute-death shape.
+      - name: gate-audit — no mute-death shape in any gate script
+        run: ./scripts/gate-audit.sh
+
+      - name: gate-audit goes red on an injected mute-death shape
+        run: ./scripts/gate-audit-red-proof.sh
+
