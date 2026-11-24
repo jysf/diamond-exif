@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-24
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-040
@@ -46,18 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                # completed | blocked | rejected
+  agent: claude-sonnet-5-5         # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
+  basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 338116             # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: null
-  branch: null
+  duration_minutes: 47
+  branch: feat/spec-040-jfif-thumbnail-build
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-24         # YYYY-MM-DD
+  notes: "Orchestrator-transcribed from the Agent result: subagent_tokens 338116, tool_uses 214, duration_ms 2799998. The implementer was told not to edit this file, so the body below is the orchestrator's summary of its report. estimated_usd null: no input/output split."  # if unusual; double-quote it — an unquoted " #" starts a YAML comment
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -193,38 +193,30 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `feat/spec-040-jfif-thumbnail-build` (local), tip `058d243`; five commits fde1f50 (red tests + stubs), acb7ef4 (jpeg/audit), 4c4aedf (write), 0d48533 (oracle/fuzz/seeds), 058d243 (seed-count pins, render and probe models). No push, PR or CHANGELOG.
+- **Completed at:** 2026-11-24
+- **All acceptance criteria met?** yes per the implementer, with the AC6 reading in Deviations. Red-first evidence reported for AC10 (`VerifyFailed { check: Preview }` with only the audit change), AC11 (`jfif-thumbnail under all: groups differ: extra ["JFIF"]` with extraction disabled) and AC12 (`theirs only: region JfifThumbnail`).
+- Gates reported green on 1.90.0: lint, lint-fuzz, lint-no-allow, forbid-unsafe, deny, deny-fuzz, validate, full `cargo test` with `DIAMOND_EXIF_REQUIRE_ORACLE=1`; 60 s smokes jpeg_segments, audit, audit_render, rewrite_jpeg; `oracle-record` twice with no diff. Not run: `just mutation-oracle` recipe, red-proof lints, other smokes.
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** 338,116 (Agent result `subagent_tokens`)
+- **Estimated USD:** null
+- **Duration (minutes):** 47 (Agent result `duration_ms` 2,799,998)
+- **Source of the number:** harness report (`agent-result`). 214 tool calls against a ~120 budget; the agent's own "~150" undercounted.
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
+- **New decisions emitted:** none
 - **Deviations from spec:**
-  - [list]
+  - AC6 says "`is_clean` is false when it is present". In this codebase `clean` is parse health (DEC-010's `ok`), and a comment-region finding leaves it true; the implementer kept that meaning. The architect accepts this: the AC6 wording is a spec error, to be corrected at ship.
+  - `RegionTooShort` reports need = 3·X·Y and have = data bytes after the 14-byte header.
+  - The strip oracle records no Thumbnail-only, `Gps` or `Custom` policy (adding one changes every existing record); those are unit-tested in `tests/strip.rs`.
+  - `fuzz/shared/render_invariants.rs` and the probe-text parser in `tests/support/inventory.rs` also needed the new region kind.
+  - New strip shapes appended at the end of `strip_shapes::all()` so existing records do not shift.
 - **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - `guidance/toolchain-brief.md` seed counts are stale (fix at ship).
 
 ### Reflection (3 questions, short answers)
 
-1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
-
-2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
-
-3. **If you did this task again, what would you do differently?**
-   — <answer>
+Not provided by the implementer (it did not edit this file); its open questions were the AC6 reading and whether to record a `Custom({Thumbnail})` strip policy.
