@@ -79,7 +79,17 @@ const SEEDS: [&str; 29] = [
 ];
 
 /// JPEG seed names are fixed by `examples/fuzz_seeds.rs`.
-const JPEG_SEEDS: [&str; 37] = [
+const JPEG_SEEDS: [&str; 45] = [
+    // SPEC-040: the eight JFIF thumbnail shapes (DEC-012 amendment of
+    // 2026-11-24).
+    "jfif-thumbnail",
+    "jfif-thumbnail-short",
+    "jfif-thumbnail-declared-no-data",
+    "jfif-thumbnail-extra-bytes",
+    "jfif-zero-size-with-text",
+    "jfif-header-cut-short",
+    "jfif-two-segments",
+    "jfif-after-exif-version-2",
     "minimal",
     "soi-only",
     "fill-bytes",
@@ -253,8 +263,9 @@ fn the_existing_63_seeds_are_byte_identical() {
             .count()
     };
     assert_eq!(count("tiff_ifd"), 32);
-    // 37 + the 15 `shape-*` seeds SPEC-019 added (none of the 37 changed).
-    assert_eq!(count("jpeg_segments"), 37 + SHAPE_SEEDS.len());
+    // 37 + the 15 `shape-*` seeds SPEC-019 added (none of the 37 changed) + the
+    // 8 `jfif-*` seeds SPEC-040 added.
+    assert_eq!(count("jpeg_segments"), 37 + 8 + SHAPE_SEEDS.len());
 }
 
 #[test]
@@ -1379,7 +1390,7 @@ fn the_existing_66_seeds_are_byte_identical() {
             .count()
     };
     assert_eq!(count("tiff_ifd"), 32);
-    assert_eq!(count("jpeg_segments"), 37 + SHAPE_SEEDS.len());
+    assert_eq!(count("jpeg_segments"), 37 + 8 + SHAPE_SEEDS.len());
 }
 
 #[test]
@@ -1658,8 +1669,8 @@ fn audit_harness_holds_on_every_seed_and_degenerate_inputs() {
     }
     assert_eq!(
         seen,
-        87 + 17 + 72 + 56,
-        "32 TIFF + 37 JPEG + 18 new + 17 SPEC-019 shapes + 72 PNG + 56 WebP"
+        87 + 8 + 17 + 72 + 56,
+        "32 TIFF + 37 JPEG + 8 SPEC-040 JFIF + 18 new + 17 SPEC-019 shapes + 72 PNG + 56 WebP"
     );
     for data in audit_degenerate_inputs() {
         audit_invariants::check(&data);
@@ -2746,7 +2757,7 @@ fn tiff_harness_entry_budget_invariants_hold_on_every_seed() {
             seen += 1;
         }
     }
-    assert_eq!(seen, 32 + 87 + 17 + 72 + 56);
+    assert_eq!(seen, 32 + 87 + 8 + 17 + 72 + 56);
     // The degenerate inputs too, and the generated big inventory.
     for data in audit_degenerate_inputs() {
         entry_budget_invariants::check_input(&data);
@@ -3225,7 +3236,7 @@ fn preview_guards_hold_on_every_seed_and_degenerate_inputs() {
             inputs.push((path.display().to_string(), data));
         }
     }
-    assert_eq!(inputs.len(), 32 + 37 + 87 + 17 + 17 + 72 + 56);
+    assert_eq!(inputs.len(), 32 + 37 + 8 + 87 + 8 + 17 + 17 + 72 + 56);
     for (i, d) in audit_degenerate_inputs().into_iter().enumerate() {
         inputs.push((format!("degenerate {i}"), d));
     }
@@ -5919,7 +5930,7 @@ fn jpeg_metadata_harness_holds_on_every_seed_and_degenerate_inputs() {
         metadata_invariants::check(&data);
         seen += 1;
     }
-    assert_eq!(seen, 37 + SHAPE_SEEDS.len());
+    assert_eq!(seen, 37 + 8 + SHAPE_SEEDS.len());
     for data in audit_degenerate_inputs() {
         metadata_invariants::check(&data);
     }
@@ -6875,7 +6886,7 @@ fn a_removal_that_joins_stray_bytes_into_a_marker_is_refused_and_excused_exactly
 /// round-4 leak inputs (HANDOFF-045) and the 144 seeds of the round-5 ones
 /// (HANDOFF-046) plus PATCH-001's six MPF-index seeds (17 and 16 entries under
 /// three policies).
-const REWRITE_SEEDS: usize = 1045;
+const REWRITE_SEEDS: usize = 1101;
 
 #[test]
 fn seed_count_is_pinned() {
@@ -6897,8 +6908,8 @@ fn seed_count_is_pinned() {
     assert_eq!(want.len(), entry, "every generated entry seed is committed");
     assert_eq!(
         entry,
-        REWRITE_SEEDS - 188 - 6,
-        "SPEC-020's 186, SPEC-023's one CI crash seed, SPEC-033's one Rights seed, PATCH-001's six MPF seeds, plus the entry seeds"
+        REWRITE_SEEDS - 188 - 6 - 56,
+        "SPEC-020's 186, SPEC-023's one CI crash seed, SPEC-033's one Rights seed, PATCH-001's six MPF seeds, SPEC-040's 56 JFIF seeds (4 JFIF strip shapes x 4 policy heads, plus 8 JFIF jpeg shapes x 5), plus the entry seeds"
     );
 }
 

@@ -218,7 +218,7 @@ pub fn expected_groups(
             }
         };
         match p.kind {
-            K::Jfif => add(&["JFIF"]),
+            K::Jfif | K::JfifThumb => add(&["JFIF"]),
             K::Adobe => add(&["Adobe"]),
             K::Exif => add(exif_groups(shape)),
             K::Xmp => {
@@ -334,6 +334,21 @@ pub fn check_groups(
         let missing: Vec<_> = want.difference(&got).collect();
         return Err(format!(
             "groups differ: extra {extra:?}, missing {missing:?}"
+        ));
+    }
+    // SPEC-040: ExifTool prints `JFIF:ThumbnailTIFF` exactly when a JFIF
+    // segment with a thumbnail is kept.
+    let want_thumb = shape
+        .parts
+        .iter()
+        .any(|p| p.kind == K::JfifThumb && !removed.iter().any(|r| r.start == p.range.start));
+    let has_thumb = section
+        .lines
+        .iter()
+        .any(|l| l.group == "JFIF" && l.tag == "ThumbnailTIFF");
+    if has_thumb != want_thumb {
+        return Err(format!(
+            "JFIF:ThumbnailTIFF present={has_thumb}, want {want_thumb}"
         ));
     }
     let has_comment = section

@@ -1,0 +1,124 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# exiftool-version: 13.55
+# fixture: jfif-two-segments
+## input
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	1
+JFIF	XResolution	72
+JFIF	YResolution	72
+JFIF	ThumbnailWidth	1
+JFIF	ThumbnailHeight	1
+JFIF	ThumbnailTIFF	(Binary data 3 bytes, use -b option to extract)
+## all
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+## everything
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+## xmp
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	1
+JFIF	XResolution	72
+JFIF	YResolution	72
+JFIF	ThumbnailWidth	1
+JFIF	ThumbnailHeight	1
+JFIF	ThumbnailTIFF	(Binary data 3 bytes, use -b option to extract)
+## icc
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	1
+JFIF	XResolution	72
+JFIF	YResolution	72
+JFIF	ThumbnailWidth	1
+JFIF	ThumbnailHeight	1
+JFIF	ThumbnailTIFF	(Binary data 3 bytes, use -b option to extract)
+## embedded
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	1
+JFIF	XResolution	72
+JFIF	YResolution	72
+JFIF	ThumbnailWidth	1
+JFIF	ThumbnailHeight	1
+JFIF	ThumbnailTIFF	(Binary data 3 bytes, use -b option to extract)
+## other
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	1
+JFIF	XResolution	72
+JFIF	YResolution	72
+JFIF	ThumbnailWidth	1
+JFIF	ThumbnailHeight	1
+JFIF	ThumbnailTIFF	(Binary data 3 bytes, use -b option to extract)
+## iptc+free_text
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	1
+JFIF	XResolution	72
+JFIF	YResolution	72
+JFIF	ThumbnailWidth	1
+JFIF	ThumbnailHeight	1
+JFIF	ThumbnailTIFF	(Binary data 3 bytes, use -b option to extract)
+## rights
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	1
+JFIF	XResolution	72
+JFIF	YResolution	72
+JFIF	ThumbnailWidth	1
+JFIF	ThumbnailHeight	1
+JFIF	ThumbnailTIFF	(Binary data 3 bytes, use -b option to extract)

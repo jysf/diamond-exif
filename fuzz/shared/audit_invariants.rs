@@ -768,6 +768,8 @@ mod audit_invariants {
                             // DEC-012 section 4, typed again.
                             Region::EmbeddedImage { .. } => ("EmbeddedImage", "EmbeddedImage"),
                             Region::Comment { .. } => ("Comment", "FreeText"),
+                            // DEC-012 amendment of 2026-11-24, typed again.
+                            Region::JfifThumbnail { .. } => ("JfifThumbnail", "Thumbnail"),
                             Region::OtherApp { .. } => ("OtherApp", "OtherSegment"),
                             Region::Trailer { .. } => ("Trailer", "OtherSegment"),
                             _ => panic!("a Region variant the harness does not know"),
@@ -793,7 +795,14 @@ mod audit_invariants {
                             }),
                             _ => None,
                         };
-                        acc.push_emb(at, Some(category), None, embedded);
+                        // A JFIF thumbnail has no TIFF range: the marker is
+                        // range-less and not a JPEG (the Thumbnail category
+                        // always carries one).
+                        let thumb = matches!(r, Region::JfifThumbnail { .. }).then_some(ThumbF {
+                            range: None,
+                            ffd8: false,
+                        });
+                        acc.push_emb(at, Some(category), thumb, embedded);
                     }
                 }
             },
@@ -950,6 +959,7 @@ mod audit_invariants {
                         "Jumbf" => "Jumbf",
                         "EmbeddedImage" => "EmbeddedImage",
                         "Comment" => "FreeText",
+                        "JfifThumbnail" => "Thumbnail",
                         "OtherApp" | "Trailer" | "RawProfile" | "Carrier" | "OtherChunk" => {
                             "OtherSegment"
                         }

@@ -678,6 +678,16 @@ fn japp(marker: u8, sig: &[u8], rest: &[u8]) -> Vec<u8> {
     jseg(marker, &[sig, rest].concat())
 }
 
+/// An APP0 JFIF payload, typed from the JFIF layout: version 1.01, units 1,
+/// density 72x72, the thumbnail dimensions, then `data`.
+fn jfif(x: u8, y: u8, data: &[u8]) -> Vec<u8> {
+    let mut v = b"JFIF\0\x01\x01\x01\0\x48\0\x48".to_vec();
+    v.push(x);
+    v.push(y);
+    v.extend_from_slice(data);
+    v
+}
+
 fn jpeg_seeds() -> Vec<(&'static str, Vec<u8>)> {
     let mut app0 = b"JFIF\0".to_vec();
     app0.extend_from_slice(&[1, 1, 0, 0, 1, 0, 1, 0, 0]);
@@ -849,6 +859,90 @@ fn jpeg_seeds() -> Vec<(&'static str, Vec<u8>)> {
                 &jseg(0xE0, b"Exif\0\0II"),
                 &jseg(0xED, b"Photoshop 2.5\0"),
                 &jsos(),
+                &JEOI,
+            ]),
+        ),
+        // ── SPEC-040: the JFIF APP0 thumbnail (DEC-012 amendment of
+        // 2026-11-24). The payload is `JFIF\0`, version 1.01, units 1, density
+        // 72x72, `Xthumbnail`, `Ythumbnail`, then the data.
+        (
+            "jfif-thumbnail",
+            jcat(&[
+                &JSOI,
+                &jseg(0xE0, &jfif(2, 2, &[0x55; 12])),
+                &jsos(),
+                scan,
+                &JEOI,
+            ]),
+        ),
+        (
+            "jfif-thumbnail-short",
+            jcat(&[
+                &JSOI,
+                &jseg(0xE0, &jfif(4, 4, &[0x55; 12])),
+                &jsos(),
+                scan,
+                &JEOI,
+            ]),
+        ),
+        (
+            "jfif-thumbnail-declared-no-data",
+            jcat(&[&JSOI, &jseg(0xE0, &jfif(2, 2, &[])), &jsos(), scan, &JEOI]),
+        ),
+        (
+            "jfif-thumbnail-extra-bytes",
+            jcat(&[
+                &JSOI,
+                &jseg(0xE0, &jfif(2, 2, b"123456789012extra")),
+                &jsos(),
+                scan,
+                &JEOI,
+            ]),
+        ),
+        (
+            "jfif-zero-size-with-text",
+            jcat(&[
+                &JSOI,
+                &jseg(0xE0, &jfif(0, 0, b"hidden text")),
+                &jsos(),
+                scan,
+                &JEOI,
+            ]),
+        ),
+        (
+            "jfif-header-cut-short",
+            jcat(&[
+                &JSOI,
+                &jseg(0xE0, b"JFIF\0\x01\x01\x01\0\x48\0\x48\x02"),
+                &jsos(),
+                scan,
+                &JEOI,
+            ]),
+        ),
+        (
+            "jfif-two-segments",
+            jcat(&[
+                &JSOI,
+                &jseg(0xE0, &jfif(0, 0, &[])),
+                &jseg(0xE0, &jfif(1, 1, &[1, 2, 3])),
+                &jsos(),
+                scan,
+                &JEOI,
+            ]),
+        ),
+        (
+            "jfif-after-exif-version-2",
+            jcat(&[
+                &JSOI,
+                &exif_seg(&tiff_ok),
+                &jseg(0xE0, &{
+                    let mut p = jfif(1, 2, &[9; 6]);
+                    p[5] = 2;
+                    p[6] = 0;
+                    p
+                }),
+                &jsos(),
+                scan,
                 &JEOI,
             ]),
         ),
@@ -1912,6 +2006,25 @@ fn rewrite_seeds() -> Vec<(String, Vec<u8>)> {
             let mut v = vec![head];
             v.extend_from_slice(bytes);
             out.push((format!("{label}-strip-{class}"), v));
+        }
+    }
+    // SPEC-040: the JFIF thumbnail shapes of `jpeg_seeds` under the presets
+    // that remove Thumbnail (AllPii 2, All 3, Everything 4), the one that keeps
+    // it (Gps 0), and a Custom [Thumbnail] mask (0x0010).
+    for (name, bytes) in jpeg_seeds()
+        .into_iter()
+        .filter(|(n, _)| n.starts_with("jfif-"))
+    {
+        for (label, head) in [
+            ("gps", vec![0u8]),
+            ("all_pii", vec![2]),
+            ("all", vec![3]),
+            ("everything", vec![4]),
+            ("thumbnail", vec![6, 0x10, 0x00]),
+        ] {
+            let mut v = head;
+            v.extend_from_slice(&bytes);
+            out.push((format!("spec040-{label}-{name}"), v));
         }
     }
     // Degenerate: a policy byte alone, and a mask cut short.

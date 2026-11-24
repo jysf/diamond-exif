@@ -147,6 +147,7 @@ mod rewrite_invariants {
             RemovalKind::Icc => "icc",
             RemovalKind::Jumbf => "jumbf",
             RemovalKind::EmbeddedImage => "embedded-image",
+            RemovalKind::Jfif => "jfif",
             RemovalKind::Comment => "comment",
             RemovalKind::OtherApp => "other-app",
             RemovalKind::Trailer => "trailer",
@@ -1510,6 +1511,22 @@ mod rewrite_invariants {
                         continue;
                     }
                     (Category::OtherSegment, "other-app")
+                }
+                // DEC-012 amendment of 2026-11-24, from the JFIF layout: the
+                // segment goes whole, under Thumbnail, when 3*X*Y (payload
+                // bytes 12 and 13) is above zero and at least one data byte
+                // follows the 14-byte header. Any other JFIF segment is kept.
+                T::Jfif => {
+                    let p = payload(s);
+                    let declared = p
+                        .get(12)
+                        .zip(p.get(13))
+                        .map_or(0, |(x, y)| 3 * usize::from(*x) * usize::from(*y));
+                    if declared > 0 && p.len() > 14 {
+                        (Category::Thumbnail, "jfif")
+                    } else {
+                        continue;
+                    }
                 }
                 _ => continue,
             };

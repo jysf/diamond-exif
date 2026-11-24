@@ -76,6 +76,7 @@ fn kind_of(k: K) -> RemovalKind {
         K::Iptc => RemovalKind::Iptc,
         K::Jumbf => RemovalKind::Jumbf,
         K::Com => RemovalKind::Comment,
+        K::JfifThumb => RemovalKind::Jfif,
         K::OtherApp => RemovalKind::OtherApp,
         K::Trailer => RemovalKind::Trailer,
         K::Image => RemovalKind::EmbeddedImage,
@@ -3066,7 +3067,7 @@ fn jfif_file(segments: &[Vec<u8>]) -> Vec<u8> {
 fn jfif_thumbnail_segment_is_cut_under_thumbnail_policies() {
     // AC8: the output is the input with that whole APP0 segment spliced out.
     let payload = jfif_payload(2, 2, &[0x55; 12]);
-    let input = jfif_file(&[payload.clone()]);
+    let input = jfif_file(std::slice::from_ref(&payload));
     let seg_len = payload.len() + 4;
     let mut want = input[..2].to_vec();
     want.extend_from_slice(&input[2 + seg_len..]);

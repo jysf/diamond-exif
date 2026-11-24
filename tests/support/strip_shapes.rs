@@ -64,7 +64,11 @@ pub const REMOVED_CANARIES: &[&[u8]] = &[
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum K {
     Soi,
+    /// An APP0 JFIF segment without a thumbnail (kept by every policy).
     Jfif,
+    /// An APP0 JFIF segment with a thumbnail (SPEC-040): removed whole by a
+    /// policy that removes `Thumbnail`.
+    JfifThumb,
     Exif,
     Xmp,
     ExtXmp,
@@ -176,6 +180,16 @@ impl B {
 fn jfif() -> Vec<u8> {
     let mut p = b"JFIF\0".to_vec();
     p.extend_from_slice(&[1, 1, 0, 0, 1, 0, 1, 0, 0]);
+    rs::seg(0xE0, &p)
+}
+
+/// An APP0 JFIF segment with these thumbnail dimensions and data (SPEC-040),
+/// typed from the JFIF layout: version 1.01, units 1, density 72x72.
+fn jfif_with(x: u8, y: u8, data: &[u8]) -> Vec<u8> {
+    let mut p = b"JFIF\0\x01\x01\x01\0\x48\0\x48".to_vec();
+    p.push(x);
+    p.push(y);
+    p.extend_from_slice(data);
     rs::seg(0xE0, &p)
 }
 
@@ -606,6 +620,45 @@ pub fn unreadable_exif() -> Shape {
             readable: false,
             cats: vec![],
         },
+    )
+}
+
+/// SPEC-040: a 2x2 JFIF thumbnail, 12 data bytes.
+pub fn jfif_thumbnail() -> Shape {
+    small(
+        "jfif-thumbnail",
+        &[(K::JfifThumb, jfif_with(2, 2, &[0x55; 12]))],
+        ExifFacts::default(),
+    )
+}
+
+/// SPEC-040: 4x4 declared (48 bytes), 12 present: ExifTool prints the 12.
+pub fn jfif_thumbnail_short() -> Shape {
+    small(
+        "jfif-thumbnail-short",
+        &[(K::JfifThumb, jfif_with(4, 4, &[0x66; 12]))],
+        ExifFacts::default(),
+    )
+}
+
+/// SPEC-040: a JFIF segment without a thumbnail, then one with.
+pub fn jfif_two_segments() -> Shape {
+    small(
+        "jfif-two-segments",
+        &[
+            (K::Jfif, jfif()),
+            (K::JfifThumb, jfif_with(1, 1, &[0x77; 3])),
+        ],
+        ExifFacts::default(),
+    )
+}
+
+/// SPEC-040: 0x0 followed by text, which is no thumbnail and stays.
+pub fn jfif_no_thumbnail() -> Shape {
+    small(
+        "jfif-no-thumbnail",
+        &[(K::Jfif, jfif_with(0, 0, b"hidden text!"))],
+        ExifFacts::default(),
     )
 }
 
@@ -1134,6 +1187,10 @@ pub fn all() -> Vec<Shape> {
         missing_eoi(),
         missing_sos(),
         fill_bytes_between_segments(),
+        jfif_thumbnail(),
+        jfif_thumbnail_short(),
+        jfif_two_segments(),
+        jfif_no_thumbnail(),
     ]
 }
 
@@ -1237,6 +1294,7 @@ pub fn part_category(kind: K) -> Option<Category> {
         K::Iptc => Some(Category::Iptc),
         K::Jumbf => Some(Category::Jumbf),
         K::Com => Some(Category::FreeText),
+        K::JfifThumb => Some(Category::Thumbnail),
         K::OtherApp | K::Trailer => Some(Category::OtherSegment),
         K::Image | K::MpfIndex => Some(Category::EmbeddedImage),
         _ => None,

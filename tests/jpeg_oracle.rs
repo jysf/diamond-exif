@@ -346,7 +346,8 @@ fn replay_jpeg_records_are_clean_on_an_unmodified_reading() {
         seeds += 1;
     }
     assert_eq!(fixtures, 44);
-    assert_eq!(seeds, 37);
+    // 37 + the 8 `jfif-*` seeds of SPEC-040.
+    assert_eq!(seeds, 45);
 }
 
 #[test]
@@ -496,7 +497,8 @@ fn tiff_records_are_byte_identical_to_the_committed_set() {
                 .starts_with("jpeg-")
         })
         .count();
-    assert_eq!(jpeg_records, 44 + 37);
+    // 44 hand-built + 37 seeds + the 8 `jpeg-seed-jfif-*` records of SPEC-040.
+    assert_eq!(jpeg_records, 44 + 37 + 8);
 }
 
 /// Replay-and-perturb on JPEG records: for every field our reading has, change

@@ -34,6 +34,71 @@ JFIF	0x0005	YResolution
 ## iptc-8bim
 Photoshop	0x0408	GridGuidesInfo
 ## iptc-truncated-resource
+## jfif-after-exif-version-2
+IFD0	0x010f	Make
+ExifIFD	0x9003	DateTimeOriginal
+GPS	0x0001	GPSLatitudeRef
+JFIF	0x0000	JFIFVersion
+JFIF	0x0002	ResolutionUnit
+JFIF	0x0003	XResolution
+JFIF	0x0005	YResolution
+JFIF	0x0007	ThumbnailWidth
+JFIF	0x0008	ThumbnailHeight
+JFIF	0x0009	ThumbnailTIFF
+## jfif-header-cut-short
+JFIF	0x0000	JFIFVersion
+JFIF	0x0002	ResolutionUnit
+JFIF	0x0003	XResolution
+JFIF	0x0005	YResolution
+JFIF	0x0007	ThumbnailWidth
+## jfif-thumbnail
+JFIF	0x0000	JFIFVersion
+JFIF	0x0002	ResolutionUnit
+JFIF	0x0003	XResolution
+JFIF	0x0005	YResolution
+JFIF	0x0007	ThumbnailWidth
+JFIF	0x0008	ThumbnailHeight
+JFIF	0x0009	ThumbnailTIFF
+## jfif-thumbnail-declared-no-data
+JFIF	0x0000	JFIFVersion
+JFIF	0x0002	ResolutionUnit
+JFIF	0x0003	XResolution
+JFIF	0x0005	YResolution
+JFIF	0x0007	ThumbnailWidth
+JFIF	0x0008	ThumbnailHeight
+## jfif-thumbnail-extra-bytes
+JFIF	0x0000	JFIFVersion
+JFIF	0x0002	ResolutionUnit
+JFIF	0x0003	XResolution
+JFIF	0x0005	YResolution
+JFIF	0x0007	ThumbnailWidth
+JFIF	0x0008	ThumbnailHeight
+JFIF	0x0009	ThumbnailTIFF
+## jfif-thumbnail-short
+JFIF	0x0000	JFIFVersion
+JFIF	0x0002	ResolutionUnit
+JFIF	0x0003	XResolution
+JFIF	0x0005	YResolution
+JFIF	0x0007	ThumbnailWidth
+JFIF	0x0008	ThumbnailHeight
+JFIF	0x0009	ThumbnailTIFF
+## jfif-two-segments
+JFIF	0x0000	JFIFVersion
+JFIF	0x0002	ResolutionUnit
+JFIF	0x0003	XResolution
+JFIF	0x0005	YResolution
+JFIF	0x0000	JFIFVersion
+JFIF	0x0002	ResolutionUnit
+JFIF	0x0003	XResolution
+JFIF	0x0005	YResolution
+JFIF	0x0007	ThumbnailWidth
+JFIF	0x0008	ThumbnailHeight
+JFIF	0x0009	ThumbnailTIFF
+## jfif-zero-size-with-text
+JFIF	0x0000	JFIFVersion
+JFIF	0x0002	ResolutionUnit
+JFIF	0x0003	XResolution
+JFIF	0x0005	YResolution
 ## jumbf-header
 ## jumbf-short
 ## many-ff00
