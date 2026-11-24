@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: verifier             # implementer | verifier
   created_at: 2026-11-24
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-040
@@ -46,18 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                # completed | blocked | rejected
+  agent: claude-opus-5-5           # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
-  verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
+  verdict: approved                # verify handoffs: approved | punch-list | rejected
+  basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
-  branch: null
+  branch: claude/spec-040-verify
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-24         # YYYY-MM-DD
+  notes: "The verifier cannot read its own token count or wall time from inside the run; the orchestrator transcribes tokens_total and duration from the Agent result (subagent_tokens, duration_ms). About 85 tool calls."
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -195,38 +195,128 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `claude/spec-040-verify` (local, from `feat/spec-040-jfif-thumbnail` at `756d817`). No push, no PR.
+- **Completed at:** 2026-11-24
+- **All acceptance criteria met?** yes. AC6's "`is_clean` is false" is read as the architect ruled (see 6 below).
+- **For `verify`:** ✅ APPROVED at `756d817` (library and tests identical to the build tip `058d243`; `756d817` adds only handoff docs).
+
+Scratch work (outside the repo): my own Python builder of 28 JFIF inputs, a probe example compiled against each tree
+(regions, issues, findings, previews, JSON/CSV/text reports, `strip` under 8 policies, or 24 with every single
+category), trees extracted with `git archive` and built with their own `CARGO_TARGET_DIR` each (`c5c2231`, `fde1f50`,
+`acb7ef4`, `058d243`, plus a scratch copy of `058d243` with the extraction turned off).
+
+**1. The gap is closed on real behaviour.** Inputs: 2×2; 4×4 with 12 bytes (short); 2×2 with 17 bytes; 0×0, 2×0,
+0×3, 0×3 with data, 0×0 with text; a 13-byte header; bare `JFIF\0`; 2×2 with no data; JFIF after an Exif APP1 with
+GPS; version 2.00; two segments (both have thumbnails, and with/without in each order); `JFIF\0` in APP1 (alone and
+after Exif); 255×255 (cut at 65,519 bytes); 147×147 full (64,827 bytes); JFIF with JFXX; JFIF with COM; JFIF in the
+trailer; JFIF in an MPF secondary; JFIF in a primary with an MPF index; a capped (17-entry) MPF index with JFIF in the
+primary and in the secondary.
+- On `c5c2231`, every thumbnail input audits with no finding and `strip` under every policy leaves ExifTool printing
+  `JFIF:ThumbnailTIFF` (red). On `058d243`: one `JfifThumbnail` region per thumbnail-bearing segment, length
+  `min(3XY, have)`; `Thumbnail`/Medium with `thumbnail=Some{range:None, starts_with_ffd8:false}`; JSON
+  `"region":"jfif_thumbnail"`, CSV `jfif_thumbnail,12`, text `region jfif_thumbnail ... thumbnail range=none`;
+  `schema_version` 2. Previews: gps/gpsdev/custom-gps `kept_unread`, allpii/all/everything/custom-thumb `removed`.
+- Short shapes give one `RegionTooShort{what:"JFIF thumbnail", need:3XY, have}` (4×4: need 48 have 12; 255×255:
+  need 195075 have 65519; 2×2 with no data: need 12 have 0 and no region). The benign shapes and APP1 `JFIF\0` give
+  no region, no issue and no output change from `main`.
+- ExifTool 13.55 `-a -G1 -s` on every output: `ThumbnailTIFF` count is 0 under AllPii/All/Everything/Custom{Thumbnail}
+  and equal to the input's under Gps/GpsAndDevice/none/Custom{Gps}, no warnings. The region count matches
+  ExifTool's `ThumbnailTIFF` count on every input. Our Custom{Thumbnail} and Everything outputs are **byte-identical**
+  to `exiftool -JFIF:all=` and `-all=` on t2x2, short4x4, extra, v200, two-both, big255, full147 and jfif-com. They
+  differ only on two-mixed, where we keep the thumbnail-less segment, as amendment part 5 says.
+
+**2. No leak, no over-cut.** No input or policy gave `Ok` with a thumbnail left in the primary. A JFIF segment without
+a thumbnail was never cut, including the 2×2-with-no-data shape. Splice check: 46 of 50 outputs with only
+Jfif/Comment/OtherApp removals equal the input with exactly those ranges cut. The other 4 also carry Exif entry
+edits or an MPF index patch, which is correct. The MPF patch was checked with ExifTool: MPImageStart moved 235→214.
+With a capped MPF index and a primary JFIF thumbnail, AllPii/All/Custom{Thumbnail} now return
+`Unstrippable{TooManyMpfImages}` (fail closed through the PATCH-001 path, because there is now a removal target).
+Gps and none still return `Ok`. `select()` in `src/write/exif.rs` ignores the finding: it filters on
+`origin().block == b` and on `ItemKind::Tag{ifd: Ifd1}`, and the entry loop `continue`s on non-tag items. A JFIF
+thumbnail inside an MPF secondary survives AllPii with `Ok`. That is DEC-012 parts 3 and 5 (embedded images go only
+under `Everything`; the preview says `kept_unread` and `holds:["thumbnail"]`), not this spec.
+
+**3. No regressions.** There were 1,760 inputs: 122 builder outputs (strip_shapes, tiff_shapes, tiff hostile,
+real_shapes::fixtures, oracle_jpeg/oracle_tiff fixtures; the 118 that predate the change are byte-identical on both
+trees) and every seed in jpeg_segments/audit/rewrite_jpeg/rewrite_tiff/tiff_ifd. Each went through the regions,
+issues, audit, previews, three reports and `strip` under 24 policies (5 presets, none, Custom{Thumbnail}, Custom{Gps},
+each of the 16 single categories). After the `Region` discriminant renumbering is normalized out, 15 inputs changed.
+13 have a `JfifThumbnail` region. 2 are the `jfif-thumbnail-declared-no-data` seed (jpeg_segments + audit copy),
+which gains the issue only. No input without JFIF changed. No `VerifyFailed` and no panic on either tree.
+
+**4. Test-suite changes.** `git diff d74f576 --name-status -- tests/oracle-fixtures fuzz/seeds` gives 84 A and 2 M. The two
+M files (the inventory records for seed-audit and seed-jpeg_segments) have only `+` lines. The seed additions are
+8 jpeg_segments, 8 audit and 56 rewrite_jpeg (4 strip shapes × 4 heads + 8 jpeg shapes × 5 heads). Every pin moves
+by exactly these: +8/+8 in fuzz_layout/policy_preview/jpeg_oracle/audit_model, 1045→1101 in mutation_oracle,
+255→271, 186→194, 81→89, 185→193 in inventory_oracle and budget_oracle, and 8 `jpeg-seed-jfif-*` records. The three
+fuzz models re-derive the rule from payload bytes 12 and 13 (`3*x*y`, `p.len()-14`, `take>0`, `declared>0 && len>14`)
+and do not call the extraction.
+
+**5. Red-first.** fde1f50 (stubs): 11 positive tests fail by assertion (metadata AC1/3/4/5, audit AC6 ×2, preview AC7,
+report AC13, strip AC8 ×2, lone-JFIF). The guard tests (benign, kept-under-gps, never-cut) pass, as they should.
+AC10 at acb7ef4: `strip(AllPii|Everything|Custom{Thumbnail})` on my 2×2 file, the after-Exif file and both
+two-segment files gives `VerifyFailed { check: Preview }`. Gps and the benign files stay `Ok`. AC11/AC12 with the
+extraction off in a scratch copy of 058d243 (`DIAMOND_EXIF_REQUIRE_ORACLE=1`): strip_oracle fails `jfif-thumbnail
+under all: groups differ: extra ["JFIF"]` and the replay record mismatch. inventory_oracle fails
+`jfif_thumbnail_tiff_is_the_jfif_thumbnail_region`, replay and live parity ("UNEXPLAINED difference" on the 5 JFIF
+seeds) and the class-S pins. The in-test perturbation red-proofs (line dropped, our region dropped) are present.
+The oracle and fuzz-pin tests were committed after the code (0d48533), as the spec's Notes order allows. Their red
+is reproduced here.
+
+**6. Deviations.** AC6 `is_clean`: I agree with the architect. `Health::clean` is parse health (DEC-010 status
+`ok`/`issues`), and a COM finding already leaves it true. A 2×2 file is `clean:true`, status ok, with a Medium
+finding. `RegionTooShort` need/have = 3XY and the data bytes after the 14-byte header is the natural reading and
+matches the fuzz model. "Kept" half of AC11: each strip-oracle JFIF fixture records six Custom policies that keep
+`Thumbnail` (xmp, icc, embedded, other, iptc+free_text, rights), and ExifTool shows `ThumbnailTIFF` in each. Gps,
+GpsAndDevice, none and Custom{Gps} are unit-tested in `tests/strip.rs`, and I checked them live with ExifTool
+(item 1). I judge this adequate.
+
+**7. Panic-freedom and constraints.** The new library code reads with `payload.get(12)`, `get(13)`, `get(14..)` and
+`have.get(..n.min(len))`, and computes 3·X·Y with `saturating_mul`. There is no indexing and no unchecked
+arithmetic. The fuzz models index, but fuzz/ is at clippy defaults (DEC-004). `just decisions-audit --changed` is
+advisory and lists DEC-001/002/006/008/009/010/012/013/020, among others. The change fits each one: issue plus partial
+region (DEC-001), borrowed `&[u8]` (DEC-002), Thumbnail row unchanged (DEC-008/009), additive region name with
+`schema_version` 2 (DEC-010/020), and the amendments (DEC-012/013).
+
+**8. Gates on 1.90.0 (clippy 0.1.90).** All green: `just lint`, `lint-fuzz`, `lint-no-allow`, `forbid-unsafe`,
+`deny`, `validate`, and `just test` with `DIAMOND_EXIF_REQUIRE_ORACLE=1` (39 binaries, 1,480 passed, 0 failed, 0
+SKIP; strip_oracle, inventory_oracle, jpeg_oracle and audit_oracle included). `just mutation-oracle`: 67 + 40 + 41
+passed. Fuzz smokes (60 s): jpeg_segments 145,611 runs, audit 79,264, audit_render 33,791, rewrite_jpeg 94,366, no
+crash. `fuzz/Cargo.lock` restored.
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null. The verifier cannot read its own count; the orchestrator transcribes it from the Agent
+  result (`subagent_tokens`).
+- **Estimated USD:** null (follows from the token count)
+- **Duration (minutes):** null (the orchestrator takes it from `duration_ms`)
+- **Source of the number:** harness report (Agent result), transcribed by the orchestrator
 
 ### Drift and new artifacts
 
 - **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
+  - none
 - **Deviations from spec:**
-  - [list]
+  - None beyond the build's (AC6 reading, accepted). Observations, not findings: (a) a 2×2-declared JFIF with no
+    data now makes the file `issues` with an unreliable preview, though ExifTool prints no warning. This is
+    amendment part 1 as written. (b) With a capped MPF index, a primary JFIF thumbnail now makes
+    AllPii/All/Custom{Thumbnail} refuse (`TooManyMpfImages`) where they used to return the input unchanged. This
+    fails closed and is consistent with PATCH-001.
 - **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - None required. Optional: a Gps or AllPii preset row in the strip oracle's JFIF fixtures would make the preset
+    half of AC11 live-recorded and not only unit-tested.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — Little. The diff baseline was `feat/spec-040-jfif-thumbnail-build`, but the branch to check out was a
+   different name. Both point at the same code. The worktree sandbox refused `git worktree add` for historical
+   trees, so I used `git archive` copies.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — PATCH-001's capped-MPF refusal (`refuse_capped_mpf` runs whenever there is a removal target). A new removal
+   target type widens when that refusal fires, which is the one behaviour change on a non-JFIF-only input class.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Build the probe and the input set first and run both trees from the start. A one-pass regression sweep of
+   every builder and seed under every single-category policy was the strongest evidence and cost little.
