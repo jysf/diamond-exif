@@ -51,13 +51,13 @@ handback:
                                    #   to_agent above is a prediction from tier_map
   verdict: approved                # verify handoffs: approved | punch-list | rejected
   basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
+  tokens_total: 245439             # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: null
+  duration_minutes: 25
   branch: claude/spec-040-verify
   pr: null
   completed_at: 2026-11-24         # YYYY-MM-DD
-  notes: "The verifier cannot read its own token count or wall time from inside the run; the orchestrator transcribes tokens_total and duration from the Agent result (subagent_tokens, duration_ms). About 85 tool calls."
+  notes: "The verifier cannot read its own token count or wall time from inside the run; the orchestrator transcribes tokens_total and duration from the Agent result (subagent_tokens, duration_ms). Transcribed: subagent_tokens 245439, tool_uses 107 (the agent estimated about 85), duration_ms 1480597. estimated_usd null: no input/output split."
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -286,10 +286,9 @@ crash. `fuzz/Cargo.lock` restored.
 
 ### Cost self-report
 
-- **Tokens (total):** null. The verifier cannot read its own count; the orchestrator transcribes it from the Agent
-  result (`subagent_tokens`).
+- **Tokens (total):** 245,439 (transcribed by the orchestrator from the Agent result `subagent_tokens`)
 - **Estimated USD:** null (follows from the token count)
-- **Duration (minutes):** null (the orchestrator takes it from `duration_ms`)
+- **Duration (minutes):** 25 (Agent result `duration_ms` 1,480,597)
 - **Source of the number:** harness report (Agent result), transcribed by the orchestrator
 
 ### Drift and new artifacts
