@@ -6,19 +6,19 @@
 task:
   id: SPEC-040
   type: story                      # epic | story | task | bug | chore
-  cycle: verify                    # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: high                   # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
   complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: approved  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
                                    #   rejects anything" stops being a hunch and becomes a number.
-  verify_rounds: []                # every verify outcome, oldest first, appended by
+  verify_rounds: [approved]  # every verify outcome, oldest first, appended by
                                    #   `just advance-cycle` each time the spec leaves verify.
                                    #   verify_verdict keeps only the LAST one, so a spec sent
                                    #   back and then approved read as "approved": irradiance's
@@ -78,10 +78,40 @@ cost:
       duration_minutes: null
       recorded_at: 2026-11-24
       notes: "main-loop design (ExifTool measurements, DEC-012/DEC-013 amendments, spec, handoff); un-metered, null by design"
+    - cycle: build
+      handoff: HANDOFF-088
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 338116
+      estimated_usd: null
+      duration_minutes: 47
+      recorded_at: 2026-11-24
+      notes: "Orchestrator-transcribed from the Agent result: subagent_tokens 338116, tool_uses 214, duration_ms 2799998. The implementer was told not to edit this file, so the body below is the orchestrator's summary of its report. estimated_usd null: no input/output split."
+    - cycle: verify
+      handoff: HANDOFF-089
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 245439
+      estimated_usd: null
+      duration_minutes: 25
+      recorded_at: 2026-11-24
+      notes: "The verifier cannot read its own token count or wall time from inside the run; the orchestrator transcribes tokens_total and duration from the Agent result (subagent_tokens, duration_ms). Transcribed: subagent_tokens 245439, tool_uses 107 (the agent estimated about 85), duration_ms 1480597. estimated_usd null: no input/output split."
+    - cycle: ship
+      agent: claude-opus-5-5
+      interface: claude-code
+      basis: null
+      tokens_total: null
+      estimated_usd: null
+      duration_minutes: null
+      recorded_at: 2026-11-24
+      notes: "main-loop ship (AC6 wording, toolchain brief, cost sync, CHANGELOG, archive, STAGE-011 close); un-metered, null by design. The orchestrator's session total is recorded once, at stage grain, in STAGE-011 orchestration_cost."
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 583555
+    estimated_usd: 0.00
+    session_count: 4
+shipped_at: 2026-11-24
 ---
 
 # SPEC-040: DEC-012 amendment: JFIF APP0 thumbnail is a Thumbnail region, audited and stripped
@@ -196,7 +226,7 @@ amendment table.
   segments are each examined on their own (two segments with thumbnails give two regions). `JFIF\0` in an APP1 stays
   `OtherApp`, as today.
 - [ ] **AC6 (audit):** the finding is `Thumbnail`, Medium, with `thumbnail == Some { range: None, starts_with_ffd8:
-  false }`, on a region item of kind `JfifThumbnail` with the region's length. `is_clean` is false when it is present.
+  false }`, on a region item of kind `JfifThumbnail` with the region's length. `health().clean` keeps its meaning (parse health, DEC-010's `ok`): a complete thumbnail leaves it true, as a COM finding does; only the short case's `RegionTooShort` makes it false (corrected at ship: the design text said "`is_clean` is false when it is present", which the build and verify showed is not this codebase's meaning).
   The audit's `holds` for an MPF secondary that carries a JFIF thumbnail includes `Thumbnail`.
 - [ ] **AC7 (preview):** `Gps` and `GpsAndDevice` give `KeptUnread`. `AllPii`, `All` and `Everything` give `Removed`.
   `Custom({Thumbnail})` gives `Removed`. `Custom({Gps})` gives `KeptUnread`.
@@ -276,34 +306,28 @@ code under test. Build the JFIF payloads with a small local helper (`jfif(x, y, 
 
 ## Reflection
 
-*Appended during **ship**. Three questions, short answers.*
+*Appended during **ship**.*
 
 1. **What would I do differently next time?**
-   — <answer>
+   — Check every AC against the codebase's existing meaning of a word before writing it. AC6's "`is_clean` is false"
+   was written from the review's phrasing, not from DEC-010, and the build had to work around it. Also budget the
+   seed-count pins: they took most of the build's overrun (214 tool calls against ~120).
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — Done this session: DEC-012 and DEC-013 amended (design); `guidance/toolchain-brief.md` seed counts now point at
+   `tests/fuzz_layout.rs` as the source of truth, and it names `JFIF:ThumbnailTIFF` as the region's counterpart. The
+   AC6 text is corrected in place. No signal recorded: the pin-update cost recurs, but its remedy (counts derived
+   rather than pinned) is a test-design choice, not yet a lesson.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — Not a spec. Optional: record a `Gps` or `AllPii` row in the strip oracle's JFIF fixtures, so the "kept" half of
+   AC11 is checked live (verify's suggestion). Deferred question `jfif-bytes-past-the-thumbnail` stays open.
 
-4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
-   the defect-escape distribution is greppable across specs:
-   `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
-   `none` (clean first try).
-   — <one word>
-   *(Runtime/operational defects — the escape-prone class — only exist once the
-   artifact meets its real host. `escaped` here is a signal to strengthen the
-   §12 behavioral pre-flight for that surface.)*
+4. **Where was the worst defect caught?**
+   — design
+   *(The AC6 wording error, found in build and confirmed in verify; no code defect was found.)*
 
-5. **What can a user do now that they couldn't before?** — one sentence,
-   before → after; quote the confirming number if one exists, name the outcome
-   if not. Write `none` if this spec has no user-visible outcome — that is a
-   real, greppable result, not a blank. This is the line a downstream work-log's
-   `impact` field is transcribed from, and both halves are already written above
-   (## Context is the before, ## Goal is the after): confirm the prediction,
-   don't reconstruct it from memory.
-   — <answer | none>
+5. **What can a user do now that they couldn't before?**
+   — Before, a JPEG whose JFIF APP0 carried a thumbnail audited clean with zero findings and kept the thumbnail under
+   `Everything`; now the audit reports a Medium `thumbnail` finding (`jfif_thumbnail` region), and `AllPii`, `All` and
+   `Everything` remove the segment, with output byte-identical to `exiftool -all=` on the 8 files the verifier compared.

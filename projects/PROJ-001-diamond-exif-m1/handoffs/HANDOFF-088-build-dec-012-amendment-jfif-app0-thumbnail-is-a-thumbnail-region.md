@@ -58,7 +58,7 @@ handback:
   pr: null
   completed_at: 2026-11-24         # YYYY-MM-DD
   notes: "Orchestrator-transcribed from the Agent result: subagent_tokens 338116, tool_uses 214, duration_ms 2799998. The implementer was told not to edit this file, so the body below is the orchestrator's summary of its report. estimated_usd null: no input/output split."  # if unusual; double-quote it — an unquoted " #" starts a YAML comment
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-24
 ---
 
 # HANDOFF-088: SPEC-040 build — a JFIF APP0 thumbnail is a Thumbnail region, audited and stripped

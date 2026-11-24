@@ -58,7 +58,7 @@ handback:
   pr: null
   completed_at: 2026-11-24         # YYYY-MM-DD
   notes: "The verifier cannot read its own token count or wall time from inside the run; the orchestrator transcribes tokens_total and duration from the Agent result (subagent_tokens, duration_ms). Transcribed: subagent_tokens 245439, tool_uses 107 (the agent estimated about 85), duration_ms 1480597. estimated_usd null: no input/output split."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  synced_at: 2026-11-24
 ---
 
 # HANDOFF-089: SPEC-040 verify (DEC-012 amendment: a JFIF APP0 thumbnail is a Thumbnail region)

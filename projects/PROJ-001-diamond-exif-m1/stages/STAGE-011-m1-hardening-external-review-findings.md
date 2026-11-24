@@ -5,7 +5,7 @@
 
 stage:
   id: STAGE-011                     # stable, zero-padded, continuous across the repo
-  status: proposed                  # proposed | active | shipped | cancelled | on_hold
+  status: shipped                   # proposed | active | shipped | cancelled | on_hold
   priority: medium                  # critical | high | medium | low
   target_complete: null             # optional: YYYY-MM-DD
 
@@ -15,7 +15,7 @@ repo:
   id: diamond-exif
 
 created_at: 2026-11-23
-shipped_at: null
+shipped_at: 2026-11-24
 
 # What part of the project's value thesis this stage advances.
 # If you can't articulate value_contribution, the stage may be
@@ -40,7 +40,12 @@ value_contribution:
 # that is a division you cannot observe, so any per-spec number is invented.
 # Warn-only, never a gate. A null here is honest; a guess is not. (DEC-013 §5)
 orchestration_cost:
-  sessions: []                      # - tokens_total: N
+  sessions:
+    - tokens_total: 36753906
+      estimated_usd: null
+      recorded_at: 2026-11-24
+      notes: "Measured by the orchestrator from this session's transcript (203cb371), live at ship, so a floor (docs/cost-tracking.md rule 6): 191 messages, each counted once with its largest output, model claude-opus-5-5, sidechains excluded; input 420, cache creation 936907, cache read 35702610, output 113969 (input + cache creation + cache read + output). The same session also orchestrated PATCH-001 (review triage, both handoffs, the fix round, the port onto main and its ship), which has no stage to carry it; the split between the two is not observable, so the whole total is recorded here. estimated_usd is null: Opus 5.5 list rates are not on record in this repo."
+                                    # - tokens_total: N
                                     #   estimated_usd: N
                                     #   recorded_at: YYYY-MM-DD
                                     #   notes: "framing + spec breakdown"
@@ -93,9 +98,9 @@ as PATCH-001 (PR #59, merged 2026-11-24).
 
 Format: `- [status] SPEC-ID (cycle) — one-line summary`
 
-- [ ] SPEC-040 (design) — DEC-012 amendment: a JFIF APP0 thumbnail is a Thumbnail region, audited and stripped
+- [x] SPEC-040 (shipped on 2026-11-24) — DEC-012 amendment: a JFIF APP0 thumbnail is a Thumbnail region, audited and stripped [M; actual M]
 
-**Count:** 0 shipped / 0 active / 1 pending
+**Count:** 1 shipped / 0 active / 0 pending
 
 ## Design Notes
 
@@ -114,21 +119,21 @@ Format: `- [status] SPEC-ID (cycle) — one-line summary`
 
 ## Stage-Level Reflection
 
-*Filled in when status moves to shipped. Run Prompt 1c (Stage Ship) in
-FIRST_SESSION_PROMPTS.md to draft this.*
-
-- **Did we deliver the outcome in "What This Stage Is"?** <yes/no + notes>
-- **How many specs did it actually take?** <number vs. plan>
-- **How many outlines survived unchanged?** <n of m — only if this stage was
-  framed with `just frame-stage`. Counts outlines whose scope held from frame to
-  ship. A low number means framing ran ahead of what was knowable; a high one
-  means it's paying for itself.>
-- **What changed between starting and shipping?** <one sentence>
+- **Did we deliver the outcome in "What This Stage Is"?** Yes. A JFIF APP0 thumbnail is a `JfifThumbnail` region
+  with a Medium `Thumbnail` finding; `AllPii`, `All` and `Everything` remove the segment, and ExifTool 13.55 agrees on
+  every recorded output. The verifier's independent probe (28 inputs, 1,760-input regression sweep) found no leak, no
+  over-cut and no change on any input without a JFIF thumbnail.
+- **How many specs did it actually take?** One, as planned.
+- **How many outlines survived unchanged?** Not framed with `just frame-stage`; n/a.
+- **What changed between starting and shipping?** The success criterion "neutralise" was settled as whole-segment
+  removal, because ExifTool cannot remove the thumbnail alone and the segment is already DEC-013's unit of removal.
 - **Lessons that should update AGENTS.md, templates, or constraints?**
-  - <one-line updates>
-- **Signals dispositioned at this close?** (Prompt 1d step 7) Every
-  `type: lesson` signal in `/guidance/signals.yaml` owned by this stage close
-  was walked — codified (at its bar), left `watch`, or dropped. No silent carry.
-  - <note what codified / what's still watch + its N>
+  - None codified. Below the bar: write an AC's terms in the codebase's existing meaning (AC6 `is_clean`).
+- **Signals dispositioned at this close?** No `type: lesson` signal in `guidance/signals.yaml` is owned by this
+  stage.
 - **Should any spec-level reflections be promoted to stage-level lessons?**
-  - <one-line items — record below-bar ones as `watch` signals; don't codify yet>
+  - Not yet. Seed-count pins dominated the build's overrun here and in PATCH-001's port; left for the next close
+    that sees it again.
+- **Cost.** SPEC-040: 583,555 tokens (build 338,116; verify 245,439; agent-result basis, which is not the transcript
+  basis SPEC-033 used, so the two are not comparable). Orchestration: at least 36,753,906 (a floor, shared with
+  PATCH-001). USD not priced: no 5.5 list rates are on record.
