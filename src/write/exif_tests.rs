@@ -1648,3 +1648,112 @@ fn l18_the_h4_tags_are_refused_in_interop_and_gps_ifds() {
         }
     }
 }
+
+/// PATCH-001 finding 3: deleting many entries of one IFD takes time linear in
+/// the entries, not entries times the IFD size. The wall-clock bound is
+/// deliberately generous (the quadratic loop took about 8 s for these 20,000 entries in a debug build, 80 s for 65,000);
+/// the exact-output check is what guards correctness.
+#[test]
+fn bulk_entry_deletion_is_linear() {
+    const N: usize = 20_000;
+    let mut b = Blob::new(false, 8);
+    let mut es = vec![b.short(0x0112, 6)];
+    // An unknown tag, inline SHORT values: deleting them touches no payload.
+    es.extend((0..N).map(|i| b.short(0x9999, u16::try_from(i % 60_000).unwrap())));
+    b.ifd(8, &es, 0);
+    let gone: Vec<(usize, usize)> = (1..=N).map(|i| (0, i)).collect();
+    let started = std::time::Instant::now();
+    let plan = run(&b.bytes, &del(&gone)).unwrap();
+    let elapsed = started.elapsed();
+    let out = apply(&b.bytes, &plan);
+    assert_eq!(out, {
+        let mut want = b.bytes.clone();
+        let t = expected_table(&b, &es, &(1..=N).collect::<Vec<_>>(), 0);
+        want[8..8 + t.len()].copy_from_slice(&t);
+        want
+    });
+    assert!(
+        elapsed < std::time::Duration::from_secs(4),
+        "deleting {N} entries took {elapsed:?}"
+    );
+}
+
+// ── PATCH-001 finding 1: the offset-array expansion budget ─────────────────
+
+/// A TIFF whose IFD0 holds `entries` StripOffsets entries and as many
+/// StripByteCounts entries, each of `count` values, and a deleted Artist (the
+/// last entry) so that the planner reads the offset arrays. With `shifted`
+/// entry k's window starts k values into one shared array; otherwise every
+/// entry points at the array's start. Returns the blob and the Artist's index.
+fn shared_array_blob(entries: usize, count: usize, shifted: bool) -> (Blob, usize) {
+    const OFFSETS_AT: usize = 40_000;
+    const LENGTHS_AT: usize = 140_000;
+    const ARTIST_AT: usize = 240_000;
+    let mut b = Blob::new(false, 8);
+    let window = |k: usize| if shifted { k * 4 } else { 0 };
+    let n = u32::try_from(count).unwrap();
+    let mut es = Vec::new();
+    for k in 0..entries {
+        es.push(b.out(0x0111, 4, n, u32::try_from(OFFSETS_AT + window(k)).unwrap()));
+    }
+    for k in 0..entries {
+        es.push(b.out(0x0117, 4, n, u32::try_from(LENGTHS_AT + window(k)).unwrap()));
+    }
+    es.push(b.out(0x013B, 2, 7, u32::try_from(ARTIST_AT).unwrap()));
+    let artist = es.len() - 1;
+    b.ifd(8, &es, 0);
+    // Every offset names 4 bytes of empty gap (30,000), clear of every table.
+    let values = count + if shifted { entries } else { 0 };
+    let (off, len) = (b.w32(30_000), b.w32(4));
+    for v in 0..values {
+        b.data(OFFSETS_AT + 4 * v, &off);
+        b.data(LENGTHS_AT + 4 * v, &len);
+    }
+    b.data(ARTIST_AT, ARTIST);
+    (b, artist)
+}
+
+#[test]
+fn offset_arrays_sharing_one_value_array_are_refused_not_expanded() {
+    let (b, artist) = shared_array_blob(1_000, 10_000, false);
+    let started = std::time::Instant::now();
+    let Err(err) = run(&b.bytes, &del(&[(0, artist)])) else {
+        panic!("an expansion past the budget must be refused");
+    };
+    assert_eq!(err.reason, UneditableReason::PayloadUnreadable);
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+}
+
+#[test]
+fn offset_arrays_in_shifted_windows_are_refused_not_expanded() {
+    // Entry k starts k values into the array: no two entries are duplicates,
+    // so skipping duplicate entries would not bound the expansion.
+    let (b, artist) = shared_array_blob(1_000, 10_000, true);
+    let Err(err) = run(&b.bytes, &del(&[(0, artist)])) else {
+        panic!("an expansion past the budget must be refused");
+    };
+    assert_eq!(err.reason, UneditableReason::PayloadUnreadable);
+}
+
+#[test]
+fn offset_arrays_within_budget_still_strip() {
+    // A normal multi-strip file: 64 strips of 16 bytes in one array pair.
+    let mut b = Blob::new(false, 8);
+    let es = vec![
+        b.out(0x0111, 4, 64, 100),
+        b.out(0x0117, 4, 64, 400),
+        b.out(0x013B, 2, 7, 700),
+    ];
+    b.ifd(8, &es, 0);
+    for s in 0..64u32 {
+        let (at, len) = (b.w32(1_000 + 16 * s), b.w32(16));
+        b.data(100 + 4 * s as usize, &at);
+        b.data(400 + 4 * s as usize, &len);
+    }
+    b.data(700, ARTIST);
+    b.data(1_000, &[0xAB; 64 * 16]);
+    let plan = run(&b.bytes, &del(&[(0, 2)])).unwrap();
+    let out = apply(&b.bytes, &plan);
+    assert_eq!(&out[700..707], &[0u8; 7], "the Artist value is zeroed");
+    assert_eq!(&out[1_000..2_024], &b.bytes[1_000..2_024], "strips intact");
+}

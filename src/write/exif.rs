@@ -245,15 +245,29 @@ const OFFSET_TAGS: [(u16, Option<u16>); 7] = [
 /// The ranges the kept entries of `ifd` (all but `gone`) point at through the
 /// offset tags: the k-th offsets entry with the k-th lengths entry, each offset
 /// with its length, clipped to the blob; an offset with no length runs to the
-/// end of the blob. `Err(entry start)` when an array cannot be read.
+/// end of the blob. `Err(entry start)` when an array cannot be read, or when
+/// the arrays name more values than `budget` has left.
+///
+/// The walk's entry budget limits entries, not the values their arrays hold,
+/// and many entries can share one out-of-line array (or name windows of it
+/// shifted by one value), so the expansion could grow as entries times values.
+/// `budget` is therefore a running count of the values still allowed, shared
+/// by every IFD of one walk: each entry's `count()` is charged BEFORE the array
+/// is read. A file whose arrays do not overlap holds at most `blob.len() / 2`
+/// offsets and lengths together (SHORT, 2 bytes each), so `new_value_budget` (half the blob) is
+/// never reached by a real file. An overflow of the sum is the same refusal.
 fn offset_targets(
     c: &Container<'_>,
     blob: &[u8],
     ifd: &Ifd,
     gone: Option<&BTreeSet<usize>>,
+    budget: &mut usize,
 ) -> Result<Vec<Range<usize>>, usize> {
     let kept = |n: usize| !gone.is_some_and(|s| s.contains(&n));
-    let mut out = Vec::new();
+    let mut out: Vec<Range<usize>> = Vec::new();
+    // Length of `out` after its last merge: merging when it has doubled keeps
+    // the vector at O(distinct ranges) at an amortised constant cost.
+    let mut merged_len = 0usize;
     for (off_tag, len_tag) in OFFSET_TAGS {
         let entries = |tag: u16| -> Vec<&Entry> {
             ifd.entries()
@@ -265,6 +279,15 @@ fn offset_targets(
         };
         let lens = len_tag.map(entries).unwrap_or_default();
         for (k, e) in entries(off_tag).into_iter().enumerate() {
+            let mut charge = |entry: &Entry| -> Result<(), usize> {
+                let count = usize::try_from(entry.count()).map_err(|_| start_of(entry))?;
+                *budget = budget.checked_sub(count).ok_or_else(|| start_of(entry))?;
+                Ok(())
+            };
+            charge(e)?;
+            if let Some(l) = lens.get(k) {
+                charge(l)?;
+            }
             let offsets = c.uints(e).map_err(|_| start_of(e))?;
             let lengths = match lens.get(k) {
                 Some(l) => c.uints(l).map_err(|_| start_of(l))?,
@@ -284,9 +307,18 @@ fn offset_targets(
                     out.push(at..end);
                 }
             }
+            if out.len() > merged_len.saturating_mul(2).saturating_add(1024) {
+                out = merge_ranges(out);
+                merged_len = out.len();
+            }
         }
     }
     Ok(out)
+}
+
+/// The value budget of one walk of `blob` (see `offset_targets`).
+fn new_value_budget(blob: &[u8]) -> usize {
+    blob.len() / 2
 }
 
 /// The in-blob part of the range `ifd`'s first 0x0201 and 0x0202 name (SHORT or
@@ -313,6 +345,17 @@ fn first_touch(set: &[Range<usize>], r: &Range<usize>) -> Option<usize> {
     let i = set.partition_point(|k| k.end <= r.start);
     let k = set.get(i)?;
     (k.start < r.end).then(|| k.start.max(r.start))
+}
+
+/// The entries a `(ifd, only)` target names: the one entry at index `e` for
+/// `Some(e)` (a direct lookup, so deleting k entries costs k, not k times the
+/// IFD's size), every entry of the IFD for `None` (a whole removed IFD).
+fn targeted_entries(ifd: &Ifd, only: Option<usize>) -> Result<&[Entry], Refusal> {
+    let all = ifd.entries();
+    match only {
+        Some(e) => all.get(e..=e).ok_or_else(|| bad(0)),
+        None => Ok(all),
+    }
 }
 
 fn bad(at: usize) -> Refusal {
@@ -567,10 +610,7 @@ pub(super) fn plan_block(
         .chain(removed.iter().map(|&r| (r, None)));
     for (g, only) in all_gone {
         let ifd = ifds.get(g).ok_or_else(|| bad(0))?;
-        for (n, entry) in ifd.entries().iter().enumerate() {
-            if only.is_some_and(|e| e != n) {
-                continue;
-            }
+        for entry in targeted_entries(ifd, only)? {
             let at = entry_start(blob, order, entry).ok_or_else(|| bad(start_of(entry)))?;
             deleted.push(Deleted {
                 ifd_index: g,
@@ -614,10 +654,7 @@ pub(super) fn plan_block(
         .chain(removed.iter().map(|&r| (r, None)));
     for (g, only) in scrub_entries {
         let ifd = ifds.get(g).ok_or_else(|| bad(0))?;
-        for (n, entry) in ifd.entries().iter().enumerate() {
-            if only.is_some_and(|e| e != n) {
-                continue;
-            }
+        for entry in targeted_entries(ifd, only)? {
             match c.payload_range(entry) {
                 Some(r) => scrubs.push((r, ScrubReason::EntryValue)),
                 // A value that cannot be sized, or that does not fit the 4-byte
@@ -657,6 +694,7 @@ pub(super) fn plan_block(
     let mut keep: Vec<Range<usize>> = Vec::new();
     keep.push(0..HEADER_LEN);
     let mut kept_tables: Vec<Range<usize>> = Vec::new();
+    let mut value_budget = new_value_budget(blob);
     for (i, ifd) in ifds.iter().enumerate() {
         let table = ifd.table_range().ok_or_else(|| bad(0))?;
         if removed.contains(&i) {
@@ -664,7 +702,7 @@ pub(super) fn plan_block(
         }
         kept_tables.push(table);
         keep.extend(
-            offset_targets(c, blob, ifd, gone.get(&i))
+            offset_targets(c, blob, ifd, gone.get(&i), &mut value_budget)
                 .map_err(|at| refuse(UneditableReason::PayloadUnreadable, at))?,
         );
         for (n, entry) in ifd.entries().iter().enumerate() {
@@ -1006,8 +1044,9 @@ mod tests;
 /// start)` when an array cannot be read.
 pub(super) fn protected_ranges(blob: &[u8], c: &Container<'_>) -> Result<Vec<Range<usize>>, usize> {
     let mut out = Vec::new();
+    let mut value_budget = new_value_budget(blob);
     for ifd in c.ifds() {
-        out.extend(offset_targets(c, blob, ifd, None)?);
+        out.extend(offset_targets(c, blob, ifd, None, &mut value_budget)?);
     }
     Ok(merge_ranges(out))
 }

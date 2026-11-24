@@ -6771,12 +6771,17 @@ fn a_removal_that_joins_stray_bytes_into_a_marker_is_refused_and_excused_exactly
         .expect("the crash seed is committed");
     assert_eq!(crash.1, exif_records::CRASH_MPF_FIELDS);
     rewrite_invariants::check(&crash.1);
+    // This input's index lists more than 16 images, so since PATCH-001 the
+    // library refuses it up front (it used to be caught by the self-check).
     assert!(matches!(
         exif_core::strip(
             rewrite_invariants::decode(&crash.1).1,
             rewrite_invariants::decode(&crash.1).0
         ),
-        Err(exif_core::StripError::VerifyFailed { .. })
+        Err(exif_core::StripError::Unstrippable {
+            reason: exif_core::write::UnstrippableReason::TooManyMpfImages,
+            ..
+        })
     ));
     // Strictness: the excuse is not a blanket one. The same input with the
     // refusal planted on a policy that removes nothing joined is rejected.
@@ -6814,9 +6819,17 @@ fn a_removal_that_joins_stray_bytes_into_a_marker_is_refused_and_excused_exactly
     // HANDOFF-044 L12: an index whose entry array lies on its own IFD table. The
     // primary-size patch would rewrite the MPEntry tag's count; refused up front.
     let (p3, j3) = rewrite_invariants::decode(exif_records::CRASH_MPF_TABLE);
+    // Since PATCH-001 this input is refused one step earlier: the entry array
+    // on the table makes the index list more than 16 images, and the cap
+    // refusal (Unstrippable) comes before MpfNotIndexed in DEC-013's order.
+    // The table-overlap refusal itself is covered by
+    // `l15_ml_a_secondary_image_over_the_mp_entry_array_is_mpf_not_indexed`.
     assert!(matches!(
         exif_core::strip(j3, p3),
-        Err(exif_core::StripError::MpfNotIndexed { offset: 150 })
+        Err(exif_core::StripError::Unstrippable {
+            reason: exif_core::write::UnstrippableReason::TooManyMpfImages,
+            offset: 150
+        })
     ));
     rewrite_invariants::check(exif_records::CRASH_MPF_TABLE);
 
@@ -6860,8 +6873,9 @@ fn a_removal_that_joins_stray_bytes_into_a_marker_is_refused_and_excused_exactly
 /// SPEC-020's 186 seeds plus SPEC-021's 198 entry seeds plus the two
 /// joined-stray seeds, SPEC-033's one Artist-and-Copyright seed, the nothing-to-edit crash and the 180 seeds of the
 /// round-4 leak inputs (HANDOFF-045) and the 144 seeds of the round-5 ones
-/// (HANDOFF-046).
-const REWRITE_SEEDS: usize = 1039;
+/// (HANDOFF-046) plus PATCH-001's six MPF-index seeds (17 and 16 entries under
+/// three policies).
+const REWRITE_SEEDS: usize = 1045;
 
 #[test]
 fn seed_count_is_pinned() {
@@ -6883,8 +6897,8 @@ fn seed_count_is_pinned() {
     assert_eq!(want.len(), entry, "every generated entry seed is committed");
     assert_eq!(
         entry,
-        REWRITE_SEEDS - 188,
-        "SPEC-020's 186, SPEC-023's one CI crash seed, SPEC-033's one Rights seed, plus the entry seeds"
+        REWRITE_SEEDS - 188 - 6,
+        "SPEC-020's 186, SPEC-023's one CI crash seed, SPEC-033's one Rights seed, PATCH-001's six MPF seeds, plus the entry seeds"
     );
 }
 

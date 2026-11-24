@@ -1735,7 +1735,84 @@ fn rewrite_tiff_seeds() -> Vec<(String, Vec<u8>)> {
         "crash-soi-then-tiff-bad-segment-length".to_string(),
         SOI_TIFF_CRASH.to_vec(),
     ));
+    // PATCH-001: many offset entries sharing one value array (refused, not
+    // expanded), plain and with shifted windows, under Everything and All.
+    for (name, bytes) in [
+        ("shared-offset-array", shared_offset_array_tiff(false)),
+        (
+            "shared-offset-array-shifted",
+            shared_offset_array_tiff(true),
+        ),
+    ] {
+        for (label, head) in [("everything", 4u8), ("all", 7u8)] {
+            let mut v = vec![head];
+            v.extend_from_slice(&bytes);
+            out.push((format!("patch001-{name}-{label}"), v));
+        }
+    }
     out
+}
+
+/// PATCH-001: a little-endian TIFF with 64 StripOffsets and 64 StripByteCounts
+/// entries of 1,500 values each, all naming one array (or, `shifted`, windows
+/// of it one value apart), and an Artist entry. About 14 KB, far past the
+/// expansion budget (half the blob).
+fn shared_offset_array_tiff(shifted: bool) -> Vec<u8> {
+    const ENTRIES: usize = 64;
+    const COUNT: usize = 1_500;
+    let table_len = 2 + 12 * (2 * ENTRIES + 1) + 4;
+    let offsets_at = 8 + table_len;
+    let values = COUNT + if shifted { ENTRIES } else { 0 };
+    let lengths_at = offsets_at + 4 * values;
+    let artist_at = lengths_at + 4 * values;
+    let mut b = b"II*\0".to_vec();
+    b.extend_from_slice(&8u32.to_le_bytes());
+    b.extend_from_slice(&u16::try_from(2 * ENTRIES + 1).expect("small").to_le_bytes());
+    let entry = |b: &mut Vec<u8>, tag: u16, ty: u16, count: usize, at: usize| {
+        b.extend_from_slice(&tag.to_le_bytes());
+        b.extend_from_slice(&ty.to_le_bytes());
+        b.extend_from_slice(&u32::try_from(count).expect("small").to_le_bytes());
+        b.extend_from_slice(&u32::try_from(at).expect("small").to_le_bytes());
+    };
+    for (tag, base) in [(0x0111u16, offsets_at), (0x0117, lengths_at)] {
+        for k in 0..ENTRIES {
+            entry(
+                &mut b,
+                tag,
+                4,
+                COUNT,
+                base + if shifted { 4 * k } else { 0 },
+            );
+        }
+    }
+    entry(&mut b, 0x013B, 2, 7, artist_at);
+    b.extend_from_slice(&0u32.to_le_bytes());
+    // Offsets name 4 bytes of the header; every length is 4.
+    for _ in 0..values {
+        b.extend_from_slice(&0u32.to_le_bytes());
+    }
+    for _ in 0..values {
+        b.extend_from_slice(&4u32.to_le_bytes());
+    }
+    b.extend_from_slice(b"ARTIST\0");
+    b
+}
+
+/// PATCH-001: a primary with a COM before its index and `secondaries` more
+/// images, so the index holds `secondaries + 1` entries.
+fn mpo_with_entries(secondaries: usize) -> Vec<u8> {
+    strip_shapes::mpo_shape(
+        "mpo-n",
+        false,
+        vec![(strip_shapes::K::Com, real_shapes::seg(0xFE, b"TEN-BYTES!"))],
+        vec![],
+        (0..secondaries)
+            .map(|_| (Vec::new(), real_shapes::nikon_extra()))
+            .collect(),
+        Vec::new(),
+        strip_shapes::ExifFacts::default(),
+    )
+    .bytes
 }
 
 /// The CI crash input (policy byte, then a JPEG; see its use in `rewrite_seeds`).
@@ -1788,6 +1865,21 @@ fn rewrite_seeds() -> Vec<(String, Vec<u8>)> {
         with("everything".to_string(), vec![4]);
         let m = mask.to_le_bytes();
         with(format!("mask{mask:04x}"), vec![6, m[0], m[1]]);
+    }
+    // PATCH-001: an index of 17 entries (past the cap, refused when anything is
+    // removed) and one of 16 (at the cap, strips), under All, Everything and
+    // the FreeText mask.
+    for (name, n) in [("mpf17", 16usize), ("mpf16", 15)] {
+        let bytes = mpo_with_entries(n);
+        for (label, head) in [
+            ("all", vec![7u8]),
+            ("everything", vec![4]),
+            ("freetext", vec![6, 0x88, 0x00]),
+        ] {
+            let mut v = head;
+            v.extend_from_slice(&bytes);
+            out.push((format!("patch001-{label}-{name}"), v));
+        }
     }
     let sink = strip_shapes::kitchen_sink().bytes;
     for (label, head) in [

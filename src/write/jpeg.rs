@@ -64,8 +64,20 @@ pub(super) fn plan(data: &[u8], spec: StripSpec) -> Result<Planned, StripError> 
 
     let mut targets: Vec<Target> = Vec::new();
     segment_targets(&meta, spec, &mut targets)?;
-    let exif_edits = exif_targets(data, &meta, spec, &mut targets)?;
     region_targets(&meta, spec, &mut targets)?;
+    // DEC-013 orders Unstrippable before Uneditable, so the MPF cap is decided
+    // before the Exif planner can refuse. A whole-segment Exif removal counts
+    // as a removal; an in-place entry edit moves no byte and does not.
+    let removes_exif = mode(spec) == Mode::Whole
+        && meta
+            .jpeg()
+            .segments()
+            .iter()
+            .any(|s| s.kind() == SegmentKind::Exif);
+    if !targets.is_empty() || removes_exif {
+        refuse_capped_mpf(&meta)?;
+    }
+    let exif_edits = exif_targets(data, &meta, spec, &mut targets)?;
     targets.sort_by_key(|t| (t.range.start, t.range.end));
 
     let removals_merged = merge_ranges(targets.iter().map(|t| t.range.clone()).collect());
@@ -118,6 +130,24 @@ fn refuse_untrusted_walk(meta: &JpegMetadata<'_>) -> Result<(), StripError> {
         });
     }
     Ok(())
+}
+
+/// An index that lists more images than the audit reads (`TooManyMpfImages`)
+/// cannot be fixed up: the entries past the cap are neither patched when bytes
+/// move nor removed with the other images. A strip that removes nothing is
+/// unaffected, so this runs only once there is a removal target (PATCH-001).
+fn refuse_capped_mpf(meta: &JpegMetadata<'_>) -> Result<(), StripError> {
+    match meta
+        .jpeg_issues()
+        .iter()
+        .find(|i| matches!(i.error(), Error::TooManyMpfImages { .. }))
+    {
+        Some(issue) => Err(StripError::Unstrippable {
+            reason: UnstrippableReason::TooManyMpfImages,
+            offset: issue.offset(),
+        }),
+        None => Ok(()),
+    }
 }
 
 /// Rule 3: XMP, extended XMP, ICC, IPTC, JUMBF, comments and unrecognised APPn
