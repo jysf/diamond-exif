@@ -52,7 +52,7 @@ SPIKE-001 (real camera and phone files) found data a strip must deal with that t
 | `OtherApp` | an APPn segment (n = 0 to 15) the library does not recognise | any `SegmentKind::App(n)` that is not on the benign list below and is not a parsed MPF segment |
 | `Trailer` | bytes after the first EOI that no `EmbeddedImage` accounts for | `Jpeg::trailer()` minus the byte ranges of the located embedded images; one region for the remainder if it is not empty |
 
-**Benign list (no region, no finding):** APP0 `JFIF\0`, and APP14 `Adobe\0` (a colour-transform marker with no free text). Every other APPn that is not Exif, XMP, extended XMP, ICC, Photoshop 3.0, JUMBF or MPF is `OtherApp`: this includes APP0 `JFXX` (it can carry a thumbnail), APP2 `FPXR` (FlashPix), APP10 `AROT` and any vendor segment. An MPF segment that cannot be parsed (bad header, no `0xB002`) is `OtherApp` and the parse failure is a typed JPEG-layer issue; a malformed entry (range outside the input, not `FF D8`) is a typed issue and no region.
+**Benign list (no region, no finding):** APP0 `JFIF\0` (without a thumbnail: amendment of 2026-11-24), and APP14 `Adobe\0` (a colour-transform marker with no free text). Every other APPn that is not Exif, XMP, extended XMP, ICC, Photoshop 3.0, JUMBF or MPF is `OtherApp`: this includes APP0 `JFXX` (it can carry a thumbnail), APP2 `FPXR` (FlashPix), APP10 `AROT` and any vendor segment. An MPF segment that cannot be parsed (bad header, no `0xB002`) is `OtherApp` and the parse failure is a typed JPEG-layer issue; a malformed entry (range outside the input, not `FF D8`) is a typed issue and no region.
 
 **Photoshop blocks.** Every APP13 segment with the `Photoshop 3.0\0` header is an `Iptc` region, whether or not a `0x0404` resource parses inside it (a Photoshop block longer than 32 KB is split across APP13 segments, and each segment is a block). Its data is the segment payload after the header. This replaces DEC-006's rule that the region is the `0x0404` resource data; the earlier rule's unparsed-resource issues stay as issues.
 
@@ -115,3 +115,36 @@ Rulings on the build's four doubts (questions `dec-012-*`). Only item 1 and item
 2. **No cap on trailer pieces.** The remainder after embedded images has at most (regions + 1) pieces, so at most 16. A cap would drop uncovered bytes silently, which a strip must not do.
 3. **The Photoshop rule moves two existing inventory results** (`fixtures/jpeg-iptc-without-0404`, seed `icc-iptc-jumbf`): they now list an `Iptc` region that ExifTool does not name. This is the intended effect of part 1 ("every APP13 `Photoshop 3.0` segment is a region"); the two are pinned as class R rows and one `KNOWN_DIVERGENCES` entry. The Iptc region data is the payload after the `Photoshop 3.0\0` header, so the golden region length for the full-house fixture is 18 (12-byte 8BIM header + 6), not 6.
 4. **MPF parse edges.** Malformed (`OtherApp` plus a typed issue): bad TIFF header or version, IFD0 absent or unreadable, no `0xB002`, a truncated index, fewer than 16 bytes, and any second MPF segment (only the first is read). `NumberOfImages` (0xB001) is ignored; the count is the whole 16-byte entries of the `0xB002` payload and a trailing partial entry is ignored.
+
+## Amendment (2026-11-24, SPEC-040): a JFIF APP0 thumbnail is a `Thumbnail` region
+
+An external review (against `fd94d4f`) found that a JPEG whose APP0 `JFIF\0` segment carries its optional uncompressed thumbnail audits clean, and `strip(Everything)` leaves it in place, while ExifTool extracts it as `JFIF:ThumbnailTIFF`. The benign list above was too wide: it moved JFXX out "because it can carry a thumbnail", but plain JFIF can carry one too. This amendment narrows it. Measured with ExifTool 13.55 on built files (SPEC-040 design, 2026-11-24):
+
+| Input (`JFIF\0`, version, units, densities, then `Xthumbnail`, `Ythumbnail`, data) | ExifTool prints |
+|---|---|
+| 2×2, 12 data bytes | `ThumbnailWidth` 2, `ThumbnailHeight` 2, `ThumbnailTIFF` 12 bytes |
+| 0×0, no data (the usual case) | the header tags only |
+| 4×4 declared (48), 12 data bytes present | `ThumbnailTIFF` 12 bytes (what is present), no warning |
+| 2×2 declared, 0 data bytes | width and height, **no** `ThumbnailTIFF` |
+| 2×2 and 5 bytes more than 12 | `ThumbnailTIFF` 12 bytes; the 5 extra bytes are not printed |
+| 0×0 followed by 11 bytes of text | the header tags only (the text is not printed) |
+| 2×0 | `ThumbnailWidth` 2 only, no `ThumbnailTIFF` |
+| payload shorter than the 14-byte header | the header tags it can read, no thumbnail |
+| version 2.00, or a JFIF APP0 after the Exif APP1, or two JFIF APP0 segments | read the same way, each segment on its own |
+| `JFIF\0` in an APP1 | not read as JFIF |
+
+Writes: `exiftool -all=` and `exiftool -JFIF:all=` both **delete the whole APP0 segment** (every JFIF segment in the file), and the result still decodes. `-ThumbnailTIFF=`, `-JFIF:ThumbnailTIFF=` and `-ThumbnailImage=` change nothing: ExifTool cannot remove the thumbnail alone.
+
+**1. What the JPEG layer locates.** A new region, `JfifThumbnail`. Every APP0 segment classified `Jfif` (payload starts `JFIF\0`) whose payload is at least 14 bytes is examined. Let `n = 3 × Xthumbnail × Ythumbnail` (payload bytes 12 and 13) and `have` = the payload bytes after the first 14. If `n > 0` and `have > 0`, the region is the first `min(n, have)` bytes after the header. If `n > have`, the extraction also records one typed `RegionTooShort` issue (`what: "JFIF thumbnail"`) at the segment. That includes `have == 0`, which gives the issue and no region. Bytes past `n` are not part of the region. There is no version check. Each JFIF segment is examined on its own. The region data is borrowed and never decoded.
+
+**2. The benign list becomes "APP0 `JFIF\0` without a thumbnail, and APP14 `Adobe\0`".** A JFIF segment with a `JfifThumbnail` region is not `OtherApp`. Its thumbnail is the finding. A JFIF segment without one stays benign: no region, no finding, never removed.
+
+**3. Category: `Thumbnail`** (DEC-008's "an embedded thumbnail", unchanged). The finding's `thumbnail` field is `Some { range: None, starts_with_ffd8: false }`. `range` stays defined as a range in a TIFF blob, which a JFIF thumbnail does not have. The region item gives its segment and length, as for every region, so the invariant "a thumbnail range accompanies exactly the `Thumbnail` category" still holds. The report region name is `jfif_thumbnail`. This adds an enumeration value, as DEC-020 did for `text`, `raw_profile` and `time`, and `schema_version` stays 2.
+
+**4. Presets and may-hold: no change.** DEC-009's `Thumbnail` row applies as it stands: removed by `AllPii`, `All` and `Everything` (and by a `Custom` set that names `Thumbnail`). It is a block category, `KeptUnread` under `Gps` and `GpsAndDevice`. Its may-hold row is conservative for a JFIF thumbnail, which is raw RGB and cannot carry tags. That keeps one rule for every thumbnail, and it changes no preset's outcome.
+
+**5. Strip** (DEC-013 rule 3 amendment). A policy that removes `Thumbnail` deletes **the whole APP0 segment** of every JFIF segment that has a `JfifThumbnail` region, as `exiftool -JFIF:all=` does. A JFIF segment without a thumbnail is kept, as before. The removal is recorded with the new `RemovalKind::Jfif` and category `Thumbnail`. This is whole-segment removal, the unit of DEC-013 rule 3. Nothing inside a segment is rewritten.
+
+**Alternatives considered.** (a) *Rewrite the segment as 0×0 and truncate it, keeping the density fields.* Rejected: it is a new kind of in-segment edit that DEC-013 does not have; ExifTool, our oracle, does not do it; and the density fields carry no meaning a decoder needs (the image decodes without the segment, as measured). (b) *Make every JFIF segment `OtherApp`.* Rejected: it would flag nearly every JPEG and change every preset's outcome for no measured gain. (c) *Treat bytes past `n`, or the hidden text after a 0×0 header, as their own finding.* Deferred: ExifTool does not print them either, so the oracle cannot prove them. Recorded as question `jfif-bytes-past-the-thumbnail`.
+
+**Validation.** Revisit if a real file shows the JFIF density fields being needed after a strip, or if the question above is answered with a measured case.

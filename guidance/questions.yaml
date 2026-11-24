@@ -1771,3 +1771,20 @@ questions:
       with the three buckets it can no longer cancel against another text line.
       Right side: neither (a documented limit of the harness). Pinned in
       tests/support/inventory.rs (KNOWN_DIVERGENCES, Class P).
+
+  - id: jfif-bytes-past-the-thumbnail
+    question: "Should bytes in a JFIF APP0 segment past its declared thumbnail (or any bytes after a 0×0 header) be a finding of their own, given that ExifTool does not print them?"
+    priority: low
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-24
+    assigned_to: null
+    notes: |
+      Measured in the SPEC-040 design (ExifTool 13.55): a 0×0 JFIF header followed by 11 bytes of
+      text prints only the header tags, and a 2×2 thumbnail followed by 5 extra bytes prints a
+      12-byte ThumbnailTIFF and nothing for the 5. So a JFIF segment can hide bytes that neither
+      ExifTool nor the audit reports. DEC-012's amendment of 2026-11-24 keeps such a segment benign
+      (no thumbnail) or reports only the thumbnail, because the oracle cannot prove anything about
+      the extra bytes. Options: treat a JFIF payload longer than 14 + 3·X·Y as OtherApp, which
+      flags it under OtherSegment and removes it only under Everything; or leave it as it is.
+      Needs a real-file count first, to make sure padded JFIF segments are not common.

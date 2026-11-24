@@ -93,7 +93,7 @@ as PATCH-001 (PR #59, merged 2026-11-24).
 
 Format: `- [status] SPEC-ID (cycle) — one-line summary`
 
-- [ ] SPEC-040 (frame) — DEC-012 amendment: a JFIF APP0 thumbnail is a Thumbnail region, audited and stripped
+- [ ] SPEC-040 (design) — DEC-012 amendment: a JFIF APP0 thumbnail is a Thumbnail region, audited and stripped
 
 **Count:** 0 shipped / 0 active / 1 pending
 
