@@ -86,6 +86,11 @@ const SIG_ADOBE: &[u8] = b"Adobe\0";
 const EXTENDED_XMP_HEADER: usize = 32 + 4 + 4;
 /// The ICC chunk header after the signature: sequence number, chunk count.
 const ICC_HEADER: usize = 2;
+/// The JFIF APP0 header: `JFIF\0`, version (2), units (1), densities (2 + 2),
+/// then `Xthumbnail` and `Ythumbnail` (1 each). The thumbnail data follows.
+const JFIF_HEADER: usize = 14;
+const JFIF_X_AT: usize = 12;
+const JFIF_Y_AT: usize = 13;
 /// The JUMBF header after the `JP` signature: `En` (`u16`) and `Z` (`u32`).
 const JUMBF_HEADER: usize = 2 + 4;
 
@@ -829,8 +834,33 @@ fn extract<'a>(jpeg: Jpeg<'a>, data: &'a [u8], embedded: bool) -> JpegMetadata<'
                 segment: index,
                 data: payload,
             }),
-            // The benign list: APP0 `JFIF\0` (classified as `Jfif`) and APP14
-            // `Adobe\0`. Every other APPn is unrecognised, except a parsed MPF.
+            // DEC-012 amendment of 2026-11-24: a JFIF segment is benign only
+            // without a thumbnail. With one, the thumbnail is a region. No
+            // version check; each segment is examined on its own.
+            SegmentKind::Jfif => {
+                let (x, y) = (payload.get(JFIF_X_AT), payload.get(JFIF_Y_AT));
+                if let (Some(&x), Some(&y), Some(have)) = (x, y, payload.get(JFIF_HEADER..)) {
+                    // At most 3 * 255 * 255 = 195,075; saturating anyway.
+                    let n = usize::from(x)
+                        .saturating_mul(usize::from(y))
+                        .saturating_mul(3);
+                    if n > 0 {
+                        if n > have.len() {
+                            ex.short("JFIF thumbnail", at, n, have.len());
+                        }
+                        if let Some(data) = have.get(..n.min(have.len())).filter(|d| !d.is_empty())
+                        {
+                            regions.push(Region::JfifThumbnail {
+                                segment: index,
+                                data,
+                            });
+                        }
+                    }
+                }
+            }
+            // The benign list: APP0 `JFIF\0` without a thumbnail (above) and
+            // APP14 `Adobe\0`. Every other APPn is unrecognised, except a
+            // parsed MPF.
             SegmentKind::App(n) => {
                 let marker = segment.marker();
                 if n == 14 && payload.starts_with(SIG_ADOBE) {

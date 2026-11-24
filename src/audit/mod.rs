@@ -479,7 +479,14 @@ fn audit_jpeg(data: &[u8], embedded: bool) -> FileAudit<'_> {
             Region::EmbeddedImage { offset, data, .. } => Some(embedded_summary(offset, data)),
             _ => None,
         };
-        b.push_with(item, Some(region_category(kind)), None, summary);
+        // A JFIF thumbnail has no range in a TIFF blob, but "a thumbnail marker
+        // accompanies exactly the Thumbnail category" holds (DEC-012 amendment
+        // of 2026-11-24). No other region kind is a Thumbnail.
+        let thumb = (kind == RegionKind::JfifThumbnail).then_some(ThumbnailRange {
+            range: None,
+            starts_with_ffd8: false,
+        });
+        b.push_with(item, Some(region_category(kind)), thumb, summary);
     }
     b.finish(
         ContainerKind::Jpeg,
