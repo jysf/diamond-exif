@@ -474,7 +474,8 @@ fn nesting_holds_on_every_committed_seed_for_every_preset() {
     // The same counts audit_model.rs asserts (32 TIFF, 37 JPEG, 81 audit),
     // plus the 17 SPEC-019 `shape-*` seeds in each of the last two.
     // SPEC-032 adds the 72 PNG and 53 WebP copies and five new audit shapes.
-    assert_eq!(seen, [32, 37 + 17, 87 + 17 + 72 + 56]);
+    // SPEC-040: eight JFIF seeds each in `jpeg_segments` and in `audit`.
+    assert_eq!(seen, [32, 37 + 8 + 17, 87 + 8 + 17 + 72 + 56]);
     let mut with_findings = 0usize;
     for (name, data) in &seeds {
         let a = audit(data);

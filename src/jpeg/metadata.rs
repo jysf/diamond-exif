@@ -216,7 +216,8 @@ pub enum Region<'a> {
         data: &'a [u8],
     },
     /// An APPn segment the library does not recognise (DEC-012): not Exif,
-    /// XMP, extended XMP, ICC, Photoshop, JUMBF, a parsed MPF, `JFIF\0` or
+    /// XMP, extended XMP, ICC, Photoshop, JUMBF, a parsed MPF, `JFIF\0` (its
+    /// thumbnail is a [`Region::JfifThumbnail`]; without one it is benign) or
     /// `Adobe\0`.
     OtherApp {
         /// Index into [`Jpeg::segments`].

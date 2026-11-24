@@ -9,6 +9,6 @@ Cycle prompts live in `prompts/SPEC-040-<cycle>.md`.
 
 - [x] frame — STAGE-011 and SPEC-040 framed from the external review's finding 3, PR #60 (2026-11-24, claude-opus-5-5)
 - [x] design — ExifTool 13.55 measurements, DEC-012 and DEC-013 amendments, question `jfif-bytes-past-the-thumbnail`, spec, HANDOFF-088 (2026-11-24, claude-opus-5-5)
-- [ ] build — HANDOFF-088 (claude-sonnet-5-5)
+- [x] build — HANDOFF-088 (claude-sonnet-5-5), branch feat/spec-040-jfif-thumbnail-build, 2026-11-24
 - [ ] verify
 - [ ] ship

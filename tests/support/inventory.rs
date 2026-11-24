@@ -979,6 +979,7 @@ pub fn parse_probe_text(text: &str) -> Result<Inventory, String> {
                     "Iptc" => RegionKind::Iptc,
                     "Icc" => RegionKind::Icc,
                     "Jumbf" => RegionKind::Jumbf,
+                    "JfifThumbnail" => RegionKind::JfifThumbnail,
                     other => return Err(format!("unknown region kind {other:?}")),
                 };
                 inv.regions.insert(kind);

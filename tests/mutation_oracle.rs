@@ -1713,13 +1713,14 @@ fn inventory_probe_control_run_is_clean_before_every_mutant() {
     // returns on (its answer is not recorded, so there is nothing to compare).
     let all = inventory_corpus::all_inputs(&root());
     let distinct = inventory_corpus::distinct(&all);
-    assert_eq!(distinct.len(), 186);
+    // 186 + the 8 JFIF seeds of SPEC-040 (their audit copies add no new content).
+    assert_eq!(distinct.len(), 194);
     let keys: Vec<String> = distinct
         .iter()
         .filter(|d| !inventory_corpus::is_not_run(d))
         .map(|d| d.canonical.key())
         .collect();
-    assert_eq!(keys.len(), 185);
+    assert_eq!(keys.len(), 193);
     let refs: Vec<&str> = keys.iter().map(String::as_str).collect();
     assert_inventory_control("inventory-all", &refs);
     // The mutants' inputs are among them.
