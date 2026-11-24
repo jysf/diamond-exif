@@ -22,7 +22,10 @@ name: CI
 # The order matters: a later pattern overrides an earlier one, so the re-included
 # files must come after "!**.md".
 on:
+  # push runs only for main (the post-merge run); a branch is checked by its
+  # pull_request run. Triggering on every branch push as well ran each PR twice.
   push:
+    branches: [main]
     paths:
       - "**"
       - "!**.md"

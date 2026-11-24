@@ -4,9 +4,11 @@ name: Process
 # the gate-audit, each beside its red-proof. Split out of ci.yml so it runs on EVERY
 # change, including docs-only ones: specs, stages, briefs and DECs are Markdown, and
 # these are exactly the gates that check them. ci.yml's Rust jobs skip a change that
-# touches only Markdown; this workflow never skips.
+# touches only Markdown; this workflow has no paths filter.
 on:
+  # push runs only for main; a branch is checked by its pull_request run (see ci.yml).
   push:
+    branches: [main]
   pull_request:
 
 jobs:
