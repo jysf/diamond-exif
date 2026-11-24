@@ -61,11 +61,22 @@ fn report_names_are_pinned() {
         RegionKind::Iptc,
         RegionKind::Icc,
         RegionKind::Jumbf,
+        RegionKind::JfifThumbnail,
     ]
     .into_iter()
     .map(region_name)
     .collect();
-    assert_eq!(regions, ["xmp", "extended_xmp", "iptc", "icc", "jumbf"]);
+    assert_eq!(
+        regions,
+        [
+            "xmp",
+            "extended_xmp",
+            "iptc",
+            "icc",
+            "jumbf",
+            "jfif_thumbnail"
+        ]
+    );
     let reasons: Vec<&str> = [
         FailReason::Unreadable,
         FailReason::TooLarge,

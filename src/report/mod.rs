@@ -441,6 +441,7 @@ pub(crate) fn region_name(kind: crate::audit::RegionKind) -> &'static str {
         RegionKind::Jumbf => "jumbf",
         RegionKind::EmbeddedImage => "embedded_image",
         RegionKind::Comment => "comment",
+        RegionKind::JfifThumbnail => "jfif_thumbnail",
         RegionKind::OtherApp => "other_app",
         RegionKind::Trailer => "trailer",
         RegionKind::Text => "text",

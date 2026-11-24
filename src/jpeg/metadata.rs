@@ -194,6 +194,15 @@ pub enum Region<'a> {
         /// The image's bytes (`size` bytes at `offset`).
         data: &'a [u8],
     },
+    /// The optional uncompressed thumbnail of an APP0 `JFIF\0` segment
+    /// (DEC-012 amendment of 2026-11-24): the first `min(3 * X * Y, bytes
+    /// present)` bytes after the 14-byte header, borrowed and never decoded.
+    JfifThumbnail {
+        /// Index into [`Jpeg::segments`] of the APP0 segment.
+        segment: usize,
+        /// The thumbnail bytes.
+        data: &'a [u8],
+    },
     /// A `COM` segment: its payload.
     Comment {
         /// Index into [`Jpeg::segments`].
@@ -234,6 +243,7 @@ impl<'a> Region<'a> {
             | Region::Iptc { segment, .. }
             | Region::Jumbf { segment, .. }
             | Region::EmbeddedImage { segment, .. }
+            | Region::JfifThumbnail { segment, .. }
             | Region::Comment { segment, .. }
             | Region::OtherApp { segment, .. }
             | Region::Trailer { segment, .. } => segment,
@@ -249,6 +259,7 @@ impl<'a> Region<'a> {
             | Region::Iptc { data, .. }
             | Region::Jumbf { data, .. }
             | Region::EmbeddedImage { data, .. }
+            | Region::JfifThumbnail { data, .. }
             | Region::Comment { data, .. }
             | Region::OtherApp { data, .. }
             | Region::Trailer { data, .. } => data,
@@ -2588,6 +2599,131 @@ mod tests {
         assert!(matches!(
             read(&other).unwrap().regions(),
             [Region::OtherApp { marker: 0xEC, .. }]
+        ));
+    }
+
+    /// An APP0 JFIF payload typed from the JFIF layout, not from the library:
+    /// `JFIF\0`, version 1.01, units 1, densities 72x72, then the thumbnail
+    /// dimensions and `data`.
+    fn jfif_payload(x: u8, y: u8, data: &[u8]) -> Vec<u8> {
+        let mut v = b"JFIF\0\x01\x01\x01\0\x48\0\x48".to_vec();
+        v.push(x);
+        v.push(y);
+        v.extend_from_slice(data);
+        v
+    }
+
+    fn jfif_regions<'a>(m: &'a JpegMetadata<'_>) -> Vec<(usize, &'a [u8])> {
+        m.regions()
+            .iter()
+            .filter_map(|r| match r {
+                Region::JfifThumbnail { segment, data } => Some((*segment, *data)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_jfif_thumbnail_is_a_region() {
+        // AC1: 2x2 declares 12 bytes and 12 are present.
+        let thumb: Vec<u8> = (1..=12).collect();
+        let d = one(seg(0xE0, &jfif_payload(2, 2, &thumb)));
+        let m = read(&d).unwrap();
+        assert_eq!(jfif_regions(&m), [(0, &thumb[..])]);
+        assert_eq!(m.regions().len(), 1);
+        assert!(m.is_clean(), "{:?}", m.jpeg_issues());
+    }
+
+    #[test]
+    fn a_jfif_segment_without_a_thumbnail_is_benign() {
+        // AC2, every shape: 0x0, 2x0, 0x3, a header cut short, and 0x0
+        // followed by text. None is a region, a finding or an issue.
+        let shapes: [Vec<u8>; 6] = [
+            jfif_payload(0, 0, &[]),
+            jfif_payload(2, 0, &[]),
+            jfif_payload(0, 3, b"abc"),
+            b"JFIF\0\x01\x01\x01\0\x48\0\x48\x02".to_vec(),
+            b"JFIF\0".to_vec(),
+            jfif_payload(0, 0, b"hidden text!"),
+        ];
+        for (i, payload) in shapes.iter().enumerate() {
+            let d = one(seg(0xE0, payload));
+            let m = read(&d).unwrap();
+            assert!(m.regions().is_empty(), "shape {i}: {:?}", m.regions());
+            assert!(m.is_clean(), "shape {i}: {:?}", m.jpeg_issues());
+        }
+    }
+
+    #[test]
+    fn a_short_jfif_thumbnail_is_the_bytes_present_and_an_issue() {
+        // AC3: 4x4 declares 48 bytes, 12 are present.
+        let thumb: Vec<u8> = (1..=12).collect();
+        let d = one(seg(0xE0, &jfif_payload(4, 4, &thumb)));
+        let m = read(&d).unwrap();
+        assert_eq!(jfif_regions(&m), [(0, &thumb[..])]);
+        assert!(
+            matches!(
+                m.jpeg_issues(),
+                [i] if matches!(
+                    i.error(),
+                    Error::RegionTooShort { what: "JFIF thumbnail", .. }
+                )
+            ),
+            "{:?}",
+            m.jpeg_issues()
+        );
+        // 2x2 declared, none present: the issue and no region.
+        let d = one(seg(0xE0, &jfif_payload(2, 2, &[])));
+        let m = read(&d).unwrap();
+        assert!(jfif_regions(&m).is_empty());
+        assert!(
+            matches!(
+                m.jpeg_issues(),
+                [i] if matches!(
+                    i.error(),
+                    Error::RegionTooShort { what: "JFIF thumbnail", .. }
+                )
+            ),
+            "{:?}",
+            m.jpeg_issues()
+        );
+    }
+
+    #[test]
+    fn bytes_past_the_jfif_thumbnail_are_not_in_the_region() {
+        // AC4: 2x2 is 12 bytes; 5 more follow.
+        let thumb: Vec<u8> = (1..=12).collect();
+        let mut data = thumb.clone();
+        data.extend_from_slice(b"extra");
+        let d = one(seg(0xE0, &jfif_payload(2, 2, &data)));
+        let m = read(&d).unwrap();
+        assert_eq!(jfif_regions(&m), [(0, &thumb[..])]);
+        assert!(m.is_clean());
+    }
+
+    #[test]
+    fn each_jfif_segment_is_examined_on_its_own() {
+        // AC5: a JFIF segment after the Exif APP1, version 2.00, and two
+        // segments with thumbnails.
+        let t1 = [1u8; 3];
+        let t2 = [2u8; 6];
+        let mut v200 = jfif_payload(1, 1, &t1);
+        v200[5] = 2;
+        v200[6] = 0;
+        let (d, _) = jpeg_of(&[
+            exif_seg(b"II*\0\x08\0\0\0\0\0\0\0\0\0"),
+            seg(0xE0, &v200),
+            seg(0xE0, &jfif_payload(2, 1, &t2)),
+        ]);
+        let m = read(&d).unwrap();
+        assert_eq!(jfif_regions(&m), [(1, &t1[..]), (2, &t2[..])]);
+        // `JFIF\0` in an APP1 stays unrecognised.
+        let d = one(seg(0xE1, &jfif_payload(1, 1, &t1)));
+        let m = read(&d).unwrap();
+        assert!(jfif_regions(&m).is_empty());
+        assert!(matches!(
+            m.regions(),
+            [Region::OtherApp { marker: 0xE1, .. }]
         ));
     }
 

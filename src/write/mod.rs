@@ -61,6 +61,9 @@ pub enum RemovalKind {
     Jumbf,
     /// A Multi-Picture image other than the primary.
     EmbeddedImage,
+    /// A JFIF APP0 segment that carries a thumbnail, removed whole (DEC-012
+    /// amendment of 2026-11-24, DEC-013 rule 3).
+    Jfif,
     /// A `COM` segment.
     Comment,
     /// An unrecognised APPn segment.

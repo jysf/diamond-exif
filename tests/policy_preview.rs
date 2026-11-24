@@ -552,3 +552,41 @@ fn unsupported_empty_and_unreadable_inputs_preview_to_nothing_and_unreliable() {
         }
     }
 }
+
+/// A JPEG whose APP0 `JFIF\0` segment carries a 2x2 thumbnail (12 bytes),
+/// typed from the JFIF layout.
+fn jfif_thumbnail_jpeg() -> Vec<u8> {
+    let mut payload = b"JFIF\0\x01\x01\x01\0\x48\0\x48\x02\x02".to_vec();
+    payload.extend_from_slice(&[0x55; 12]);
+    real_shapes::jpeg_of(&[real_shapes::seg(0xE0, &payload)])
+}
+
+#[test]
+fn jfif_thumbnail_dispositions_per_preset() {
+    // SPEC-040 AC7, a hand-typed grid for the one Thumbnail finding:
+    // Gps and GpsAndDevice keep it unread; AllPii, All and Everything remove it.
+    let bytes = jfif_thumbnail_jpeg();
+    let a = audit(&bytes);
+    assert_eq!(categories_of(&a), vec![Thumbnail]);
+    let want = [
+        (StripPolicy::Gps, KeptUnread),
+        (StripPolicy::GpsAndDevice, KeptUnread),
+        (StripPolicy::AllPii, Removed),
+        (StripPolicy::All, Removed),
+        (StripPolicy::Everything, Removed),
+    ];
+    for (policy, d) in want {
+        assert_eq!(preview(&a, policy).dispositions(), [d], "{policy:?}");
+    }
+    let custom = |c: Category| StripPolicy::Custom(exif_core::policy::StripSpec::none().include(c));
+    assert_eq!(
+        preview(&a, custom(Thumbnail)).dispositions(),
+        [Removed],
+        "custom thumbnail"
+    );
+    assert_eq!(
+        preview(&a, custom(Gps)).dispositions(),
+        [KeptUnread],
+        "custom gps"
+    );
+}

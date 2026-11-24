@@ -1219,6 +1219,35 @@ fn by_category_has_sixteen_keys_in_order() {
 }
 
 #[test]
+fn jfif_thumbnail_region_name_is_pinned_in_every_format() {
+    // AC13: the name appears in JSON, CSV and text, and the schema stays 2.
+    let mut payload = b"JFIF\0\x01\x01\x01\0\x48\0\x48\x02\x02".to_vec();
+    payload.extend_from_slice(&[9u8; 12]);
+    let file = real_shapes::jpeg_of(&[real_shapes::seg(0xE0, &payload)]);
+    let files = one_file(&file);
+    let on = opts(Some(StripPolicy::Gps), true, false);
+    let j = json(&files, &on);
+    assert_eq!(j.get("schema_version").unwrap().as_uint(), Some(2));
+    let f = &j.get("files").unwrap().as_arr().unwrap()[0];
+    let regions: Vec<String> = f
+        .get("inventory")
+        .unwrap()
+        .as_arr()
+        .unwrap()
+        .iter()
+        .filter_map(|i| i.get("at").unwrap().get("region"))
+        .map(|r| r.as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(regions, ["jfif_thumbnail"]);
+    let text = render_text(&files, &on);
+    assert!(text.contains("jfif_thumbnail"), "{text}");
+    assert!(text.contains("thumbnail"), "{text}");
+    let rows = csv(&files, &on);
+    let all: String = rows.iter().flatten().cloned().collect::<Vec<_>>().join("|");
+    assert!(all.contains("jfif_thumbnail"), "{all}");
+}
+
+#[test]
 fn new_region_and_category_names_are_pinned_in_every_format() {
     // One file with all four new region kinds: an MPF image, a comment, an
     // APP10 segment and a trailer.
