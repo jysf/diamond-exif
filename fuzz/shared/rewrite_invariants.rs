@@ -162,6 +162,7 @@ mod rewrite_invariants {
                     UnstrippableReason::BadSegmentLength => "bad-length",
                     UnstrippableReason::TooManySegments => "too-many-segments",
                     UnstrippableReason::TooManyIssues => "too-many-issues",
+                    UnstrippableReason::TooManyMpfImages => "too-many-mpf-images",
                     _ => "other",
                 },
                 *offset,
@@ -486,6 +487,9 @@ mod rewrite_invariants {
         table: Range<usize>,
         /// `(size_field, offset_field, size, offset)` per examined entry.
         entries: Vec<(usize, usize, u32, u32)>,
+        /// The index lists more than `MAX_MPF_IMAGES` entries (the library
+        /// records `TooManyMpfImages` and reads no more).
+        capped: bool,
     }
 
     /// The second, naive MPF reader of `jpeg_metadata_invariants.rs`, extended
@@ -573,6 +577,7 @@ mod rewrite_invariants {
             big,
             table: ifd..end + 4,
             entries,
+            capped: whole > MAX_MPF_IMAGES,
         })
     }
 
@@ -1515,6 +1520,21 @@ mod rewrite_invariants {
                     category: cat,
                     kind,
                 });
+            }
+        }
+
+        // An index past the entry cap cannot be fixed up (PATCH-001): refused
+        // once anything is removed, and before any Exif refusal (DEC-013 puts
+        // Unstrippable first). The removals counted are the segments above, a
+        // whole-segment Exif removal, the trailers, and the images and index of
+        // EmbeddedImage; an in-place Exif entry edit is not one.
+        if let Some((ki, m)) = &mpf {
+            let removes = !targets.is_empty()
+                || (all_exif_removed(spec) && typed.contains(&T::Exif))
+                || (spec.contains(Category::OtherSegment) && !pieces.is_empty())
+                || spec.contains(Category::EmbeddedImage);
+            if m.capped && removes {
+                return Pred::Unstrippable("too-many-mpf-images", w.segs[*ki].off);
             }
         }
 

@@ -2223,6 +2223,29 @@ fn the_refusal_order_is_unstrippable_uneditable_mpf_not_indexed_overlap_verify_f
         strip(&v, StripPolicy::Gps),
         Err(StripError::Unstrippable { .. })
     ));
+    // The MPF cap is Unstrippable too: a 17-entry index beats an unreadable
+    // Exif (PATCH-001).
+    let capped = strip_shapes::mpo_shape(
+        "mpo-17-bad-exif-order",
+        false,
+        vec![
+            (K::Com, real_shapes::seg(0xFE, b"TEN-BYTES!")),
+            (K::Exif, real_shapes::exif_app1(b"not a tiff header")),
+        ],
+        vec![],
+        (0..16)
+            .map(|_| (Vec::new(), real_shapes::nikon_extra()))
+            .collect(),
+        Vec::new(),
+        strip_shapes::ExifFacts::default(),
+    );
+    assert!(matches!(
+        strip(&capped.bytes, StripPolicy::AllPii),
+        Err(StripError::Unstrippable {
+            reason: UnstrippableReason::TooManyMpfImages,
+            ..
+        })
+    ));
     // Uneditable beats MpfNotIndexed: an unreadable Exif, then an MPF segment
     // the audit cannot index, then a segment the policy removes.
     let mut v = vec![0xFF, 0xD8];
@@ -2907,4 +2930,111 @@ fn l15_mn_an_mp_entry_array_on_the_tiff_header_is_mpf_not_indexed() {
             "be={be}: {err:?}"
         );
     }
+}
+
+// ── PATCH-001 finding 2: an MPF index past the audit's 16-entry cap ─────────
+
+/// A primary (JFIF, a COM before the index, the index, the scan) and
+/// `secondaries` further images, so the index holds `secondaries + 1` entries.
+fn mpo_with_entries(secondaries: usize) -> Shape {
+    strip_shapes::mpo_shape(
+        "mpo-n",
+        false,
+        vec![(K::Com, real_shapes::seg(0xFE, b"TEN-BYTES!"))],
+        vec![],
+        (0..secondaries)
+            .map(|_| (Vec::new(), real_shapes::nikon_extra()))
+            .collect(),
+        Vec::new(),
+        strip_shapes::ExifFacts::default(),
+    )
+}
+
+fn assert_too_many_mpf_images(r: Result<Stripped, StripError>, what: &str) {
+    match r {
+        Err(StripError::Unstrippable {
+            reason: UnstrippableReason::TooManyMpfImages,
+            ..
+        }) => {}
+        Err(other) => panic!("{what}: expected TooManyMpfImages, got {other:?}"),
+        Ok(_) => panic!("{what}: expected a refusal, got Ok"),
+    }
+}
+
+#[test]
+fn seventeen_image_mpf_is_refused_when_bytes_move() {
+    // Removing the COM before the index shifts every image: the 17th index
+    // entry is past the cap, so it could not be patched.
+    let s = mpo_with_entries(16);
+    assert_too_many_mpf_images(strip(&s.bytes, policy("free_text")), "free_text");
+}
+
+#[test]
+fn seventeen_image_mpf_is_refused_under_everything() {
+    // The 17th image is neither a region nor patchable: it would stay in the
+    // file behind an Ok.
+    let s = mpo_with_entries(16);
+    assert_too_many_mpf_images(strip(&s.bytes, policy("everything")), "everything");
+    assert_too_many_mpf_images(strip(&s.bytes, policy("embedded")), "embedded");
+}
+
+#[test]
+fn seventeen_image_mpf_with_nothing_to_remove_is_returned_unchanged() {
+    let s = mpo_with_entries(16);
+    let out = strip(&s.bytes, policy("none")).unwrap();
+    assert_eq!(out.bytes(), &s.bytes[..]);
+}
+
+#[test]
+fn sixteen_image_mpf_still_strips() {
+    // Exactly at the cap: 16 entries. The COM goes, every offset is patched,
+    // and the self-check inside `strip` accepts the output.
+    let s = mpo_with_entries(15);
+    let out = strip(&s.bytes, policy("free_text")).unwrap();
+    assert!(out.bytes().len() < s.bytes.len());
+    assert!(!out.patches().is_empty());
+}
+
+/// PATCH-001 L1: DEC-013's order puts Unstrippable before Uneditable, so a
+/// capped MPF index is reported even when an unreadable Exif block would also
+/// refuse the strip.
+#[test]
+fn capped_mpf_index_is_refused_before_an_uneditable_exif_block() {
+    let s = strip_shapes::mpo_shape(
+        "mpo-17-bad-exif",
+        false,
+        vec![
+            (K::Com, real_shapes::seg(0xFE, b"TEN-BYTES!")),
+            (K::Exif, real_shapes::exif_app1(b"not a tiff header")),
+        ],
+        vec![],
+        (0..16)
+            .map(|_| (Vec::new(), real_shapes::nikon_extra()))
+            .collect(),
+        Vec::new(),
+        strip_shapes::ExifFacts::default(),
+    );
+    for name in ["all_pii", "free_text", "all", "everything"] {
+        assert_too_many_mpf_images(strip(&s.bytes, policy(name)), name);
+    }
+}
+
+/// PATCH-001 L1: only a removal counts. An in-place Exif edit moves no byte,
+/// so a 17-entry index with nothing else to remove still strips.
+#[test]
+fn capped_mpf_index_with_only_an_in_place_exif_edit_still_strips() {
+    let l = exif_layout::full_le().layout();
+    let s = strip_shapes::mpo_shape(
+        "mpo-17-edit-only",
+        false,
+        vec![(K::Exif, real_shapes::exif_app1(&l.bytes))],
+        vec![],
+        (0..16)
+            .map(|_| (Vec::new(), real_shapes::nikon_extra()))
+            .collect(),
+        Vec::new(),
+        strip_shapes::ExifFacts::default(),
+    );
+    let out = strip(&s.bytes, policy("gps")).unwrap();
+    assert_eq!(out.bytes().len(), s.bytes.len());
 }

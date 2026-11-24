@@ -281,6 +281,11 @@ pub enum UnstrippableReason {
     TooManySegments,
     /// The walk stopped at the issue cap.
     TooManyIssues,
+    /// The Multi-Picture index lists more images than the audit reads (16), and
+    /// the strip would remove or move bytes: the images past the cap could be
+    /// neither patched nor removed, so they would be left behind (or their
+    /// index entries left stale) behind an `Ok` (PATCH-001).
+    TooManyMpfImages,
     /// A segment range overflowed `usize` (not reachable from a real slice).
     RangeOverflow,
     /// A PNG or WebP chunk runs past the end of the input (PNG: or fewer bytes
