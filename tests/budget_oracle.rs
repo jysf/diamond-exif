@@ -122,6 +122,18 @@ fn fnv1a_64(bytes: &[u8]) -> u64 {
     h
 }
 
+/// The SPEC-040 JFIF thumbnail seed names (typed by hand).
+const JFIF_SEEDS: [&str; 8] = [
+    "jfif-thumbnail",
+    "jfif-thumbnail-short",
+    "jfif-thumbnail-declared-no-data",
+    "jfif-thumbnail-extra-bytes",
+    "jfif-zero-size-with-text",
+    "jfif-header-cut-short",
+    "jfif-two-segments",
+    "jfif-after-exif-version-2",
+];
+
 /// The SPEC-019 seed names (typed by hand, without the `shape-` prefix).
 const SHAPE_NAMES: [&str; 17] = [
     "mpo-two-le",
@@ -184,6 +196,15 @@ fn existing_records_and_seeds_are_byte_identical() {
             // SPEC-035: the two full-block several-Exif JPEG records.
             "jpeg-exif-full-one-two.txt",
             "jpeg-exif-full-two-one.txt",
+            // SPEC-040: the records of the eight JFIF thumbnail seeds.
+            "jpeg-seed-jfif-thumbnail.txt",
+            "jpeg-seed-jfif-thumbnail-short.txt",
+            "jpeg-seed-jfif-thumbnail-declared-no-data.txt",
+            "jpeg-seed-jfif-thumbnail-extra-bytes.txt",
+            "jpeg-seed-jfif-zero-size-with-text.txt",
+            "jpeg-seed-jfif-header-cut-short.txt",
+            "jpeg-seed-jfif-two-segments.txt",
+            "jpeg-seed-jfif-after-exif-version-2.txt",
         ],
     );
     let new_tiff = [
@@ -195,7 +216,10 @@ fn existing_records_and_seeds_are_byte_identical() {
     // SPEC-019: the fifteen `shape-*` seeds are the only additions.
     let shapes: Vec<String> = SHAPE_NAMES.iter().map(|n| format!("shape-{n}")).collect();
     let shape_refs: Vec<&str> = shapes.iter().map(String::as_str).collect();
-    check_dir("fuzz/seeds/jpeg_segments", &OLD_JPEG_SEEDS, &shape_refs);
+    // SPEC-040: and the eight `jfif-*` seeds.
+    let mut jpeg_extra = shape_refs.clone();
+    jpeg_extra.extend(JFIF_SEEDS);
+    check_dir("fuzz/seeds/jpeg_segments", &OLD_JPEG_SEEDS, &jpeg_extra);
     // The audit directory copies each `tiff_ifd` seed under a `tiff-` prefix.
     let mut new_audit = vec![
         "tiff-entry-budget-exact",
@@ -220,6 +244,8 @@ fn existing_records_and_seeds_are_byte_identical() {
         "audit-copyright-only-le",
     ];
     new_audit.extend(shape_refs.iter().copied());
+    let jfif_audit: Vec<String> = JFIF_SEEDS.iter().map(|n| format!("jpeg-{n}")).collect();
+    new_audit.extend(jfif_audit.iter().map(String::as_str));
     check_dir("fuzz/seeds/audit", &OLD_AUDIT_SEEDS, &new_audit);
 }
 

@@ -150,7 +150,8 @@ fn refuse_capped_mpf(meta: &JpegMetadata<'_>) -> Result<(), StripError> {
     }
 }
 
-/// Rule 3: XMP, extended XMP, ICC, IPTC, JUMBF, comments and unrecognised APPn
+/// Rule 3: XMP, extended XMP, ICC, IPTC, JUMBF, comments, JFIF segments with a
+/// thumbnail and unrecognised APPn
 /// segments, whole.
 fn segment_targets(
     meta: &JpegMetadata<'_>,
@@ -167,8 +168,22 @@ fn segment_targets(
             _ => None,
         })
         .collect();
+    // The JFIF segments the audit reports with a thumbnail. One without a
+    // thumbnail is benign and is never a target (DEC-012 amendment of
+    // 2026-11-24).
+    let jfif_thumbnail: Vec<usize> = meta
+        .regions()
+        .iter()
+        .filter_map(|r| match r {
+            Region::JfifThumbnail { segment, .. } => Some(*segment),
+            _ => None,
+        })
+        .collect();
     for (i, seg) in meta.jpeg().segments().iter().enumerate() {
         let (category, kind) = match seg.kind() {
+            SegmentKind::Jfif if jfif_thumbnail.contains(&i) => {
+                (Category::Thumbnail, RemovalKind::Jfif)
+            }
             SegmentKind::Xmp => (Category::Xmp, RemovalKind::Xmp),
             SegmentKind::ExtendedXmp => (Category::Xmp, RemovalKind::ExtendedXmp),
             SegmentKind::Icc => (Category::Icc, RemovalKind::Icc),

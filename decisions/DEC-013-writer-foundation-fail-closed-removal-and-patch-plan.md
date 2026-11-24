@@ -145,3 +145,7 @@ Part 4's set of categories an Exif segment can hold gains `Rights` (DEC-008 amen
 - `AllPii` is partial, as before. Copyright is now a kept entry: it is not deleted and its value bytes are not zeroed.
 - A `Custom` set that held all of the old nine and not `Rights` was whole before and is partial now. It keeps the Copyright entry instead of dropping the segment.
 - Kept and deleted entries that share out-of-line bytes are refused as `SharedBytes`, as for any kept/deleted pair. Artist and Copyright pointing at the same bytes under `AllPii` is such a pair; it used to be two deletions and is now a refusal. Fail-closed, and only reachable from a hand-built file.
+
+## Amendment (2026-11-24, SPEC-040): a JFIF segment with a thumbnail is removed under `Thumbnail`
+
+Rule 3's list of segments that carry no category and stay now reads "`JFIF\0` **without a thumbnail**". A JFIF APP0 segment with a `JfifThumbnail` region (DEC-012 amendment of the same date) carries the `Thumbnail` category. A policy that removes `Thumbnail` deletes that whole segment (`RemovalKind::Jfif`), as `exiftool -JFIF:all=` does. The unit of removal is still the segment, and nothing else in this DEC changes.

@@ -1,0 +1,75 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# exiftool-version: 13.55
+# fixture: jfif-no-thumbnail
+## input
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	1
+JFIF	XResolution	72
+JFIF	YResolution	72
+## all
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	1
+JFIF	XResolution	72
+JFIF	YResolution	72
+## everything
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	1
+JFIF	XResolution	72
+JFIF	YResolution	72
+## xmp
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	1
+JFIF	XResolution	72
+JFIF	YResolution	72
+## icc
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	1
+JFIF	XResolution	72
+JFIF	YResolution	72
+## embedded
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	1
+JFIF	XResolution	72
+JFIF	YResolution	72
+## other
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	1
+JFIF	XResolution	72
+JFIF	YResolution	72
+## iptc+free_text
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	1
+JFIF	XResolution	72
+JFIF	YResolution	72
+## rights
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	1
+JFIF	XResolution	72
+JFIF	YResolution	72

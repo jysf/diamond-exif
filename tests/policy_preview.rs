@@ -474,7 +474,8 @@ fn nesting_holds_on_every_committed_seed_for_every_preset() {
     // The same counts audit_model.rs asserts (32 TIFF, 37 JPEG, 81 audit),
     // plus the 17 SPEC-019 `shape-*` seeds in each of the last two.
     // SPEC-032 adds the 72 PNG and 53 WebP copies and five new audit shapes.
-    assert_eq!(seen, [32, 37 + 17, 87 + 17 + 72 + 56]);
+    // SPEC-040: eight JFIF seeds each in `jpeg_segments` and in `audit`.
+    assert_eq!(seen, [32, 37 + 8 + 17, 87 + 8 + 17 + 72 + 56]);
     let mut with_findings = 0usize;
     for (name, data) in &seeds {
         let a = audit(data);
@@ -551,4 +552,42 @@ fn unsupported_empty_and_unreadable_inputs_preview_to_nothing_and_unreliable() {
             assert!(!p.reliable(), "{label}");
         }
     }
+}
+
+/// A JPEG whose APP0 `JFIF\0` segment carries a 2x2 thumbnail (12 bytes),
+/// typed from the JFIF layout.
+fn jfif_thumbnail_jpeg() -> Vec<u8> {
+    let mut payload = b"JFIF\0\x01\x01\x01\0\x48\0\x48\x02\x02".to_vec();
+    payload.extend_from_slice(&[0x55; 12]);
+    real_shapes::jpeg_of(&[real_shapes::seg(0xE0, &payload)])
+}
+
+#[test]
+fn jfif_thumbnail_dispositions_per_preset() {
+    // SPEC-040 AC7, a hand-typed grid for the one Thumbnail finding:
+    // Gps and GpsAndDevice keep it unread; AllPii, All and Everything remove it.
+    let bytes = jfif_thumbnail_jpeg();
+    let a = audit(&bytes);
+    assert_eq!(categories_of(&a), vec![Thumbnail]);
+    let want = [
+        (StripPolicy::Gps, KeptUnread),
+        (StripPolicy::GpsAndDevice, KeptUnread),
+        (StripPolicy::AllPii, Removed),
+        (StripPolicy::All, Removed),
+        (StripPolicy::Everything, Removed),
+    ];
+    for (policy, d) in want {
+        assert_eq!(preview(&a, policy).dispositions(), [d], "{policy:?}");
+    }
+    let custom = |c: Category| StripPolicy::Custom(exif_core::policy::StripSpec::none().include(c));
+    assert_eq!(
+        preview(&a, custom(Thumbnail)).dispositions(),
+        [Removed],
+        "custom thumbnail"
+    );
+    assert_eq!(
+        preview(&a, custom(Gps)).dispositions(),
+        [KeptUnread],
+        "custom gps"
+    );
 }

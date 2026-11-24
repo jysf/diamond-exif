@@ -473,19 +473,22 @@ fn theirs_parser_maps_region_groups_by_prefix() {
 #[test]
 fn distinct_inputs_are_counted_once_across_seed_directories() {
     let all = all_inputs();
-    assert_eq!(all.len(), 255, "inputs over the five corpora");
+    // 255 + the 8 `jfif-*` seeds SPEC-040 added to the JPEG corpus and the
+    // same 8 copied into the audit corpus.
+    assert_eq!(all.len(), 271, "inputs over the five corpora");
     let per_corpus: Vec<usize> = inventory_corpus::CORPORA
         .iter()
         .map(|c| all.iter().filter(|i| i.corpus == *c).count())
         .collect();
     // 63 hand-built (12 + 2 TIFF, 44 + 5 JPEG; SPEC-035 added two), 41 DEC-008 ids, and the seeds
-    // (32 TIFF, 37 JPEG, 82 audit; SPEC-033 added `audit-copyright-only-le`).
-    assert_eq!(per_corpus, vec![63, 41, 32, 37, 82]);
+    // (32 TIFF, 37 JPEG, 82 audit; SPEC-033 added `audit-copyright-only-le`;
+    // SPEC-040 added 8 JFIF seeds to each of the JPEG and audit corpora).
+    assert_eq!(per_corpus, vec![63, 41, 32, 45, 90]);
     let keys: BTreeSet<String> = all.iter().map(Input::key).collect();
     assert_eq!(keys.len(), all.len(), "keys are unique");
 
     let distinct = inventory_corpus::distinct(&all);
-    assert_eq!(distinct.len(), 186, "distinct inputs by content");
+    assert_eq!(distinct.len(), 194, "distinct inputs by content");
     let members: usize = distinct.iter().map(|d| d.keys.len()).sum();
     assert_eq!(members, all.len(), "every input belongs to one group");
 
@@ -504,7 +507,8 @@ fn distinct_inputs_are_counted_once_across_seed_directories() {
             .count()
     };
     assert_eq!(aliases("tiff-", "seed-tiff_ifd"), 32);
-    assert_eq!(aliases("jpeg-", "seed-jpeg_segments"), 37);
+    // 37 + the 8 `jfif-*` seeds of SPEC-040.
+    assert_eq!(aliases("jpeg-", "seed-jpeg_segments"), 45);
     let audit_canonical = distinct
         .iter()
         .filter(|d| d.canonical.corpus == "seed-audit")
@@ -691,8 +695,9 @@ fn live_inventory_parity_on_the_seed_corpora() {
         return;
     }
     let n = live_parity(|d| d.canonical.corpus.starts_with("seed-"));
-    // 82 distinct seeds (SPEC-033 added one), minus the one ExifTool never returns on.
-    assert_eq!(n, 81);
+    // 82 distinct seeds (SPEC-033 added one) and the 8 JFIF seeds of SPEC-040,
+    // minus the one ExifTool never returns on.
+    assert_eq!(n, 89);
 }
 
 // ── the classes ─────────────────────────────────────────────────────────────
@@ -1193,6 +1198,8 @@ fn existing_oracle_records_are_byte_identical_to_the_committed_set() {
         .filter(|n| !n.starts_with("png-") && !n.starts_with("webp-"))
         // SPEC-035: the two full-block several-Exif JPEG records are additions.
         .filter(|n| !n.starts_with("jpeg-exif-full-"))
+        // SPEC-040: the records of the eight JFIF thumbnail seeds are additions.
+        .filter(|n| !n.starts_with("jpeg-seed-jfif-"))
         .collect();
     on_disk.sort();
     let want: Vec<String> = EXISTING_RECORDS
@@ -1467,6 +1474,80 @@ fn oracle_names_an_extra_region() {
         [RegionKind::Xmp].into_iter().collect()
     );
     assert!(d.to_string().contains("theirs only: region Xmp"), "{d}");
+}
+
+/// SPEC-040 AC12: ExifTool's one `JFIF:ThumbnailTIFF` line (id `0x0009`) is the
+/// counterpart of our `JfifThumbnail` region; every other `JFIF` line stays
+/// dropped.
+#[test]
+fn jfif_thumbnail_tiff_is_the_jfif_thumbnail_region() {
+    let want: BTreeSet<RegionKind> = [RegionKind::JfifThumbnail].into_iter().collect();
+    // A 2x2 thumbnail, a short one, and the bytes-past-the-thumbnail one: both
+    // sides list the region, and the diff is empty.
+    for name in [
+        "jfif-thumbnail",
+        "jfif-thumbnail-short",
+        "jfif-thumbnail-extra-bytes",
+        "jfif-after-exif-version-2",
+        "jfif-two-segments",
+    ] {
+        let key = format!("seed-jpeg_segments/{name}");
+        let (mine, their) = control(&key);
+        assert_eq!(mine.regions, want, "{key}: ours");
+        assert_eq!(their.regions, want, "{key}: theirs");
+        assert!(diff(&mine, &their).is_empty(), "{key}");
+    }
+    // No thumbnail (declared and absent, 0x0 with text, a cut header): neither
+    // side lists a region.
+    for name in [
+        "jfif-thumbnail-declared-no-data",
+        "jfif-zero-size-with-text",
+        "jfif-header-cut-short",
+    ] {
+        let key = format!("seed-jpeg_segments/{name}");
+        let (mine, their) = control(&key);
+        assert!(mine.regions.is_empty(), "{key}: ours");
+        assert!(their.regions.is_empty(), "{key}: theirs");
+    }
+    // The parser: that one line is a region, the header lines are not, and the
+    // group stays unmodelled for everything else.
+    let inv = theirs(
+        "[JFIF] 0x0000 JFIFVersion : 1.01\n[JFIF] 0x0003 ThumbnailWidth : 2\n\
+         [JFIF] 0x0009 ThumbnailTIFF : (Binary data 12 bytes)",
+    )
+    .expect("ok");
+    assert_eq!(inv.regions, want);
+    assert!(inv.tags.is_empty());
+    let inv =
+        theirs("[JFIF] 0x0000 JFIFVersion : 1.01\n[JFIF] 0x0003 ThumbnailWidth : 2").expect("ok");
+    assert!(inv.regions.is_empty() && inv.tags.is_empty());
+
+    // Red-proof 1: the record's line is dropped, so ExifTool "lists" nothing
+    // and the audit's region is ours-only.
+    let key = "seed-jpeg_segments/jfif-thumbnail";
+    let (mine, _) = control(key);
+    let mut lines = lines_of(key);
+    let at = lines
+        .iter()
+        .position(|l| l.group == "JFIF" && l.name == "ThumbnailTIFF")
+        .expect("the ThumbnailTIFF line");
+    lines.remove(at);
+    let d = diff(&mine, &their_inventory(&lines, true));
+    assert_eq!(d.regions_ours_only, want);
+    assert!(
+        d.to_string().contains("ours only:   region JfifThumbnail"),
+        "{d}"
+    );
+    // Red-proof 2: the audit side's region is dropped, so ExifTool's line is
+    // theirs-only.
+    let (mut mine, their) = control(key);
+    mine.regions.clear();
+    let d = diff(&mine, &their);
+    assert_eq!(d.regions_theirs_only, want);
+    assert!(
+        d.to_string().contains("theirs only: region JfifThumbnail"),
+        "{d}"
+    );
 }
 
 // ── red-proofs: their-side perturbation of a committed record ───────────────
@@ -1745,8 +1826,8 @@ fn class_s_region_kinds_are_excluded_exactly_and_the_existing_pins_are_unchanged
     );
     // The five old corpora are the five old corpora, with their old counts.
     assert_eq!(inventory_corpus::CORPORA.len(), 5);
-    assert_eq!(all_inputs().len(), 255);
-    assert_eq!(distinct_inputs().len(), 186);
+    assert_eq!(all_inputs().len(), 271);
+    assert_eq!(distinct_inputs().len(), 194);
     // The pinned table: the same rows as before plus DEC-012's one new row
     // (`fixtures/jpeg-iptc-without-0404`); the seed row that gained `Iptc` is
     // the other change. Counted by class.

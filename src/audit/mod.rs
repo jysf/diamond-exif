@@ -121,6 +121,9 @@ pub enum RegionKind {
     Jumbf,
     /// A Multi-Picture Format image other than the primary (DEC-012).
     EmbeddedImage,
+    /// The uncompressed thumbnail of a JFIF APP0 segment (DEC-012 amendment of
+    /// 2026-11-24).
+    JfifThumbnail,
     /// A `COM` segment.
     Comment,
     /// An unrecognised APPn segment.
@@ -452,6 +455,7 @@ fn audit_jpeg(data: &[u8], embedded: bool) -> FileAudit<'_> {
             Region::Iptc { segment, .. } => (RegionKind::Iptc, segment),
             Region::Jumbf { segment, .. } => (RegionKind::Jumbf, segment),
             Region::EmbeddedImage { segment, .. } => (RegionKind::EmbeddedImage, segment),
+            Region::JfifThumbnail { segment, .. } => (RegionKind::JfifThumbnail, segment),
             Region::Comment { segment, .. } => (RegionKind::Comment, segment),
             Region::OtherApp { segment, .. } => (RegionKind::OtherApp, segment),
             Region::Trailer { segment, .. } => (RegionKind::Trailer, segment),
@@ -475,7 +479,14 @@ fn audit_jpeg(data: &[u8], embedded: bool) -> FileAudit<'_> {
             Region::EmbeddedImage { offset, data, .. } => Some(embedded_summary(offset, data)),
             _ => None,
         };
-        b.push_with(item, Some(region_category(kind)), None, summary);
+        // A JFIF thumbnail has no range in a TIFF blob, but "a thumbnail marker
+        // accompanies exactly the Thumbnail category" holds (DEC-012 amendment
+        // of 2026-11-24). No other region kind is a Thumbnail.
+        let thumb = (kind == RegionKind::JfifThumbnail).then_some(ThumbnailRange {
+            range: None,
+            starts_with_ffd8: false,
+        });
+        b.push_with(item, Some(region_category(kind)), thumb, summary);
     }
     b.finish(
         ContainerKind::Jpeg,
@@ -1860,6 +1871,64 @@ mod tests {
             ItemKind::Tag { .. } => panic!("a tag"),
         }
         assert!(a.findings()[0].embedded.is_none());
+    }
+
+    /// A JFIF APP0 payload typed by hand: version 1.01, 72 dpi, then the
+    /// thumbnail dimensions and data.
+    fn jfif_with(x: u8, y: u8, data: &[u8]) -> Vec<u8> {
+        let mut p = b"JFIF\0\x01\x01\x01\0\x48\0\x48".to_vec();
+        p.push(x);
+        p.push(y);
+        p.extend_from_slice(data);
+        p
+    }
+
+    #[test]
+    fn a_jfif_thumbnail_is_a_medium_thumbnail_finding_with_no_range() {
+        // AC6.
+        let a = audit(&jpeg(&[seg(0xE0, &jfif_with(2, 2, &[7u8; 12]))]));
+        // `Health::clean` is about parse health, as for a comment region: a
+        // finding does not make it false (AC6's "is_clean" read this way).
+        assert!(a.health().clean);
+        assert_eq!(cats(&a), vec![Category::Thumbnail]);
+        let f = &a.findings()[0];
+        assert_eq!(f.category.severity(), Severity::Medium);
+        assert_eq!(
+            f.thumbnail,
+            Some(ThumbnailRange {
+                range: None,
+                starts_with_ffd8: false
+            })
+        );
+        match f.at.kind() {
+            ItemKind::Region { kind, len, segment } => {
+                assert_eq!(kind, RegionKind::JfifThumbnail);
+                assert_eq!((len, segment), (12, 0));
+            }
+            ItemKind::Tag { .. } => panic!("a tag"),
+        }
+        // A JFIF segment without a thumbnail is no finding.
+        let a = audit(&jpeg(&[seg(0xE0, &jfif_with(0, 0, &[]))]));
+        assert!(a.findings().is_empty());
+        // "A thumbnail range iff Thumbnail" still holds for every finding.
+        let a = audit(&jpeg(&[
+            seg(0xE0, &jfif_with(1, 1, &[1, 2, 3])),
+            seg(0xFE, b"c"),
+        ]));
+        assert!(a
+            .findings()
+            .iter()
+            .all(|f| f.thumbnail.is_some() == (f.category == Category::Thumbnail)));
+    }
+
+    #[test]
+    fn an_mpf_secondary_with_a_jfif_thumbnail_holds_thumbnail() {
+        // AC6, the `holds` half.
+        let inner = jpeg(&[seg(0xE0, &jfif_with(2, 2, &[7u8; 12]))]);
+        let a = audit(&mpo(&[], &[inner]));
+        let e = embedded_findings(&a);
+        assert_eq!(e.len(), 1);
+        assert_eq!(holds_of(e[0]), vec![Category::Thumbnail]);
     }
 
     #[test]

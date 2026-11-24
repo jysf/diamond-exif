@@ -80,13 +80,14 @@ mod render_invariants {
     pub const IFDS: [&str; 8] = [
         "ifd0", "ifd1", "chain", "sub", "exif", "gps", "interop", "other",
     ];
-    pub const REGIONS: [&str; 14] = [
+    pub const REGIONS: [&str; 15] = [
         "xmp",
         "extended_xmp",
         "iptc",
         "icc",
         "jumbf",
         "embedded_image",
+        "jfif_thumbnail",
         "comment",
         "other_app",
         "trailer",
@@ -109,6 +110,7 @@ mod render_invariants {
             "Icc" => "icc",
             "Jumbf" => "jumbf",
             "EmbeddedImage" => "embedded_image",
+            "JfifThumbnail" => "jfif_thumbnail",
             "Comment" => "comment",
             "OtherApp" => "other_app",
             "Trailer" => "trailer",

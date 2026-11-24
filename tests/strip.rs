@@ -76,6 +76,7 @@ fn kind_of(k: K) -> RemovalKind {
         K::Iptc => RemovalKind::Iptc,
         K::Jumbf => RemovalKind::Jumbf,
         K::Com => RemovalKind::Comment,
+        K::JfifThumb => RemovalKind::Jfif,
         K::OtherApp => RemovalKind::OtherApp,
         K::Trailer => RemovalKind::Trailer,
         K::Image => RemovalKind::EmbeddedImage,
@@ -3037,4 +3038,122 @@ fn capped_mpf_index_with_only_an_in_place_exif_edit_still_strips() {
     );
     let out = strip(&s.bytes, policy("gps")).unwrap();
     assert_eq!(out.bytes().len(), s.bytes.len());
+}
+
+// ── SPEC-040: a JFIF APP0 thumbnail ─────────────────────────────────────────
+
+/// An APP0 JFIF payload typed from the JFIF layout: version 1.01, 72 dpi, the
+/// thumbnail dimensions, then `data`.
+fn jfif_payload(x: u8, y: u8, data: &[u8]) -> Vec<u8> {
+    let mut v = b"JFIF\0\x01\x01\x01\0\x48\0\x48".to_vec();
+    v.push(x);
+    v.push(y);
+    v.extend_from_slice(data);
+    v
+}
+
+/// A JPEG whose APP0 segments carry these payloads, in order, right after the
+/// SOI (so the first segment starts at input offset 2).
+fn jfif_file(segments: &[Vec<u8>]) -> Vec<u8> {
+    real_shapes::jpeg_of(
+        &segments
+            .iter()
+            .map(|p| real_shapes::seg(0xE0, p))
+            .collect::<Vec<_>>(),
+    )
+}
+
+#[test]
+fn jfif_thumbnail_segment_is_cut_under_thumbnail_policies() {
+    // AC8: the output is the input with that whole APP0 segment spliced out.
+    let payload = jfif_payload(2, 2, &[0x55; 12]);
+    let input = jfif_file(std::slice::from_ref(&payload));
+    let seg_len = payload.len() + 4;
+    let mut want = input[..2].to_vec();
+    want.extend_from_slice(&input[2 + seg_len..]);
+    let thumbnail_only = StripPolicy::Custom(spec_of(&[Category::Thumbnail]));
+    let cases = [
+        ("all_pii", StripPolicy::AllPii),
+        ("all", StripPolicy::All),
+        ("everything", StripPolicy::Everything),
+        ("custom thumbnail", thumbnail_only),
+    ];
+    for (name, p) in cases {
+        let out = strip(&input, p).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!(out.bytes(), &want[..], "{name}");
+        let r = out.removals();
+        assert_eq!(r.len(), 1, "{name}: {r:?}");
+        assert_eq!(r[0].kind, RemovalKind::Jfif, "{name}");
+        assert_eq!(r[0].category, Category::Thumbnail, "{name}");
+        assert_eq!((r[0].offset, r[0].len), (2, seg_len), "{name}");
+    }
+}
+
+#[test]
+fn jfif_thumbnail_is_kept_under_gps_presets() {
+    // AC9.
+    let input = jfif_file(&[jfif_payload(2, 2, &[0x55; 12])]);
+    for (name, p) in [
+        ("gps", StripPolicy::Gps),
+        ("gps_and_device", StripPolicy::GpsAndDevice),
+        ("none", StripPolicy::Custom(StripSpec::none())),
+        ("custom gps", StripPolicy::Custom(spec_of(&[Category::Gps]))),
+    ] {
+        let out = strip(&input, p).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!(out.bytes(), &input[..], "{name}");
+        assert!(out.removals().is_empty(), "{name}");
+    }
+}
+
+#[test]
+fn a_jfif_segment_without_a_thumbnail_is_never_cut() {
+    // AC9, every policy the file lists, `Everything` included.
+    let shapes = [
+        jfif_payload(0, 0, &[]),
+        jfif_payload(2, 0, &[]),
+        jfif_payload(0, 0, b"hidden text!"),
+        b"JFIF\0\x01\x01".to_vec(),
+    ];
+    for payload in shapes {
+        let input = jfif_file(&[payload]);
+        for (name, p) in policies() {
+            let out = strip(&input, p).unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert_eq!(out.bytes(), &input[..], "{name}");
+        }
+    }
+}
+
+#[test]
+fn two_jfif_segments_only_the_one_with_a_thumbnail_is_cut() {
+    // AC8: the plain segment stays, whichever order they come in.
+    let thumb = jfif_payload(1, 1, &[1, 2, 3]);
+    let plain = jfif_payload(0, 0, &[]);
+    for (first, second) in [(&thumb, &plain), (&plain, &thumb)] {
+        let input = jfif_file(&[first.clone(), second.clone()]);
+        let (cut_at, cut_len) = if first == &thumb {
+            (2, thumb.len() + 4)
+        } else {
+            (2 + plain.len() + 4, thumb.len() + 4)
+        };
+        let mut want = input[..cut_at].to_vec();
+        want.extend_from_slice(&input[cut_at + cut_len..]);
+        let out = strip(&input, StripPolicy::Everything).unwrap();
+        assert_eq!(out.bytes(), &want[..]);
+        let r = out.removals();
+        assert_eq!(r.len(), 1, "{r:?}");
+        assert_eq!(
+            (r[0].kind, r[0].category),
+            (RemovalKind::Jfif, Category::Thumbnail)
+        );
+        assert_eq!((r[0].offset, r[0].len), (cut_at, cut_len));
+    }
+}
+
+#[test]
+fn a_lone_jfif_thumbnail_strips_with_no_exif_segment() {
+    // The Exif path ignores a region finding that sits in no Exif block: with
+    // no Exif segment present, `AllPii` still succeeds (one removal).
+    let input = jfif_file(&[jfif_payload(1, 1, &[1, 2, 3])]);
+    let out = strip(&input, StripPolicy::AllPii).unwrap();
+    assert_eq!(out.removals().len(), 1);
 }

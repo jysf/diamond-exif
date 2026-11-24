@@ -36,6 +36,10 @@ pub const FILE_LEVEL_GROUPS: [&str; 4] = ["System", "File", "ExifTool", "Composi
 /// name; any other group that is not modelled is a [`ParseError`].
 pub const UNMODELLED_GROUPS: [&str; 2] = ["JFIF", "Photoshop"];
 
+/// The `JFIF` line ExifTool prints for the thumbnail of a JFIF APP0 segment
+/// (measured, ExifTool 13.55: id `0x0009`).
+pub const JFIF_THUMBNAIL_NAME: &str = "ThumbnailTIFF";
+
 /// ExifTool groups that exist only on the SPEC-019 real-shape fixtures and that
 /// the audit model has no item for: the Apple `AROT` APP10 segment (ExifTool
 /// decodes `HDRGainCurveSize` from it; the audit reports the segment as an
@@ -185,6 +189,10 @@ pub enum RegionKind {
     Iptc,
     Icc,
     Jumbf,
+    /// SPEC-040: the thumbnail of a JFIF APP0 segment. ExifTool's counterpart
+    /// is the one `JFIF` line `ThumbnailTIFF` (id `0x0009`); every other
+    /// `JFIF` line stays dropped.
+    JfifThumbnail,
 }
 
 /// One side's inventory.
@@ -353,6 +361,7 @@ pub fn ours_png(a: &FileAudit<'_>, first_ok_block: Option<usize>) -> Inventory {
                     LibRegionKind::Iptc => RegionKind::Iptc,
                     LibRegionKind::Icc => RegionKind::Icc,
                     LibRegionKind::Jumbf => RegionKind::Jumbf,
+                    LibRegionKind::JfifThumbnail => RegionKind::JfifThumbnail,
                     other => panic!("a RegionKind the inventory model does not know: {other:?}"),
                 };
                 inv.regions.insert(k);
@@ -554,6 +563,12 @@ pub fn inventory_of(lines: &[Line]) -> Result<Inventory, ParseError> {
     let mut inv = Inventory::default();
     for l in lines {
         let describe = || format!("{} {:?} {}", l.group, l.id, l.name);
+        // SPEC-040: the one JFIF line that is a region (the thumbnail). The rest
+        // of the JFIF group is the header and stays unmodelled.
+        if l.group == "JFIF" && l.name == JFIF_THUMBNAIL_NAME {
+            inv.regions.insert(RegionKind::JfifThumbnail);
+            continue;
+        }
         match classify_group(&l.group) {
             Some(GroupClass::Exif) => {
                 let Some(id) = l.id else { continue };
@@ -964,6 +979,7 @@ pub fn parse_probe_text(text: &str) -> Result<Inventory, String> {
                     "Iptc" => RegionKind::Iptc,
                     "Icc" => RegionKind::Icc,
                     "Jumbf" => RegionKind::Jumbf,
+                    "JfifThumbnail" => RegionKind::JfifThumbnail,
                     other => return Err(format!("unknown region kind {other:?}")),
                 };
                 inv.regions.insert(kind);

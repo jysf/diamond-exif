@@ -217,6 +217,7 @@ pub fn region_category(kind: RegionKind) -> Category {
         RegionKind::Jumbf => Category::Jumbf,
         RegionKind::EmbeddedImage => Category::EmbeddedImage,
         RegionKind::Comment => Category::FreeText,
+        RegionKind::JfifThumbnail => Category::Thumbnail,
         RegionKind::OtherApp | RegionKind::Trailer => Category::OtherSegment,
         // A raw profile and a PNG trailer are present, not parsed, and may hold
         // Exif (DEC-020).
@@ -582,6 +583,11 @@ mod tests {
             Category::OtherSegment
         );
         assert_eq!(region_category(RegionKind::Trailer), Category::OtherSegment);
+        // DEC-012 amendment of 2026-11-24: a JFIF thumbnail is a Thumbnail.
+        assert_eq!(
+            region_category(RegionKind::JfifThumbnail),
+            Category::Thumbnail
+        );
     }
 
     #[test]

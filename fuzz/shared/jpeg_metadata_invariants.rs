@@ -49,6 +49,7 @@ mod metadata_invariants {
         Jumbf(usize, u16, u32, &'a [u8]),
         Embedded(usize, usize, &'a [u8]),
         Comment(usize, &'a [u8]),
+        JfifThumb(usize, &'a [u8]),
         OtherApp(usize, u8, &'a [u8]),
         Trailer(usize, usize, &'a [u8]),
     }
@@ -82,6 +83,7 @@ mod metadata_invariants {
                 data,
             } => Exp::Embedded(segment, offset, data),
             Region::Comment { segment, data } => Exp::Comment(segment, data),
+            Region::JfifThumbnail { segment, data } => Exp::JfifThumb(segment, data),
             Region::OtherApp {
                 segment,
                 marker,
@@ -171,8 +173,8 @@ mod metadata_invariants {
                 regions.push(Exp::Comment(index, p));
             } else if (0xE0..=0xEF).contains(&seg.marker()) && !recognised(seg.marker(), p) {
                 let is_mpf = seg.marker() == 0xE2 && p.starts_with(b"MPF\0");
-                let benign = (seg.marker() == 0xE0 && p.starts_with(b"JFIF\0"))
-                    || (seg.marker() == 0xEE && p.starts_with(b"Adobe\0"));
+                let jfif = seg.marker() == 0xE0 && p.starts_with(b"JFIF\0");
+                let benign = seg.marker() == 0xEE && p.starts_with(b"Adobe\0");
                 if is_mpf {
                     let images = if mpf_seen { None } else { mpf_images(p) };
                     mpf_seen = true;
@@ -206,6 +208,28 @@ mod metadata_invariants {
                         None => {
                             errors.push(Error::MpfMalformed { at });
                             regions.push(Exp::OtherApp(index, seg.marker(), p));
+                        }
+                    }
+                } else if jfif {
+                    // DEC-012 amendment of 2026-11-24, from the JFIF layout:
+                    // the 14-byte header ends with Xthumbnail and Ythumbnail;
+                    // the thumbnail is min(3*X*Y, bytes present) bytes after
+                    // it, and a shortfall costs one issue. Any version, any
+                    // position; a header under 14 bytes has no thumbnail.
+                    if p.len() >= 14 {
+                        let n = 3 * usize::from(p[12]) * usize::from(p[13]);
+                        let have = p.len() - 14;
+                        if n > have {
+                            errors.push(Error::RegionTooShort {
+                                what: "JFIF thumbnail",
+                                at,
+                                need: n,
+                                have,
+                            });
+                        }
+                        let take = n.min(have);
+                        if take > 0 {
+                            regions.push(Exp::JfifThumb(index, &p[14..14 + take]));
                         }
                     }
                 } else if !benign {
@@ -540,6 +564,7 @@ mod metadata_invariants {
                 Region::Iptc { .. } => seg.kind() == SegmentKind::Iptc,
                 Region::Jumbf { .. } => seg.kind() == SegmentKind::Jumbf,
                 Region::Comment { .. } => seg.kind() == SegmentKind::Com,
+                Region::JfifThumbnail { .. } => seg.kind() == SegmentKind::Jfif,
                 Region::OtherApp { .. } | Region::EmbeddedImage { .. } => {
                     matches!(seg.kind(), SegmentKind::App(_))
                 }
