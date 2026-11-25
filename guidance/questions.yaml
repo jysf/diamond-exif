@@ -1826,3 +1826,24 @@ questions:
       value level. The 31 WebP_Flags pairs are a new class, D6: ExifTool recomputes the VP8X flags
       and we clear only the bits of kinds we removed (DEC-022 clause 7). They are not D1. There are
       157 identical pairs. Exception (c) gets its two fixtures in Part B.
+
+  - id: i3-judge-exception-c-converse
+    question: "Is the converse of DEC-023 rule 3 exception (c) part of that exception: `Composite:GPS*` derived from a plain XMP packet go with the packet when a policy removes `Xmp`?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-25
+    assigned_to: null
+    notes: |
+      SPEC-039 Part B build. The two exception (c) fixtures (`png-xmp-plain-gps`,
+      `webp-xmp-plain-gps`, a plain XMP packet with GPS properties) showed that exception (c) as
+      written is one-directional: it excuses a `Composite:GPS*` tag that is still printed from a
+      kept XMP packet under a Gps-removing policy. Under the Custom `xmp` policy (removes `Xmp`,
+      keeps `Gps`) the packet goes, and the `Composite:GPS*` tags ExifTool derives from it go too:
+      6 "kept tag missing" lines (3 per fixture: GPSLatitudeRef, GPSLongitudeRef, GPSPosition). A
+      derived tag follows its source, so the build counts this under the same exception (c), in
+      `i3_judge::judge`, only when the input's XMP holds a GPS property and the policy removes
+      `Xmp`. A red-proof shows it is not a blanket excuse
+      (`comparator_is_red_when_exception_c_is_claimed_without_an_xmp_source`). The architect
+      should ratify it in DEC-023 rule 3 (c), or say what else to do. No count of the design
+      changes: the extra fixtures are not among the 174.

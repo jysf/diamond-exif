@@ -1116,6 +1116,7 @@ pub const DIFFERENCES: &[Diff] = &[
             "webp-xmp-nul-id-7-bytes",
             "webp-xmp-nul-id",
             "webp-xmp-odd-padded",
+            "webp-xmp-plain-gps",
             "webp-xmp-three",
             "webp-xmp-two-distinct",
             "webp-xmp-two",

@@ -12,7 +12,11 @@
 //!    plus the keyword),
 //! 5. one PNG with a `caBX` JUMBF manifest,
 //! 6. one WebP per `webp_carriers` row (the row's own payload, one chunk before
-//!    the image data).
+//!    the image data),
+//! 7. (SPEC-039 Part B) one PNG and one WebP that hold a plain XMP packet with
+//!    GPS properties, so that the judge's exception (c) is used: ExifTool
+//!    derives `Composite:GPS*` from the XMP a keeping preset leaves. They are
+//!    not among the 174 oracle fixtures the design's counts are over.
 //!
 //! No import from `src/`. The expectations are typed elsewhere (the judge, the
 //! tables), never derived from the library.
@@ -205,6 +209,32 @@ pub fn row_shapes() -> Vec<(String, Vec<u8>)> {
         .collect()
 }
 
+/// Exception (c)'s two fixtures: a plain XMP packet with a GPS position, in a
+/// PNG (an uncompressed `iTXt` keyed `XML:com.adobe.xmp`) and in a WebP (an
+/// `XMP ` chunk).
+pub fn xmp_gps_shapes() -> Vec<(String, &'static str, Vec<u8>)> {
+    let xmp = xmp_with_gps();
+    // keyword, NUL, flag 0, method 0, language NUL, translated NUL, text
+    let itxt = [b"XML:com.adobe.xmp\0\0\0\0\0".to_vec(), xmp.clone()].concat();
+    vec![
+        (
+            "png-xmp-plain-gps".to_string(),
+            "png",
+            with(&[oracle_png::chunk(b"iTXt", &itxt)]),
+        ),
+        (
+            "webp-xmp-plain-gps".to_string(),
+            "webp",
+            webp_shapes::riff(&[
+                // The XMP flag (0x04) is set, as a real file's would be.
+                webp_shapes::vp8x(0x04, 8, 8),
+                webp_shapes::chunk(b"XMP ", &xmp),
+                webp_shapes::vp8l(),
+            ]),
+        ),
+    ]
+}
+
 /// The whole I3 set, in the order of the module comment.
 pub fn fixtures() -> Vec<Fixture> {
     let mut out = Vec::new();
@@ -239,6 +269,9 @@ pub fn fixtures() -> Vec<Fixture> {
             ext: "webp",
             bytes,
         });
+    }
+    for (name, ext, bytes) in xmp_gps_shapes() {
+        out.push(Fixture { name, ext, bytes });
     }
     out
 }

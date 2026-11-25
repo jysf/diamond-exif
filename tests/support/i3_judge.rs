@@ -23,7 +23,11 @@
 //!   chunk, so the uncategorised Exif tags go with it;
 //! * (c) the stated residuals: `Composite:GPS*` derived from an XMP packet
 //!   that a policy keeping `Xmp` leaves, and `JUMBF`/`JSON` contents under a
-//!   policy that keeps `Jumbf` (those are simply a kept category).
+//!   policy that keeps `Jumbf` (those are simply a kept category). A derived
+//!   tag follows its source, so the converse is the same exception: when the
+//!   input's XMP holds GPS properties and the policy removes `Xmp`, the
+//!   `Composite:GPS*` derived from them go with the packet (SPEC-039 Part B,
+//!   raised as question `i3-judge-exception-c-converse`).
 //!
 //! Shared by `tests/strip_png_webp_oracle.rs`, `tests/strip_png_live.rs` and
 //! `tests/strip_webp_live.rs`.
@@ -425,6 +429,12 @@ pub fn judge(
             .iter()
             .any(|l| l.group.starts_with("XMP") && l.tag.starts_with("GPS"));
 
+    // The input's XMP packet holds a GPS property (a plain packet, not a
+    // carrier): the source of `Composite:GPS*` tags that follow it.
+    let xmp_gps_in_input = input
+        .iter()
+        .any(|l| l.group.starts_with("XMP") && l.tag.starts_with("GPS"));
+
     // Output lines the input did not have.
     let mut phantom: Vec<(String, String, String)> = Vec::new();
     for (k, n) in &out_m {
@@ -491,6 +501,13 @@ pub fn judge(
                 .any(|t| t.split_once(':').is_some_and(|(g, _)| g == k.0));
         if carrier_line && removes_carriers(policy) {
             v.uses.carrier += 1;
+        } else if k.0 == "Composite"
+            && k.1.starts_with("GPS")
+            && xmp_gps_in_input
+            && removes(policy, Cat::Xmp)
+        {
+            // Exception (c), converse: derived from the XMP packet that went.
+            v.uses.residual += 1;
         } else if in_exif && holds_every_exif_category(policy) {
             v.uses.whole_block += 1;
         } else {

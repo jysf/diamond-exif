@@ -373,7 +373,7 @@ fn assert_judge_holds(t: &Totals) {
     );
     // Exception (c), the residual, is reached by the two plain-XMP-with-GPS
     // fixtures at the end of `i3_shapes` (SPEC-039 Part B).
-    assert!(t.uses.residual >= 1, "residual used {}", t.uses.residual);
+    assert!(t.uses.residual >= 20, "residual used {}", t.uses.residual);
 }
 
 #[test]
@@ -823,6 +823,35 @@ fn comparator_is_red_when_the_carrier_exception_is_claimed_without_a_carrier() {
         "{f:?}"
     );
     println!("AC7 (v) red: {}", f.first().cloned().unwrap_or_default());
+}
+
+#[test]
+fn comparator_is_red_when_exception_c_is_claimed_without_an_xmp_source() {
+    // Control: under `xmp`, the plain XMP packet's `Composite:GPS*` go with it
+    // and the judge excuses that (exception (c)) ...
+    assert!(judged_with("png-xmp-plain-gps", "xmp", &|_, _| {}).is_empty());
+    // ... but a file whose GPS comes from an Exif block has no XMP source: the
+    // same loss of `Composite:GPSLatitude` under `xmp` is a failure.
+    let f = judged_with(GPS_FIXTURE, "xmp", &|out, _| {
+        let at = out
+            .iter()
+            .position(|l| l.group == "Composite" && l.tag == "GPSLatitude")
+            .expect("a Composite GPS tag kept under xmp");
+        out.remove(at);
+    });
+    assert!(
+        contains_all(
+            &f,
+            &[
+                GPS_FIXTURE,
+                "under xmp",
+                "kept tag missing",
+                "Composite:GPSLatitude"
+            ]
+        ),
+        "{f:?}"
+    );
+    println!("AC7 (x) red: {}", f.first().cloned().unwrap_or_default());
 }
 
 #[test]
