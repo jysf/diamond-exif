@@ -1,0 +1,10 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# writes: exiftool -all= -o <out> <file>; exiftool -gps:all= -o <out> <file>
+# exiftool-version: 13.55
+# fixture: webp-header-wave
+## input
+IFD0	Make	WaveCam
+## exiftool:all
+# refused: Error: Can't currently write RIFF WAVE files - <file>
+## exiftool:gps:all
+# refused: Error: Can't currently write RIFF WAVE files - <file>

@@ -1,0 +1,153 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# writes: exiftool -all= -o <out> <file>; exiftool -gps:all= -o <out> <file>
+# exiftool-version: 13.55
+# fixture: webp-riff-size-10
+## input
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## gps
+# output: 108 a647f47daa7354e7
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## gps_and_device
+# output: 108 a647f47daa7354e7
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## all_pii
+# output: 108 90950dd83969fc8e
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## all
+# output: 44 ab4308bbe524f1d0
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## everything
+# output: 44 ab4308bbe524f1d0
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## xmp
+# output: 108 a647f47daa7354e7
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## icc
+# output: 108 a647f47daa7354e7
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## jumbf
+# output: 108 a647f47daa7354e7
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## rights
+# output: 108 a647f47daa7354e7
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## timestamps
+# output: 108 a647f47daa7354e7
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## free_text
+# output: 108 a647f47daa7354e7
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## other
+# output: 108 a647f47daa7354e7
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## exiftool:all
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+## exiftool:gps:all
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06

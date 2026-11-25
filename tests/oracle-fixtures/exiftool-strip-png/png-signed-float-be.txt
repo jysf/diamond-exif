@@ -1,0 +1,249 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# writes: exiftool -all= -o <out> <file>; exiftool -gps:all= -o <out> <file>
+# exiftool-version: 13.55
+# fixture: png-signed-float-be
+## input
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+IFD0	Make	SignedFloat
+ExifIFD	ExposureTime	0.125
+ExifIFD	ExposureProgram	-2
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.125
+Composite	FocalLength35efl	4.5
+## gps
+# output: 194 75f88591c53cbe19
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+IFD0	Make	SignedFloat
+ExifIFD	ExposureTime	0.125
+ExifIFD	ExposureProgram	-2
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.125
+Composite	FocalLength35efl	4.5
+## gps_and_device
+# output: 194 75f88591c53cbe19
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+IFD0	Make	SignedFloat
+ExifIFD	ExposureTime	0.125
+ExifIFD	ExposureProgram	-2
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.125
+Composite	FocalLength35efl	4.5
+## all_pii
+# output: 194 4253f7dd71ca5334
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+ExifIFD	ExposureTime	0.125
+ExifIFD	ExposureProgram	-2
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.125
+Composite	FocalLength35efl	4.5
+## all
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## everything
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## xmp
+# output: 194 75f88591c53cbe19
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+IFD0	Make	SignedFloat
+ExifIFD	ExposureTime	0.125
+ExifIFD	ExposureProgram	-2
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.125
+Composite	FocalLength35efl	4.5
+## icc
+# output: 194 75f88591c53cbe19
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+IFD0	Make	SignedFloat
+ExifIFD	ExposureTime	0.125
+ExifIFD	ExposureProgram	-2
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.125
+Composite	FocalLength35efl	4.5
+## jumbf
+# output: 194 75f88591c53cbe19
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+IFD0	Make	SignedFloat
+ExifIFD	ExposureTime	0.125
+ExifIFD	ExposureProgram	-2
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.125
+Composite	FocalLength35efl	4.5
+## rights
+# output: 194 75f88591c53cbe19
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+IFD0	Make	SignedFloat
+ExifIFD	ExposureTime	0.125
+ExifIFD	ExposureProgram	-2
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.125
+Composite	FocalLength35efl	4.5
+## timestamps
+# output: 194 75f88591c53cbe19
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+IFD0	Make	SignedFloat
+ExifIFD	ExposureTime	0.125
+ExifIFD	ExposureProgram	-2
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.125
+Composite	FocalLength35efl	4.5
+## free_text
+# output: 194 75f88591c53cbe19
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+IFD0	Make	SignedFloat
+ExifIFD	ExposureTime	0.125
+ExifIFD	ExposureProgram	-2
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.125
+Composite	FocalLength35efl	4.5
+## other
+# output: 194 75f88591c53cbe19
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+IFD0	Make	SignedFloat
+ExifIFD	ExposureTime	0.125
+ExifIFD	ExposureProgram	-2
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.125
+Composite	FocalLength35efl	4.5
+## exiftool:all
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## exiftool:gps:all
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+IFD0	Make	SignedFloat
+ExifIFD	ExposureTime	0.125
+ExifIFD	ExposureProgram	-2
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.125
+Composite	FocalLength35efl	4.5

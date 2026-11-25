@@ -1,0 +1,9 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# writes: exiftool -all= -o <out> <file>; exiftool -gps:all= -o <out> <file>
+# exiftool-version: 13.55
+# fixture: webp-header-11-bytes
+## input
+## exiftool:all
+# refused: Error: Format error in file - <file>
+## exiftool:gps:all
+# refused: Error: Format error in file - <file>

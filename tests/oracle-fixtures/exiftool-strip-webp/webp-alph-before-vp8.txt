@@ -1,0 +1,173 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# writes: exiftool -all= -o <out> <file>; exiftool -gps:all= -o <out> <file>
+# exiftool-version: 13.55
+# fixture: webp-alph-before-vp8
+## input
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	AlphaPreprocessing	0
+RIFF	AlphaFiltering	0
+RIFF	AlphaCompression	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## gps
+# output: 124 de49611ce20eafa8
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	AlphaPreprocessing	0
+RIFF	AlphaFiltering	0
+RIFF	AlphaCompression	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## gps_and_device
+# output: 124 de49611ce20eafa8
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	AlphaPreprocessing	0
+RIFF	AlphaFiltering	0
+RIFF	AlphaCompression	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## all_pii
+# output: 124 491f108f4c32f11d
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	AlphaPreprocessing	0
+RIFF	AlphaFiltering	0
+RIFF	AlphaCompression	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## all
+# output: 60 9ad7a381706353df
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	AlphaPreprocessing	0
+RIFF	AlphaFiltering	0
+RIFF	AlphaCompression	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## everything
+# output: 60 9ad7a381706353df
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	AlphaPreprocessing	0
+RIFF	AlphaFiltering	0
+RIFF	AlphaCompression	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## xmp
+# output: 124 de49611ce20eafa8
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	AlphaPreprocessing	0
+RIFF	AlphaFiltering	0
+RIFF	AlphaCompression	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## icc
+# output: 124 de49611ce20eafa8
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	AlphaPreprocessing	0
+RIFF	AlphaFiltering	0
+RIFF	AlphaCompression	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## jumbf
+# output: 124 de49611ce20eafa8
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	AlphaPreprocessing	0
+RIFF	AlphaFiltering	0
+RIFF	AlphaCompression	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## rights
+# output: 124 de49611ce20eafa8
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	AlphaPreprocessing	0
+RIFF	AlphaFiltering	0
+RIFF	AlphaCompression	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## timestamps
+# output: 124 de49611ce20eafa8
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	AlphaPreprocessing	0
+RIFF	AlphaFiltering	0
+RIFF	AlphaCompression	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## free_text
+# output: 124 de49611ce20eafa8
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	AlphaPreprocessing	0
+RIFF	AlphaFiltering	0
+RIFF	AlphaCompression	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## other
+# output: 124 de49611ce20eafa8
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	AlphaPreprocessing	0
+RIFF	AlphaFiltering	0
+RIFF	AlphaCompression	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## exiftool:all
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	AlphaPreprocessing	0
+RIFF	AlphaFiltering	0
+RIFF	AlphaCompression	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## exiftool:gps:all
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	AlphaPreprocessing	0
+RIFF	AlphaFiltering	0
+RIFF	AlphaCompression	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06

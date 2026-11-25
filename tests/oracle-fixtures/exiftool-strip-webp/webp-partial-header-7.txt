@@ -1,0 +1,144 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# writes: exiftool -all= -o <out> <file>; exiftool -gps:all= -o <out> <file>
+# exiftool-version: 13.55
+# fixture: webp-partial-header-7
+## input
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## gps
+# output: 115 bd54e60a9e93b4bd
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## gps_and_device
+# output: 115 bd54e60a9e93b4bd
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## all_pii
+# output: 115 9711970e10d23042
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## all
+# output: 51 ddfd8289e40d25c8
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## everything
+# output: 51 ddfd8289e40d25c8
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## xmp
+# output: 115 bd54e60a9e93b4bd
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## icc
+# output: 115 bd54e60a9e93b4bd
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## jumbf
+# output: 115 bd54e60a9e93b4bd
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## rights
+# output: 115 bd54e60a9e93b4bd
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## timestamps
+# output: 115 bd54e60a9e93b4bd
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## free_text
+# output: 115 bd54e60a9e93b4bd
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## other
+# output: 115 bd54e60a9e93b4bd
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## exiftool:all
+# refused: Error: RIFF format error - <file>
+## exiftool:gps:all
+# refused: Error: RIFF format error - <file>

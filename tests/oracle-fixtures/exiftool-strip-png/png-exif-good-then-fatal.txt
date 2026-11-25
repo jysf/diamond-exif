@@ -1,0 +1,90 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# writes: exiftool -all= -o <out> <file>; exiftool -gps:all= -o <out> <file>
+# exiftool-version: 13.55
+# fixture: png-exif-good-then-fatal
+## input
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+PNG	eXIf	(Binary data 16 bytes, use -b option to extract)
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## all
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## everything
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## jumbf
+# output: 166 f4b238b8ce4495a5
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+PNG	eXIf	(Binary data 16 bytes, use -b option to extract)
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## other
+# output: 166 f4b238b8ce4495a5
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+PNG	eXIf	(Binary data 16 bytes, use -b option to extract)
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## exiftool:all
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## exiftool:gps:all
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+PNG	eXIf	(Binary data 16 bytes, use -b option to extract)
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06

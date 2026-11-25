@@ -1,0 +1,176 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# writes: exiftool -all= -o <out> <file>; exiftool -gps:all= -o <out> <file>
+# exiftool-version: 13.55
+# fixture: png-kw-18-aesthetic-score
+## input
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+PNG	AestheticScore	Sweepaesthetic_score
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## gps
+# output: 118 428d2489e77b3f22
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+PNG	AestheticScore	Sweepaesthetic_score
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## gps_and_device
+# output: 118 428d2489e77b3f22
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+PNG	AestheticScore	Sweepaesthetic_score
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## all_pii
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## all
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## everything
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## xmp
+# output: 118 428d2489e77b3f22
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+PNG	AestheticScore	Sweepaesthetic_score
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## icc
+# output: 118 428d2489e77b3f22
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+PNG	AestheticScore	Sweepaesthetic_score
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## jumbf
+# output: 118 428d2489e77b3f22
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+PNG	AestheticScore	Sweepaesthetic_score
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## rights
+# output: 118 428d2489e77b3f22
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+PNG	AestheticScore	Sweepaesthetic_score
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## timestamps
+# output: 118 428d2489e77b3f22
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+PNG	AestheticScore	Sweepaesthetic_score
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## free_text
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## other
+# output: 118 428d2489e77b3f22
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+PNG	AestheticScore	Sweepaesthetic_score
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## exiftool:all
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## exiftool:gps:all
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+PNG	AestheticScore	Sweepaesthetic_score
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06

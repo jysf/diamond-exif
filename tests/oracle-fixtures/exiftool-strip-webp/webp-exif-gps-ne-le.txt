@@ -1,0 +1,198 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# writes: exiftool -all= -o <out> <file>; exiftool -gps:all= -o <out> <file>
+# exiftool-version: 13.55
+# fixture: webp-exif-gps-ne-le
+## input
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	GpsCam
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	37.4252083333333
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	122.096916666667
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	GPSLatitude	37.4252083333333
+Composite	GPSLongitude	122.096916666667
+Composite	GPSPosition	37.4252083333333 122.096916666667
+## gps
+# output: 200 a51f62305078c239
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	GpsCam
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## gps_and_device
+# output: 200 a51f62305078c239
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	GpsCam
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## all_pii
+# output: 200 eb94d2ddd25570f0
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## all
+# output: 44 f4e8867eeb98f4ea
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## everything
+# output: 44 f4e8867eeb98f4ea
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## xmp
+# output: 200 82573b2a381ecd9c
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	GpsCam
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	37.4252083333333
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	122.096916666667
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	GPSLatitude	37.4252083333333
+Composite	GPSLongitude	122.096916666667
+Composite	GPSPosition	37.4252083333333 122.096916666667
+## icc
+# output: 200 82573b2a381ecd9c
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	GpsCam
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	37.4252083333333
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	122.096916666667
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	GPSLatitude	37.4252083333333
+Composite	GPSLongitude	122.096916666667
+Composite	GPSPosition	37.4252083333333 122.096916666667
+## jumbf
+# output: 200 82573b2a381ecd9c
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	GpsCam
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	37.4252083333333
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	122.096916666667
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	GPSLatitude	37.4252083333333
+Composite	GPSLongitude	122.096916666667
+Composite	GPSPosition	37.4252083333333 122.096916666667
+## rights
+# output: 200 82573b2a381ecd9c
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	GpsCam
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	37.4252083333333
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	122.096916666667
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	GPSLatitude	37.4252083333333
+Composite	GPSLongitude	122.096916666667
+Composite	GPSPosition	37.4252083333333 122.096916666667
+## timestamps
+# output: 200 82573b2a381ecd9c
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	GpsCam
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	37.4252083333333
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	122.096916666667
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	GPSLatitude	37.4252083333333
+Composite	GPSLongitude	122.096916666667
+Composite	GPSPosition	37.4252083333333 122.096916666667
+## free_text
+# output: 200 82573b2a381ecd9c
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	GpsCam
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	37.4252083333333
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	122.096916666667
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	GPSLatitude	37.4252083333333
+Composite	GPSLongitude	122.096916666667
+Composite	GPSPosition	37.4252083333333 122.096916666667
+## other
+# output: 200 82573b2a381ecd9c
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	GpsCam
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	37.4252083333333
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	122.096916666667
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	GPSLatitude	37.4252083333333
+Composite	GPSLongitude	122.096916666667
+Composite	GPSPosition	37.4252083333333 122.096916666667
+## exiftool:all
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+## exiftool:gps:all
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	GpsCam
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06

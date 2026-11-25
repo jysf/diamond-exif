@@ -1,0 +1,214 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# writes: exiftool -all= -o <out> <file>; exiftool -gps:all= -o <out> <file>
+# exiftool-version: 13.55
+# fixture: webp-signed-float-be
+## input
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	SignedFloat
+ExifIFD	ExposureTime	0.125
+ExifIFD	ExposureProgram	-2
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.125
+Composite	FocalLength35efl	4.5
+## gps
+# output: 164 0b1d7b4e6744f80a
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	SignedFloat
+ExifIFD	ExposureTime	0.125
+ExifIFD	ExposureProgram	-2
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.125
+Composite	FocalLength35efl	4.5
+## gps_and_device
+# output: 164 0b1d7b4e6744f80a
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	SignedFloat
+ExifIFD	ExposureTime	0.125
+ExifIFD	ExposureProgram	-2
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.125
+Composite	FocalLength35efl	4.5
+## all_pii
+# output: 164 27d1c94fded298cd
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+ExifIFD	ExposureTime	0.125
+ExifIFD	ExposureProgram	-2
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.125
+Composite	FocalLength35efl	4.5
+## all
+# output: 44 f4e8867eeb98f4ea
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## everything
+# output: 44 f4e8867eeb98f4ea
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## xmp
+# output: 164 0b1d7b4e6744f80a
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	SignedFloat
+ExifIFD	ExposureTime	0.125
+ExifIFD	ExposureProgram	-2
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.125
+Composite	FocalLength35efl	4.5
+## icc
+# output: 164 0b1d7b4e6744f80a
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	SignedFloat
+ExifIFD	ExposureTime	0.125
+ExifIFD	ExposureProgram	-2
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.125
+Composite	FocalLength35efl	4.5
+## jumbf
+# output: 164 0b1d7b4e6744f80a
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	SignedFloat
+ExifIFD	ExposureTime	0.125
+ExifIFD	ExposureProgram	-2
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.125
+Composite	FocalLength35efl	4.5
+## rights
+# output: 164 0b1d7b4e6744f80a
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	SignedFloat
+ExifIFD	ExposureTime	0.125
+ExifIFD	ExposureProgram	-2
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.125
+Composite	FocalLength35efl	4.5
+## timestamps
+# output: 164 0b1d7b4e6744f80a
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	SignedFloat
+ExifIFD	ExposureTime	0.125
+ExifIFD	ExposureProgram	-2
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.125
+Composite	FocalLength35efl	4.5
+## free_text
+# output: 164 0b1d7b4e6744f80a
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	SignedFloat
+ExifIFD	ExposureTime	0.125
+ExifIFD	ExposureProgram	-2
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.125
+Composite	FocalLength35efl	4.5
+## other
+# output: 164 0b1d7b4e6744f80a
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	SignedFloat
+ExifIFD	ExposureTime	0.125
+ExifIFD	ExposureProgram	-2
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.125
+Composite	FocalLength35efl	4.5
+## exiftool:all
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+## exiftool:gps:all
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	SignedFloat
+ExifIFD	ExposureTime	0.125
+ExifIFD	ExposureProgram	-2
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.125
+Composite	FocalLength35efl	4.5

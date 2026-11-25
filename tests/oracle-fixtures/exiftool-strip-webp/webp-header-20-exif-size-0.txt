@@ -1,0 +1,15 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# writes: exiftool -all= -o <out> <file>; exiftool -gps:all= -o <out> <file>
+# exiftool-version: 13.55
+# fixture: webp-header-20-exif-size-0
+## input
+## all
+# output: 12 90f65ac0b36d1d36
+## everything
+# output: 12 90f65ac0b36d1d36
+## jumbf
+# output: 20 2d507fbf00fd6cf0
+## other
+# output: 20 2d507fbf00fd6cf0
+## exiftool:all
+## exiftool:gps:all

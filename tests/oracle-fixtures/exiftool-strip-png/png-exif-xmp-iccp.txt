@@ -1,0 +1,565 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# writes: exiftool -all= -o <out> <file>; exiftool -gps:all= -o <out> <file>
+# exiftool-version: 13.55
+# fixture: png-exif-xmp-iccp
+## input
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+PNG	ProfileName	diamond
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	ModifyDate	2024:05:06 07:08:09
+IFD0	Artist	A. Photographer
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	DateTimeOriginal	2024:05:06 07:08:08
+ExifIFD	ExposureCompensation	-0.3333333333
+XMP-xmp	CreatorTool	DiamondTool
+ICC-header	ProfileCMMType	
+ICC-header	ProfileVersion	528
+ICC-header	ProfileClass	mntr
+ICC-header	ColorSpaceData	RGB
+ICC-header	ProfileConnectionSpace	XYZ
+ICC-header	ProfileDateTime	0000:00:00 00:00:00
+ICC-header	ProfileFileSignature	acsp
+ICC-header	PrimaryPlatform	
+ICC-header	CMMFlags	0
+ICC-header	DeviceManufacturer	
+ICC-header	DeviceModel	
+ICC-header	DeviceAttributes	0 0
+ICC-header	RenderingIntent	0
+ICC-header	ConnectionSpaceIlluminant	0 0 0
+ICC-header	ProfileCreator	
+ICC-header	ProfileID	0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ICC_Profile	ProfileDescription	abcd
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## gps
+# output: 975 86f79a4b02acbde3
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+PNG	ProfileName	diamond
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	ModifyDate	2024:05:06 07:08:09
+IFD0	Artist	A. Photographer
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	DateTimeOriginal	2024:05:06 07:08:08
+ExifIFD	ExposureCompensation	-0.3333333333
+XMP-xmp	CreatorTool	DiamondTool
+ICC-header	ProfileCMMType	
+ICC-header	ProfileVersion	528
+ICC-header	ProfileClass	mntr
+ICC-header	ColorSpaceData	RGB
+ICC-header	ProfileConnectionSpace	XYZ
+ICC-header	ProfileDateTime	0000:00:00 00:00:00
+ICC-header	ProfileFileSignature	acsp
+ICC-header	PrimaryPlatform	
+ICC-header	CMMFlags	0
+ICC-header	DeviceManufacturer	
+ICC-header	DeviceModel	
+ICC-header	DeviceAttributes	0 0
+ICC-header	RenderingIntent	0
+ICC-header	ConnectionSpaceIlluminant	0 0 0
+ICC-header	ProfileCreator	
+ICC-header	ProfileID	0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ICC_Profile	ProfileDescription	abcd
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## gps_and_device
+# output: 975 86f79a4b02acbde3
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+PNG	ProfileName	diamond
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	ModifyDate	2024:05:06 07:08:09
+IFD0	Artist	A. Photographer
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	DateTimeOriginal	2024:05:06 07:08:08
+ExifIFD	ExposureCompensation	-0.3333333333
+XMP-xmp	CreatorTool	DiamondTool
+ICC-header	ProfileCMMType	
+ICC-header	ProfileVersion	528
+ICC-header	ProfileClass	mntr
+ICC-header	ColorSpaceData	RGB
+ICC-header	ProfileConnectionSpace	XYZ
+ICC-header	ProfileDateTime	0000:00:00 00:00:00
+ICC-header	ProfileFileSignature	acsp
+ICC-header	PrimaryPlatform	
+ICC-header	CMMFlags	0
+ICC-header	DeviceManufacturer	
+ICC-header	DeviceModel	
+ICC-header	DeviceAttributes	0 0
+ICC-header	RenderingIntent	0
+ICC-header	ConnectionSpaceIlluminant	0 0 0
+ICC-header	ProfileCreator	
+ICC-header	ProfileID	0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ICC_Profile	ProfileDescription	abcd
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## all_pii
+# output: 975 dd94dcfd6af5b71a
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+PNG	ProfileName	diamond
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	ExposureCompensation	-0.3333333333
+XMP-xmp	CreatorTool	DiamondTool
+ICC-header	ProfileCMMType	
+ICC-header	ProfileVersion	528
+ICC-header	ProfileClass	mntr
+ICC-header	ColorSpaceData	RGB
+ICC-header	ProfileConnectionSpace	XYZ
+ICC-header	ProfileDateTime	0000:00:00 00:00:00
+ICC-header	ProfileFileSignature	acsp
+ICC-header	PrimaryPlatform	
+ICC-header	CMMFlags	0
+ICC-header	DeviceManufacturer	
+ICC-header	DeviceModel	
+ICC-header	DeviceAttributes	0 0
+ICC-header	RenderingIntent	0
+ICC-header	ConnectionSpaceIlluminant	0 0 0
+ICC-header	ProfileCreator	
+ICC-header	ProfileID	0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ICC_Profile	ProfileDescription	abcd
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## all
+# output: 263 ef431e5b453e918d
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+PNG	ProfileName	diamond
+ICC-header	ProfileCMMType	
+ICC-header	ProfileVersion	528
+ICC-header	ProfileClass	mntr
+ICC-header	ColorSpaceData	RGB
+ICC-header	ProfileConnectionSpace	XYZ
+ICC-header	ProfileDateTime	0000:00:00 00:00:00
+ICC-header	ProfileFileSignature	acsp
+ICC-header	PrimaryPlatform	
+ICC-header	CMMFlags	0
+ICC-header	DeviceManufacturer	
+ICC-header	DeviceModel	
+ICC-header	DeviceAttributes	0 0
+ICC-header	RenderingIntent	0
+ICC-header	ConnectionSpaceIlluminant	0 0 0
+ICC-header	ProfileCreator	
+ICC-header	ProfileID	0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ICC_Profile	ProfileDescription	abcd
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## everything
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## xmp
+# output: 609 8887a104ac6f7b71
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+PNG	ProfileName	diamond
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	ModifyDate	2024:05:06 07:08:09
+IFD0	Artist	A. Photographer
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	DateTimeOriginal	2024:05:06 07:08:08
+ExifIFD	ExposureCompensation	-0.3333333333
+ICC-header	ProfileCMMType	
+ICC-header	ProfileVersion	528
+ICC-header	ProfileClass	mntr
+ICC-header	ColorSpaceData	RGB
+ICC-header	ProfileConnectionSpace	XYZ
+ICC-header	ProfileDateTime	0000:00:00 00:00:00
+ICC-header	ProfileFileSignature	acsp
+ICC-header	PrimaryPlatform	
+ICC-header	CMMFlags	0
+ICC-header	DeviceManufacturer	
+ICC-header	DeviceModel	
+ICC-header	DeviceAttributes	0 0
+ICC-header	RenderingIntent	0
+ICC-header	ConnectionSpaceIlluminant	0 0 0
+ICC-header	ProfileCreator	
+ICC-header	ProfileID	0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ICC_Profile	ProfileDescription	abcd
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## icc
+# output: 782 c69ca0a4145b8fbc
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	ModifyDate	2024:05:06 07:08:09
+IFD0	Artist	A. Photographer
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	DateTimeOriginal	2024:05:06 07:08:08
+ExifIFD	ExposureCompensation	-0.3333333333
+XMP-xmp	CreatorTool	DiamondTool
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## jumbf
+# output: 975 86f79a4b02acbde3
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+PNG	ProfileName	diamond
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	ModifyDate	2024:05:06 07:08:09
+IFD0	Artist	A. Photographer
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	DateTimeOriginal	2024:05:06 07:08:08
+ExifIFD	ExposureCompensation	-0.3333333333
+XMP-xmp	CreatorTool	DiamondTool
+ICC-header	ProfileCMMType	
+ICC-header	ProfileVersion	528
+ICC-header	ProfileClass	mntr
+ICC-header	ColorSpaceData	RGB
+ICC-header	ProfileConnectionSpace	XYZ
+ICC-header	ProfileDateTime	0000:00:00 00:00:00
+ICC-header	ProfileFileSignature	acsp
+ICC-header	PrimaryPlatform	
+ICC-header	CMMFlags	0
+ICC-header	DeviceManufacturer	
+ICC-header	DeviceModel	
+ICC-header	DeviceAttributes	0 0
+ICC-header	RenderingIntent	0
+ICC-header	ConnectionSpaceIlluminant	0 0 0
+ICC-header	ProfileCreator	
+ICC-header	ProfileID	0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ICC_Profile	ProfileDescription	abcd
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## rights
+# output: 975 655e49f2b8283f2b
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+PNG	ProfileName	diamond
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	ModifyDate	2024:05:06 07:08:09
+IFD0	Artist	A. Photographer
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	DateTimeOriginal	2024:05:06 07:08:08
+ExifIFD	ExposureCompensation	-0.3333333333
+XMP-xmp	CreatorTool	DiamondTool
+ICC-header	ProfileCMMType	
+ICC-header	ProfileVersion	528
+ICC-header	ProfileClass	mntr
+ICC-header	ColorSpaceData	RGB
+ICC-header	ProfileConnectionSpace	XYZ
+ICC-header	ProfileDateTime	0000:00:00 00:00:00
+ICC-header	ProfileFileSignature	acsp
+ICC-header	PrimaryPlatform	
+ICC-header	CMMFlags	0
+ICC-header	DeviceManufacturer	
+ICC-header	DeviceModel	
+ICC-header	DeviceAttributes	0 0
+ICC-header	RenderingIntent	0
+ICC-header	ConnectionSpaceIlluminant	0 0 0
+ICC-header	ProfileCreator	
+ICC-header	ProfileID	0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ICC_Profile	ProfileDescription	abcd
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## timestamps
+# output: 975 743e625c98d956fa
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+PNG	ProfileName	diamond
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	Artist	A. Photographer
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	ExposureCompensation	-0.3333333333
+XMP-xmp	CreatorTool	DiamondTool
+ICC-header	ProfileCMMType	
+ICC-header	ProfileVersion	528
+ICC-header	ProfileClass	mntr
+ICC-header	ColorSpaceData	RGB
+ICC-header	ProfileConnectionSpace	XYZ
+ICC-header	ProfileDateTime	0000:00:00 00:00:00
+ICC-header	ProfileFileSignature	acsp
+ICC-header	PrimaryPlatform	
+ICC-header	CMMFlags	0
+ICC-header	DeviceManufacturer	
+ICC-header	DeviceModel	
+ICC-header	DeviceAttributes	0 0
+ICC-header	RenderingIntent	0
+ICC-header	ConnectionSpaceIlluminant	0 0 0
+ICC-header	ProfileCreator	
+ICC-header	ProfileID	0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ICC_Profile	ProfileDescription	abcd
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## free_text
+# output: 975 86f79a4b02acbde3
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+PNG	ProfileName	diamond
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	ModifyDate	2024:05:06 07:08:09
+IFD0	Artist	A. Photographer
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	DateTimeOriginal	2024:05:06 07:08:08
+ExifIFD	ExposureCompensation	-0.3333333333
+XMP-xmp	CreatorTool	DiamondTool
+ICC-header	ProfileCMMType	
+ICC-header	ProfileVersion	528
+ICC-header	ProfileClass	mntr
+ICC-header	ColorSpaceData	RGB
+ICC-header	ProfileConnectionSpace	XYZ
+ICC-header	ProfileDateTime	0000:00:00 00:00:00
+ICC-header	ProfileFileSignature	acsp
+ICC-header	PrimaryPlatform	
+ICC-header	CMMFlags	0
+ICC-header	DeviceManufacturer	
+ICC-header	DeviceModel	
+ICC-header	DeviceAttributes	0 0
+ICC-header	RenderingIntent	0
+ICC-header	ConnectionSpaceIlluminant	0 0 0
+ICC-header	ProfileCreator	
+ICC-header	ProfileID	0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ICC_Profile	ProfileDescription	abcd
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## other
+# output: 975 86f79a4b02acbde3
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+PNG	ProfileName	diamond
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	ModifyDate	2024:05:06 07:08:09
+IFD0	Artist	A. Photographer
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	DateTimeOriginal	2024:05:06 07:08:08
+ExifIFD	ExposureCompensation	-0.3333333333
+XMP-xmp	CreatorTool	DiamondTool
+ICC-header	ProfileCMMType	
+ICC-header	ProfileVersion	528
+ICC-header	ProfileClass	mntr
+ICC-header	ColorSpaceData	RGB
+ICC-header	ProfileConnectionSpace	XYZ
+ICC-header	ProfileDateTime	0000:00:00 00:00:00
+ICC-header	ProfileFileSignature	acsp
+ICC-header	PrimaryPlatform	
+ICC-header	CMMFlags	0
+ICC-header	DeviceManufacturer	
+ICC-header	DeviceModel	
+ICC-header	DeviceAttributes	0 0
+ICC-header	RenderingIntent	0
+ICC-header	ConnectionSpaceIlluminant	0 0 0
+ICC-header	ProfileCreator	
+ICC-header	ProfileID	0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ICC_Profile	ProfileDescription	abcd
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## exiftool:all
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## exiftool:gps:all
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+PNG	ProfileName	diamond
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	ModifyDate	2024:05:06 07:08:09
+IFD0	Artist	A. Photographer
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	DateTimeOriginal	2024:05:06 07:08:08
+ExifIFD	ExposureCompensation	-0.3333333333
+XMP-xmp	CreatorTool	DiamondTool
+ICC-header	ProfileCMMType	
+ICC-header	ProfileVersion	528
+ICC-header	ProfileClass	mntr
+ICC-header	ColorSpaceData	RGB
+ICC-header	ProfileConnectionSpace	XYZ
+ICC-header	ProfileDateTime	0000:00:00 00:00:00
+ICC-header	ProfileFileSignature	acsp
+ICC-header	PrimaryPlatform	
+ICC-header	CMMFlags	0
+ICC-header	DeviceManufacturer	
+ICC-header	DeviceModel	
+ICC-header	DeviceAttributes	0 0
+ICC-header	RenderingIntent	0
+ICC-header	ConnectionSpaceIlluminant	0 0 0
+ICC-header	ProfileCreator	
+ICC-header	ProfileID	0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+ICC_Profile	ProfileDescription	abcd
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06

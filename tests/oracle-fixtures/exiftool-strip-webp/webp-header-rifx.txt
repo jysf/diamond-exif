@@ -1,0 +1,10 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# writes: exiftool -all= -o <out> <file>; exiftool -gps:all= -o <out> <file>
+# exiftool-version: 13.55
+# fixture: webp-header-rifx
+## input
+IFD0	Make	RifxCam
+## exiftool:all
+# refused: Error: Not a valid WEBP - <file>
+## exiftool:gps:all
+# refused: Error: Not a valid WEBP - <file>

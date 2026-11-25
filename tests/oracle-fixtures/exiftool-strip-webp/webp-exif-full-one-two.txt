@@ -1,0 +1,683 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# writes: exiftool -all= -o <out> <file>; exiftool -gps:all= -o <out> <file>
+# exiftool-version: 13.55
+# fixture: webp-exif-full-one-two
+## input
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	ImageWidth	100
+IFD0	ImageHeight	50
+IFD0	Make	MakeOne
+IFD0	Model	ModelOne
+IFD0	Orientation	1
+IFD0	XResolution	72
+IFD0	Software	SoftOne
+IFD0	ModifyDate	2020:01:01 00:00:00
+IFD0	Artist	ArtistOne
+IFD0	Copyright	CopyOne
+IFD0	ImageWidth	200
+IFD0	ImageHeight	100
+IFD0	Make	MakeTwo
+IFD0	Model	ModelTwo
+IFD0	Orientation	8
+IFD0	XResolution	144
+IFD0	Software	SoftTwo
+IFD0	ModifyDate	2020:01:02 00:00:00
+IFD0	Artist	ArtistTwo
+IFD0	Copyright	CopyTwo
+ExifIFD	ExposureTime	0.125
+ExifIFD	FNumber	2.8
+ExifIFD	ExposureProgram	-1
+ExifIFD	ISO	100
+ExifIFD	DateTimeOriginal	2021:02:01 01:02:03
+ExifIFD	ExposureCompensation	-0.25
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+ExifIFD	ExposureTime	0.25
+ExifIFD	FNumber	5.6
+ExifIFD	ExposureProgram	-2
+ExifIFD	ISO	200
+ExifIFD	DateTimeOriginal	2021:02:02 01:02:03
+ExifIFD	ExposureCompensation	-0.5
+ExifIFD	FocalLength	9
+ExifIFD	ExifImageWidth	-10
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	31.4252083333333
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	121.096916666667
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	32.4252083333333
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	122.096916666667
+Composite	Aperture	5.6
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.25
+Composite	GPSLatitude	32.4252083333333
+Composite	GPSLongitude	122.096916666667
+Composite	FocalLength35efl	9
+Composite	GPSPosition	32.4252083333333 122.096916666667
+Composite	LightValue	5.97085365434048
+## gps
+# output: 1016 af5d58ffd72d3c2b
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	ImageWidth	100
+IFD0	ImageHeight	50
+IFD0	Make	MakeOne
+IFD0	Model	ModelOne
+IFD0	Orientation	1
+IFD0	XResolution	72
+IFD0	Software	SoftOne
+IFD0	ModifyDate	2020:01:01 00:00:00
+IFD0	Artist	ArtistOne
+IFD0	Copyright	CopyOne
+IFD0	ImageWidth	200
+IFD0	ImageHeight	100
+IFD0	Make	MakeTwo
+IFD0	Model	ModelTwo
+IFD0	Orientation	8
+IFD0	XResolution	144
+IFD0	Software	SoftTwo
+IFD0	ModifyDate	2020:01:02 00:00:00
+IFD0	Artist	ArtistTwo
+IFD0	Copyright	CopyTwo
+ExifIFD	ExposureTime	0.125
+ExifIFD	FNumber	2.8
+ExifIFD	ExposureProgram	-1
+ExifIFD	ISO	100
+ExifIFD	DateTimeOriginal	2021:02:01 01:02:03
+ExifIFD	ExposureCompensation	-0.25
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+ExifIFD	ExposureTime	0.25
+ExifIFD	FNumber	5.6
+ExifIFD	ExposureProgram	-2
+ExifIFD	ISO	200
+ExifIFD	DateTimeOriginal	2021:02:02 01:02:03
+ExifIFD	ExposureCompensation	-0.5
+ExifIFD	FocalLength	9
+ExifIFD	ExifImageWidth	-10
+Composite	Aperture	5.6
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.25
+Composite	FocalLength35efl	9
+Composite	LightValue	5.97085365434048
+## gps_and_device
+# output: 1016 af5d58ffd72d3c2b
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	ImageWidth	100
+IFD0	ImageHeight	50
+IFD0	Make	MakeOne
+IFD0	Model	ModelOne
+IFD0	Orientation	1
+IFD0	XResolution	72
+IFD0	Software	SoftOne
+IFD0	ModifyDate	2020:01:01 00:00:00
+IFD0	Artist	ArtistOne
+IFD0	Copyright	CopyOne
+IFD0	ImageWidth	200
+IFD0	ImageHeight	100
+IFD0	Make	MakeTwo
+IFD0	Model	ModelTwo
+IFD0	Orientation	8
+IFD0	XResolution	144
+IFD0	Software	SoftTwo
+IFD0	ModifyDate	2020:01:02 00:00:00
+IFD0	Artist	ArtistTwo
+IFD0	Copyright	CopyTwo
+ExifIFD	ExposureTime	0.125
+ExifIFD	FNumber	2.8
+ExifIFD	ExposureProgram	-1
+ExifIFD	ISO	100
+ExifIFD	DateTimeOriginal	2021:02:01 01:02:03
+ExifIFD	ExposureCompensation	-0.25
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+ExifIFD	ExposureTime	0.25
+ExifIFD	FNumber	5.6
+ExifIFD	ExposureProgram	-2
+ExifIFD	ISO	200
+ExifIFD	DateTimeOriginal	2021:02:02 01:02:03
+ExifIFD	ExposureCompensation	-0.5
+ExifIFD	FocalLength	9
+ExifIFD	ExifImageWidth	-10
+Composite	Aperture	5.6
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.25
+Composite	FocalLength35efl	9
+Composite	LightValue	5.97085365434048
+## all_pii
+# output: 1016 f26207af84e82239
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	ImageWidth	100
+IFD0	ImageHeight	50
+IFD0	Orientation	1
+IFD0	XResolution	72
+IFD0	Software	SoftOne
+IFD0	Copyright	CopyOne
+IFD0	ImageWidth	200
+IFD0	ImageHeight	100
+IFD0	Orientation	8
+IFD0	XResolution	144
+IFD0	Software	SoftTwo
+IFD0	Copyright	CopyTwo
+ExifIFD	ExposureTime	0.125
+ExifIFD	FNumber	2.8
+ExifIFD	ExposureProgram	-1
+ExifIFD	ISO	100
+ExifIFD	ExposureCompensation	-0.25
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+ExifIFD	ExposureTime	0.25
+ExifIFD	FNumber	5.6
+ExifIFD	ExposureProgram	-2
+ExifIFD	ISO	200
+ExifIFD	ExposureCompensation	-0.5
+ExifIFD	FocalLength	9
+ExifIFD	ExifImageWidth	-10
+Composite	Aperture	5.6
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.25
+Composite	FocalLength35efl	9
+Composite	LightValue	5.97085365434048
+## all
+# output: 44 f4e8867eeb98f4ea
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## everything
+# output: 44 f4e8867eeb98f4ea
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## xmp
+# output: 1016 4d0f4b683e617dc3
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	ImageWidth	100
+IFD0	ImageHeight	50
+IFD0	Make	MakeOne
+IFD0	Model	ModelOne
+IFD0	Orientation	1
+IFD0	XResolution	72
+IFD0	Software	SoftOne
+IFD0	ModifyDate	2020:01:01 00:00:00
+IFD0	Artist	ArtistOne
+IFD0	Copyright	CopyOne
+IFD0	ImageWidth	200
+IFD0	ImageHeight	100
+IFD0	Make	MakeTwo
+IFD0	Model	ModelTwo
+IFD0	Orientation	8
+IFD0	XResolution	144
+IFD0	Software	SoftTwo
+IFD0	ModifyDate	2020:01:02 00:00:00
+IFD0	Artist	ArtistTwo
+IFD0	Copyright	CopyTwo
+ExifIFD	ExposureTime	0.125
+ExifIFD	FNumber	2.8
+ExifIFD	ExposureProgram	-1
+ExifIFD	ISO	100
+ExifIFD	DateTimeOriginal	2021:02:01 01:02:03
+ExifIFD	ExposureCompensation	-0.25
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+ExifIFD	ExposureTime	0.25
+ExifIFD	FNumber	5.6
+ExifIFD	ExposureProgram	-2
+ExifIFD	ISO	200
+ExifIFD	DateTimeOriginal	2021:02:02 01:02:03
+ExifIFD	ExposureCompensation	-0.5
+ExifIFD	FocalLength	9
+ExifIFD	ExifImageWidth	-10
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	31.4252083333333
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	121.096916666667
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	32.4252083333333
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	122.096916666667
+Composite	Aperture	5.6
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.25
+Composite	GPSLatitude	32.4252083333333
+Composite	GPSLongitude	122.096916666667
+Composite	FocalLength35efl	9
+Composite	GPSPosition	32.4252083333333 122.096916666667
+Composite	LightValue	5.97085365434048
+## icc
+# output: 1016 4d0f4b683e617dc3
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	ImageWidth	100
+IFD0	ImageHeight	50
+IFD0	Make	MakeOne
+IFD0	Model	ModelOne
+IFD0	Orientation	1
+IFD0	XResolution	72
+IFD0	Software	SoftOne
+IFD0	ModifyDate	2020:01:01 00:00:00
+IFD0	Artist	ArtistOne
+IFD0	Copyright	CopyOne
+IFD0	ImageWidth	200
+IFD0	ImageHeight	100
+IFD0	Make	MakeTwo
+IFD0	Model	ModelTwo
+IFD0	Orientation	8
+IFD0	XResolution	144
+IFD0	Software	SoftTwo
+IFD0	ModifyDate	2020:01:02 00:00:00
+IFD0	Artist	ArtistTwo
+IFD0	Copyright	CopyTwo
+ExifIFD	ExposureTime	0.125
+ExifIFD	FNumber	2.8
+ExifIFD	ExposureProgram	-1
+ExifIFD	ISO	100
+ExifIFD	DateTimeOriginal	2021:02:01 01:02:03
+ExifIFD	ExposureCompensation	-0.25
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+ExifIFD	ExposureTime	0.25
+ExifIFD	FNumber	5.6
+ExifIFD	ExposureProgram	-2
+ExifIFD	ISO	200
+ExifIFD	DateTimeOriginal	2021:02:02 01:02:03
+ExifIFD	ExposureCompensation	-0.5
+ExifIFD	FocalLength	9
+ExifIFD	ExifImageWidth	-10
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	31.4252083333333
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	121.096916666667
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	32.4252083333333
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	122.096916666667
+Composite	Aperture	5.6
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.25
+Composite	GPSLatitude	32.4252083333333
+Composite	GPSLongitude	122.096916666667
+Composite	FocalLength35efl	9
+Composite	GPSPosition	32.4252083333333 122.096916666667
+Composite	LightValue	5.97085365434048
+## jumbf
+# output: 1016 4d0f4b683e617dc3
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	ImageWidth	100
+IFD0	ImageHeight	50
+IFD0	Make	MakeOne
+IFD0	Model	ModelOne
+IFD0	Orientation	1
+IFD0	XResolution	72
+IFD0	Software	SoftOne
+IFD0	ModifyDate	2020:01:01 00:00:00
+IFD0	Artist	ArtistOne
+IFD0	Copyright	CopyOne
+IFD0	ImageWidth	200
+IFD0	ImageHeight	100
+IFD0	Make	MakeTwo
+IFD0	Model	ModelTwo
+IFD0	Orientation	8
+IFD0	XResolution	144
+IFD0	Software	SoftTwo
+IFD0	ModifyDate	2020:01:02 00:00:00
+IFD0	Artist	ArtistTwo
+IFD0	Copyright	CopyTwo
+ExifIFD	ExposureTime	0.125
+ExifIFD	FNumber	2.8
+ExifIFD	ExposureProgram	-1
+ExifIFD	ISO	100
+ExifIFD	DateTimeOriginal	2021:02:01 01:02:03
+ExifIFD	ExposureCompensation	-0.25
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+ExifIFD	ExposureTime	0.25
+ExifIFD	FNumber	5.6
+ExifIFD	ExposureProgram	-2
+ExifIFD	ISO	200
+ExifIFD	DateTimeOriginal	2021:02:02 01:02:03
+ExifIFD	ExposureCompensation	-0.5
+ExifIFD	FocalLength	9
+ExifIFD	ExifImageWidth	-10
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	31.4252083333333
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	121.096916666667
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	32.4252083333333
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	122.096916666667
+Composite	Aperture	5.6
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.25
+Composite	GPSLatitude	32.4252083333333
+Composite	GPSLongitude	122.096916666667
+Composite	FocalLength35efl	9
+Composite	GPSPosition	32.4252083333333 122.096916666667
+Composite	LightValue	5.97085365434048
+## rights
+# output: 1016 b78eec0603f76d61
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	ImageWidth	100
+IFD0	ImageHeight	50
+IFD0	Make	MakeOne
+IFD0	Model	ModelOne
+IFD0	Orientation	1
+IFD0	XResolution	72
+IFD0	Software	SoftOne
+IFD0	ModifyDate	2020:01:01 00:00:00
+IFD0	Artist	ArtistOne
+IFD0	ImageWidth	200
+IFD0	ImageHeight	100
+IFD0	Make	MakeTwo
+IFD0	Model	ModelTwo
+IFD0	Orientation	8
+IFD0	XResolution	144
+IFD0	Software	SoftTwo
+IFD0	ModifyDate	2020:01:02 00:00:00
+IFD0	Artist	ArtistTwo
+ExifIFD	ExposureTime	0.125
+ExifIFD	FNumber	2.8
+ExifIFD	ExposureProgram	-1
+ExifIFD	ISO	100
+ExifIFD	DateTimeOriginal	2021:02:01 01:02:03
+ExifIFD	ExposureCompensation	-0.25
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+ExifIFD	ExposureTime	0.25
+ExifIFD	FNumber	5.6
+ExifIFD	ExposureProgram	-2
+ExifIFD	ISO	200
+ExifIFD	DateTimeOriginal	2021:02:02 01:02:03
+ExifIFD	ExposureCompensation	-0.5
+ExifIFD	FocalLength	9
+ExifIFD	ExifImageWidth	-10
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	31.4252083333333
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	121.096916666667
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	32.4252083333333
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	122.096916666667
+Composite	Aperture	5.6
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.25
+Composite	GPSLatitude	32.4252083333333
+Composite	GPSLongitude	122.096916666667
+Composite	FocalLength35efl	9
+Composite	GPSPosition	32.4252083333333 122.096916666667
+Composite	LightValue	5.97085365434048
+## timestamps
+# output: 1016 38421611a93fde77
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	ImageWidth	100
+IFD0	ImageHeight	50
+IFD0	Make	MakeOne
+IFD0	Model	ModelOne
+IFD0	Orientation	1
+IFD0	XResolution	72
+IFD0	Software	SoftOne
+IFD0	Artist	ArtistOne
+IFD0	Copyright	CopyOne
+IFD0	ImageWidth	200
+IFD0	ImageHeight	100
+IFD0	Make	MakeTwo
+IFD0	Model	ModelTwo
+IFD0	Orientation	8
+IFD0	XResolution	144
+IFD0	Software	SoftTwo
+IFD0	Artist	ArtistTwo
+IFD0	Copyright	CopyTwo
+ExifIFD	ExposureTime	0.125
+ExifIFD	FNumber	2.8
+ExifIFD	ExposureProgram	-1
+ExifIFD	ISO	100
+ExifIFD	ExposureCompensation	-0.25
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+ExifIFD	ExposureTime	0.25
+ExifIFD	FNumber	5.6
+ExifIFD	ExposureProgram	-2
+ExifIFD	ISO	200
+ExifIFD	ExposureCompensation	-0.5
+ExifIFD	FocalLength	9
+ExifIFD	ExifImageWidth	-10
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	31.4252083333333
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	121.096916666667
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	32.4252083333333
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	122.096916666667
+Composite	Aperture	5.6
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.25
+Composite	GPSLatitude	32.4252083333333
+Composite	GPSLongitude	122.096916666667
+Composite	FocalLength35efl	9
+Composite	GPSPosition	32.4252083333333 122.096916666667
+Composite	LightValue	5.97085365434048
+## free_text
+# output: 1016 4d0f4b683e617dc3
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	ImageWidth	100
+IFD0	ImageHeight	50
+IFD0	Make	MakeOne
+IFD0	Model	ModelOne
+IFD0	Orientation	1
+IFD0	XResolution	72
+IFD0	Software	SoftOne
+IFD0	ModifyDate	2020:01:01 00:00:00
+IFD0	Artist	ArtistOne
+IFD0	Copyright	CopyOne
+IFD0	ImageWidth	200
+IFD0	ImageHeight	100
+IFD0	Make	MakeTwo
+IFD0	Model	ModelTwo
+IFD0	Orientation	8
+IFD0	XResolution	144
+IFD0	Software	SoftTwo
+IFD0	ModifyDate	2020:01:02 00:00:00
+IFD0	Artist	ArtistTwo
+IFD0	Copyright	CopyTwo
+ExifIFD	ExposureTime	0.125
+ExifIFD	FNumber	2.8
+ExifIFD	ExposureProgram	-1
+ExifIFD	ISO	100
+ExifIFD	DateTimeOriginal	2021:02:01 01:02:03
+ExifIFD	ExposureCompensation	-0.25
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+ExifIFD	ExposureTime	0.25
+ExifIFD	FNumber	5.6
+ExifIFD	ExposureProgram	-2
+ExifIFD	ISO	200
+ExifIFD	DateTimeOriginal	2021:02:02 01:02:03
+ExifIFD	ExposureCompensation	-0.5
+ExifIFD	FocalLength	9
+ExifIFD	ExifImageWidth	-10
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	31.4252083333333
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	121.096916666667
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	32.4252083333333
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	122.096916666667
+Composite	Aperture	5.6
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.25
+Composite	GPSLatitude	32.4252083333333
+Composite	GPSLongitude	122.096916666667
+Composite	FocalLength35efl	9
+Composite	GPSPosition	32.4252083333333 122.096916666667
+Composite	LightValue	5.97085365434048
+## other
+# output: 1016 4d0f4b683e617dc3
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	ImageWidth	100
+IFD0	ImageHeight	50
+IFD0	Make	MakeOne
+IFD0	Model	ModelOne
+IFD0	Orientation	1
+IFD0	XResolution	72
+IFD0	Software	SoftOne
+IFD0	ModifyDate	2020:01:01 00:00:00
+IFD0	Artist	ArtistOne
+IFD0	Copyright	CopyOne
+IFD0	ImageWidth	200
+IFD0	ImageHeight	100
+IFD0	Make	MakeTwo
+IFD0	Model	ModelTwo
+IFD0	Orientation	8
+IFD0	XResolution	144
+IFD0	Software	SoftTwo
+IFD0	ModifyDate	2020:01:02 00:00:00
+IFD0	Artist	ArtistTwo
+IFD0	Copyright	CopyTwo
+ExifIFD	ExposureTime	0.125
+ExifIFD	FNumber	2.8
+ExifIFD	ExposureProgram	-1
+ExifIFD	ISO	100
+ExifIFD	DateTimeOriginal	2021:02:01 01:02:03
+ExifIFD	ExposureCompensation	-0.25
+ExifIFD	FocalLength	4.5
+ExifIFD	ExifImageWidth	-5
+ExifIFD	ExposureTime	0.25
+ExifIFD	FNumber	5.6
+ExifIFD	ExposureProgram	-2
+ExifIFD	ISO	200
+ExifIFD	DateTimeOriginal	2021:02:02 01:02:03
+ExifIFD	ExposureCompensation	-0.5
+ExifIFD	FocalLength	9
+ExifIFD	ExifImageWidth	-10
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	31.4252083333333
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	121.096916666667
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	32.4252083333333
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	122.096916666667
+Composite	Aperture	5.6
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.25
+Composite	GPSLatitude	32.4252083333333
+Composite	GPSLongitude	122.096916666667
+Composite	FocalLength35efl	9
+Composite	GPSPosition	32.4252083333333 122.096916666667
+Composite	LightValue	5.97085365434048
+## exiftool:all
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+## exiftool:gps:all
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	ImageWidth	200
+IFD0	ImageHeight	100
+IFD0	Make	MakeTwo
+IFD0	Model	ModelTwo
+IFD0	Orientation	8
+IFD0	XResolution	144
+IFD0	Software	SoftTwo
+IFD0	ModifyDate	2020:01:02 00:00:00
+IFD0	Artist	ArtistTwo
+IFD0	Copyright	CopyTwo
+IFD0	ImageWidth	200
+IFD0	ImageHeight	100
+IFD0	Make	MakeTwo
+IFD0	Model	ModelTwo
+IFD0	Orientation	8
+IFD0	XResolution	144
+IFD0	Software	SoftTwo
+IFD0	ModifyDate	2020:01:02 00:00:00
+IFD0	Artist	ArtistTwo
+IFD0	Copyright	CopyTwo
+ExifIFD	ExposureTime	0.25
+ExifIFD	FNumber	5.6
+ExifIFD	ExposureProgram	-2
+ExifIFD	ISO	200
+ExifIFD	DateTimeOriginal	2021:02:02 01:02:03
+ExifIFD	ExposureCompensation	-0.5
+ExifIFD	FocalLength	9
+ExifIFD	ExifImageWidth	-10
+ExifIFD	ExposureTime	0.25
+ExifIFD	FNumber	5.6
+ExifIFD	ExposureProgram	-2
+ExifIFD	ISO	200
+ExifIFD	DateTimeOriginal	2021:02:02 01:02:03
+ExifIFD	ExposureCompensation	-0.5
+ExifIFD	FocalLength	9
+ExifIFD	ExifImageWidth	-10
+Composite	Aperture	5.6
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	ShutterSpeed	0.25
+Composite	FocalLength35efl	9
+Composite	LightValue	5.97085365434048
