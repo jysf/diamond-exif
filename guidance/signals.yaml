@@ -277,4 +277,4 @@ signals:
     first_flagged: 2026-11-24
     last_touched: 2026-11-24
     raised_by: claude
-    notes: "Fix: add a Gps (or AllPii) row to the recorded policies for the four jfif-* strip fixtures only, or to all fixtures with a one-time re-record of tests/oracle-fixtures/exiftool-strip/. Small; schedule it with the next spec that touches the strip oracle."
+    notes: "Fix: add a Gps (or AllPii) row to the recorded policies for the four jfif-* strip fixtures only, or to all fixtures with a one-time re-record of tests/oracle-fixtures/exiftool-strip/. Small; schedule it with the next spec that touches the strip oracle. Scheduled 2026-11-24 as SPEC-039 part C (AC14: gps and all-pii recorded for every JPEG strip fixture, one re-record); close at SPEC-039 ship, or re-defer if part C is cut."
