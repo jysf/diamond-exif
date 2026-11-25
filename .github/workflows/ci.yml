@@ -12,9 +12,45 @@ name: CI
 # ExifTool and sets DIAMOND_EXIF_REQUIRE_ORACLE=1, which turns "exiftool not on
 # PATH" into a test FAILURE (tests/support/tools.rs). The pin is the version the
 # committed records in tests/oracle-fixtures/exiftool/ were taken with.
+#
+# A change that touches only Markdown skips this workflow: specs, stages, briefs, DECs
+# and docs cannot change what cargo builds or tests. The process gates that DO read
+# them live in process.yml, which always runs. The Markdown files a Rust test reads
+# are listed back in below; a new test that reads another one must add it here, or a
+# change to that file alone would skip the test that checks it. (No branch protection
+# on main, so a skipped workflow does not leave a required check pending.)
+# The order matters: a later pattern overrides an earlier one, so the re-included
+# files must come after "!**.md".
 on:
+  # push runs only for main (the post-merge run); a branch is checked by its
+  # pull_request run. Triggering on every branch push as well ran each PR twice.
   push:
+    branches: [main]
+    paths:
+      - "**"
+      - "!**.md"
+      # Read by tests/release_layout.rs and tests/fuzz_layout.rs.
+      - "README.md"
+      # Read by tests/release_layout.rs.
+      - "CHANGELOG.md"
+      # Read by tests/crate_policy.rs.
+      - "docs/provenance-ledger.md"
+      # Test fixtures stay code, whatever their extension.
+      - "tests/**"
   pull_request:
+    # Same list as push (kept in sync by hand; no YAML anchors, to stay on the
+    # syntax every Actions runner version parses).
+    paths:
+      - "**"
+      - "!**.md"
+      # Read by tests/release_layout.rs and tests/fuzz_layout.rs.
+      - "README.md"
+      # Read by tests/release_layout.rs.
+      - "CHANGELOG.md"
+      # Read by tests/crate_policy.rs.
+      - "docs/provenance-ledger.md"
+      # Test fixtures stay code, whatever their extension.
+      - "tests/**"
 
 env:
   # The ExifTool version the committed oracle records were recorded with, and the
@@ -24,42 +60,6 @@ env:
   EXIFTOOL_SHA256: "5f4c81d34ad406538c2871ad72dbfceb5d9b412b2f16cbbeb4d712d270846667"
 
 jobs:
-  cost-data:
-    name: cost-capture audit
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: cost-audit (shipped specs have build/verify cost; AGENTS §4)
-        run: ./scripts/cost-audit.sh
-
-      # A gate that has never failed cannot be told from one that never ran, so each
-      # gate's red-proof runs in CI beside it.
-      - name: cost-audit goes red on an unfilled stage orchestration_cost
-        run: ./scripts/cost-audit-red-proof.sh
-
-      # Opt-in by existence: passes quietly until `just decisions-index` has been run
-      # once and committed; after that it fails if the index falls behind.
-      - name: decisions-index is not stale
-        run: ./scripts/decisions-index.sh --check
-
-      # validate PARSES every artifact's front matter with a real YAML parser (ruby's
-      # Psych, present on the runner image). It fails loudly if ruby is absent rather
-      # than reporting green on an unrun check.
-      - name: validate parses every artifact's front matter
-        run: ./scripts/validate.sh
-
-      - name: validate parse gate goes red on unparseable front matter
-        run: ./scripts/validate-red-proof.sh
-
-      # The gate over the gates: scans verdict-bearing scripts for the mute-death shape.
-      - name: gate-audit — no mute-death shape in any gate script
-        run: ./scripts/gate-audit.sh
-
-      - name: gate-audit goes red on an injected mute-death shape
-        run: ./scripts/gate-audit-red-proof.sh
-
   fmt:
     name: rust / fmt --check
     runs-on: ubuntu-latest
