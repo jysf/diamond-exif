@@ -9,7 +9,9 @@
 //! prints `SKIP` and passes, unless `DIAMOND_EXIF_REQUIRE_ORACLE=1` (as its
 //! siblings). ExifTool is run (`-a -u -G1 -H -s`, 8 s limit), never read or linked.
 //!
-//! The pinned tag list, per preset (DEC-009 columns, DEC-021 clause 2 and 4):
+//! SPEC-039 switched this file to the shared judge table and the shared shapes
+//! (`support/i3_judge.rs`, `support/i3_shapes.rs`); the tests are the same. The
+//! list below is the first build's statement of what the table says:
 //!
 //! * every preset: any tag in the `GPS` group and any `Composite` tag whose name
 //!   starts with `GPS` (`GPSPosition`, `GPSLatitude`, ...);
@@ -28,18 +30,30 @@
 //! must print at least one tag the preset removes before the strip (no vacuous
 //! pass).
 
+#[path = "support/i3_judge.rs"]
+mod i3_judge;
+#[path = "support/i3_records.rs"]
+mod i3_records;
+#[path = "support/i3_shapes.rs"]
+mod i3_shapes;
 #[path = "support/oracle.rs"]
 mod oracle;
 #[path = "support/oracle_png.rs"]
 mod oracle_png;
 #[path = "support/oracle_tiff.rs"]
 mod oracle_tiff;
+#[path = "support/oracle_webp.rs"]
+mod oracle_webp;
 #[path = "support/tools.rs"]
 mod tools;
+#[path = "support/webp_carriers.rs"]
+mod webp_carriers;
+#[path = "support/webp_shapes.rs"]
+mod webp_shapes;
 
 use exif_core::policy::StripPolicy;
 use exif_core::strip;
-use oracle_tiff as t;
+use i3_shapes::{carrier_shapes, rich_tiff, with, zlib_wrapped};
 use std::path::Path;
 use std::time::Duration;
 
@@ -48,17 +62,6 @@ const REQUIRE_VAR: &str = "DIAMOND_EXIF_REQUIRE_ORACLE";
 /// The `-a -u -G1 -H -s` run, the same arguments as the audit oracle.
 const ARGS: [&str; 5] = ["-a", "-u", "-G1", "-H", "-s"];
 
-const DEVICE_TAGS: [&str; 4] = [
-    "SerialNumber",
-    "BodySerialNumber",
-    "InternalSerialNumber",
-    "LensSerialNumber",
-];
-// The library files the camera owner under Authorship (`category.rs`, 0xA430).
-const AUTHORSHIP_TAGS: [&str; 4] = ["Author", "Artist", "OwnerName", "CameraOwnerName"];
-// Copyright is `Rights` (DEC-008 amendment, SPEC-033): removed by `All` and
-// `Everything`, kept by `AllPii`.
-const RIGHTS_TAGS: [&str; 1] = ["Copyright"];
 const CARRIER_GROUPS: [&str; 5] = ["IFD0", "IFD1", "ExifIFD", "GPS", "InteropIFD"];
 
 /// The representative `oracle_png` fixtures (names are the committed ones).
@@ -124,14 +127,11 @@ fn run(path: &Path) -> Vec<Tag> {
     parse(&String::from_utf8_lossy(&out.stdout))
 }
 
-/// The pinned list: does `preset` (index into `StripPolicy::PRESETS`) remove
-/// this tag?
+/// The shared judge's table (`support/i3_judge.rs`, typed from DEC-008 and
+/// DEC-009): does `preset` (index into `StripPolicy::PRESETS`) remove this tag?
 fn removed_by(preset: usize, tag: &Tag) -> bool {
-    let gps = tag.group == "GPS" || (tag.group == "Composite" && tag.name.starts_with("GPS"));
-    let device = preset >= 1 && DEVICE_TAGS.contains(&tag.name.as_str());
-    let authorship = preset >= 2 && AUTHORSHIP_TAGS.contains(&tag.name.as_str());
-    let rights = preset >= 3 && RIGHTS_TAGS.contains(&tag.name.as_str());
-    gps || device || authorship || rights
+    i3_judge::category_of(&tag.group, &tag.name)
+        .is_some_and(|c| i3_judge::removes(i3_judge::PRESET_NAMES[preset], c))
 }
 
 fn is_carrier_tag(tag: &Tag) -> bool {
@@ -185,46 +185,6 @@ fn check(
 
 // ── the inputs ──────────────────────────────────────────────────────────────
 
-/// A TIFF with a GPS position, a body serial, an owner name, an artist and a
-/// copyright: every tag family the pinned list names, in the three IFDs.
-fn rich_tiff() -> Vec<u8> {
-    let big = false;
-    let ifd0 = t::ifd(vec![
-        t::ascii(0x010F, b"MakeCorp\0"),
-        t::ascii(0x013B, b"Artist Zed\0"),
-        t::ascii(0x8298, b"Copy Zed\0"),
-        t::ptr(0x8769, 1),
-        t::ptr(0x8825, 2),
-    ]);
-    let exif = t::ifd(vec![
-        t::ascii(0xA430, b"Owner Zed\0"),
-        t::ascii(0xA431, b"SN123456\0"),
-    ]);
-    let gps = t::ifd(vec![
-        t::ascii(0x0001, b"N\0"),
-        t::rational(big, 0x0002, &[(51, 1), (30, 1), (0, 1)]),
-        t::ascii(0x0003, b"E\0"),
-        t::rational(big, 0x0004, &[(0, 1), (7, 1), (0, 1)]),
-    ]);
-    t::assemble(big, &[ifd0, exif, gps])
-}
-
-fn zlib_wrapped(tiff: &[u8]) -> Vec<u8> {
-    let mut d = vec![0];
-    d.extend_from_slice(&(tiff.len() as u32).to_be_bytes());
-    d.extend_from_slice(&oracle_png::zlib_stored(tiff));
-    d
-}
-
-fn xmp_with_gps() -> Vec<u8> {
-    br#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:exif="http://ns.adobe.com/exif/1.0/" exif:GPSLatitude="51,30.0N" exif:GPSLongitude="0,7.0E"><dc:creator><rdf:Seq><rdf:li>Zed</rdf:li></rdf:Seq></dc:creator></rdf:Description></rdf:RDF></x:xmpmeta>"#.to_vec()
-}
-
-/// A minimal PNG around the given chunks (before `IDAT`).
-fn with(chunks: &[Vec<u8>]) -> Vec<u8> {
-    oracle_png::png(chunks, &[], &[])
-}
-
 /// The 16 ASCII-case spellings of a four-letter type.
 fn spellings(base: [u8; 4]) -> Vec<[u8; 4]> {
     (0..16u8)
@@ -257,40 +217,6 @@ fn case_grid() -> Vec<(String, Vec<u8>)> {
         }
     }
     out
-}
-
-/// The opaque carriers ExifTool decodes: a file that holds only the carrier.
-fn carrier_shapes() -> Vec<(String, Vec<u8>)> {
-    let tiff = rich_tiff();
-    let xmp = xmp_with_gps();
-    let xml = b"<?xml version=\"1.0\"?><a><b>Zed</b></a>".to_vec();
-    let raw = oracle_png::raw_profile_body("exif", &tiff);
-    vec![
-        (
-            "carrier-zxIf".to_string(),
-            with(&[oracle_png::chunk(b"zxIf", &zlib_wrapped(&tiff))]),
-        ),
-        (
-            "carrier-tXMP".to_string(),
-            with(&[oracle_png::chunk(b"tXMP", &xmp)]),
-        ),
-        (
-            "carrier-meTa".to_string(),
-            with(&[oracle_png::chunk(b"meTa", &xml)]),
-        ),
-        (
-            "carrier-seAl".to_string(),
-            with(&[oracle_png::chunk(b"seAl", &xml)]),
-        ),
-        (
-            "carrier-raw-profile-text".to_string(),
-            with(&[oracle_png::text(b"Raw profile type exif", &raw)]),
-        ),
-        (
-            "carrier-after-iend".to_string(),
-            oracle_png::png(&[], &[], &oracle_png::chunk(b"zxIf", &tiff)),
-        ),
-    ]
 }
 
 /// The `oracle_png` fixtures, plus one with every pinned tag in an `eXIf`.
