@@ -83,11 +83,11 @@ The design and porting brief are complete and carry named failure modes. The fir
 - [x] STAGE-011 (shipped on 2026-11-24) — M1 hardening from an external review: the JFIF APP0 thumbnail fix (SPEC-040)
 - [ ] STAGE-007 (proposed) — Relocatable Exif block for another TIFF writer (requested by monorail-000; consumer decision monorail-000/DEC-075): Exif, GPS and Interop IFDs rebuilt at a caller-given base, MakerNote left out, ExifTool parity, optional presets; DEC-014, DEC-015; 3 specs framed
 - [ ] (not yet defined) — exif-core crates.io pre-release once STAGE-007 ships and SPEC-025 and SPEC-026 are verified, before M1f, for monorail-000 to pin exactly (monorail-000/DEC-077 item 2); a release spec with the DEC-006 pre-flight
-- [ ] STAGE-010 (proposed; 3 of 4 specs shipped) — M1d PNG and WebP strip: tag-level inventory parity (SPEC-036, shipped 2026-11-22), PNG strip (SPEC-037, shipped 2026-11-23), WebP strip (SPEC-038, shipped 2026-11-23), ExifTool write parity and audit switch-over (SPEC-039, pending); `set` operations and MakerNote rules stay out
+- [ ] STAGE-010 (active; 3 of 4 specs shipped) — M1d PNG and WebP strip: tag-level inventory parity (SPEC-036, shipped 2026-11-22), PNG strip (SPEC-037, shipped 2026-11-23), WebP strip (SPEC-038, shipped 2026-11-23), ExifTool write parity and audit switch-over (SPEC-039, in design 2026-11-24: DEC-023); `set` operations and MakerNote rules stay out
 - [ ] (not yet defined) — M1e/M1f: HEIC read, IPTC/ICC passthrough, 24 h fuzz gate, publish
 - [ ] STAGE-012 (proposed, priority low) — In-browser EXIF viewer and stripper: exif-core compiled to wasm behind a thin bindings crate, a static page that shows the audit and hands back a stripped file, Pages deploy gated on a browser smoke test checked by ExifTool; starts after SPEC-039, and its first spec is the DEC that admits it to M1 or moves it to M2 (the site is out of scope above)
 
-**Count:** 9 shipped / 0 active / 5 pending
+**Count:** 9 shipped / 1 active / 4 pending
 
 ## Dependencies
 

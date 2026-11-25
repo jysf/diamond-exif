@@ -98,3 +98,15 @@ Measured on ExifTool 13.55 (`-a -u -G1 -H -s`, a minimal WebP with one chunk, th
 ## Amendment (2026-11-22, SPEC-033): the `Copyright` keyword is `Rights`
 
 Clause 4's `Copyright` row moves to `Rights` (DEC-008 amendment, 2026-11-21): a PNG text chunk keyed `Copyright` or `copyright` (the measured first-letter rule, unchanged) is a `Rights` finding, severity Medium as before. `Artist` and `Author` stay `Authorship`. `COPYRIGHT` and other spellings ExifTool prints as their own tag stay `FreeText`. No other row changes and no category is added for PNG or WebP. A WebP has no keyword table: ExifTool's `RIFF:Copyright` comes from a `LIST/INFO` chunk, which is an opaque carrier (DEC-022 clause 4) and is unaffected.
+
+## Amendment (2026-11-24, SPEC-039): PNG and WebP are strippable; three keyword rows
+
+1. **Clause 6 is reversed for PNG and WebP.** `ContainerKind::strippable()` is true for `Jpeg`, `Tiff`, `Png` and `Webp`. It is false for every `Unsupported` kind. It is still the single helper. The preview of a PNG or WebP then follows DEC-009 rule 2 as a JPEG's does: `Removed`, `KeptUnread`, `Kept`. `reliable()` is again "strippable, clean, and not truncated". The "has not been checked against ExifTool yet" wording is deleted from the text renderer. This rests on DEC-023: SPEC-039's records show ExifTool agrees with the writer's output, with every difference pinned.
+2. **Per file.** The flip is per container kind, as for JPEG. A strip can still refuse a file whose preview shows removals. Measured on the 174 PNG and WebP fixtures under all five presets: every refusal falls on a file whose audit is not clean, so its preview already says "not reliable". The refusal reasons a clean file can still meet (`Uneditable` ones such as `SharedBytes`, `HiddenPointer`, `EmptiedIfd`) are the same as a JPEG's and are typed at strip time. The README says so in one sentence.
+3. **Keyword rows** (clause 4 and the SPEC-033 amendment).
+   - ExifTool's `PNG::TextualData` table (`-listx`, 13.55) has `Make` and `Model` (`PNG:Make`, `PNG:Model`). They become `CameraModel`.
+   - `TimeStamp` (`PNG:TimeStamp`) becomes `Timestamps`.
+   - All three use the measured first-letter rule.
+   - Presets don't change: `FreeText`, `CameraModel` and `Timestamps` are all in `AllPii`, `All` and `Everything`, and none is in `Gps` or `GpsAndDevice`. Only a `Custom` spec sees the difference.
+   - The rest of that table (`Collection`, `Document`, `Label`, `URL`, `Source`, `Title`, `Description`, `Comment`, `Disclaimer`, `Warning`, `aesthetic_score`, `parameters`) stays `FreeText`.
+4. **`PLTE` is structure.** It joins clarification 4's list of chunks that ExifTool prints and that are never located or removed (`PNG:Palette`, measured by the SPEC-039 type sweep).

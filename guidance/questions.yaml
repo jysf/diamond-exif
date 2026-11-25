@@ -19,12 +19,19 @@ questions:
   - id: exiftool-write-exit-codes
     question: "What exit codes does ExifTool return in write mode, and how should I3 write-parity treat them?"
     priority: high
-    status: open
+    status: answered
     raised_by: human
     raised_at: 2026-11-04
     assigned_to: null
     notes: |
       Measure before building I3 write parity.
+      Answered by DEC-023 rule 5 (SPEC-039 design, 2026-11-24, ExifTool 13.55,
+      348 write runs over the PNG and WebP fixtures plus probes): 0 = output
+      written (warnings possible), 1 = error and no output (first `Error:` line
+      on stderr; a `[minor]` error without -m, an existing output path and a
+      missing input are all 1), 2 = a -if condition failed. rc == 0 held exactly
+      when the output file existed. The I3 harness asserts that equivalence on
+      every run and never passes -m.
 
   - id: template-drift
     question: "Has spec-driven-template drifted since this repo was scaffolded?"
