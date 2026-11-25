@@ -711,4 +711,40 @@ mod tests {
             );
         }
     }
+
+    /// DEC-020 amendment (2026-11-24, SPEC-039): ExifTool's `PNG::TextualData`
+    /// table has `Make`, `Model` and `TimeStamp`. Typed by hand. The three
+    /// all-caps spellings are their own tags (the first-letter rule, measured
+    /// live in the SPEC-039 build: `MAKE`, `MODEL` and `TIMESTAMP` print under
+    /// their own names), and so are the other table rows that stay free text.
+    #[test]
+    fn make_model_and_timestamp_keywords_have_their_categories() {
+        use Category::*;
+        let rows: [(&[u8], Category); 16] = [
+            (b"Make", CameraModel),
+            (b"make", CameraModel),
+            (b"Model", CameraModel),
+            (b"model", CameraModel),
+            (b"TimeStamp", Timestamps),
+            (b"timeStamp", Timestamps),
+            (b"MAKE", FreeText),
+            (b"MODEL", FreeText),
+            (b"TIMESTAMP", FreeText),
+            (b"Collection", FreeText),
+            (b"Document", FreeText),
+            (b"Label", FreeText),
+            (b"URL", FreeText),
+            (b"Source", FreeText),
+            (b"aesthetic_score", FreeText),
+            (b"parameters", FreeText),
+        ];
+        for (keyword, want) in rows {
+            assert_eq!(
+                text_keyword_category(keyword),
+                want,
+                "{}",
+                String::from_utf8_lossy(keyword)
+            );
+        }
+    }
 }
