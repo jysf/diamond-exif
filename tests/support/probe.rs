@@ -501,6 +501,20 @@ pub fn run_probe_theirs(bin: &Path, record: &Path, section: &str) -> Result<Stri
     String::from_utf8(run.stdout).map_err(|e| format!("probe stdout: {e}"))
 }
 
+/// What the probe's strip mode printed (SPEC-039 AC10): the writer's output
+/// bytes, or the refusal's `Debug`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StripRun {
+    Ok(Vec<u8>),
+    Err(String),
+}
+
+/// Run a built probe in `--strip` mode: `exif_core::strip` of `file` under the
+/// preset named `policy`. STUB at the red commit: the probe has no strip mode.
+pub fn run_probe_strip(_bin: &Path, _file: &Path, _policy: &str) -> Result<StripRun, String> {
+    Err("the probe has no strip mode yet".to_string())
+}
+
 /// Build the staged crate in `dir` and run its probe on `file`.
 pub fn build_and_run_probe(dir: &Path, file: &Path) -> Result<Vec<Option<String>>, String> {
     let bin = build_probe(dir)?;

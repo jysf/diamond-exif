@@ -18,6 +18,12 @@
 //! (`DIAMOND_EXIF_REQUIRE_ORACLE=1` makes that a failure). `src/` is never
 //! modified.
 
+#[path = "support/i3_judge.rs"]
+mod i3_judge;
+#[path = "support/i3_records.rs"]
+mod i3_records;
+#[path = "support/i3_shapes.rs"]
+mod i3_shapes;
 #[path = "support/mutate.rs"]
 mod mutate;
 #[path = "support/oracle.rs"]
@@ -32,6 +38,12 @@ mod oracle_webp;
 mod probe;
 #[path = "support/tools.rs"]
 mod tools;
+#[path = "support/webp_carriers.rs"]
+mod webp_carriers;
+#[path = "support/webp_shapes.rs"]
+mod webp_shapes;
+#[path = "support/writer_mutants.rs"]
+mod writer_mutants;
 
 use oracle::{JpegComparison, Mismatch};
 use probe::{TempDir, MARKER};
@@ -734,6 +746,88 @@ fn byte_mutation_truncation_between_vp8l_and_exif_is_named() {
         .unexplained
         .is_empty());
     println!("{test} (live variant): ExifTool agrees on both cuts");
+}
+
+// ── SPEC-039 AC10: writer mutants W2 and W4 ────────────────────────────────
+
+use writer_mutants::Mutant;
+
+/// W2: `SEAL` is dropped from `webp::metadata::chunk_class`. Audit and writer
+/// both read it, so the self-check passes; ExifTool still decodes the chunk.
+const W2: Mutant = Mutant {
+    id: "W2",
+    fixture: "webp-row-05-seal",
+    policy: "gps",
+    file: "webp/metadata.rs",
+    needle:
+        "b\"_PMX\" | b\"SEAL\" | b\"aXML\" | b\"iXML\" | b\"JUNQ\" => Some(ChunkClass::XmlCarrier),",
+    replacement: "b\"_PMX\" | b\"aXML\" | b\"iXML\" | b\"JUNQ\" => Some(ChunkClass::XmlCarrier),",
+};
+
+/// W4: `C2PA` is an `XmlCarrier` instead of `Jumbf`. An over-removal under
+/// `All`, which keeps `Jumbf` while a carrier goes under every preset.
+const W4: Mutant = Mutant {
+    id: "W4",
+    fixture: "webp-row-22-c2pa",
+    policy: "all",
+    file: "webp/metadata.rs",
+    needle: "b\"C2PA\" => Some(ChunkClass::Jumbf),",
+    replacement: "b\"C2PA\" => Some(ChunkClass::XmlCarrier),",
+};
+
+fn assert_four_results(m: &Mutant, name_needles: &[&str]) {
+    let live = live_gate(&format!("writer mutant {} (live)", m.id));
+    let r = writer_mutants::run(m, live);
+    println!("AC10 {}", writer_mutants::report(m, &r));
+    assert!(
+        r.control_matches,
+        "{}: the control must reproduce the committed digest",
+        m.id
+    );
+    assert!(
+        r.mutant_ok,
+        "{}: the mutant's strip must return Ok (escape the self-check)",
+        m.id
+    );
+    let replay = r
+        .replay_red
+        .as_deref()
+        .unwrap_or_else(|| panic!("{}: replay must go red on the digest, and did not", m.id));
+    println!("AC10 {} replay red: {replay}", m.id);
+    if let Some(failures) = &r.live_failures {
+        assert!(
+            failures
+                .iter()
+                .any(|f| name_needles.iter().all(|n| f.contains(n))),
+            "{}: live must go red naming {name_needles:?}, got {failures:?}",
+            m.id
+        );
+        println!(
+            "AC10 {} live red: {}",
+            m.id,
+            failures
+                .iter()
+                .find(|f| name_needles.iter().all(|n| f.contains(n)))
+                .cloned()
+                .unwrap_or_default()
+        );
+    }
+}
+
+#[test]
+fn writer_mutant_w2_seal_not_a_carrier_escapes_the_self_check_and_i3_names_it() {
+    assert_four_results(
+        &W2,
+        &["webp-row-05-seal", "under gps", "carrier tag left in"],
+    );
+}
+
+#[test]
+fn writer_mutant_w4_c2pa_as_carrier_is_named() {
+    assert_four_results(
+        &W4,
+        &["webp-row-22-c2pa", "under all", "kept tag missing JUMBF:"],
+    );
 }
 
 // ── The injection scaffolding is itself guarded ────────────────────────────

@@ -133,14 +133,17 @@ fn expected_sections(fx: &Fixture) -> Vec<String> {
 #[test]
 fn the_i3_fixture_set_is_the_designed_one() {
     let f = fixtures();
-    assert_eq!(f.len(), 236);
-    assert_eq!(f.iter().filter(|x| x.ext == "png").count(), 90);
-    assert_eq!(f.iter().filter(|x| x.ext == "webp").count(), 146);
+    assert_eq!(f.len(), 238);
+    assert_eq!(f.iter().filter(|x| x.ext == "png").count(), 91);
+    assert_eq!(f.iter().filter(|x| x.ext == "webp").count(), 147);
     let names: BTreeSet<_> = f.iter().map(|x| x.name.to_ascii_lowercase()).collect();
     assert_eq!(names.len(), f.len(), "names are unique even case-folded");
     assert!(f[..i3_shapes::ORACLE_COUNT]
         .iter()
         .all(|x| !x.name.starts_with("png-carrier-")));
+    // New shapes go at the end: the last two are the exception (c) fixtures.
+    let last: Vec<&str> = f[236..].iter().map(|x| x.name.as_str()).collect();
+    assert_eq!(last, ["png-xmp-plain-gps", "webp-xmp-plain-gps"]);
 }
 
 #[test]
@@ -368,8 +371,9 @@ fn assert_judge_holds(t: &Totals) {
         "whole block {}",
         t.uses.whole_block
     );
-    // Exception (c), the residual, is not reached: no I3 fixture holds a plain
-    // XMP packet with a GPS property (see the SPEC-039 Part A handback).
+    // Exception (c), the residual, is reached by the two plain-XMP-with-GPS
+    // fixtures at the end of `i3_shapes` (SPEC-039 Part B).
+    assert!(t.uses.residual >= 1, "residual used {}", t.uses.residual);
 }
 
 #[test]
