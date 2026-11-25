@@ -266,3 +266,15 @@ signals:
     last_touched: 2026-11-22
     raised_by: claude
     notes: "At the bar. Dispositioned at STAGE-008 close: make 'a variant grid of hostile shapes measured against the oracle' a design step for any parity or audit spec, not a verify-only one."
+
+  - id: strip-oracle-jfif-kept-presets-unrecorded
+    type: process-debt
+    summary: "The strip oracle records no Gps, GpsAndDevice or AllPii policy, so for the JFIF fixtures the presets that keep the thumbnail as kept-unread (SPEC-040 AC9/AC11) are checked against ExifTool only by the verifier's one-off probe; the recorded Custom policies (xmp, icc, rights...) cover 'kept' but not the preset path, which tests/strip.rs unit-tests."
+    evidence: "SPEC-040 build (HANDOFF-088 deviation 3: adding a recorded policy changes every existing strip record) and verify (HANDOFF-089, optional suggestion; the verifier checked the kept presets live by hand). N=1."
+    bar: null
+    status: open
+    disposition_at: project-close
+    first_flagged: 2026-11-24
+    last_touched: 2026-11-24
+    raised_by: claude
+    notes: "Fix: add a Gps (or AllPii) row to the recorded policies for the four jfif-* strip fixtures only, or to all fixtures with a one-time re-record of tests/oracle-fixtures/exiftool-strip/. Small; schedule it with the next spec that touches the strip oracle."
