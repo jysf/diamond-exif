@@ -324,6 +324,114 @@ AC7 (vi) red: png-exif-gps-full-le under all_pii: kept tag missing ExifIFD:Expos
   1,910 s (about 32 min) of wall clock. The self-report's "about 3 hours" was wrong. Basis: agent-result. USD is not
   computed because the input/output split is not reported.
 
+### Part B (AC8 to AC10, plus the exception (c) fixtures), claude-sonnet-5-5, 2026-11-25
+
+Branch `feat/spec-039-png-webp-write-parity-build`. Part B is done: AC8 to AC10 green, the two exception (c)
+fixtures recorded, `just oracle-record` run twice with no diff. Part C not started; `handoff.status` left `pending`.
+
+**What was done**
+- AC8: `tests/support/sweep.rs` (`listx_ids`, `parse_listing`, `new_tags`, `unexplained`, `Scratch`, `exiftool_listx`,
+  `live_gate`). `unexplained` now takes the known set and the pinned structure list as arguments. The WebP sweep
+  imports it with its verdict unchanged (13 passed, 1 ignored; 2700 codes x 8 shapes, 40 codes print) and its
+  red-proofs still go red.
+- AC9: `tests/strip_png_sweep_live.rs`. The type sweep: 2913 candidate codes (the `-listx` ids, the 26 pinned
+  subdirectory types, all 16 case spellings of the 17 codes the writer names) x 10 payload shapes = 29,130 files,
+  2 ExifTool runs (a `-a -u -G1 -s` run per directory of 5 shapes). 66 codes print a tag the bare file does not:
+  all 17 writer codes (and every case of `eXIf` and `zxIf`, 32 spellings; no other case of any code), and 19 codes
+  outside the writer's set, which are exactly DEC-020 clarification 4's 18 structure chunks plus `PLTE`. **Unknown
+  chunk types found: 0.** `STRUCTURE` pins the tag names each of the 19 printed. The keyword sweep: 22 keywords x 3
+  chunk forms (`tEXt`, `zTXt`, `iTXt`) = 66 files, one run, 0 failures; ExifTool's `PNG::TextualData` ids equal
+  `i3_shapes::TEXTUAL_DATA_KEYWORDS`. The residual (rule 6) is in the file's doc comment.
+- AC10: `probe --strip <file> <preset>` in `tests/support/probe.rs` (`run_probe_strip`, `StripRun`), the shared
+  apparatus `tests/support/writer_mutants.rs`, and W1 and W3 in `png_mutation_oracle.rs`, W2 and W4 in
+  `webp_mutation_oracle.rs`. Needles are exactly-once (the existing guard asserts it); the marker guard still passes.
+- Exception (c): `png-xmp-plain-gps` (an uncompressed `iTXt` keyed `XML:com.adobe.xmp`) and `webp-xmp-plain-gps` (a
+  `VP8X` with the XMP flag, an `XMP ` chunk), appended to `i3_shapes` (238 fixtures: 91 PNG, 147 WebP; the 174
+  oracle counts unchanged). Their differences: PNG none; WebP `everything` against `-all=` is D1 (pinned), `gps`
+  against `-gps:all=` is identical. The judge now uses (c) 24 times (bound `>= 20`).
+
+**Commits** (on `feat/spec-039-png-webp-write-parity-build`):
+- `eab9d04` test(oracle): SPEC-039 Part B red: PNG sweep, writer mutants W1 to W4, exception (c) bound
+  (stubs: `sweep.rs` parsers and `run_probe_strip`; 10 tests red: the 4 PNG sweep tests, W1 to W4, the fixture count
+  and the judge's (c) bound)
+- `b9dc680` test(oracle): SPEC-039 exception (c) fixtures, records, and the judge's converse
+- `7449c9a` test(oracle): SPEC-039 AC8 to AC10 green: shared sweep, PNG sweeps, probe strip mode, writer mutants
+- the bookkeeping commit (this entry) follows (see `git log`).
+
+**Measured numbers**
+- Judge (replay and live identical): 2571 policy sections judged, 595 with a removable tag (2402 tags); exception
+  (a) carrier 670, (b) whole block 354, (c) residual 24 (18 under `gps`, `gps_and_device`, `all_pii`: 2 fixtures x
+  3 Composite tags x 3 presets; 6 under the Custom `xmp`, the converse below). Part A's 2547, 583, 2354, 670, 354, 0
+  are unchanged except by the two fixtures.
+- `just oracle-record` twice: the first run added only the two new records (the 236 others reproduced); after the
+  commit the second run left `git status` empty. The records hold no machine path (the section test asserts it).
+- Differential over the 174: unchanged (157 identical, key level D1 72, D2 2, D3 7, D4 4, D5 1, value level D4 3, D6
+  31, 41 outcome differences, 30 both refuse).
+- Gates on 1.90.0 (clippy 0.1.90): `just lint` rc 0, `just lint-no-allow` rc 0, `just forbid-unsafe` rc 0,
+  `DIAMOND_EXIF_REQUIRE_ORACLE=1 just test` rc 0 (41 result lines ok, 0 failed), `just mutation-oracle` rc 0
+  (67 + 42 + 43 passed). `fuzz/Cargo.lock` was not touched (no fuzz run in Part B).
+
+**Red evidence**
+
+AC9 (`cargo test --test strip_png_sweep_live -- --nocapture`):
+```
+AC9 red (type sweep): without tXMP in the known set: "tXMP" (xmp): ExifTool prints ["XMP-dc:Creator", "XMP-photoshop:City"], and the code is neither the writer's nor pinned as structure
+AC9 red (keyword sweep): without the Make row in the judge: "Make" in tEXt: ExifTool prints PNG:Make, which the judge files under Some(FreeText), but text_keyword_category says Some(CameraModel)
+```
+
+AC10 (`cargo test --test png_mutation_oracle --test webp_mutation_oracle -- --nocapture writer_mutant`). The four
+results of each mutant: (1) the control reproduces the committed digest, (2) `strip` returns `Ok`, (3) replay red,
+(4) live red:
+```
+AC10 W1: control digest equal true; strip Ok true; replay red true; live red true
+AC10 W1 replay red: png-carrier-tXMP under gps: the writer's output is 446 bytes, digest 9b9b3f1c6b593517; the record read 70 bytes, digest 2d3cc60e9a50b1be
+AC10 W1 live red: png-carrier-tXMP under gps: carrier tag left in XMP-dc:Creator=Zed
+AC10 W2: control digest equal true; strip Ok true; replay red true; live red true
+AC10 W2 replay red: webp-row-05-seal under gps: the writer's output is 506 bytes, digest 18c6265a0b93df02; the record read 44 bytes, digest 9b58c96f182ec9d0
+AC10 W2 live red: webp-row-05-seal under gps: carrier tag left in XML-dc:Creator
+AC10 W3: control digest equal true; strip Ok true; replay red true; live red true
+AC10 W3 replay red: png-kw-04-copyright under all_pii: the writer's output is 70 bytes, digest 2d3cc60e9a50b1be; the record read 106 bytes, digest 4a40827073ce2164
+AC10 W3 live red: png-kw-04-copyright under all_pii: kept tag missing PNG:Copyright=SweepCopyright
+AC10 W4: control digest equal true; strip Ok true; replay red true; live red true
+AC10 W4 replay red: webp-row-22-c2pa under all: the writer's output is 44 bytes, digest 9b58c96f182ec9d0; the record read 208 bytes, digest aa0594648055475c
+AC10 W4 live red: webp-row-22-c2pa under all: kept tag missing JUMBF:JUMDLabel=c2pa
+```
+No mutant was caught by the self-check. The needles: W1 `b"tXMP" | b"meTa" | b"seAl" => ...` in `png/metadata.rs`;
+W2 `b"_PMX" | b"SEAL" | ...` in `webp/metadata.rs`; W3 `(b"Copyright", Category::Rights),` in `audit/category.rs`; W4
+`b"C2PA" => Some(ChunkClass::Jumbf),` in `webp/metadata.rs`. Nothing under `src/` was changed.
+
+Exception (c) converse (new red-proof, `comparator_is_red_when_exception_c_is_claimed_without_an_xmp_source`):
+```
+AC7 (x) red: png-exif-gps-full-le under xmp: kept tag missing Composite:GPSLatitude=37.4252083333333
+```
+(the test first asserts the control: `png-xmp-plain-gps` under `xmp` judges clean).
+
+**Deviations and findings**
+1. Judge exception (c) has a converse, found by the new fixtures: under the Custom `xmp` (removes `Xmp`, keeps `Gps`)
+   the packet goes and ExifTool's `Composite:GPSLatitudeRef`, `GPSLongitudeRef`, `GPSPosition` derived from it go too
+   (6 "kept tag missing" lines). I counted that under exception (c), in `i3_judge::judge`, only when the input's XMP
+   holds a GPS property and the policy removes `Xmp`, and I red-proofed it. DEC-023 rule 3 (c) is one-directional as
+   written, so this extends it. Question `i3-judge-exception-c-converse` (open, low) asks the architect to ratify it
+   in DEC-023. No class of the differential was invented.
+2. The WebP exception (c) fixture sets the `VP8X` XMP flag (`0x04`), as a real file would. With flags 0 ExifTool's
+   recomputed flags differ (a D6 value pin); with the flag set the `gps` pair is identical, so only the D1 pin is new.
+3. The type sweep's candidate set follows AC9 (2913 codes, 29,130 files), not the design's measurement (35,020 files
+   over 56 case-spelled types); the design's figure is of a wider one-off run, and AC9 does not ask for it.
+4. `tests/support/writer_mutants.rs` is a new support file that the spec's Outputs do not list: it holds the four-result
+   apparatus once, for the two mutation files.
+5. The red-proofs of AC9 are live (they reuse the sweep's one run); each also has an ungated canned half. The AC9
+   tests skip loudly without ExifTool, like the WebP sweep.
+
+**Reflection (Part B)**
+1. *What was unclear?* Whether the judge could excuse a derived `Composite:GPS*` going missing when its XMP source is
+   removed (rule 3 (c) names only the kept direction), and what "all 16 case spellings of every code the writer names"
+   should add to the design's 56-type grid. I took the AC text literally and raised the first as a question.
+2. *A missing constraint or decision?* DEC-023 (c) should state the converse, and the spec should say the exception
+   (c) fixtures' VP8X flag.
+3. *What would I do differently?* Run the sweep before typing `STRUCTURE`, as I did, but also print the observed
+   table from the first run in the test itself, which I now do; and write the exception (c) fixtures in the design, so
+   the converse showed in Part A.
+
 ### Execution notes
 
 - **Branch / PR:** [link]
