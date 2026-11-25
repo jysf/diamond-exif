@@ -235,7 +235,7 @@ pub fn region_category(kind: RegionKind) -> Category {
 /// The PNG text keywords that are not free text (DEC-020), as data: one row per
 /// keyword, in ExifTool's standard spelling. SPEC-033 re-homed `Copyright` to
 /// `Rights` by editing its row (DEC-020 amendment).
-const TEXT_KEYWORDS: [(&[u8], Category); 7] = [
+const TEXT_KEYWORDS: [(&[u8], Category); 10] = [
     (b"Artist", Category::Authorship),
     (b"Author", Category::Authorship),
     (b"Copyright", Category::Rights),
@@ -245,6 +245,11 @@ const TEXT_KEYWORDS: [(&[u8], Category); 7] = [
     (b"create-date", Category::Timestamps),
     (b"modify-date", Category::Timestamps),
     (b"Software", Category::Software),
+    // DEC-020 amendment (2026-11-24, SPEC-039): ExifTool's `PNG::TextualData`
+    // table also has these three, found by the SPEC-039 build's keyword sweep.
+    (b"Make", Category::CameraModel),
+    (b"Model", Category::CameraModel),
+    (b"TimeStamp", Category::Timestamps),
 ];
 
 /// The category of a PNG text chunk (`tEXt`, `zTXt`, `iTXt`) by its keyword.

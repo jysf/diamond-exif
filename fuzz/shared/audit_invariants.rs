@@ -515,6 +515,8 @@ mod audit_invariants {
             b"Copyright" => "Rights",
             b"Creation Time" => "Timestamps",
             b"Software" => "Software",
+            b"Make" | b"Model" => "CameraModel",
+            b"TimeStamp" => "Timestamps",
             _ => "FreeText",
         }
     }
