@@ -312,6 +312,18 @@ AC7 (vi) red: png-exif-gps-full-le under all_pii: kept tag missing ExifIFD:Expos
    and add the plain-XMP-with-GPS fixtures at design so exception (c) is exercised.
 
 
+**Orchestrator notes on Part A** (claude-opus-5-5, 2026-11-25)
+- Ruling on `i3-differential-value-level-differences` (now answered): the DEC-023 amendment of 2026-11-25. Values are
+  compared. The 3 duplicate-`EXIF` pairs are D4 at value level. The 31 `RIFF:WebP_Flags` pairs are a new class, D6:
+  ExifTool recomputes the `VP8X` flags, and we clear only the bits of kinds we removed (DEC-022 clause 7). They are not
+  D1, which is ExifTool dropping `VP8X`. The 11 value-level flag rows in `i3_records.rs` were relabelled from D1 to D6.
+  The test now pins value-level D4 3 and D6 31, with 157 identical pairs. It is green in replay and live
+  (`DIAMOND_EXIF_REQUIRE_ORACLE=1`, 29 passed, 1 ignored).
+- Exception (c)'s two fixtures, a plain XMP packet with GPS in one PNG and one WebP, are added to Part B's scope.
+- Part A cost, from the harness's subagent result rather than the self-report: 341,318 tokens; 86 tool calls;
+  1,910 s (about 32 min) of wall clock. The self-report's "about 3 hours" was wrong. Basis: agent-result. USD is not
+  computed because the input/output split is not reported.
+
 ### Execution notes
 
 - **Branch / PR:** [link]

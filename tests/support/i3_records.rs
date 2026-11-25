@@ -411,7 +411,7 @@ pub fn variant_name(e: &exif_core::StripError) -> String {
 
 /// One row of [`DIFFERENCES`].
 pub struct Diff {
-    /// `D1` to `D5` (DEC-023 rule 4).
+    /// `D1` to `D6` (DEC-023 rule 4).
     pub class: &'static str,
     /// `keys` or `values`.
     pub level: &'static str,
@@ -427,6 +427,11 @@ pub struct Diff {
 /// the pairs both tools refuse.
 pub const DESIGN_KEY_COUNTS: [(&str, usize); 5] =
     [("D1", 72), ("D2", 2), ("D3", 7), ("D4", 4), ("D5", 1)];
+/// The value-level classes over the same fixtures (DEC-023 rule 4 as amended
+/// 2026-11-25): pairs with equal `(group, tag)` multisets whose values differ.
+pub const DESIGN_VALUE_COUNTS: [(&str, usize); 2] = [("D4", 3), ("D6", 31)];
+/// Pairs identical at both levels.
+pub const DESIGN_IDENTICAL: usize = 157;
 pub const DESIGN_OUTCOME_DIFFERENCES: usize = 41;
 pub const DESIGN_BOTH_REFUSE: usize = 30;
 pub const DESIGN_PAIRS: usize = 348;
@@ -1159,7 +1164,7 @@ pub const DIFFERENCES: &[Diff] = &[
         fixtures: &["webp-exif-blocks-16"],
     },
     Diff {
-        class: "D1",
+        class: "D6",
         level: "values",
         pair: "gps",
         ours_only: &["RIFF:WebP_Flags=0"],
@@ -1271,7 +1276,7 @@ pub const DIFFERENCES: &[Diff] = &[
         ],
     },
     Diff {
-        class: "D1",
+        class: "D6",
         level: "values",
         pair: "all",
         ours_only: &["RIFF:WebP_Flags=10"],
@@ -1279,7 +1284,7 @@ pub const DIFFERENCES: &[Diff] = &[
         fixtures: &["webp-exif-inside-anmf"],
     },
     Diff {
-        class: "D1",
+        class: "D6",
         level: "values",
         pair: "gps",
         ours_only: &["RIFF:WebP_Flags=10"],
@@ -1287,7 +1292,7 @@ pub const DIFFERENCES: &[Diff] = &[
         fixtures: &["webp-exif-inside-anmf"],
     },
     Diff {
-        class: "D1",
+        class: "D6",
         level: "values",
         pair: "all",
         ours_only: &["RIFF:WebP_Flags=8"],
@@ -1299,7 +1304,7 @@ pub const DIFFERENCES: &[Diff] = &[
         ],
     },
     Diff {
-        class: "D1",
+        class: "D6",
         level: "values",
         pair: "gps",
         ours_only: &["RIFF:WebP_Flags=8"],
@@ -1333,7 +1338,7 @@ pub const DIFFERENCES: &[Diff] = &[
         fixtures: &["webp-exif-two-same-tag-reversed"],
     },
     Diff {
-        class: "D1",
+        class: "D6",
         level: "values",
         pair: "gps",
         ours_only: &["RIFF:WebP_Flags=36"],
@@ -1341,7 +1346,7 @@ pub const DIFFERENCES: &[Diff] = &[
         fixtures: &["webp-flags-all-wrong"],
     },
     Diff {
-        class: "D1",
+        class: "D6",
         level: "values",
         pair: "gps",
         ours_only: &["RIFF:WebP_Flags=32"],
@@ -1349,7 +1354,7 @@ pub const DIFFERENCES: &[Diff] = &[
         fixtures: &["webp-icc-empty", "webp-icc-kind-lower"],
     },
     Diff {
-        class: "D1",
+        class: "D6",
         level: "values",
         pair: "all",
         ours_only: &["RIFF:WebP_Flags=32"],
@@ -1357,7 +1362,7 @@ pub const DIFFERENCES: &[Diff] = &[
         fixtures: &["webp-icc-kind-lower"],
     },
     Diff {
-        class: "D1",
+        class: "D6",
         level: "values",
         pair: "gps",
         ours_only: &["RIFF:WebP_Flags=0"],
@@ -1836,7 +1841,7 @@ pub const DIFFERENCES: &[Diff] = &[
         fixtures: &["webp-vp8x-two"],
     },
     Diff {
-        class: "D1",
+        class: "D6",
         level: "values",
         pair: "gps",
         ours_only: &["RIFF:WebP_Flags=4"],
@@ -1858,7 +1863,7 @@ pub const DIFFERENCES: &[Diff] = &[
         ],
     },
     Diff {
-        class: "D1",
+        class: "D6",
         level: "values",
         pair: "all",
         ours_only: &["RIFF:WebP_Flags=4"],

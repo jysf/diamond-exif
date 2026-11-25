@@ -107,14 +107,17 @@ the build rebuilds what it needs from these facts. **DEC-023 is normative** and 
    a `-if` condition failed. Across 348 write runs, `rc == 0` held exactly when the output file existed. `-m` turns
    `[minor]` errors into warnings and exit 0.
 2. **The differential** (`Everything` ↔ `exiftool -all=`, `Gps` ↔ `exiftool -gps:all=`, compared as ExifTool's
-   readings of the two outputs, `(group, tag)` multisets):
-   - 191 pairs are identical.
+   readings of the two outputs, `(group, tag)` multisets and the values of tags both keep):
+   - 157 pairs are identical. The design first counted 191 by comparing keys only. 34 of those agree on keys and
+     differ in value: D4 3 and D6 31 (DEC-023 amendment of 2026-11-25).
    - 86 differ, all in five classes (DEC-023 rule 4):
      - D1: ExifTool drops `VP8X` after `-all=` (72 pairs).
      - D2: ExifTool adds `VP8X` when writing `EXIF` into a simple WebP (2).
      - D3: ExifTool keeps raw-profile carriers that we remove (7).
      - D4: ExifTool rewrites duplicate `EXIF` chunks from the last one, which changes kept values (4).
      - D5: ExifTool can't delete a text chunk that has no keyword NUL (1).
+     - D6, value level only: ExifTool recomputes the `VP8X` flags from the chunks present. We clear only the bits
+       of kinds we removed (31).
    - 41 pairs are outcome differences: ExifTool refuses where we strip (hostile structure we tolerate), or we refuse
      where ExifTool writes (`Uneditable { BlockNotClean }` on an untrusted Exif block).
    - 30 pairs are refused by both.
@@ -277,8 +280,11 @@ now true.
 - [ ] **AC5 (Layer B differential, rule 4):**
   - For every fixture, run `Everything` against `exiftool -all=` and `Gps` against `exiftool -gps:all=`.
   - Compare the `(group, tag)` multisets, and the values of tags both outputs keep.
-  - Every difference must be in the pinned table, as (fixture, pair, class D1 to D5, the exact tag lines). The table
-    is typed by hand from DEC-023 and this design's counts: D1 72, D2 2, D3 7, D4 4, D5 1.
+  - Every difference must be in the pinned table, as (fixture, pair, class D1 to D6, level, the exact tag lines). The
+    table is typed by hand from DEC-023 and this design's counts:
+    - key level: D1 72, D2 2, D3 7, D4 4, D5 1;
+    - value level: D4 3, D6 31;
+    - 157 identical pairs.
   - Outcome pins: 41 (ExifTool refuses with its `Error:` line, or we refuse with our variant). Both refusing is
     agreement.
   - An unpinned difference fails, and so does a stale pin.
@@ -438,7 +444,8 @@ amendment and this spec's counts. Never derive one from the code under test.
     so `-t -n`, not `-H`.
 - **The differential's multiset compare:** duplicate `EXIF`/`eXIf` blocks print the same `(group, tag)` several times
   (`-a`). Compare as multisets. D4 is exactly a multiset-and-value difference.
-- **Reproducing the design's counts:** D1 72, D2 2, D3 7, D4 4, D5 1. There are 41 outcome differences, 30 both-refuse
+- **Reproducing the design's counts:** key level D1 72, D2 2, D3 7, D4 4, D5 1. Value level D4 3, D6 31, and 157
+  identical pairs (DEC-023 amendment of 2026-11-25). There are 41 outcome differences, 30 both-refuse
   pairs, and 113 refused `(fixture, preset)` pairs. If the rebuilt harness disagrees, stop and report the difference.
   Don't re-pin it to match. Either the harness or the measurement is wrong, and the architect decides which.
 - **The mutants must escape the self-check.** That's the point: a mutant the self-check catches proves nothing about

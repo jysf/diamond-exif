@@ -1799,7 +1799,7 @@ questions:
   - id: i3-differential-value-level-differences
     question: "Does DEC-023 rule 4's 'values for the tags both keep' mean the 34 equal-key pairs whose values differ are D1/D4 differences to pin, or is the differential keyed by (group, tag) only?"
     priority: low
-    status: open
+    status: answered
     raised_by: claude-sonnet-5-5
     raised_at: 2026-11-25
     assigned_to: null
@@ -1821,3 +1821,8 @@ questions:
       Also found: the I3 fixture set holds no plain XMP packet with a GPS property, so judge
       exception (c) (Composite GPS from a kept XMP packet) is never used (0 uses); it needs one
       PNG and one WebP fixture at the end of `i3_shapes` if it is to be exercised.
+      Answered 2026-11-25 by the DEC-023 amendment "value-level differences and class D6".
+      Values are compared, and each pin carries a level. The 3 duplicate-EXIF pairs are D4 at
+      value level. The 31 WebP_Flags pairs are a new class, D6: ExifTool recomputes the VP8X flags
+      and we clear only the bits of kinds we removed (DEC-022 clause 7). They are not D1. There are
+      157 identical pairs. Exception (c) gets its two fixtures in Part B.

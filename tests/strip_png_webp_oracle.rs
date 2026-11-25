@@ -556,15 +556,17 @@ fn differential(source: &dyn Fn(&Fixture) -> Record) {
     let core_pairs = i3_shapes::ORACLE_COUNT * 2;
     assert_eq!(core_pairs, i3_records::DESIGN_PAIRS);
     let mut by_class: BTreeMap<&str, usize> = BTreeMap::new();
-    let (mut value_level, mut outcomes) = (0usize, 0usize);
+    let mut by_value_class: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut outcomes = 0usize;
     for d in i3_records::DIFFERENCES {
         let n = d.fixtures.iter().filter(|f| is_core(f)).count();
         if d.level == "keys" {
             *by_class.entry(d.class).or_insert(0) += n;
         } else {
-            value_level += n;
+            *by_value_class.entry(d.class).or_insert(0) += n;
         }
     }
+    let value_level: usize = by_value_class.values().sum();
     for (f, _, _, _) in i3_records::OUTCOMES {
         if is_core(f) {
             outcomes += 1;
@@ -579,12 +581,21 @@ fn differential(source: &dyn Fn(&Fixture) -> Record) {
     }
     assert_eq!(outcomes, i3_records::DESIGN_OUTCOME_DIFFERENCES);
     assert_eq!(both, i3_records::DESIGN_BOTH_REFUSE);
-    // 191 identical in the design, which compared the `(group, tag)` multisets:
-    // those with equal keys, whether or not a value differs.
+    for (class, n) in i3_records::DESIGN_VALUE_COUNTS {
+        assert_eq!(
+            by_value_class.get(class).copied().unwrap_or(0),
+            n,
+            "value-level class {class}"
+        );
+    }
+    assert_eq!(by_value_class.len(), i3_records::DESIGN_VALUE_COUNTS.len());
+    // The design first measured 191 identical comparing `(group, tag)` keys
+    // only; 34 of those differ in value (DEC-023 rule 4, amended 2026-11-25).
+    assert_eq!(same, i3_records::DESIGN_IDENTICAL);
     assert_eq!(same + value_level, 191);
     println!(
         "differential: {same} identical pairs, {value_level} equal-key pairs whose values \
-         differ, key-level differences {by_class:?}, {outcomes} outcome differences, {both} \
+         differ, key-level differences {by_class:?}, value-level {by_value_class:?}, {outcomes} outcome differences, {both} \
          pairs both tools refuse (the 174 oracle fixtures)"
     );
 }

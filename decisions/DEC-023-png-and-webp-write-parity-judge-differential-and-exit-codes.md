@@ -101,3 +101,16 @@ The comparator red-proofs and the mutated-copy writer red-proofs of SPEC-039 (AC
 - Related specs: SPEC-039; SPEC-020, SPEC-021 (the JPEG strip oracle), SPEC-037, SPEC-038
 - Related decisions: DEC-008, DEC-009, DEC-013, DEC-020, DEC-021, DEC-022
 - `docs/exif-core-design.md` §8 (I3) and §16; `docs/porting-brief-diamond-exif.md` (the write-side warning)
+
+## Amendment (2026-11-25, SPEC-039 build): value-level differences and class D6
+
+Answers question `i3-differential-value-level-differences`. Rule 4 compares values as well as `(group, tag)` keys, and that stands. The design's counts above were measured on keys only, so they missed 34 pairs whose keys agree and whose values differ (the 174 oracle fixtures, ExifTool 13.55). The design's key-level counts still hold. Each pin in the table now has a level, `keys` or `values`:
+
+1. **Key level** (unchanged): D1 72, D2 2, D3 7, D4 4, D5 1.
+2. **Value level:**
+   - **D4, 3 pairs:** `webp-exif-blocks-16`, `webp-exif-full-one-two` and `webp-exif-full-two-one` under `Gps`. The mechanism is D4's: ExifTool rewrites every `EXIF` chunk from the last one, so kept values change. The keys agree only because the chunks hold the same tags.
+   - **D6, 31 pairs: ExifTool recomputes the `VP8X` flags.** ExifTool sets `WebP_Flags` from the chunks the output contains: 23 pairs under `Gps`, and 8 under `Everything` where it keeps `VP8X`. We follow DEC-022 clause 7. We clear the ICC, Exif or XMP bit only when the strip removes every chunk of that kind, and leave every other bit as the input had it, including a bit that was already wrong (an `EXIF` flag with no `EXIF` chunk, or an `EXIF` chunk with no flag). Example: `webp-exif-flag-unset` under `Gps`, where we write `WebP_Flags=0` and ExifTool writes `8`. Repairing flags the input got wrong is out of scope for a strip, so this class is ours by decision, like D1 to D5.
+3. **Identical pairs: 157** (191 − 34). The outcome differences (41) and both-refuse pairs (30) are unchanged.
+4. A value-level difference is pinned like a key-level one: it gives (fixture, pair, class, the exact tag lines on each side). It fails when unpinned, and a stale pin fails too. The consequence "review of D1 to D5" now reads "D1 to D6".
+
+The architect's design measurement left the values out. The build's harness found the gap, raised it as a question and did not re-pin anything. That is how the stop-and-report rule is meant to work.
