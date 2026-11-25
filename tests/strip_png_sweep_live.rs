@@ -83,7 +83,60 @@ const WRITER_CODES: [&[u8; 4]; 17] = [
 /// the tag names ExifTool prints for them (pinned; a name outside the list is a
 /// failure). DEC-020 clarification 4 plus `PLTE` (clarification 4 of the
 /// 2026-11-24 amendment). Measured on ExifTool 13.55 over the ten shapes.
-const STRUCTURE: [([u8; 4], &[&str]); 0] = [];
+const STRUCTURE: [([u8; 4], &[&str]); 19] = [
+    (*b"PLTE", &["Palette"]),
+    (*b"acTL", &["AnimationFrames", "AnimationPlays"]),
+    (*b"bKGD", &["BackgroundColor"]),
+    (
+        *b"cHRM",
+        &[
+            "BlueX",
+            "BlueY",
+            "GreenX",
+            "GreenY",
+            "RedX",
+            "RedY",
+            "WhitePointX",
+            "WhitePointY",
+        ],
+    ),
+    (
+        *b"cICP",
+        &[
+            "ColorPrimaries",
+            "MatrixCoefficients",
+            "TransferCharacteristics",
+            "VideoFullRangeFlag",
+        ],
+    ),
+    (*b"gAMA", &["Gamma"]),
+    (*b"gdAT", &["GainMapImage"]),
+    (*b"hIST", &["PaletteHistogram"]),
+    (*b"iDOT", &["AppleDataOffsets"]),
+    (*b"oFFs", &["ImageOffset"]),
+    (*b"pCAL", &["PixelCalibration"]),
+    (
+        *b"pHYs",
+        &["PixelUnits", "PixelsPerUnitX", "PixelsPerUnitY"],
+    ),
+    (*b"sBIT", &["SignificantBits"]),
+    (
+        *b"sCAL",
+        &["SubjectPixelHeight", "SubjectPixelWidth", "SubjectUnits"],
+    ),
+    (*b"sPLT", &["SuggestedPalette"]),
+    (*b"sRGB", &["SRGBRendering"]),
+    (*b"sTER", &["StereoMode"]),
+    (*b"tRNS", &["Transparency"]),
+    (
+        *b"vpAg",
+        &[
+            "VirtualImageHeight",
+            "VirtualImageWidth",
+            "VirtualPageUnits",
+        ],
+    ),
+];
 
 /// The ten payload shapes of one candidate chunk.
 const SHAPES: [&str; 10] = [
@@ -100,8 +153,8 @@ const SHAPES: [&str; 10] = [
 ];
 
 /// The writer's codes that must print under at least one shape (so the sweep
-/// proves something for them).
-const MUST_PRINT: [&[u8; 4]; 0] = [];
+/// proves something for them): all 17 did, on ExifTool 13.55.
+const MUST_PRINT: [&[u8; 4]; 17] = WRITER_CODES;
 
 fn spellings(base: [u8; 4]) -> Vec<[u8; 4]> {
     (0..16u8)
@@ -274,18 +327,43 @@ fn every_png_code_exiftool_decodes_is_known_or_structure() {
         return;
     }
     let sweep = type_sweep();
+    let known = known_codes();
     let printing: BTreeSet<[u8; 4]> = sweep.printed.iter().map(|p| p.0).collect();
+    let failures = type_failures(sweep, &known);
+    // The tag names each code outside the writer's set printed, over all shapes
+    // (the table `STRUCTURE` pins).
+    let mut observed: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for (code, _, tags) in &sweep.printed {
+        if known.contains(code) {
+            continue;
+        }
+        let names = observed
+            .entry(String::from_utf8_lossy(code).into_owned())
+            .or_default();
+        names.extend(
+            tags.iter()
+                .map(|k| k.split_once(':').map_or(k.as_str(), |(_, n)| n).to_string()),
+        );
+    }
     println!(
-        "png sweep: {} codes x {} shapes = {} files in {} ExifTool runs; {} codes print a tag \
-         the bare file does not; unknown types found: {:?}",
+        "png sweep: {} codes x {} shapes = {} files in {} ExifTool runs; {} codes print a tag the bare file does not ({} of them outside the writer's set); {} unexplained",
         sweep.codes,
         SHAPES.len(),
         sweep.files,
         sweep.runs,
         printing.len(),
-        type_failures(sweep, &known_codes())
+        observed.len(),
+        failures.len()
     );
-    let failures = type_failures(sweep, &known_codes());
+    println!("png sweep observed outside the writer's set: {observed:?}");
+    println!(
+        "png sweep writer codes that printed: {:?}",
+        printing
+            .iter()
+            .filter(|c| known.contains(*c))
+            .map(|c| String::from_utf8_lossy(c).into_owned())
+            .collect::<Vec<_>>()
+    );
     assert!(failures.is_empty(), "{failures:#?}");
     // Not vacuous: the named codes printed, and the sweep saw a fair number.
     for code in MUST_PRINT {
@@ -295,7 +373,7 @@ fn every_png_code_exiftool_decodes_is_known_or_structure() {
             String::from_utf8_lossy(code)
         );
     }
-    assert!(printing.len() >= 20, "{} printing codes", printing.len());
+    assert!(printing.len() >= 60, "{} printing codes", printing.len());
 }
 
 #[test]
@@ -408,9 +486,12 @@ fn keyword_failures(rows: &[KeywordRow], judge_map: &dyn Fn(&str) -> Option<Cat>
     out
 }
 
+/// The table's `(id, name)` pairs, and the rows read from the files.
+type KeywordSweep = (Vec<(String, String)>, Vec<KeywordRow>);
+
 /// ExifTool's reading of every keyword in every text-chunk form, once.
-fn keyword_rows() -> &'static (Vec<(String, String)>, Vec<KeywordRow>) {
-    static ROWS: OnceLock<(Vec<(String, String)>, Vec<KeywordRow>)> = OnceLock::new();
+fn keyword_rows() -> &'static KeywordSweep {
+    static ROWS: OnceLock<KeywordSweep> = OnceLock::new();
     ROWS.get_or_init(|| {
         let table = textual_data_tags(&exiftool_listx());
         let scratch = Scratch::new("png-keywords");
@@ -430,7 +511,7 @@ fn keyword_rows() -> &'static (Vec<(String, String)>, Vec<KeywordRow>) {
             for (f, chunk) in chunks.iter().enumerate() {
                 std::fs::write(
                     scratch.0.join(name(i, f)),
-                    i3_shapes::with(&[chunk.clone()]),
+                    i3_shapes::with(std::slice::from_ref(chunk)),
                 )
                 .expect("write");
             }

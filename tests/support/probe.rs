@@ -259,6 +259,28 @@ fn main() {
         print!("{}", inventory::probe_text(&inv));
         return;
     }
+    // SPEC-039 AC10: `probe --strip <file> <preset>` runs the (possibly
+    // faulted) COPY's `exif_core::strip` and prints `OK <hex of the output>` or
+    // `ERR <Debug of the refusal>`, so a writer mutant is judged on its bytes.
+    if args.first().is_some_and(|a| a == "--strip") {
+        let data = std::fs::read(&args[1]).expect("read the input");
+        let Some(policy) = exif_core::policy::StripPolicy::PRESETS
+            .iter()
+            .find(|p| p.name() == args[2])
+            .copied()
+        else {
+            eprintln!("no preset named {}", args[2]);
+            std::process::exit(2);
+        };
+        match exif_core::strip(&data, policy) {
+            Ok(out) => {
+                let hex: String = out.bytes().iter().map(|b| format!("{b:02x}")).collect();
+                println!("OK {hex}");
+            }
+            Err(e) => println!("ERR {e:?}"),
+        }
+        return;
+    }
     // SPEC-013: `probe --inventory <file>` prints the audit's inventory (the
     // lines `inventory::ours` builds), not the oracle readings.
     let inventory_mode = args.first().is_some_and(|a| a == "--inventory");
@@ -510,9 +532,38 @@ pub enum StripRun {
 }
 
 /// Run a built probe in `--strip` mode: `exif_core::strip` of `file` under the
-/// preset named `policy`. STUB at the red commit: the probe has no strip mode.
-pub fn run_probe_strip(_bin: &Path, _file: &Path, _policy: &str) -> Result<StripRun, String> {
-    Err("the probe has no strip mode yet".to_string())
+/// preset named `policy`. The probe prints `OK <hex>` (the output bytes) or
+/// `ERR <Debug of the refusal>`; every other failure is a `String` with the
+/// captured stderr. Bounded by [`RUN_LIMIT_VAR`].
+pub fn run_probe_strip(bin: &Path, file: &Path, policy: &str) -> Result<StripRun, String> {
+    let mut cmd = Command::new(bin);
+    cmd.arg("--strip").arg(file).arg(policy);
+    let run = run_with_limit(cmd, &format!("probe {}", bin.display()), run_limit())?;
+    if !run.status.success() {
+        return Err(format!(
+            "probe --strip failed ({}) on {}:\n{}",
+            run.status,
+            file.display(),
+            String::from_utf8_lossy(&run.stderr)
+        ));
+    }
+    let stdout = String::from_utf8(run.stdout).map_err(|e| format!("probe stdout: {e}"))?;
+    let line = stdout.trim_end_matches('\n');
+    if let Some(debug) = line.strip_prefix("ERR ") {
+        return Ok(StripRun::Err(debug.to_string()));
+    }
+    let hex = line
+        .strip_prefix("OK ")
+        .ok_or_else(|| format!("probe --strip printed {line:?}"))?;
+    if hex.len() % 2 != 0 {
+        return Err("probe --strip printed an odd number of hex digits".to_string());
+    }
+    let mut bytes = Vec::with_capacity(hex.len() / 2);
+    for pair in hex.as_bytes().chunks(2) {
+        let digits = std::str::from_utf8(pair).map_err(|e| e.to_string())?;
+        bytes.push(u8::from_str_radix(digits, 16).map_err(|e| format!("hex {digits:?}: {e}"))?);
+    }
+    Ok(StripRun::Ok(bytes))
 }
 
 /// Build the staged crate in `dir` and run its probe on `file`.
