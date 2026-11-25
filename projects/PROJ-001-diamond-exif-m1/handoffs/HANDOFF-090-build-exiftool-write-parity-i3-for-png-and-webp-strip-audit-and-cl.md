@@ -223,6 +223,95 @@ If you cannot complete the task:
 *Filled in by the receiving agent. The orchestrator does not reconstruct any of
 this — it transcribes it. The reflection questions are part of completion.*
 
+### Part A (AC1 to AC7), claude-sonnet-5-5, 2026-11-25
+
+Branch `feat/spec-039-png-webp-write-parity-build`. Part A is done: AC1 to AC7 green, records committed,
+`just oracle-record` twice with no diff. Parts B and C not started; `handoff.status` left `pending`.
+
+**What was done**
+- AC1: three `TEXT_KEYWORDS` rows (`Make`, `Model` to `CameraModel`; `TimeStamp` to `Timestamps`), the fuzz mirror
+  (`fuzz/shared/audit_invariants.rs`), the hand-typed table test, `PLTE` pinned as having no `chunk_class`. The
+  `MAKE`/`MODEL`/`TIMESTAMP` live run: one tEXt PNG with all 16 keywords through `exiftool -a -G1 -s -n` printed
+  `PNG:Make` for `Make` and `make`, `PNG:Model` for `Model` and `model`, `PNG:TimeStamp` for `TimeStamp` and
+  `timeStamp`, and `PNG:MAKE`, `PNG:MODEL`, `PNG:TIMESTAMP` (their own tags) for the all-caps ones;
+  `Collection`, `Document`, `Label`, `URL`, `Source` printed as themselves, `aesthetic_score` as `AestheticScore`,
+  `parameters` as `Parameters`.
+- `tests/support/i3_shapes.rs` (236 fixtures: 61 + 113 oracle, 6 PNG carrier shapes, 22 `TextualData` keyword
+  PNGs, 1 `caBX` PNG, 33 WebP carrier rows; 90 PNG, 146 WebP), `i3_records.rs` (format, FNV-1a 64, policies, the
+  write runner and `classify_write`, the pinned tables), `i3_judge.rs`, `tests/strip_png_webp_oracle.rs` (30 tests
+  with the 9 red-proofs), `examples/oracle_record.rs` extended (`record_strip_png_webp`, 8 threads, about 2 minutes).
+- Records: `tests/oracle-fixtures/exiftool-strip-png/` (90) and `-webp/` (146). Sections: `input`, the 12 recorded
+  policies that strip (5 presets and `xmp`, `icc`, `jumbf`, `rights`, `timestamps`, `free_text`, `other`),
+  `exiftool:all`, `exiftool:gps:all`. A refused ExifTool write is a section with one `# refused:` line.
+- `strip_png_live.rs` and `strip_webp_live.rs` now take their category table and carrier shapes from
+  `i3_judge.rs` and `i3_shapes.rs`; their tests are unchanged and pass live (21 and 23 passed).
+
+**Commits** (on `feat/spec-039-png-webp-write-parity-build`):
+- `1e8fb2b` test(audit): SPEC-039 AC1 keyword rows for Make, Model and TimeStamp, red
+- `333ea28` feat(audit): SPEC-039 AC1 Make, Model and TimeStamp text keyword rows
+- `2b041ad` test(oracle): SPEC-039 I3 for PNG and WebP strip: judge, differential, pins, comparator red-proofs
+  (without the records: 14 of the new tests fail, none can read a record)
+- `6419790` test(oracle): SPEC-039 committed ExifTool records for 236 PNG and WebP fixtures
+- the live-precursor switch commit and the bookkeeping commit follow (see `git log`).
+
+**Measured numbers** (replay equals live, and the live run reproduces every record byte for byte):
+- Counts reproduce over the 174 oracle fixtures: 348 pairs = 191 identical (compared as `(group, tag)` multisets)
+  + 86 differing (D1 72, D2 2, D3 7, D4 4, D5 1) + 41 outcome differences (29 ExifTool refuses, 12 we refuse)
+  + 30 both refuse; 113 refused preset pairs (13 fixtures under all five, 16 under `gps`, `gps_and_device`,
+  `all_pii`).
+- Over all 236 fixtures: D1 74 (the two extra are `webp-row-05-seal` and `webp-row-22-c2pa` under `Everything`),
+  D3 67 (7 + 60 extra pairs: ExifTool keeps carriers and opaque chunks we remove), D2 2, D4 4, D5 1 at key level;
+  value level 31 D1 (`RIFF:WebP_Flags`) and 3 D4; no extra outcome pins; no refusal among the 62 extra fixtures.
+- Judge (AC4), replay and live identical: 2547 policy sections judged, 583 with a removable tag (2354 removable
+  tags before the strip); exception (a) carrier used 670 times, (b) whole block 354, (c) residual 0. Test bounds:
+  sections >= 2000, removable sections >= 550, removable tags >= 2000, carrier >= 600, whole block >= 300.
+- Refusal table (AC3): 285 `(fixture, policy, variant)` rows over the 12 policies (113 are the preset pairs).
+  The 16 fixtures that three presets refuse are refused under 8 policies (`gps`, `gps_and_device`, `all_pii` and the
+  Custom `xmp`, `icc`, `rights`, `timestamps`, `free_text`): 15 with `Uneditable(BlockNotClean)`, one with
+  `Uneditable(TooManyExifSegments)`; the Custom `jumbf` and `other` do not refuse them.
+
+**AC7 red evidence** (`cargo test --test strip_png_webp_oracle comparator_is_red -- --nocapture`; each line is the
+failure the comparator printed on the committed record with one line edited in memory):
+```
+AC7 (ii) red: png-exif-gps-full-le under gps: kept tag missing IFD0:Make=DiamondCam
+AC7 (iii) red: png-exif-gps-full-le under gps: kept value changed IFD0:Make=CANARY-MAKE
+AC7 (iv) red: png-exif-gps-full-le under gps: phantom tag IFD0:PhantomTag=1
+AC7 (i) red: png-exif-gps-full-le under gps: removed tag left in GPS:GPSLatitudeRef=N
+AC7 (ix) red: png-exif-gps-full-le under gps: the writer's output is 530 bytes, digest efa0e273c6950935; the record read 530 bytes, digest 8ca4609144a5b442
+AC7 (v) red: png-exif-gps-full-le under gps: kept tag missing IFD0:Make=DiamondCam
+AC7 (viii) red: png-text-no-nul all (everything against exiftool:all): stale pin keys|[]|["PNG:TextualData"] (the pair now gives Same)
+AC7 (vii) red: png-exif-basic-le gps (gps against exiftool:gps:all): unpinned difference keys|[]|["IFD0:PhantomTag"] (pinned: None)
+AC7 (vi) red: png-exif-gps-full-le under all_pii: kept tag missing ExifIFD:ExposureCompensation=-0.3333333333
+```
+
+**Deviations and findings**
+1. Value level of the differential (question `i3-differential-value-level-differences`, added): the design's
+   191/86 counts hold for `(group, tag)` multisets, but AC5 also says to compare values. 34 equal-key pairs differ in
+   value (31 `RIFF:WebP_Flags`, 3 duplicate-`EXIF`). They are pinned as `values`-level rows labelled D1 and D4, so no
+   difference is unpinned and the key-level counts are the design's. The architect should confirm or drop them.
+2. Judge exception (c) is never used (0 uses): no I3 fixture holds a plain XMP packet with GPS. Not added (the
+   fixture list is the spec's); noted in the same question.
+3. The fixture set has 236 entries: the 174 oracle fixtures plus the spec's Outputs list (carrier shapes 6, keywords
+   22, `caBX` 1, WebP rows 33). The design's counts are asserted over the 174; the extras' differences are pinned too
+   (D1 and D3 only).
+4. The judge's carrier rule is also a positive check (a carrier-only fixture must print none of the carrier's
+   tags): without it W1 and W2 (AC10) could not go red under `Gps`, which keeps `Xmp`.
+5. `PNG:XMP` (an XMP `iTXt` with an unusable flag prints this binary tag) is classed `Xmp`; the other `PNG` text tags,
+   including `XMLcomadobexmp` of a mis-spelled or language-tagged XMP keyword, are `FreeText` as the library files them.
+6. Gates run on 1.90.0 (clippy 0.1.90): `just lint`, `just lint-no-allow`, `just forbid-unsafe`, `just lint-fuzz`
+   all rc 0; `DIAMOND_EXIF_REQUIRE_ORACLE=1 just test` rc 0; `just fuzz-smoke audit` 83,358 runs in 61 s, no crash;
+   `fuzz/Cargo.lock` restored.
+
+**Reflection (Part A)**
+1. *What was unclear?* How to compare values at the differential's value level, and what makes a fixture "hold a
+   carrier" for the judge. I resolved the first with the question above and the second with a naive per-container
+   chunk scan in `i3_judge.rs`.
+2. *A missing constraint or decision?* The spec should say the differential's identity criterion is `(group, tag)`
+   multisets (that is what its counts mean) and name the `WebP_Flags` value differences.
+3. *What would I do differently?* Generate the pin tables and the refusal table from the first record run earlier,
+   and add the plain-XMP-with-GPS fixtures at design so exception (c) is exercised.
+
+
 ### Execution notes
 
 - **Branch / PR:** [link]

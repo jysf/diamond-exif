@@ -1795,3 +1795,29 @@ questions:
       the extra bytes. Options: treat a JFIF payload longer than 14 + 3·X·Y as OtherApp, which
       flags it under OtherSegment and removes it only under Everything; or leave it as it is.
       Needs a real-file count first, to make sure padded JFIF segments are not common.
+
+  - id: i3-differential-value-level-differences
+    question: "Does DEC-023 rule 4's 'values for the tags both keep' mean the 34 equal-key pairs whose values differ are D1/D4 differences to pin, or is the differential keyed by (group, tag) only?"
+    priority: low
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-25
+    assigned_to: null
+    notes: |
+      SPEC-039 Part A build. The design's counts reproduce exactly when the two outputs' readings
+      are compared as (group, tag) multisets: 348 pairs over the 174 oracle fixtures = 191 identical
+      + 86 differing (D1 72, D2 2, D3 7, D4 4, D5 1) + 41 outcome differences + 30 both-refuse; 113
+      refused preset pairs (13 fixtures x 5, 16 x 3). But AC5 and DEC-023 rule 4 also say to compare
+      "the values of tags both outputs keep", and 34 of the 191 "identical" pairs have equal keys and
+      differing values: 31 are `RIFF:WebP_Flags` (we clear the flag bit of a removed kind and leave
+      the other bits; ExifTool normalises the flags to what it reads, e.g. fixtures with a mis-kinded
+      `EXIF`/`XMP `/`ICCP` chunk or a wrong flag byte), and 3 are duplicate-`EXIF` fixtures
+      (`webp-exif-blocks-16`, `-full-one-two`, `-full-two-one` under Gps: ExifTool rewrites every
+      chunk from the last one, the D4 mechanism). The build pins them in `DIFFERENCES` at level
+      `values`, labelled D1 (flags) and D4 (duplicate values), so no difference is unpinned and the
+      D1 to D5 key-level counts are unchanged. Needs the architect: either confirm those labels
+      (and amend DEC-023 rule 4 to name the value level), or say the differential is keyed by
+      (group, tag) only and the 34 pins are dropped.
+      Also found: the I3 fixture set holds no plain XMP packet with a GPS property, so judge
+      exception (c) (Composite GPS from a kept XMP packet) is never used (0 uses); it needs one
+      PNG and one WebP fixture at the end of `i3_shapes` if it is to be exercised.
