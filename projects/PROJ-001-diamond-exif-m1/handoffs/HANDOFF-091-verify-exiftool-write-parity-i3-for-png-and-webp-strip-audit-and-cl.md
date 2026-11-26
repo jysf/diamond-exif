@@ -50,15 +50,15 @@ handback:
   agent: claude-opus-5-5           # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: punch-list              # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
+  basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 258606             # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: null
+  duration_minutes: 26
   branch: claude/spec-039-verify
   pr: null
   completed_at: 2026-11-26         # YYYY-MM-DD
-  notes: "Verdict applies to f5e24c1 (build tip plus this handoff). basis and tokens_total are left null: the orchestrator fills them from the harness result. Punch list of 3 items: 1 (M) judge exception (a) is group-level and excuses a dropped plain Exif/XMP block when a carrier coexists; 2 (L) the AC11 grid has no ICC finding; 3 (L) the README PNG keyword sentence omits Make, Model and TimeStamp."                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "Verdict applies to f5e24c1 (build tip plus this handoff). Cost filled by the orchestrator from the harness subagent result: 258,606 tokens, 96 tool calls, 1,553 s. Punch list of 3 items: 1 (M) judge exception (a) is group-level and excuses a dropped plain Exif/XMP block when a carrier coexists; 2 (L) the AC11 grid has no ICC finding; 3 (L) the README PNG keyword sentence omits Make, Model and TimeStamp."                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  synced_at: 2026-11-26
 ---
 
 # HANDOFF-091: SPEC-039 verify — ExifTool write parity (I3) for PNG and WebP strip, audit and CLI switch-over
@@ -390,11 +390,10 @@ inputs), `judgerun/` (calls the committed `i3_judge::judge` on arbitrary reading
 
 ### Cost self-report
 
-- **Tokens (total):** null. The verifier cannot read its own count. The orchestrator fills it from the harness's
-  subagent result.
-- **Estimated USD:** null
-- **Duration (minutes):** null. The orchestrator fills it from the harness; not estimated here.
-- **Source of the number:** harness report (to be filled by the orchestrator)
+- **Tokens (total):** 258,606, filled by the orchestrator from the harness subagent result (96 tool calls).
+- **Estimated USD:** null, because the input/output split is not reported.
+- **Duration (minutes):** 26 (1,553 s of subagent wall clock, from the harness).
+- **Source of the number:** harness report (agent-result).
 
 ### Drift and new artifacts
 
