@@ -57,7 +57,7 @@ handback:
   branch: claude/spec-039-verify
   pr: null
   completed_at: 2026-11-26         # YYYY-MM-DD
-  notes: "Round 2 (2026-11-26, branch claude/spec-039-verify-r2): PUNCH LIST against 34008cc, 2 items (L): the multiplicity bound and the plain-block carrier-left-in check have no red-proof (mutants M1, M3 survive); the line-level model inverts on a non-additive (carrier-before-plain) shape, not in the corpus. Round-1 items 1-3 fixed. Round 1: Verdict applies to f5e24c1 (build tip plus this handoff). Cost filled by the orchestrator from the harness subagent result: 258,606 tokens, 96 tool calls, 1,553 s. Punch list of 3 items: 1 (M) judge exception (a) is group-level and excuses a dropped plain Exif/XMP block when a carrier coexists; 2 (L) the AC11 grid has no ICC finding; 3 (L) the README PNG keyword sentence omits Make, Model and TimeStamp."                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  notes: "Round 3 (2026-11-26, branch claude/spec-039-verify-r3): PUNCH LIST against 2f790d4, 1 item (L): the additivity check compares the Exif/XMP/XML/Composite:GPS lines only, while exception (a) can also excuse judged lines such as ID3v2_3:Artist and Olympus:Model (3 such carrier lines in the corpus); latent, widening keeps 36/36 adding up. Round-2 items 1-2 fixed (M1/M3 red, b1 red, records byte-equal, gates green). Round 2 (2026-11-26, branch claude/spec-039-verify-r2): PUNCH LIST against 34008cc, 2 items (L): the multiplicity bound and the plain-block carrier-left-in check have no red-proof (mutants M1, M3 survive); the line-level model inverts on a non-additive (carrier-before-plain) shape, not in the corpus. Round-1 items 1-3 fixed. Round 1: Verdict applies to f5e24c1 (build tip plus this handoff). Cost filled by the orchestrator from the harness subagent result: 258,606 tokens, 96 tool calls, 1,553 s. Punch list of 3 items: 1 (M) judge exception (a) is group-level and excuses a dropped plain Exif/XMP block when a carrier coexists; 2 (L) the AC11 grid has no ICC finding; 3 (L) the README PNG keyword sentence omits Make, Model and TimeStamp."                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
   synced_at: 2026-11-26
 ---
 
@@ -701,6 +701,153 @@ unchanged.
   + 43 passed.
 - No change in `src/`, `fuzz/` or the Cargo files. The record diff since `a452bc4` is 36 files, +319 −0.
 - Fix round 2 cost, from the harness subagent result: 144,285 tokens, 46 tool calls, 1,209 s (about 20 min).
+
+### Verify round 3 (2026-11-26)
+
+Independent verifier (claude-opus-5-5), cold, on `claude/spec-039-verify-r3` from
+`feat/spec-039-png-webp-write-parity-build` at `2f790d4`. Scope: the two round-2 items and regressions. Change
+reviewed: `git diff c0e3482 2f790d4` (amendment `a452bc4`; red `071a20c`; fix `74ebc02`, `7a04688`; bookkeeping
+`90d627a`, `2f790d4`). Read-only on library, tests and records.
+
+**Verdict: ⚠ PUNCH LIST against `2f790d4`, one item (L).** Both round-2 items are fixed. The one item is a gap
+between the additivity check's compared set and what exception (a) can actually excuse.
+
+1. **(L) The additivity check compares fewer groups than exception (a) excuses.**
+   - The amendment defines the compared lines as "the groups exception (a) can excuse", then lists the Exif and
+     XMP/XML families and `Composite:GPS*`. `additive_line` follows that list.
+   - The judge excuses more. It excuses any `judged` line the `## carriers` reading prints, and `judged` is
+     `category_of(..).is_some() || exif_group`. That also covers `ID3v2_3:Artist` (Authorship), `Olympus:Model`
+     (CameraModel), PNG text, `ICC*` and `JUMBF`/`JSON` lines.
+   - In the committed carriers sections, 3 such lines are excusable but not compared: `ID3v2_3:Artist` ×2 and
+     `Olympus:Model` ×1. My Python reimplementation of `category_of`/`judged` over the 36 records found them.
+   - No interfering shape in those groups was found: no non-carrier chunk prints into them. So this is latent, not
+     a live mis-excuse.
+   - Widening the check costs nothing. On the 36 records, `judged(l) || xml_group(l)` (Warning and Error still
+     excluded) still adds up: 0 failing.
+   - Suggested fix (architect's choice):
+     - (a) Make `additive_line` `judged(l) || xml_group(&l.group)`, so the check covers every line the excuse can
+       touch.
+     - (b) Or amend the parenthetical to name the omitted groups as out of scope, with the reason. Then correct the
+       doc comment on `additive_line`, which currently states the narrower set as fact.
+
+**Evidence.**
+
+1. **Item 1 (round 2), the two guards pinned: fixed.**
+   - M1 and M3 were run on a `git archive 2f790d4` scratch copy, with its own `CARGO_TARGET_DIR` and
+     `DIAMOND_EXIF_REQUIRE_ORACLE=1`, using `cargo test --test strip_png_webp_oracle`.
+   - M1 (`*n -= 1;` → `let _ = n;`): `38 passed; 1 failed`.
+     - Only `comparator_is_red_when_the_excuse_outruns_the_carriers_multiplicity` failed.
+     - It panicked at line 1098, the red assertion (both copies dropped), with `[]`.
+     - Its control at line 1094 (one copy kept) passed first.
+   - M3 (the by-line `if (carriers.exif && carriers.exif_plain) || (carriers.xml && carriers.xml_plain)` →
+     `if false`): `38 passed; 1 failed`.
+     - Only `comparator_is_red_when_a_carrier_tag_is_put_back_beside_a_plain_block` failed.
+     - It panicked at line 1118, the red assertion, with `[]`. Its control `judged_with(EXIF_PAIR, "gps", no-op)` is
+       empty and passed first.
+   - Both mutants were reverted with `git checkout`, and the scratch tree was clean afterwards.
+   - Are the multiplicity test's in-memory readings realistic? I built the shape and read it with ExifTool 13.55:
+     a plain `eXIf` `Make=SameCam`, then a raw-profile Exif carrier `Make=SameCam`.
+     - The input reading prints `IFD0:Make=SameCam` twice, `## carriers` prints it once, and `## no-carriers` once.
+     - The library's `gps` output prints it once, which is the control.
+     - So the test's readings are a shape ExifTool prints, and the shape adds up.
+2. **Item 2 (round 2), the additivity check: fixed, with punch item 1 above.**
+   - Against the amendment:
+     - `no_carriers` shares `split_by_carrier` with `carriers_only`, so the carrier typing is the same (`png_kind`
+       CarrierExif/CarrierXml; WebP `webp_rows` non-empty).
+     - A PNG keeps every non-carrier chunk in order.
+     - A WebP keeps every non-carrier chunk, and `RIFF` is rebuilt as `RIFF` + `len(body)+4` + the original form
+       type + body.
+     - The comparison is on multisets of `(group, tag, value)`, `Warning`/`Error` excluded, over the stated groups.
+   - Excluding Warning and Error is sound:
+     - The judge never excuses them (`judged` drops them), so they cannot feed a mis-excuse.
+     - The `b1` signal was never a read warning. My `b1` input reading has no `Warning` line and empty stderr. The
+       `IFD0 pointer references previous IFD0 directory` text is ExifTool's write-side refusal (`# refused:` in 3
+       records). The check catches `b1` through the hidden lines.
+     - As a counterfactual, comparing Warning/Error too would also give 0 failing on the corpus. So the exclusion
+       hides nothing there.
+   - My own inputs: `scratchpad/r3/inputs/`, 15 files built by `scripts/zz_verify_r3.rs` in the scratch copy, read
+     live:
+     - `b1` (raw Exif carrier, then a plain `eXIf`): RED.
+       - `IFD0:Make=VerifyCam` and `IFD0:Model=VerifyModel`: input 0, sum 1.
+       - On the library's `gps` output the judge gives `kept value changed`/`phantom tag`, the round-2 inversion,
+         now flagged by the check.
+     - `b1r` (plain, then carrier): GREEN.
+     - XMP raw-profile carrier, then a plain `iTXt` packet: GREEN. ExifTool prints both packets, so there is no
+       interference to catch. The reverse order is GREEN too.
+     - WebP plain `EXIF` + `_PMX` row, both orders: GREEN, and the judge is clean on the library's `gps` output.
+     - WebP plain `XMP ` + `_PMX`, both orders: GREEN.
+     - Two carriers then a plain `eXIf`: RED (the plain block is hidden).
+     - Plain then two carriers: GREEN.
+     - Two carriers alone (raw Exif + raw XMP): GREEN.
+     - WebP `_PMX` + `aXML` + `XMP ` + `EXIF`: GREEN.
+     - Identical-value carrier then plain: RED (input 1, sum 2).
+   - Interfering shapes that add up but are still misjudged:
+     - Swap (not a punch item). A plain `eXIf` and a raw carrier with identical lines, and a writer that drops the
+       plain block and keeps the carrier.
+       - The readings add up, and the judge passes it with `[]`. Its reading is identical to the correct strip's,
+         so no reading-based judge can see it.
+       - The byte-level suites cover it: `strip_png.rs` `carriers_follow_the_clause_4_rule_for_every_policy` and
+         `the_output_audit_has_no_carrier_the_policy_removes`.
+       - The library's own output holds no carrier (`scan(..).any()` false).
+     - WebP plain `XMP ` packet equal to a `_PMX` row's packet (observation, not a punch item; it predates this
+       round).
+       - The readings add up, but the judge fails the library's correct `gps` output with `carrier tag left in
+         XMP-dc:Creator`.
+       - Cause: the `row_tags` check flags any output line with the row's `group:tag`, ignoring a plain packet.
+       - This is a loud false red, not a silent pass, and no corpus fixture has the shape.
+   - `the_readings_add_up_on_every_carrier_fixture`: ok, in replay and live, with ExifTool required. It asserts
+     `checked == 36` in both. My Python reimplementation over the committed records also gives 36 fixtures,
+     0 failing.
+3. **Records.**
+   - `git diff c0e3482 2f790d4 -- tests/oracle-fixtures`: 36 files, +319 −0.
+     - `-U0`: 0 deleted lines and 36 hunks.
+     - Every added header is `+## no-carriers`, 36 in all.
+     - All 36 carrier records now hold `## carriers` then `## no-carriers` as sections 2 and 3.
+   - Re-record: `git archive 2f790d4` into a scratch git repo, then `cargo run --example oracle_record` with its own
+     `CARGO_TARGET_DIR`.
+     - It printed `wrote 239 PNG and WebP strip records`.
+     - `git status --porcelain` was empty, so the output is byte-equal.
+4. **Red first.** At `git archive 071a20c`, with its own target dir and ExifTool required: `35 passed; 4 failed`.
+   - The failures:
+     - `the_additivity_check_is_red_on_readings_that_do_not_add_up` (line 1307, red assertion; the stub returns
+       empty);
+     - `the_readings_add_up_on_every_carrier_fixture` (line 1271, no `## no-carriers` section);
+     - `the_additivity_check_is_red_on_a_carrier_before_a_plain_exif_block` (line 1345, the `no_carriers` stub gives
+       `None`);
+     - `every_i3_fixture_has_a_record_with_the_expected_sections` (line 205).
+   - Three of the four are new tests, and the fourth is the amended section test.
+   - Both item-1 tests passed at `071a20c`, as expected: their guards predate them.
+   - Their red comes from M1 and M3, which I reproduced independently. That is adequate: each mutant turns exactly
+     its own test red, at the red assertion, with its control green.
+5. **No regressions.**
+   - `git diff --stat c0e3482 2f790d4 -- src fuzz Cargo.toml Cargo.lock` is empty.
+   - Differential, from my own Python (`scripts/r3count.py`) over the committed records at `2f790d4`:
+     - Core set: the first 174 of `i3_shapes::fixtures()`, an order dumped by the scratch harness.
+     - Pairs: `everything`/`exiftool:all` and `gps`/`exiftool:gps:all`, as multisets without File/System/ExifTool.
+     - Result: identical 157, key level 86, value level 34, outcome 41, both refuse 30. Total 348.
+   - The test prints the per-class split, in replay and live: D1 72, D2 2, D3 7, D4 4, D5 1; value D4 3, D6 31.
+   - Judge over 239 fixtures, replay and live: 2,583 sections judged, 598 with a removable tag (2,408 tags). (a)
+     677, (b) 354, (c) 24.
+   - Gates on rustc 1.90.0 and clippy 0.1.90 (1159e78c47), in the worktree at `2f790d4`:
+     - `just lint`, `just lint-no-allow`, `just forbid-unsafe` and `just validate`: rc 0 each.
+     - `DIAMOND_EXIF_REQUIRE_ORACLE=1 just test`: 41 `test result: ok` lines, 1,540 passed, 0 failed, 20 ignored.
+       No `FAILED`, `error` or `SKIP` lines.
+     - `just mutation-oracle`: rc 0, 67 + 42 + 43 passed, 1 ignored each.
+     - W1 to W4 with `--nocapture`: each `control digest equal true; strip Ok true; replay red true; live red true`.
+       The live reds are the same as in round 2.
+     - `just decisions-audit --changed`: advisory list only, rc 0.
+   - Afterwards, `git status` showed only this handoff. No background process is left.
+   - No fuzz run.
+
+Scratch apparatus (outside the repo, session scratchpad `r3/`):
+- `scripts/zz_verify_r3.rs`, a probe harness over the committed support modules;
+- `scripts/r3count.py`;
+- `inputs/` (the 15 probe files);
+- the `tip/` and `red/` archives;
+- gate logs `gate-*.log`.
+
+No cost session entry was appended. Per the brief, `tokens_total`, `basis` and `duration_minutes` are left for the
+orchestrator.
 
 ### Cost self-report
 
