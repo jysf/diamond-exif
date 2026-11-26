@@ -18,6 +18,22 @@ RIFF	AlphaIsUsed	0
 Composite	ImageSize	8 8
 Composite	Megapixels	6.4e-05
 Composite	GPSPosition	0 0
+## carriers
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	Warning	[minor] The ExtractEmbedded option may find more tags in the media data
+RIFF	GPSDateTime	2000:00:00 00:00:00Z
+RIFF	GPSLatitude	0
+RIFF	GPSLongitude	0
+RIFF	GPSSpeed	0
+RIFF	GPSTrack	0
+RIFF	GPSAltitude	0
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+Composite	GPSPosition	0 0
 ## gps
 # output: 44 9b58c96f182ec9d0
 RIFF	WebP_Flags	0

@@ -13,6 +13,17 @@ PNG	Interlace	0
 SEAL	AB	Zed
 Composite	ImageSize	1 1
 Composite	Megapixels	1e-06
+## carriers
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+SEAL	AB	Zed
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
 ## gps
 # output: 70 2d3cc60e9a50b1be
 PNG	ImageWidth	1

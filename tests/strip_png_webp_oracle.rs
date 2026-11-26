@@ -119,6 +119,10 @@ fn live(fx: &Fixture) -> Record {
 /// the library strips, then ExifTool's two writes.
 fn expected_sections(fx: &Fixture) -> Vec<String> {
     let mut want = vec!["input".to_string()];
+    // A fixture that holds a carrier has its carriers' own reading next.
+    if i3_records::carriers_only(fx.ext, &fx.bytes).is_some() {
+        want.push("carriers".to_string());
+    }
     for (name, policy) in i3_records::policies() {
         if exif_core::strip(&fx.bytes, policy).is_ok() {
             want.push(name.to_string());
@@ -152,6 +156,44 @@ fn the_i3_fixture_set_is_the_designed_one() {
             "png-xmp-and-raw-xmp"
         ]
     );
+}
+
+#[test]
+fn the_carriers_reading_prints_nothing_the_input_does_not() {
+    // The `## carriers` file keeps the skeleton and the carrier chunks, so
+    // ExifTool's reading of it can only print what the input printed. A line
+    // it printed that the input did not would let exception (a) excuse a line
+    // that was never there.
+    let mut with_carriers = 0;
+    for fx in fixtures() {
+        let rec = committed(fx);
+        let Some(c) = rec.section("carriers") else {
+            continue;
+        };
+        with_carriers += 1;
+        let input = rec.section("input").expect("input");
+        let mut left: BTreeMap<(&str, &str, &str), usize> = BTreeMap::new();
+        for l in &input.lines {
+            *left
+                .entry((l.group.as_str(), l.tag.as_str(), l.value.as_str()))
+                .or_insert(0) += 1;
+        }
+        for l in &c.lines {
+            let n = left
+                .entry((l.group.as_str(), l.tag.as_str(), l.value.as_str()))
+                .or_insert(0);
+            assert!(
+                *n > 0,
+                "{}: the carriers reading prints {}:{}={} beyond the input's",
+                fx.name,
+                l.group,
+                l.tag,
+                l.value
+            );
+            *n -= 1;
+        }
+    }
+    assert_eq!(with_carriers, 36, "fixtures that hold a carrier");
 }
 
 #[test]
@@ -364,7 +406,15 @@ fn judge_record(fx: &Fixture, rec: &Record, totals: &mut Totals) {
         let Some(s) = rec.section(name) else {
             continue;
         };
-        let v = judge(&fx.name, fx.ext, &fx.bytes, name, &input.lines, &s.lines);
+        let v = judge(
+            &fx.name,
+            fx.ext,
+            &fx.bytes,
+            name,
+            &input.lines,
+            rec.section("carriers").map(|c| c.lines.as_slice()),
+            &s.lines,
+        );
         totals.sections += 1;
         totals.uses += v.uses;
         if v.removable_before > 0 {
@@ -403,20 +453,22 @@ fn assert_judge_holds(t: &Totals) {
         t.failures.len(),
         t.failures
     );
-    // Not vacuous: lower bounds, measured at build (the handback has the
-    // actual numbers).
-    assert!(t.sections >= 2000, "{} sections", t.sections);
-    assert!(t.removable_sections >= 550, "{}", t.removable_sections);
-    assert!(t.removable_tags >= 2000, "{}", t.removable_tags);
-    assert!(t.uses.carrier >= 600, "carrier used {}", t.uses.carrier);
+    // Not vacuous: lower bounds, measured (the handback has the numbers). The
+    // carrier count is line-level since the verify fix round (DEC-023
+    // amendment of 2026-11-26): 677 uses, 670 of them over the 238 earlier
+    // fixtures, unchanged by it, and 7 on `png-xmp-and-raw-xmp`.
+    assert!(t.sections >= 2500, "{} sections", t.sections);
+    assert!(t.removable_sections >= 590, "{}", t.removable_sections);
+    assert!(t.removable_tags >= 2400, "{}", t.removable_tags);
+    assert!(t.uses.carrier >= 670, "carrier used {}", t.uses.carrier);
     assert!(
-        t.uses.whole_block >= 300,
+        t.uses.whole_block >= 350,
         "whole block {}",
         t.uses.whole_block
     );
     // Exception (c), the residual, is reached by the two plain-XMP-with-GPS
     // fixtures at the end of `i3_shapes` (SPEC-039 Part B).
-    assert!(t.uses.residual >= 20, "residual used {}", t.uses.residual);
+    assert!(t.uses.residual >= 24, "residual used {}", t.uses.residual);
 }
 
 #[test]
@@ -745,6 +797,30 @@ fn judged_with(
     judged_as(fixture, policy, policy, &fixture_bytes(fixture), plant)
 }
 
+/// `GPS_FIXTURE` under `gps`, judged on `bytes`, with `carrier_lines` given as
+/// the `## carriers` reading and `plant` applied to the output.
+fn judged_with_carriers(
+    bytes: &[u8],
+    carrier_lines: Vec<Line>,
+    plant: &dyn Fn(&mut Vec<Line>, &[Line]),
+) -> Vec<String> {
+    let fx = fixture(GPS_FIXTURE);
+    let rec = committed(fx);
+    let input = rec.section("input").expect("input");
+    let mut out = rec.section("gps").expect("gps").lines.clone();
+    plant(&mut out, &input.lines);
+    judge(
+        GPS_FIXTURE,
+        fx.ext,
+        bytes,
+        "gps",
+        &input.lines,
+        Some(&carrier_lines),
+        &out,
+    )
+    .failures
+}
+
 fn fixture_bytes(name: &str) -> Vec<u8> {
     fixture(name).bytes.clone()
 }
@@ -761,7 +837,17 @@ fn judged_as(
     let input = rec.section("input").expect("input");
     let mut out = rec.section(section).expect("section").lines.clone();
     plant(&mut out, &input.lines);
-    judge(fixture_name, fx.ext, bytes, policy, &input.lines, &out).failures
+    let carriers = rec.section("carriers").map(|c| c.lines.as_slice());
+    judge(
+        fixture_name,
+        fx.ext,
+        bytes,
+        policy,
+        &input.lines,
+        carriers,
+        &out,
+    )
+    .failures
 }
 
 fn contains_all(failures: &[String], needles: &[&str]) -> bool {
@@ -849,15 +935,28 @@ fn comparator_is_red_when_the_carrier_exception_is_claimed_without_a_carrier() {
         let at = out.iter().position(|l| l.tag == "Make").expect("Make kept");
         out.remove(at);
     };
+    // The `## carriers` reading a carrier that prints this Make would have.
+    let make = {
+        let rec = committed(fixture(GPS_FIXTURE));
+        let input = rec.section("input").expect("input");
+        input
+            .lines
+            .iter()
+            .find(|l| l.tag == "Make")
+            .expect("Make in the input")
+            .clone()
+    };
     // Control: the same missing tag is excused on a file that holds a carrier
-    // (the exception exists), so the red below is the exception's guard.
+    // whose own reading prints it (the exception exists), so the red below is
+    // the exception's guard.
     let carrier = fixture_bytes("png-carrier-zxIf");
-    let excused = judged_as(GPS_FIXTURE, "gps", "gps", &carrier, &plant);
+    let excused = judged_with_carriers(&carrier, vec![make.clone()], &plant);
     assert!(
         !excused.iter().any(|f| f.contains("kept tag missing")),
         "the carrier rule excuses a missing Exif tag on a carrier file: {excused:?}"
     );
-    let f = judged_with(GPS_FIXTURE, "gps", &plant);
+    // The same reading on a file with no carrier excuses nothing.
+    let f = judged_with_carriers(&fixture_bytes(GPS_FIXTURE), vec![make], &plant);
     assert!(
         contains_all(
             &f,

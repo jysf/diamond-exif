@@ -129,7 +129,17 @@ pub fn run(m: &Mutant, live: bool) -> Results {
     let live_failures = live.then(|| {
         let (lines, _) = i3_records::read_bytes(&format!("{}-out", m.id), fx.ext, &bytes)
             .unwrap_or_else(|e| panic!("{}: exiftool on the mutant's output: {e}", m.id));
-        i3_judge::judge(&fx.name, fx.ext, &fx.bytes, m.policy, &input.lines, &lines).failures
+        let carriers = record.section("carriers").map(|c| c.lines.as_slice());
+        i3_judge::judge(
+            &fx.name,
+            fx.ext,
+            &fx.bytes,
+            m.policy,
+            &input.lines,
+            carriers,
+            &lines,
+        )
+        .failures
     });
     Results {
         control_matches,

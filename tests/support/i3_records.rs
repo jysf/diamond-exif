@@ -14,6 +14,8 @@
 //! # fixture: <name>
 //! ## input
 //! <group> TAB <tag> TAB <value>      (ExifTool's reading of the input)
+//! ## carriers                        (only a fixture that holds a carrier:
+//! <lines>                             ExifTool's reading of `carriers_only`)
 //! ## <policy>                        (each recorded policy that strips)
 //! # output: <len> <fnv1a64>          (the bytes the reading was made from)
 //! <lines>
@@ -307,6 +309,247 @@ pub fn exiftool_write(label: &str, ext: &str, op: &str, bytes: &[u8]) -> WriteRe
     classify_write(run.status.code(), out.exists(), &stderr, &out)
 }
 
+// ── the carriers a fixture holds (DEC-023 rule 3 (a)) ───────────────────────
+
+/// The groups an XMP, XML or SEAL carrier prints in.
+pub fn xml_group(g: &str) -> bool {
+    g.starts_with("XMP") || g.starts_with("XML") || g.starts_with("SEAL")
+}
+
+/// What the bytes of a fixture hold that exception (a) is about.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Carriers {
+    /// A PNG chunk that prints Exif tags (`zxIf` in any case, a mixed-case
+    /// `eXIf`, a raw-profile `exif`/`APP1` text chunk).
+    pub exif: bool,
+    /// A PNG chunk that prints XMP/XML tags (`tXMP`, `meTa`, `seAl`, a
+    /// raw-profile `xmp` chunk).
+    pub xml: bool,
+    /// The file also holds a plain Exif block (`eXIf`; WebP `EXIF`).
+    pub exif_plain: bool,
+    /// The file also holds a plain XMP packet (`XML:com.adobe.xmp`; WebP `XMP `).
+    pub xml_plain: bool,
+    /// WebP carrier rows present: the tag each prints (`Group:Tag`).
+    pub row_tags: Vec<&'static str>,
+}
+
+impl Carriers {
+    pub fn any(&self) -> bool {
+        self.exif || self.xml || !self.row_tags.is_empty()
+    }
+}
+
+fn be32(b: &[u8], at: usize) -> Option<usize> {
+    let s = b.get(at..at.checked_add(4)?)?;
+    Some(u32::from_be_bytes([s[0], s[1], s[2], s[3]]) as usize)
+}
+
+fn le32(b: &[u8], at: usize) -> Option<usize> {
+    let s = b.get(at..at.checked_add(4)?)?;
+    Some(u32::from_le_bytes([s[0], s[1], s[2], s[3]]) as usize)
+}
+
+/// DEC-022: printable ASCII, then NULs, with at least one text byte.
+fn is_text_junk(data: &[u8]) -> bool {
+    let end = data.iter().rposition(|b| *b != 0).map_or(0, |i| i + 1);
+    end > 0 && data[..end].iter().all(|b| (0x20..=0x7E).contains(b))
+}
+
+/// What one PNG chunk is, for the carrier rule (typed from DEC-021 clause 4).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PngKind {
+    CarrierExif,
+    CarrierXml,
+    PlainExif,
+    PlainXml,
+    Other,
+}
+
+fn png_kind(ty: &[u8], data: &[u8]) -> PngKind {
+    let lower: Vec<u8> = ty.iter().map(u8::to_ascii_lowercase).collect();
+    match ty {
+        b"eXIf" => PngKind::PlainExif,
+        b"tXMP" | b"meTa" | b"seAl" => PngKind::CarrierXml,
+        _ if lower == b"zxif" || lower == b"exif" => PngKind::CarrierExif,
+        b"tEXt" | b"zTXt" | b"iTXt" => {
+            let key = data.split(|b| *b == 0).next().unwrap_or(&[]);
+            if key == b"XML:com.adobe.xmp" {
+                PngKind::PlainXml
+            } else if let Some(kind) = key.strip_prefix(b"Raw profile type ") {
+                match kind {
+                    b"exif" | b"APP1" => PngKind::CarrierExif,
+                    b"xmp" => PngKind::CarrierXml,
+                    _ => PngKind::Other,
+                }
+            } else {
+                PngKind::Other
+            }
+        }
+        _ => PngKind::Other,
+    }
+}
+
+/// The PNG chunks that make the container (an `IHDR` field, the palette, the
+/// pixels, a rendering chunk, the animation frames), none of them metadata.
+const PNG_SKELETON: [&[u8; 4]; 14] = [
+    b"IHDR", b"PLTE", b"IDAT", b"IEND", b"tRNS", b"gAMA", b"cHRM", b"sRGB", b"sBIT", b"bKGD",
+    b"pHYs", b"acTL", b"fcTL", b"fdAT",
+];
+
+/// The WebP chunks that make the container.
+const WEBP_SKELETON: [&[u8; 4]; 6] = [b"VP8 ", b"VP8L", b"VP8X", b"ANIM", b"ANMF", b"ALPH"];
+
+/// The rows of `webp_carriers` a WebP chunk is a carrier by (DEC-022 clause 4).
+fn webp_rows(code4: [u8; 4], data: &[u8]) -> Vec<&'static crate::webp_carriers::Row> {
+    crate::webp_carriers::ROWS
+        .iter()
+        .filter(|r| r.region == "carrier" && r.code == code4)
+        // A `JUNK` chunk is a carrier by the text rule only (DEC-022).
+        .filter(|_| &code4 != b"JUNK" || is_text_junk(data))
+        .collect()
+}
+
+/// One chunk of a file: its type, its data and all its bytes (length, type,
+/// data, CRC or pad), bounded by the file.
+struct Chunk<'a> {
+    ty: &'a [u8],
+    data: &'a [u8],
+    raw: &'a [u8],
+}
+
+/// A naive walk of the PNG chunks, written for the judge and sharing nothing
+/// with `src/`: every chunk to the end of the file (a trailer after `IEND`
+/// too), the declared lengths bounded by the file.
+fn png_chunks(bytes: &[u8]) -> Vec<Chunk<'_>> {
+    let mut out = Vec::new();
+    let mut at = 8usize;
+    while let (Some(len), Some(ty)) = (be32(bytes, at), bytes.get(at + 4..at + 8)) {
+        let data_at = at + 8;
+        let data = bytes
+            .get(data_at..data_at.saturating_add(len))
+            .unwrap_or(&[]);
+        // A chunk that runs past the end is still looked at (bounded by the
+        // file), and is the last.
+        let end = data_at.checked_add(len).and_then(|n| n.checked_add(4));
+        let bound = end.map_or(bytes.len(), |n| n.min(bytes.len()));
+        out.push(Chunk {
+            ty,
+            data,
+            raw: &bytes[at..bound],
+        });
+        at = match end {
+            Some(n) if n <= bytes.len() => n,
+            _ => break,
+        };
+    }
+    out
+}
+
+/// The same for WebP: the chunks after the 12-byte `RIFF` header.
+fn webp_chunks(bytes: &[u8]) -> Vec<Chunk<'_>> {
+    let mut out = Vec::new();
+    let mut at = 12usize;
+    while let (Some(code), Some(size)) = (bytes.get(at..at + 4), le32(bytes, at + 4)) {
+        let data = bytes
+            .get(at + 8..(at + 8).saturating_add(size))
+            .unwrap_or(&[]);
+        let end = (at + 8)
+            .checked_add(size)
+            .and_then(|n| n.checked_add(size & 1));
+        let bound = end.map_or(bytes.len(), |n| n.min(bytes.len()));
+        out.push(Chunk {
+            ty: code,
+            data,
+            raw: &bytes[at..bound],
+        });
+        at = match end {
+            Some(n) if n < bytes.len() => n,
+            _ => break,
+        };
+    }
+    out
+}
+
+pub fn scan(ext: &str, bytes: &[u8]) -> Carriers {
+    let mut c = Carriers::default();
+    if ext == "png" {
+        for ch in png_chunks(bytes) {
+            match png_kind(ch.ty, ch.data) {
+                PngKind::PlainExif => c.exif_plain = true,
+                PngKind::PlainXml => c.xml_plain = true,
+                PngKind::CarrierExif => c.exif = true,
+                PngKind::CarrierXml => c.xml = true,
+                PngKind::Other => {}
+            }
+        }
+    } else {
+        for ch in webp_chunks(bytes) {
+            let code4 = [ch.ty[0], ch.ty[1], ch.ty[2], ch.ty[3]];
+            match &code4 {
+                b"EXIF" => c.exif_plain = true,
+                b"XMP " | b"XMP\0" => c.xml_plain = true,
+                _ => {}
+            }
+            for row in webp_rows(code4, ch.data) {
+                c.row_tags.push(row.prints);
+                // A row that prints XMP/XML tags is an XML carrier: every tag
+                // of those groups goes with it.
+                if row
+                    .prints
+                    .split_once(':')
+                    .is_some_and(|(g, _)| xml_group(g))
+                {
+                    c.xml = true;
+                }
+            }
+        }
+    }
+    c
+}
+
+/// The file ExifTool reads for the `## carriers` section (DEC-023, amendment of
+/// 2026-11-26): the container skeleton and the carrier chunks of `bytes`, in
+/// their order and byte for byte, and every other metadata chunk dropped (a
+/// plain `eXIf`/`EXIF`, a plain XMP packet, `iCCP`/`ICCP`, `tIME`, the other
+/// text chunks, `caBX`, ...). `None` when the fixture holds no carrier.
+///
+/// What is a carrier is typed here from DEC-021 clause 4 and DEC-022 clause 4
+/// (the same classification as [`scan`]); nothing is read from `src/`.
+pub fn carriers_only(ext: &str, bytes: &[u8]) -> Option<Vec<u8>> {
+    if !scan(ext, bytes).any() {
+        return None;
+    }
+    if ext == "png" {
+        let mut out = bytes.get(..8)?.to_vec();
+        for ch in png_chunks(bytes) {
+            let skeleton = PNG_SKELETON.iter().any(|t| ch.ty == &t[..]);
+            let carrier = matches!(
+                png_kind(ch.ty, ch.data),
+                PngKind::CarrierExif | PngKind::CarrierXml
+            );
+            if skeleton || carrier {
+                out.extend_from_slice(ch.raw);
+            }
+        }
+        Some(out)
+    } else {
+        let mut body = Vec::new();
+        for ch in webp_chunks(bytes) {
+            let code4 = [ch.ty[0], ch.ty[1], ch.ty[2], ch.ty[3]];
+            let skeleton = WEBP_SKELETON.iter().any(|t| code4 == **t);
+            if skeleton || !webp_rows(code4, ch.data).is_empty() {
+                body.extend_from_slice(ch.raw);
+            }
+        }
+        // `RIFF`, the new size, `WEBP`.
+        let mut out = b"RIFF".to_vec();
+        out.extend_from_slice(&u32::try_from(body.len() + 4).ok()?.to_le_bytes());
+        out.extend_from_slice(bytes.get(8..12)?);
+        out.extend_from_slice(&body);
+        Some(out)
+    }
+}
+
 // ── making a record ─────────────────────────────────────────────────────────
 
 fn push_section(out: &mut String, name: &str, extra: &[String], stderr: &[String], lines: &[Line]) {
@@ -334,6 +577,11 @@ pub fn record_text(fx: &Fixture, version: &str) -> Result<String, String> {
     );
     let (lines, stderr) = read_bytes(&format!("{}-input", fx.name), fx.ext, &fx.bytes)?;
     push_section(&mut out, "input", &[], &stderr, &lines);
+    // The carriers alone (DEC-023 rule 3 (a), amendment of 2026-11-26).
+    if let Some(carriers) = carriers_only(fx.ext, &fx.bytes) {
+        let (lines, stderr) = read_bytes(&format!("{}-carriers", fx.name), fx.ext, &carriers)?;
+        push_section(&mut out, "carriers", &[], &stderr, &lines);
+    }
     for (name, policy) in policies() {
         let Ok(stripped) = exif_core::strip(&fx.bytes, policy) else {
             continue;

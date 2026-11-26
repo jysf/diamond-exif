@@ -16,8 +16,13 @@
 //!
 //! * (a) the carrier rule (DEC-021 clause 4, DEC-022 clause 4): the tags a
 //!   carrier chunk prints go under every policy that removes carriers, the
-//!   kept-category ones among them. Allowed only on a fixture that holds a
-//!   carrier, and then the carrier's tags must in fact be gone;
+//!   kept-category ones among them. Line-level (DEC-023 amendment of
+//!   2026-11-26): a missing line is excused only up to its count in the
+//!   record's `## carriers` section, ExifTool's reading of a file that keeps
+//!   the container skeleton and the carrier chunks and nothing else, compared
+//!   on `(group, tag, value)`. A plain `eXIf`/XMP block beside a carrier keeps
+//!   its lines. Allowed only on a fixture that holds a carrier, and then the
+//!   carrier's tags must in fact be gone;
 //! * (b) the whole-block rule: a policy that holds every category an Exif
 //!   entry can have (`all`, `everything`) removes the whole `eXIf`/`EXIF`
 //!   chunk, so the uncategorised Exif tags go with it;
@@ -36,8 +41,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::i3_records::Line;
-use crate::webp_carriers;
+use crate::i3_records::{scan, xml_group, Line};
 
 /// The DEC-008 categories a PNG or a WebP can hold and this judge classifies.
 /// `Iptc` has no carrier in either container; `EmbeddedImage` and
@@ -142,10 +146,6 @@ fn exif_group(g: &str) -> bool {
     )
 }
 
-fn xml_group(g: &str) -> bool {
-    g.starts_with("XMP") || g.starts_with("XML") || g.starts_with("SEAL")
-}
-
 /// `PNG`-group tags that are structure (an `IHDR` field, a rendering chunk),
 /// not text. Every other `PNG` tag is text (DEC-020 clause 4).
 const PNG_STRUCTURE: [&str; 20] = [
@@ -240,126 +240,6 @@ fn judged(l: &Line) -> bool {
     category_of(&l.group, &l.tag).is_some() || exif_group(&l.group)
 }
 
-// ── the carriers a fixture holds, found by a naive scan ─────────────────────
-
-/// What the bytes of a fixture hold that exception (a) is about.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Carriers {
-    /// A PNG chunk that prints Exif tags (`zxIf` in any case, a mixed-case
-    /// `eXIf`, a raw-profile `exif`/`APP1` text chunk).
-    pub exif: bool,
-    /// A PNG chunk that prints XMP/XML tags (`tXMP`, `meTa`, `seAl`, a
-    /// raw-profile `xmp` chunk).
-    pub xml: bool,
-    /// The file also holds a plain Exif block (`eXIf`; WebP `EXIF`).
-    pub exif_plain: bool,
-    /// The file also holds a plain XMP packet (`XML:com.adobe.xmp`; WebP `XMP `).
-    pub xml_plain: bool,
-    /// WebP carrier rows present: the tag each prints (`Group:Tag`).
-    pub row_tags: Vec<&'static str>,
-}
-
-impl Carriers {
-    pub fn any(&self) -> bool {
-        self.exif || self.xml || !self.row_tags.is_empty()
-    }
-}
-
-fn be32(b: &[u8], at: usize) -> Option<usize> {
-    let s = b.get(at..at.checked_add(4)?)?;
-    Some(u32::from_be_bytes([s[0], s[1], s[2], s[3]]) as usize)
-}
-
-fn le32(b: &[u8], at: usize) -> Option<usize> {
-    let s = b.get(at..at.checked_add(4)?)?;
-    Some(u32::from_le_bytes([s[0], s[1], s[2], s[3]]) as usize)
-}
-
-/// A naive scan, written for the judge and sharing nothing with `src/`: every
-/// chunk to the end of the file (a trailer after `IEND` too), the declared
-/// lengths bounded by the file.
-pub fn scan(ext: &str, bytes: &[u8]) -> Carriers {
-    let mut c = Carriers::default();
-    if ext == "png" {
-        let mut at = 8usize;
-        while let (Some(len), Some(ty)) = (be32(bytes, at), bytes.get(at + 4..at + 8)) {
-            let data_at = at + 8;
-            let data = bytes
-                .get(data_at..data_at.saturating_add(len))
-                .unwrap_or(&[]);
-            let lower: Vec<u8> = ty.iter().map(u8::to_ascii_lowercase).collect();
-            match ty {
-                b"eXIf" => c.exif_plain = true,
-                b"tXMP" | b"meTa" | b"seAl" => c.xml = true,
-                _ if lower == b"zxif" || lower == b"exif" => c.exif = true,
-                b"tEXt" | b"zTXt" | b"iTXt" => {
-                    let key = data.split(|b| *b == 0).next().unwrap_or(&[]);
-                    if key == b"XML:com.adobe.xmp" {
-                        c.xml_plain = true;
-                    } else if let Some(kind) = key.strip_prefix(b"Raw profile type ") {
-                        match kind {
-                            b"exif" | b"APP1" => c.exif = true,
-                            b"xmp" => c.xml = true,
-                            _ => {}
-                        }
-                    }
-                }
-                _ => {}
-            }
-            at = match data_at.checked_add(len).and_then(|n| n.checked_add(4)) {
-                Some(n) if n <= bytes.len() => n,
-                _ => break,
-            };
-        }
-    } else {
-        let mut at = 12usize;
-        while let (Some(code), Some(size)) = (bytes.get(at..at + 4), le32(bytes, at + 4)) {
-            let data = bytes
-                .get(at + 8..(at + 8).saturating_add(size))
-                .unwrap_or(&[]);
-            let code4 = [code[0], code[1], code[2], code[3]];
-            match &code4 {
-                b"EXIF" => c.exif_plain = true,
-                b"XMP " | b"XMP\0" => c.xml_plain = true,
-                _ => {}
-            }
-            for row in webp_carriers::ROWS.iter().filter(|r| r.region == "carrier") {
-                if row.code != code4 {
-                    continue;
-                }
-                // A `JUNK` chunk is a carrier by the text rule only (DEC-022).
-                if &code4 == b"JUNK" && !is_text_junk(data) {
-                    continue;
-                }
-                c.row_tags.push(row.prints);
-                // A row that prints XMP/XML tags is an XML carrier: every tag of
-                // those groups goes with it.
-                if row
-                    .prints
-                    .split_once(':')
-                    .is_some_and(|(g, _)| xml_group(g))
-                {
-                    c.xml = true;
-                }
-            }
-            at = match (at + 8)
-                .checked_add(size)
-                .and_then(|n| n.checked_add(size & 1))
-            {
-                Some(n) if n < bytes.len() => n,
-                _ => break,
-            };
-        }
-    }
-    c
-}
-
-/// DEC-022: printable ASCII, then NULs, with at least one text byte.
-fn is_text_junk(data: &[u8]) -> bool {
-    let end = data.iter().rposition(|b| *b != 0).map_or(0, |i| i + 1);
-    end > 0 && data[..end].iter().all(|b| (0x20..=0x7E).contains(b))
-}
-
 // ── the judge ───────────────────────────────────────────────────────────────
 
 /// How often each exception was used.
@@ -404,6 +284,7 @@ pub fn judge(
     bytes: &[u8],
     policy: &str,
     input: &[Line],
+    carrier_lines: Option<&[Line]>,
     output: &[Line],
 ) -> Verdict {
     let mut v = Verdict::default();
@@ -478,28 +359,37 @@ pub fn judge(
             v.failures.push(at("phantom tag", k));
         }
     }
+    // ExifTool's reading of the carriers alone (the `## carriers` section):
+    // what exception (a) may excuse, line by line and up to its count.
+    // A fixture that holds no carrier excuses nothing, whatever it is given.
+    let carrier_read: &[Line] = if carriers.any() {
+        carrier_lines.unwrap_or(&[])
+    } else {
+        &[]
+    };
+    if carriers.any() && carrier_lines.is_none() {
+        v.failures.push(format!(
+            "{fixture} under {policy}: the fixture holds a carrier and the record has no \
+             carriers section"
+        ));
+    }
+    let carrier_judged: Vec<&Line> = carrier_read.iter().filter(|l| judged(l)).collect();
+    let mut excusable = multiset(&carrier_judged);
     // Missing lines.
     for k in &missing {
         if removed_cat(k) {
             continue;
         }
         let in_exif = exif_group(&k.0);
-        // The Composite GPS tags are derived from the carrier's own GPS tags.
-        let row_gps = carriers
-            .row_tags
-            .iter()
-            .any(|t| t.split_once(':').is_some_and(|(_, n)| n.starts_with("GPS")));
-        let derived = k.0 == "Composite"
-            && k.1.starts_with("GPS")
-            && (row_gps || carriers.exif || carriers.xml);
-        let carrier_line = derived
-            || (carriers.exif && in_exif)
-            || (carriers.xml && xml_group(&k.0))
-            || carriers
-                .row_tags
-                .iter()
-                .any(|t| t.split_once(':').is_some_and(|(g, _)| g == k.0));
-        if carrier_line && removes_carriers(policy) {
+        // A carrier line: the carriers' own reading prints it, and the number
+        // of such lines already excused is below that reading's count. A
+        // `Composite:GPS*` line is excused the same way, so only when the
+        // carriers section itself prints it.
+        let carrier_line = removes_carriers(policy) && excusable.get(k).is_some_and(|n| *n > 0);
+        if carrier_line {
+            if let Some(n) = excusable.get_mut(k) {
+                *n -= 1;
+            }
             v.uses.carrier += 1;
         } else if k.0 == "Composite"
             && k.1.starts_with("GPS")
@@ -514,8 +404,11 @@ pub fn judge(
             v.failures.push(at("kept tag missing", k));
         }
     }
-    // The carrier rule fires: what the carriers print is gone. Only claimed
-    // where no plain block of the same family prints the same groups.
+    // The carrier rule fires: what the carriers print is gone. With no plain
+    // block of the same family in the file, nothing in those groups may be
+    // left. With one, the plain block's lines stay, so the check is by line:
+    // a carrier line is left in when the output prints more of it than the
+    // input printed beyond the carriers.
     if removes_carriers(policy) {
         if carriers.exif && !carriers.exif_plain {
             for l in output
@@ -534,6 +427,24 @@ pub fn judge(
                     "{fixture} under {policy}: carrier tag left in {}:{}={}",
                     l.group, l.tag, l.value
                 ));
+            }
+        }
+        if (carriers.exif && carriers.exif_plain) || (carriers.xml && carriers.xml_plain) {
+            let carrier_ms = multiset(&carrier_judged);
+            for (k, n_car) in &carrier_ms {
+                let family =
+                    (carriers.exif && exif_group(&k.0)) || (carriers.xml && xml_group(&k.0));
+                if !family || removed_cat(k) {
+                    continue;
+                }
+                let n_in = in_m.get(k).copied().unwrap_or(0);
+                let n_out = out_m.get(k).copied().unwrap_or(0);
+                if n_out > n_in.saturating_sub(*n_car) {
+                    v.failures.push(format!(
+                        "{fixture} under {policy}: carrier tag left in {}:{}={}",
+                        k.0, k.1, k.2
+                    ));
+                }
             }
         }
         for t in &carriers.row_tags {
