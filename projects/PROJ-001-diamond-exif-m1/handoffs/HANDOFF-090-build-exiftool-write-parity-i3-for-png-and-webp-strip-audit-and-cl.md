@@ -50,15 +50,15 @@ handback:
   agent: claude-sonnet-5-5         # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
+  basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 859490             # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: null
+  duration_minutes: 97
   branch: feat/spec-039-png-webp-write-parity-build
   pr: null
   completed_at: 2026-11-26         # YYYY-MM-DD
-  notes: "Parts A, B and C are done on one branch. basis and tokens_total are left null on purpose: the orchestrator fills them from the harness's per-part subagent results (Part A and B are already recorded in the notes under Handback). No wall-clock estimate is given."                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "Parts A, B and C done on one branch, one subagent each. tokens_total and duration are the sums of the harness subagent results, filled by the orchestrator: A 341,318 tokens / 86 tool calls / 1,910 s; B 272,228 / 94 / 1,630 s; C 245,944 / 88 / 2,292 s. USD is not computed because the input/output split is not reported."                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  synced_at: 2026-11-26
 ---
 
 # HANDOFF-090: SPEC-039 build — ExifTool write parity (I3) for PNG and WebP strip, audit and CLI switch-over
@@ -541,6 +541,17 @@ Branch `feat/spec-039-png-webp-write-parity-build`. Part C is done: AC11 to AC15
 3. *What would I do differently?* Run the JPEG re-record before writing the AC14 test, so the group-table gap shows
    first; and grep `fuzz_layout.rs` for "strippable" at design.
 
+**Orchestrator notes on Part C** (claude-opus-5-5, 2026-11-26)
+- Re-run on 1.90.0: `DIAMOND_EXIF_REQUIRE_ORACLE=1 just test` returned rc 0, 41 `test result: ok` lines, none failed.
+  Library diff: `src/audit/mod.rs`, `src/audit/preview.rs`, `src/report/text.rs`, `src/write/mod.rs` (37+/34-),
+  limited to the switch-over and the two neutral `Display` strings.
+- Accepted deviation, to be checked in verify: `entry_edit_groups` in `tests/support/strip_records.rs`. The JPEG
+  group table was segment-level, so under `gps` it expected `kitchen-sink`'s `GPS` group even though every GPS entry
+  is deleted. The new table, typed from the fixture builders, drops a group only when the policy holds the category
+  of every entry in it. A group that holds an uncategorised entry is never listed. No existing pin changed.
+- Part C cost, from the harness's subagent result: 245,944 tokens; 88 tool calls; 2,292 s (about 38 min) of wall
+  clock. Basis: agent-result.
+
 ### Execution notes
 
 - **Branch / PR:** `feat/spec-039-png-webp-write-parity-build` (no PR; the orchestrator opens it)
@@ -551,11 +562,11 @@ Branch `feat/spec-039-png-webp-write-parity-build`. Part C is done: AC11 to AC15
 
 ### Cost self-report
 
-- **Tokens (total):** null. The orchestrator fills `basis` and `tokens_total` from the harness's per-part subagent
-  results; Parts A and B are recorded under Handback. This agent cannot read its own token count.
-- **Estimated USD:** null
-- **Duration (minutes):** null (no wall-clock estimate is given)
-- **Source of the number:** none available to the executing agent
+- **Tokens (total):** 859,490. The orchestrator summed the harness's per-part subagent results: A 341,318, B 272,228,
+  C 245,944. The executing agents could not read their own counts.
+- **Estimated USD:** null, because the harness does not report the input/output split.
+- **Duration (minutes):** 97 (1,910 s + 1,630 s + 2,292 s = 5,832 s of subagent wall clock).
+- **Source of the number:** harness report (agent-result), one per part.
 
 ### Drift and new artifacts
 

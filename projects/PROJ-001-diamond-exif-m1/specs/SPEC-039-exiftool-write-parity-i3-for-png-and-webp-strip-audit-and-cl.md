@@ -78,10 +78,20 @@ cost:
       duration_minutes: null
       recorded_at: 2026-11-24
       notes: "main-loop design (ExifTool write-mode exit codes, the ours-vs-ExifTool differential over 174 fixtures, PNG type and keyword sweeps, refusal-vs-preview measurement, DEC-023, DEC-020 amendment, spec, HANDOFF); un-metered, null by design"
+    - cycle: build
+      handoff: HANDOFF-090
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 859490
+      estimated_usd: null
+      duration_minutes: 97
+      recorded_at: 2026-11-26
+      notes: "Parts A, B and C done on one branch, one subagent each. tokens_total and duration are the sums of the harness subagent results, filled by the orchestrator: A 341,318 tokens / 86 tool calls / 1,910 s; B 272,228 / 94 / 1,630 s; C 245,944 / 88 / 2,292 s. USD is not computed because the input/output split is not reported."
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 859490
+    estimated_usd: 0.00
+    session_count: 2
 ---
 
 # SPEC-039: ExifTool write parity (I3) for PNG and WebP strip, audit and CLI switch-over
