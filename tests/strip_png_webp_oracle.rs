@@ -133,17 +133,25 @@ fn expected_sections(fx: &Fixture) -> Vec<String> {
 #[test]
 fn the_i3_fixture_set_is_the_designed_one() {
     let f = fixtures();
-    assert_eq!(f.len(), 238);
-    assert_eq!(f.iter().filter(|x| x.ext == "png").count(), 91);
+    assert_eq!(f.len(), 239);
+    assert_eq!(f.iter().filter(|x| x.ext == "png").count(), 92);
     assert_eq!(f.iter().filter(|x| x.ext == "webp").count(), 147);
     let names: BTreeSet<_> = f.iter().map(|x| x.name.to_ascii_lowercase()).collect();
     assert_eq!(names.len(), f.len(), "names are unique even case-folded");
     assert!(f[..i3_shapes::ORACLE_COUNT]
         .iter()
         .all(|x| !x.name.starts_with("png-carrier-")));
-    // New shapes go at the end: the last two are the exception (c) fixtures.
+    // New shapes go at the end: the exception (c) fixtures, then the XMP
+    // plain-and-carrier fixture of the exception (a) red-proof.
     let last: Vec<&str> = f[236..].iter().map(|x| x.name.as_str()).collect();
-    assert_eq!(last, ["png-xmp-plain-gps", "webp-xmp-plain-gps"]);
+    assert_eq!(
+        last,
+        [
+            "png-xmp-plain-gps",
+            "webp-xmp-plain-gps",
+            "png-xmp-and-raw-xmp"
+        ]
+    );
 }
 
 #[test]
@@ -887,6 +895,79 @@ fn comparator_is_red_when_exception_c_is_claimed_without_an_xmp_source() {
         "{f:?}"
     );
     println!("AC7 (x) red: {}", f.first().cloned().unwrap_or_default());
+}
+
+/// Exception (a) is line-level (DEC-023 amendment of 2026-11-26): a plain block
+/// that coexists with a carrier keeps its lines, and a writer that drops it
+/// must be red. Each pair has a control that passes.
+const EXIF_PAIR: &str = "png-exif-and-raw-exif";
+const XMP_PAIR: &str = "png-xmp-and-raw-xmp";
+
+#[test]
+fn comparator_is_red_when_a_plain_exif_block_is_dropped_beside_a_carrier() {
+    // Control: the genuine record. The carrier's `IFD0:Make=RawCam` is excused,
+    // the plain block's lines are kept.
+    for policy in ["gps", "gps_and_device"] {
+        assert!(judged_with(EXIF_PAIR, policy, &|_, _| {}).is_empty());
+    }
+    // The writer also dropped the plain `eXIf`: every `IFD0` line is gone.
+    let f = judged_with(EXIF_PAIR, "gps", &|out, _| {
+        out.retain(|l| l.group != "IFD0");
+    });
+    assert!(
+        contains_all(
+            &f,
+            &[
+                EXIF_PAIR,
+                "under gps",
+                "kept tag missing",
+                "IFD0:Make=AlphaCam"
+            ]
+        ),
+        "{f:?}"
+    );
+    assert!(
+        contains_all(
+            &f,
+            &[
+                EXIF_PAIR,
+                "under gps",
+                "kept tag missing",
+                "IFD0:Model=OnlyInA"
+            ]
+        ),
+        "{f:?}"
+    );
+    println!(
+        "AC4 (a) Exif red: {}",
+        f.first().cloned().unwrap_or_default()
+    );
+}
+
+#[test]
+fn comparator_is_red_when_a_plain_xmp_packet_is_dropped_beside_a_carrier() {
+    for policy in ["gps", "gps_and_device", "all_pii"] {
+        assert!(judged_with(XMP_PAIR, policy, &|_, _| {}).is_empty());
+    }
+    let f = judged_with(XMP_PAIR, "gps", &|out, _| {
+        out.retain(|l| !l.group.starts_with("XMP"));
+    });
+    assert!(
+        contains_all(
+            &f,
+            &[
+                XMP_PAIR,
+                "under gps",
+                "kept tag missing",
+                "XMP-xmp:CreatorTool=DiamondTool"
+            ]
+        ),
+        "{f:?}"
+    );
+    println!(
+        "AC4 (a) XMP red: {}",
+        f.first().cloned().unwrap_or_default()
+    );
 }
 
 #[test]

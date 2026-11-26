@@ -992,6 +992,17 @@ pub const DIFFERENCES: &[Diff] = &[
         theirs_only: &["IFD0:Make"],
         fixtures: &["png-exif-and-raw-exif"],
     },
+    // The XMP twin of the entry above, added in the SPEC-039 verify fix round
+    // (not one of the 174 oracle fixtures): ExifTool keeps the raw-profile
+    // packet's `CreatorTool`, we remove the carrier.
+    Diff {
+        class: "D3",
+        level: "keys",
+        pair: "gps",
+        ours_only: &[],
+        theirs_only: &["XMP-xmp:CreatorTool"],
+        fixtures: &["png-xmp-and-raw-xmp"],
+    },
     Diff {
         class: "D3",
         level: "keys",

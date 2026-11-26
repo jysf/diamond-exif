@@ -17,6 +17,9 @@
 //!    GPS properties, so that the judge's exception (c) is used: ExifTool
 //!    derives `Composite:GPS*` from the XMP a keeping preset leaves. They are
 //!    not among the 174 oracle fixtures the design's counts are over.
+//! 8. (SPEC-039 verify fix round) one PNG that holds a plain XMP packet and a
+//!    raw-profile XMP carrier, the XMP twin of `png-exif-and-raw-exif`, so the
+//!    line-level exception (a) is shown red for XMP as well as Exif.
 //!
 //! No import from `src/`. The expectations are typed elsewhere (the judge, the
 //! tables), never derived from the library.
@@ -235,6 +238,27 @@ pub fn xmp_gps_shapes() -> Vec<(String, &'static str, Vec<u8>)> {
     ]
 }
 
+/// A plain XMP packet (`CreatorTool` `DiamondTool`, kept under `gps`) and a
+/// raw-profile XMP carrier whose packet says `RawTool`: the XMP twin of
+/// `png-exif-and-raw-exif`.
+pub fn xmp_and_raw_xmp_shape() -> (String, Vec<u8>) {
+    let plain = oracle_png::xmp_packet();
+    let raw_packet: Vec<u8> = String::from_utf8_lossy(&plain)
+        .replace("DiamondTool", "RawTool")
+        .into_bytes();
+    // An uncompressed `iTXt`: keyword, NUL, flag 0, method 0, empty language
+    // and translated keyword.
+    let plain_chunk = oracle_png::itxt(oracle_png::XMP_KEYWORD, 0, &plain);
+    let carrier = oracle_png::text(
+        b"Raw profile type xmp",
+        &oracle_png::raw_profile_body("xmp", &raw_packet),
+    );
+    (
+        "png-xmp-and-raw-xmp".to_string(),
+        with(&[plain_chunk, carrier]),
+    )
+}
+
 /// The whole I3 set, in the order of the module comment.
 pub fn fixtures() -> Vec<Fixture> {
     let mut out = Vec::new();
@@ -273,5 +297,11 @@ pub fn fixtures() -> Vec<Fixture> {
     for (name, ext, bytes) in xmp_gps_shapes() {
         out.push(Fixture { name, ext, bytes });
     }
+    let (name, bytes) = xmp_and_raw_xmp_shape();
+    out.push(Fixture {
+        name,
+        ext: "png",
+        bytes,
+    });
     out
 }
