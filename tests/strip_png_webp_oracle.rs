@@ -1084,7 +1084,7 @@ fn comparator_is_red_when_the_excuse_outruns_the_carriers_multiplicity() {
             &bytes,
             "gps",
             &[same.clone(), same.clone()],
-            Some(&[same.clone()]),
+            Some(std::slice::from_ref(&same)),
             &output,
         )
         .failures
