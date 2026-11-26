@@ -997,6 +997,15 @@ Implementer (claude-sonnet-5-5) on `feat/spec-039-png-webp-write-parity-build`, 
 - **Gates** at the final commit: `just lint`, `just lint-no-allow`, `just forbid-unsafe` and `just validate` exit 0. `DIAMOND_EXIF_REQUIRE_ORACLE=1 just test` exits 0: 41 result lines, 1,543 passed, 0 failed (1,541 before, plus the two new tests). `just mutation-oracle` exits 0: 67 + 42 + 43 passed.
 - **Deviations:** the item 2 comment fix went into the red-test commit rather than its own commit. `just oracle-record` was run twice by mistake (a stray first invocation in the same command line, output discarded); both completed and wrote 239 records, and `git status` and `git diff -- tests/oracle-fixtures` show no change. The gate commit for this entry is the handoff-only commit that follows `506f2fb`.
 
+**Orchestrator self-check of fix round 4** (claude-opus-5-5, 2026-11-26; replaces a round-5 verify at the user's choice)
+- Diff `d13e7c2..c5115c7`. It touches only `tests/support/i3_judge.rs`, `tests/strip_png_webp_oracle.rs` and this file, and it matches the amendment: the excuse stays `judged`, and `carrier_checked` drives the by-line left-in check and additivity.
+- Mutants, each run in a `git archive` copy with its own `CARGO_TARGET_DIR`, against `strip_png_webp_oracle` with ExifTool required:
+  - **A** (the by-line check reverted to `judged`): 40 passed, 2 failed. Both SEAL red-proofs fail (live and in-memory). **Pinned.**
+  - **B** (the excuse widened to `carrier_checked`, so XML/SEAL lines become excusable): 42 passed, 0 failed. **Not pinned.**
+  - **C** (additivity reverted to `judged`): 42 passed, 0 failed. **Not pinned.**
+- Gates at `c5115c7` on 1.90.0: `just lint`, `just lint-no-allow`, `just forbid-unsafe` and `just validate` rc 0. `DIAMOND_EXIF_REQUIRE_ORACLE=1 just test` rc 0, 41 result lines, 1,543 passed, 0 failed. `just mutation-oracle` 67 + 42 + 43 passed. `git diff d13e7c2 HEAD -- tests/oracle-fixtures src` is empty.
+- Fix round 4 cost, from the harness subagent result: 137,987 tokens, 57 tool calls, 840 s (about 14 min). Basis: agent-result.
+
 ### Cost self-report
 
 - **Tokens (total):** 258,606, filled by the orchestrator from the harness subagent result (96 tool calls).

@@ -158,10 +158,20 @@ cost:
       duration_minutes: 11
       recorded_at: 2026-11-26
       notes: "Verify round 4, against 9c368ba, one subagent. The orchestrator transcribed the final harness notification: 135,708 tokens, 47 tool calls, 683 s. Punch list of 2 L items: a SEAL/XML carrier line left in beside a plain XMP packet goes unchecked (pre-existing), and the red-proof comment misdescribes its readings."
+    - cycle: build
+      handoff: HANDOFF-091
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 137987
+      estimated_usd: null
+      duration_minutes: 14
+      recorded_at: 2026-11-26
+      notes: "Round-4 fix round (carrier_checked drives the by-line left-in check and additivity; the excuse stays judged), one subagent. The orchestrator transcribed the cost from the harness subagent result: 137,987 tokens, 57 tool calls, 840 s. Checked by the orchestrator instead of a round-5 verify."
   totals:
-    tokens_total: 2082598
+    tokens_total: 2220585
     estimated_usd: 0.00
-    session_count: 9
+    session_count: 10
 ---
 
 # SPEC-039: ExifTool write parity (I3) for PNG and WebP strip, audit and CLI switch-over
