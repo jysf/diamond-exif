@@ -138,10 +138,20 @@ cost:
       duration_minutes: 19
       recorded_at: 2026-11-26
       notes: "Verify round 3, against 2f790d4, one subagent. The orchestrator transcribed the cost from the harness subagent result: 191,215 tokens, 79 tool calls, 1,159 s. Punch list of 1 item (L): the additivity check compares fewer groups than exception (a) can excuse (ID3v2_3, Olympus, PNG text, ICC, JUMBF/JSON are not compared)."
+    - cycle: build
+      handoff: HANDOFF-091
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 114377
+      estimated_usd: null
+      duration_minutes: 14
+      recorded_at: 2026-11-26
+      notes: "Round-3 fix round (additivity compares judged lines). One subagent, resumed twice after two correct stops. The harness's last notification is read as cumulative: 114,377 tokens, 40 tool calls, 846 s. The earlier readings were 82,538 and 88,160."
   totals:
-    tokens_total: 1832513
+    tokens_total: 1946890
     estimated_usd: 0.00
-    session_count: 7
+    session_count: 8
 ---
 
 # SPEC-039: ExifTool write parity (I3) for PNG and WebP strip, audit and CLI switch-over

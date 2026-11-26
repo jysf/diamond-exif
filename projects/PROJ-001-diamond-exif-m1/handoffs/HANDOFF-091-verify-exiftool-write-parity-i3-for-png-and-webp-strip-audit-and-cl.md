@@ -865,8 +865,23 @@ Implementer (claude-sonnet-5-5) on `feat/spec-039-png-webp-write-parity-build`, 
   - `the_readings_add_up_on_every_carrier_fixture`: passes on all 36, replay and live.
   - `git diff -- tests/oracle-fixtures` is empty; `just oracle-record` gave no diff.
   - Judge counts, replay and live: (a) 677, (b) 354, (c) 24; 2583 sections judged.
-- **Gates** at the final commit: see the report to the orchestrator; recorded below.
+- **Gates** at the final commit (`7c454ed`): `just lint`, `just lint-no-allow`, `just forbid-unsafe` and `just validate` exit 0; `DIAMOND_EXIF_REQUIRE_ORACLE=1 just test` exit 0; `just mutation-oracle` exit 0. The orchestrator re-ran them; the numbers are in its notes below.
 - **Deviations:** none from the rulings.
+
+**Orchestrator notes on fix round 3** (claude-opus-5-5, 2026-11-26)
+- **Rulings.** The implementer stopped twice before changing code, and both stops were correct. Each found that the
+  orchestrator's DEC-023 wording did not match the judge. The wrong wordings were committed in `89ac392` and `f9aed69`. The final ruling,
+  option A, rests on the orchestrator reading the code (`9e37e8f`): `judged` is the one predicate.
+- **Re-run at `7c454ed` on 1.90.0 with ExifTool required.** `just lint`, `just lint-no-allow`, `just forbid-unsafe`
+  and `just validate` returned rc 0. `just test` returned rc 0, with 41 result lines, 1,541 passed and 0 failed.
+  `just mutation-oracle` passed 67 + 42 + 43. `git diff 9e37e8f HEAD -- tests/oracle-fixtures` is empty. The change
+  touches only `tests/support/i3_judge.rs` and `tests/strip_png_webp_oracle.rs`, plus this file.
+- **Process.** The implementer reports that a `pgrep -f "just test"` monitor matched another session's process. It
+  then killed "one stray shell" by PID (45357). That PID no longer exists, so it cannot be checked which process it
+  was. This was reported to the user.
+- **Cost, from the harness.** One agent, resumed twice. Its three notifications read 82,538, 88,160 and 114,377
+  tokens. They are read as cumulative, so 114,377 tokens, 40 tool calls and 846 s (about 14 min) are recorded.
+  Basis: agent-result.
 
 ### Cost self-report
 
