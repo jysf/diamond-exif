@@ -694,6 +694,14 @@ unchanged.
 - The DEC-023 amendment names "the verifier's `b1` shape"; I rebuilt it from the description, not from the
   verifier's scratch file.
 
+**Orchestrator notes on fix round 2** (claude-opus-5-5, 2026-11-26)
+- Every gate was re-run at `90d627a`, because the implementer ran `just test` and `just mutation-oracle` before its
+  clippy fix. Results on 1.90.0 with ExifTool required: `just lint`, `just lint-no-allow`, `just forbid-unsafe` and
+  `just validate` all rc 0. `just test` rc 0, 41 result lines, 1,540 passed, 0 failed. `just mutation-oracle` 67 + 42
+  + 43 passed.
+- No change in `src/`, `fuzz/` or the Cargo files. The record diff since `a452bc4` is 36 files, +319 −0.
+- Fix round 2 cost, from the harness subagent result: 144,285 tokens, 46 tool calls, 1,209 s (about 20 min).
+
 ### Cost self-report
 
 - **Tokens (total):** 258,606, filled by the orchestrator from the harness subagent result (96 tool calls).

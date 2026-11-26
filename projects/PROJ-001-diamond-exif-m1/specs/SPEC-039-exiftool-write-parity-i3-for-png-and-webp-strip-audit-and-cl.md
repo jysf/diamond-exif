@@ -118,10 +118,20 @@ cost:
       duration_minutes: 16
       recorded_at: 2026-11-26
       notes: "Verify round 2, against 34008cc. One subagent. The orchestrator transcribed this from the harness subagent result: 184,591 tokens, 48 tool calls, 944 s. The verdict is a punch list of 2 L items: two line-level guards are unpinned (multiplicity decrement, by-line left-in check), and the line-level rule assumes readings add up, which a carrier placed before the plain block breaks."
+    - cycle: build
+      handoff: HANDOFF-091
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 144285
+      estimated_usd: null
+      duration_minutes: 20
+      recorded_at: 2026-11-26
+      notes: "Round-2 punch-list fix round, one subagent: both guards pinned, plus the no-carriers additivity check. The orchestrator transcribed the cost from the harness subagent result: 144,285 tokens, 46 tool calls, 1,209 s."
   totals:
-    tokens_total: 1497013
+    tokens_total: 1641298
     estimated_usd: 0.00
-    session_count: 5
+    session_count: 6
 ---
 
 # SPEC-039: ExifTool write parity (I3) for PNG and WebP strip, audit and CLI switch-over
