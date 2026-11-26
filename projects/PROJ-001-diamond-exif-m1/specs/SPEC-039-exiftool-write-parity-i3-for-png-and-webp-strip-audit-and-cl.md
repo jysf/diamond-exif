@@ -148,10 +148,20 @@ cost:
       duration_minutes: 14
       recorded_at: 2026-11-26
       notes: "Round-3 fix round (additivity compares judged lines). One subagent, resumed twice after two correct stops. The harness's last notification is read as cumulative: 114,377 tokens, 40 tool calls, 846 s. The earlier readings were 82,538 and 88,160."
+    - cycle: verify
+      handoff: HANDOFF-091
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 135708
+      estimated_usd: null
+      duration_minutes: 11
+      recorded_at: 2026-11-26
+      notes: "Verify round 4, against 9c368ba, one subagent. The orchestrator transcribed the final harness notification: 135,708 tokens, 47 tool calls, 683 s. Punch list of 2 L items: a SEAL/XML carrier line left in beside a plain XMP packet goes unchecked (pre-existing), and the red-proof comment misdescribes its readings."
   totals:
-    tokens_total: 1946890
+    tokens_total: 2082598
     estimated_usd: 0.00
-    session_count: 8
+    session_count: 9
 ---
 
 # SPEC-039: ExifTool write parity (I3) for PNG and WebP strip, audit and CLI switch-over
