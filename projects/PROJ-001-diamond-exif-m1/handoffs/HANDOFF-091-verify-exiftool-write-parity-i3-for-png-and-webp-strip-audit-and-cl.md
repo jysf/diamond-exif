@@ -616,6 +616,84 @@ Scratch apparatus (outside the repo, session scratchpad `r2/`): `scripts/build.p
 `attack/tests/zz_verify_attack.rs` (a harness over the committed judge, plus the M1/M3/M4/M5 mutants applied to a
 scratch copy only), `scripts/diffcount.py`, and the `tip/` and `red/` archives.
 
+### Fix round 2 (2026-11-26)
+
+Implementer (claude-sonnet-5-5), on `feat/spec-039-png-webp-write-parity-build` from `a452bc4`. Scope: the two round-2
+punch items. No `src/` change, no new dependency, verdict fields untouched.
+
+**Commits** (work order: red tests first, then the implementation)
+- `071a20c` test(spec-039): HANDOFF-091 round 2 red tests: multiplicity, carrier left in, additivity
+- `74ebc02` test(spec-039): HANDOFF-091 round 2: no-carriers record section and additivity check
+- `7a04688` test(spec-039): HANDOFF-091 round 2: clippy from_ref in the multiplicity test
+
+**Item 1 (L), the two guards pinned: done.** Both tests are in `tests/strip_png_webp_oracle.rs`, with controls.
+- `comparator_is_red_when_the_excuse_outruns_the_carriers_multiplicity`: the input prints `IFD0:Make=SameCam` twice,
+  `## carriers` once, on the bytes of `png-exif-and-raw-exif` (plain `eXIf` first, then the carrier). The readings are
+  given in memory, not read from ExifTool. Control: one copy dropped (the carrier's) is green. Both dropped is red
+  with `same-line under gps: kept tag missing IFD0:Make=SameCam`.
+- `comparator_is_red_when_a_carrier_tag_is_put_back_beside_a_plain_block`: `png-exif-and-raw-exif` under `gps`.
+  Control: the unaltered output is green. With `IFD0:Make=RawCam` pushed into the output it is red with
+  `png-exif-and-raw-exif under gps: carrier tag left in IFD0:Make=RawCam`.
+- Mutants, applied to the working copy of `tests/support/i3_judge.rs` and reverted with the backup copy each time
+  (never committed; `git status` clean afterwards). Both ran against `74ebc02`, with ExifTool required.
+  - M1 (the `*n -= 1` decrement replaced by `let _ = n;`): `38 passed; 1 failed`. Failed:
+    `comparator_is_red_when_the_excuse_outruns_the_carriers_multiplicity`, at its red assertion with `[]`. The other
+    38 tests passed.
+  - M3 (the by-line block's `if (carriers.exif && carriers.exif_plain) || (carriers.xml && carriers.xml_plain)`
+    replaced by `if false`): `38 passed; 1 failed`. Failed:
+    `comparator_is_red_when_a_carrier_tag_is_put_back_beside_a_plain_block`, at its red assertion with `[]`. The
+    other 38 tests passed.
+  - The red assertion prints the failure list, which is empty under a mutant (that is the red).
+
+**Item 2 (L), the additivity check: done.**
+- `no_carriers(ext, bytes)` in `tests/support/i3_records.rs`. It shares one splitter with `carriers_only`, so the
+  carrier typing is the same. A PNG keeps every chunk that is not a carrier. A WebP keeps every chunk that is not a
+  carrier row, and the `RIFF` size is recomputed. The record gains `## no-carriers` right after `## carriers`, for
+  the 36 carrier fixtures.
+- `additivity_failures(input, carriers, no_carriers)` in `tests/support/i3_judge.rs`. It compares multisets of
+  `(group, tag, value)` on the Exif groups, the XMP/XML groups and `Composite:GPS*`, leaving out `Warning` and
+  `Error`. It returns one message per line whose counts differ.
+- `the_readings_add_up_on_every_carrier_fixture` runs it over the committed records and, with ExifTool, over a fresh
+  live recording. It names the failing fixture. Result: 36 carrier fixtures checked, 0 failing, in replay and live.
+  No question was added.
+- Red-proofs:
+  - `the_additivity_check_is_red_on_readings_that_do_not_add_up`: in memory, with a control that adds up.
+  - `the_additivity_check_is_red_on_a_carrier_before_a_plain_exif_block` (live; skipped without ExifTool): the `b1`
+    PNG is built in the test, a raw-profile Exif `CarrierCam` before a plain `eXIf` of `VerifyCam`/`VerifyModel`,
+    and read with ExifTool 13.55. Red line: `IFD0:Make=VerifyCam: the input prints it 0 time(s), the carriers and
+    no-carriers readings together 1`. Controls: `png-exif-and-raw-exif` and `png-xmp-and-raw-xmp` pass.
+- `expected_sections` now requires `no-carriers` after `carriers`.
+
+**Records.** `just oracle-record` run twice. After the first run, `git diff -- tests/oracle-fixtures` was 36 files,
+319 lines added, 0 deleted, and in each file one hunk adding one `## no-carriers` section. A script
+(`git diff -U0` per file) checked that there are no deleted lines, that each file adds exactly one `## ` header and
+that it is `## no-carriers`. The second run left the diff byte-identical (same md5 of the diff). The other 203 records
+are unchanged.
+
+**Numbers (unchanged).** Judge over the 239 fixtures: 2,583 sections judged, 598 with a removable tag (2,408 tags);
+exception (a) used 677 times, (b) 354, (c) 24, in replay and live, as before. The differential tests over the 174
+oracle fixtures pass with the pinned counts untouched (157 identical, 41 outcome differences, 30 both refuse). I did
+not recompute those counts with a separate script this round; the differential code and the sections it reads are
+unchanged.
+
+**Gates, Rust 1.90.0, ExifTool 13.55, `DIAMOND_EXIF_REQUIRE_ORACLE=1`:**
+- `just lint`: the first run failed on `clippy::cloned_ref_to_slice_refs` in my new test; fixed in `7a04688`; rc 0
+  after. `just lint-no-allow` rc 0. `just forbid-unsafe` rc 0. `just validate` rc 0.
+- `just test` rc 0: 41 `test result: ok` lines, 1,540 passed, 0 failed, 20 ignored (1,535 before, plus 5 new tests).
+  This run was made before the one-line clippy change in `7a04688`; after it I re-ran
+  `cargo test --test strip_png_webp_oracle` (39 passed, 1 ignored).
+- `just mutation-oracle` rc 0: 67 + 42 + 43 passed, 1 ignored each. Also run before `7a04688`, which touches only
+  the oracle test file. W1 to W4 re-run afterwards with `--nocapture`: each `control digest equal true; strip Ok
+  true; replay red true; live red true`.
+- No background process left. `fuzz/` untouched.
+
+**Deviations.**
+- Item 1 test 1 uses real fixture bytes with in-memory readings, not an ExifTool reading, so it also runs in replay.
+- `just test` and `just mutation-oracle` were not re-run in full after the clippy fix (see above). The affected
+  test file was re-run alone.
+- The DEC-023 amendment names "the verifier's `b1` shape"; I rebuilt it from the description, not from the
+  verifier's scratch file.
+
 ### Cost self-report
 
 - **Tokens (total):** 258,606, filled by the orchestrator from the harness subagent result (96 tool calls).
