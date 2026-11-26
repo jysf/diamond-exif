@@ -79,3 +79,20 @@ JFIF	JFIFVersion	1 1
 JFIF	ResolutionUnit	0
 JFIF	XResolution	1
 JFIF	YResolution	1
+## gps
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	Comment	CANARY-COMMENT-ONE
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+## all-pii
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1

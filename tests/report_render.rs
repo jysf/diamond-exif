@@ -231,11 +231,16 @@ fn golden_png_and_webp_report_in_all_three_formats() {
     assert!(!text.contains("the writer refuses this container"));
     let csv = render(Format::Csv, &files, &opts);
     assert!(!csv.contains("not_strippable"));
-    // The PNG has bytes after IEND (not clean, so not reliable); the WebP is
-    // clean, so it is the one reliable file.
-    assert!(text.contains("preview not reliable: the file was not read cleanly"));
-    assert!(text.contains("preview (all-pii): removed"));
-    assert!(json.contains("\"reliable_files\":1,\"unreliable_files\":1"));
+    // Both files read clean (the PNG's trailer is a finding, not an issue), so
+    // both are reliable and the preview says what it would remove.
+    assert!(!text.contains("preview not reliable"));
+    assert!(text.contains(
+        "preview (all_pii): removed 4, kept 0, kept_unread 2; residual findings 2, residual severity medium"
+    ));
+    assert!(text.contains(
+        "preview (all_pii): removed 1, kept 1, kept_unread 1; residual findings 2, residual severity medium"
+    ));
+    assert!(json.contains("\"reliable_files\":2,\"unreliable_files\":0"));
 }
 
 // ── the cross product ───────────────────────────────────────────────────────

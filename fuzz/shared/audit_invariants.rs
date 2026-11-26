@@ -1421,9 +1421,9 @@ mod audit_invariants {
     }
 
     /// Whether the writer can strip a container of this kind (DEC-020 clause
-    /// 6). The harness holds the kind as a label, so it maps the label back to
+    /// 6, amended 2026-11-24). The harness holds the kind as a label, so it maps the label back to
     /// a `ContainerKind` and asks the ONE definition, `ContainerKind::strippable`
-    /// (true for JPEG and TIFF only); it keeps no copy of the rule.
+    /// (true for JPEG, TIFF, PNG and WebP since SPEC-039); it keeps no copy of the rule.
     pub fn strippable_kind(kind: &str) -> bool {
         let k = match kind {
             "Tiff" => ContainerKind::Tiff,

@@ -125,21 +125,12 @@ fn finding_line(
 
 /// `unsupported`: the container was not read at all, so the line stays "not
 /// read cleanly"; the "writer refuses" line is for a container that was read
-/// and has no strip. A PNG and a WebP have one, not yet checked against
-/// ExifTool, so their lines say that instead (SPEC-037 verify L3 and SPEC-038
-/// verify M1; DEC-020 clause 6).
+/// and has no strip. PNG and WebP have one, shown against ExifTool (SPEC-039),
+/// so they take the ordinary lines like a JPEG.
 fn preview_lines(out: &mut String, p: &Preview, kind: ContainerKind) {
     let unsupported = matches!(kind, ContainerKind::Unsupported(_));
     if !p.strippable() && !unsupported {
-        let why = match kind {
-            ContainerKind::Png => {
-                "the PNG strip exists but has not been checked against ExifTool yet, so no removal is claimed"
-            }
-            ContainerKind::Webp => {
-                "the WebP strip exists but has not been checked against ExifTool yet, so no removal is claimed"
-            }
-            _ => "the writer refuses this container, so nothing would be removed",
-        };
+        let why = "the writer refuses this container, so nothing would be removed";
         out.push_str(&format!(
             "  preview ({}): not strippable: {why}; every finding is kept\n",
             p.policy().name()

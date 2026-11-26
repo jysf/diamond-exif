@@ -63,3 +63,21 @@ JFIF	ResolutionUnit	0
 JFIF	XResolution	1
 JFIF	YResolution	1
 XMP-xmp	CreatorTool	CANARY-XMP-PACKET
+## gps
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+XMP-xmp	CreatorTool	CANARY-XMP-PACKET
+## all-pii
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+XMP-xmp	CreatorTool	CANARY-XMP-PACKET

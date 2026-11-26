@@ -537,66 +537,49 @@ fn grid_webp() -> Vec<u8> {
 }
 
 /// SPEC-039 AC11: DEC-009 rule 2 over a clean PNG and a clean WebP, a
-/// hand-typed grid. The findings are Gps, Xmp, Jumbf (and Rights for the PNG);
-/// the presets remove, per DEC-009's columns: `gps`, `gps_and_device` and
-/// `all_pii` only Gps; `all` also Xmp and Rights, keeping Jumbf; `everything`
-/// all of them.
+/// hand-typed grid. The findings are Gps, Xmp and Jumbf (and Rights for the
+/// PNG). Per preset, from DEC-009's columns and the may-hold rule:
+///
+/// * `gps`, `gps_and_device`, `all_pii`: remove Gps only. The kept Xmp and
+///   Jumbf could hold a Gps tag, so they are `kept_unread`; Rights holds no
+///   tag, so it is plain `kept`.
+/// * `all`: removes Gps, Xmp and Rights; the kept Jumbf is `kept_unread`.
+/// * `everything`: removes all four.
 #[test]
 fn png_and_webp_dispositions_per_preset() {
-    let png_rows: [(StripPolicy, &[Category]); 5] = [
-        (StripPolicy::Gps, &[Category::Gps]),
-        (StripPolicy::GpsAndDevice, &[Category::Gps]),
-        (StripPolicy::AllPii, &[Category::Gps]),
-        (
-            StripPolicy::All,
-            &[Category::Gps, Category::Xmp, Category::Rights],
-        ),
-        (
-            StripPolicy::Everything,
-            &[
-                Category::Gps,
-                Category::Xmp,
-                Category::Rights,
-                Category::Jumbf,
-            ],
-        ),
+    use Category::{Gps, Jumbf, Rights, Xmp};
+    // (policy, removed, kept_unread); every other finding is kept.
+    let grid: [(StripPolicy, &[Category], &[Category]); 5] = [
+        (StripPolicy::Gps, &[Gps], &[Xmp, Jumbf]),
+        (StripPolicy::GpsAndDevice, &[Gps], &[Xmp, Jumbf]),
+        (StripPolicy::AllPii, &[Gps], &[Xmp, Jumbf]),
+        (StripPolicy::All, &[Gps, Xmp, Rights], &[Jumbf]),
+        (StripPolicy::Everything, &[Gps, Xmp, Rights, Jumbf], &[]),
     ];
     for (name, bytes, has_rights) in [("png", grid_png(), true), ("webp", grid_webp(), false)] {
         let a = audit(&bytes);
         assert!(a.health().clean, "{name}: premise, the file is clean");
         let mut present = categories(&a);
         present.sort_by_key(|c| c.name());
-        let mut want_present = vec![Category::Gps, Category::Xmp, Category::Jumbf];
+        let mut want_present = vec![Gps, Xmp, Jumbf];
         if has_rights {
-            want_present.push(Category::Rights);
+            want_present.push(Rights);
         }
         want_present.sort_by_key(|c| c.name());
         assert_eq!(present, want_present, "{name}: premise, the findings");
-        for (policy, removed) in png_rows {
-            let removed: Vec<Category> = removed
-                .iter()
-                .copied()
-                .filter(|c| *c != Category::Rights || has_rights)
-                .collect();
+        for (policy, removed, unread) in grid {
             let pv = preview(&a, policy);
             assert!(pv.strippable() && pv.reliable(), "{name} {}", policy.name());
-            assert_eq!(
-                pv.counts().removed,
-                removed.len(),
-                "{name} under {}",
-                policy.name()
-            );
-            assert_eq!(pv.counts().kept_unread, 0, "{name} {}", policy.name());
-            assert_eq!(
-                pv.counts().kept,
-                a.findings().len() - removed.len(),
-                "{name} {}",
-                policy.name()
-            );
+            let (mut n_removed, mut n_unread, mut n_kept) = (0, 0, 0);
             for (f, d) in a.findings().iter().zip(pv.dispositions()) {
                 let want = if removed.contains(&f.category) {
+                    n_removed += 1;
                     "removed"
+                } else if unread.contains(&f.category) {
+                    n_unread += 1;
+                    "kept_unread"
                 } else {
+                    n_kept += 1;
                     "kept"
                 };
                 assert_eq!(
@@ -607,6 +590,13 @@ fn png_and_webp_dispositions_per_preset() {
                     f.category.name()
                 );
             }
+            let c = pv.counts();
+            assert_eq!(
+                (c.removed, c.kept_unread, c.kept),
+                (n_removed, n_unread, n_kept),
+                "{name} under {}",
+                policy.name()
+            );
         }
     }
 }

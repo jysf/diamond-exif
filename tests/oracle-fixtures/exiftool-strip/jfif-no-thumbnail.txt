@@ -73,3 +73,19 @@ JFIF	JFIFVersion	1 1
 JFIF	ResolutionUnit	1
 JFIF	XResolution	72
 JFIF	YResolution	72
+## gps
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	1
+JFIF	XResolution	72
+JFIF	YResolution	72
+## all-pii
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	1
+JFIF	XResolution	72
+JFIF	YResolution	72

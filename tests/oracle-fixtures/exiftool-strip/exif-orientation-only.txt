@@ -93,3 +93,24 @@ JFIF	ResolutionUnit	0
 JFIF	XResolution	1
 JFIF	YResolution	1
 IFD0	Orientation	6
+## gps
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+File	Comment	CANARY-COMMENT-ONE
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Orientation	6
+## all-pii
+File	FileType	JPEG
+File	FileTypeExtension	JPG
+File	MIMEType	image/jpeg
+File	ExifByteOrder	II
+JFIF	JFIFVersion	1 1
+JFIF	ResolutionUnit	0
+JFIF	XResolution	1
+JFIF	YResolution	1
+IFD0	Orientation	6
