@@ -57,7 +57,7 @@ handback:
   branch: claude/spec-039-verify
   pr: null
   completed_at: 2026-11-26         # YYYY-MM-DD
-  notes: "Round 3 (2026-11-26, branch claude/spec-039-verify-r3): PUNCH LIST against 2f790d4, 1 item (L): the additivity check compares the Exif/XMP/XML/Composite:GPS lines only, while exception (a) can also excuse judged lines such as ID3v2_3:Artist and Olympus:Model (3 such carrier lines in the corpus); latent, widening keeps 36/36 adding up. Round-2 items 1-2 fixed (M1/M3 red, b1 red, records byte-equal, gates green). Round 2 (2026-11-26, branch claude/spec-039-verify-r2): PUNCH LIST against 34008cc, 2 items (L): the multiplicity bound and the plain-block carrier-left-in check have no red-proof (mutants M1, M3 survive); the line-level model inverts on a non-additive (carrier-before-plain) shape, not in the corpus. Round-1 items 1-3 fixed. Round 1: Verdict applies to f5e24c1 (build tip plus this handoff). Cost filled by the orchestrator from the harness subagent result: 258,606 tokens, 96 tool calls, 1,553 s. Punch list of 3 items: 1 (M) judge exception (a) is group-level and excuses a dropped plain Exif/XMP block when a carrier coexists; 2 (L) the AC11 grid has no ICC finding; 3 (L) the README PNG keyword sentence omits Make, Model and TimeStamp."                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  notes: "Round 4 (2026-11-26, branch claude/spec-039-verify-r4): PUNCH LIST against 9c368ba, 2 items (L): a non-judged SEAL/XML carrier line left in beside a plain XMP packet is caught by no check (probe red under neither gps nor all; latent, library output clean, not in corpus; not caused by the fix); the red-proof comment misdescribes its readings. Round-3 fix verified (judged is the one predicate, red-proof red at a96af47, M1/M3/group-level red, gates green, 1,541 passed). Round 3 (2026-11-26, branch claude/spec-039-verify-r3): PUNCH LIST against 2f790d4, 1 item (L): the additivity check compares the Exif/XMP/XML/Composite:GPS lines only, while exception (a) can also excuse judged lines such as ID3v2_3:Artist and Olympus:Model (3 such carrier lines in the corpus); latent, widening keeps 36/36 adding up. Round-2 items 1-2 fixed (M1/M3 red, b1 red, records byte-equal, gates green). Round 2 (2026-11-26, branch claude/spec-039-verify-r2): PUNCH LIST against 34008cc, 2 items (L): the multiplicity bound and the plain-block carrier-left-in check have no red-proof (mutants M1, M3 survive); the line-level model inverts on a non-additive (carrier-before-plain) shape, not in the corpus. Round-1 items 1-3 fixed. Round 1: Verdict applies to f5e24c1 (build tip plus this handoff). Cost filled by the orchestrator from the harness subagent result: 258,606 tokens, 96 tool calls, 1,553 s. Punch list of 3 items: 1 (M) judge exception (a) is group-level and excuses a dropped plain Exif/XMP block when a carrier coexists; 2 (L) the AC11 grid has no ICC finding; 3 (L) the README PNG keyword sentence omits Make, Model and TimeStamp."                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
   synced_at: 2026-11-26
 ---
 
@@ -882,6 +882,100 @@ Implementer (claude-sonnet-5-5) on `feat/spec-039-png-webp-write-parity-build`, 
 - **Cost, from the harness.** One agent, resumed twice. Its three notifications read 82,538, 88,160 and 114,377
   tokens. They are read as cumulative, so 114,377 tokens, 40 tool calls and 846 s (about 14 min) are recorded.
   Basis: agent-result.
+
+### Verify round 4 (2026-11-26)
+
+Verifier (claude-opus-5-5) on `claude/spec-039-verify-r4`, cut from `9c368ba`. Scope: the round-3 fix only
+(`git diff 0acdb72 9c368ba`).
+
+**Verdict: ⚠ PUNCH LIST against `9c368ba`, 2 items, both (L).** The fix itself is correct. Item 1 is a judge
+coverage gap that predates this fix. Item 2 is a wrong test comment.
+
+**Punch list.**
+
+1. **(L) A non-`judged` XML/SEAL carrier line left in the output beside a plain XMP packet is caught by nothing.**
+   Item 1 of the round-3 amendment says `XML*` and `SEAL*` lines "are caught only by the output-only scan". That scan
+   runs only when `carriers.xml && !carriers.xml_plain`. When a plain XMP packet is also present, the by-line check
+   runs instead, but it only covers `carrier_judged` lines. `SEAL:*` and `XML:*` are not `judged`, so they are not
+   in `in_m`/`out_m` either. The module header's "the carrier's tags must in fact be gone" overclaims for this shape
+   in the same way.
+   - Evidence: I ran an in-memory probe on a scratch copy of `9c368ba`, live with ExifTool 13.55. It used the real
+     readings of a PNG with a plain `iTXt` `XML:com.adobe.xmp` packet plus a `seAl` chunk (`<a><b>Zed</b></a>`), in
+     both chunk orders. I then added `SEAL:AB=Zed` back into the library's real output.
+     - `judge` returned `[]` under `gps` and under `all`.
+     - On the same probe with no plain packet, the same doctored output gives
+       `carrier tag left in SEAL:AB=Zed` under both policies.
+     - The library's real output prints no SEAL line, so there is no leak today. This is a gap in what the oracle
+       can detect, and no corpus fixture has this shape: the five records whose `## carriers` print XML/SEAL lines
+       hold no plain packet.
+   - Dropping `xml_group` from additivity did not cause this gap and does not widen it. Additivity compares the three
+     input readings and never looks at the output. The probe's readings add up (`additivity []`) in all three shapes.
+     So the old XML/SEAL terms in additivity protected no judge arithmetic. Dropping them loses nothing.
+   - Suggested fix: when a plain block of the family exists, run the by-line left-in check over every `xml_group` line
+     of the carriers reading, not only `judged` ones. Widen additivity to the same set so that the one-predicate rule
+     holds (a `carrier_compared(l) = judged(l) || xml_group(&l.group)` used by both). Red-proof it with the probe
+     shape above. Alternatively, record the limit in DEC-023 and correct the "caught only by the output-only scan"
+     sentence and the module header.
+2. **(L) The red-proof's comment says the wrong thing about the readings.** The comment says "the input prints it
+   once, the carriers reading once, the no-carriers reading once more". The fix-round-3 entry above repeats it. What
+   the test builds is:
+   - `input = [IFD0:Make=SameCam, ID3v2_3:Artist=Someone]`;
+   - `car = [IFD0:Make=SameCam]`, so the carriers reading prints no Artist;
+   - control: `plain = [Artist]`, which adds up;
+   - red: `plain = [Artist, Artist]`, so the no-carriers reading prints Artist twice and input 1 ≠ 0 + 2.
+
+   Suggested fix: reword the comment to say that.
+
+**Evidence.**
+
+1. **The amendment's claim about the code is true.** In `judge`, the carriers reading (`carrier_read`) is used only
+   through `carrier_judged = carrier_read.filter(judged)`. That feeds `excusable`, which is the excuse together with
+   its `*n -= 1` bound, and `carrier_ms`, which is the by-line left-in check.
+   - The two other left-in checks scan `output` only: the Exif or XML family with no plain block, and the WebP
+     `row_tags`.
+   - `carrier_lines.is_none()` is checked for presence only.
+   - `ID3v2_3:Artist` is `judged`: `category_of` falls through to the tag match, which gives `Authorship`.
+   - See item 1 for the one sentence of the amendment that does not hold.
+2. **One predicate.** `additivity_failures` filters by `judged`. `rtk proxy grep -rn additive_line tests src` finds
+   nothing. The doc comments on `judged` and `additivity_failures` are accurate. `non_additive`'s "the lines exception
+   (a) can excuse" also holds, since those are exactly the `judged` lines.
+3. **Red-proof.** Run on a `git archive a96af47` copy with its own `CARGO_TARGET_DIR`:
+   `the_additivity_check_compares_a_judged_line_outside_the_exif_and_xml_groups` failed at
+   `tests/strip_png_webp_oracle.rs:1326`. That is the red assertion, and it reported `[]`. The control passed first.
+   At `9c368ba` (own target dir, ExifTool required) it is green and prints
+   `ID3v2_3:Artist=Someone: the input prints it 1 time(s), the carriers and no-carriers readings together 2`.
+   - The control matters at the tip. It has Artist in input and no-carriers, and Make in input and carriers, so it
+     shows that widening to `judged` causes no false red on readings that add up. It is weaker at `a96af47`, where it
+     passes trivially because Artist was not compared.
+   - Between `a96af47` and the tip, the test changed only in the `println!` line wrapping (rustfmt).
+4. **No regressions.**
+   - `git diff 9e37e8f 9c368ba -- tests/oracle-fixtures src fuzz Cargo.toml Cargo.lock` is empty.
+   - `the_readings_add_up_on_every_carrier_fixture` passes. It asserts `checked == 36` and no failures, replay and
+     live.
+   - Judge counts, replay and live: 2583 sections judged, 598 with a removable tag (2408 tags); (a) 677, (b) 354,
+     (c) 24.
+   - Gates at `9c368ba` in this worktree, rustc 1.90.0, clippy 0.1.90, ExifTool required:
+     - `just lint`, `just lint-no-allow`, `just forbid-unsafe` and `just validate` each returned rc 0.
+     - `DIAMOND_EXIF_REQUIRE_ORACLE=1 just test` returned rc 0, with 41 result lines, 1,541 passed and 0 failed.
+     - `just mutation-oracle` returned rc 0, with 67 + 42 + 43 passed.
+5. **Earlier items still closed.** Run on a `git archive 9c368ba` copy with its own target dir and
+   `cargo test --test strip_png_webp_oracle`. Each mutant was restored and checked with `cmp` afterwards.
+   - M1 (`*n -= 1;` → `let _ = n;`): `39 passed; 1 failed; 1 ignored`. Only
+     `comparator_is_red_when_the_excuse_outruns_the_carriers_multiplicity` failed, at its red assertion `:1098`.
+   - M3 (by-line `if (carriers.exif && carriers.exif_plain) || ...` → `if false`): `39 passed; 1 failed`. Only
+     `comparator_is_red_when_a_carrier_tag_is_put_back_beside_a_plain_block` failed, at `:1118`.
+   - Group-level rule (`carrier_line = removes_carriers(policy) && ((carriers.exif && in_exif) || (carriers.xml &&
+     xml_group(&k.0)))`, with the decrement made `saturating_sub` so that it cannot underflow): `36 passed; 4 failed`.
+     - `..._a_plain_exif_block_is_dropped_beside_a_carrier` failed at `:1017`.
+     - `..._a_plain_xmp_packet_is_dropped_beside_a_carrier` failed at `:1055`.
+     - The multiplicity test failed at `:1098`.
+     - `the_judge_holds_both_ways...` failed with 78 failures. These are `kept tag missing Composite:GPS*`, because my
+       reconstruction does not excuse `Composite:GPS*` the way the original rule did, so they are an artifact of the
+       reconstruction.
+     - With the plain `*n -= 1`, the multiplicity test instead panicked on the underflow at `i3_judge.rs:393`.
+- **Process.** I started and waited on only my own processes. The gate run was PID 87389, waited on by PID. No
+  background processes are left. Scratch copies are under the session scratchpad. Nothing was changed outside this
+  file.
 
 ### Cost self-report
 
