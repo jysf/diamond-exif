@@ -849,6 +849,25 @@ Scratch apparatus (outside the repo, session scratchpad `r3/`):
 No cost session entry was appended. Per the brief, `tokens_total`, `basis` and `duration_minutes` are left for the
 orchestrator.
 
+### Fix round 3 (2026-11-26)
+
+Implementer (claude-sonnet-5-5) on `feat/spec-039-png-webp-write-parity-build`, from `89ac392`. Scope: punch item 1 (L).
+
+- **Two stops, two rulings.**
+  - Stop 1: the excuse path's eligibility was `judged`, not `judged || xml_group` as the first amendment wording said. `XML*` and `SEAL*` lines are not `judged` and are never excused. The architect corrected DEC-023 (`f9aed69`).
+  - Stop 2: the by-line left-in check does arithmetic with the carriers reading only through `carrier_judged`. The scan for a carrier XML block with no plain block reads the output alone. So the set the judge uses with the carriers reading is `judged` only. The architect ruled option A and rewrote the amendment (`9e37e8f`).
+- **Red first** (`a96af47`): `the_additivity_check_compares_a_judged_line_outside_the_exif_and_xml_groups`, in memory. The input prints `ID3v2_3:Artist=Someone` once, the carriers reading once (no Artist), the no-carriers reading once more.
+  - Control: readings that add up, passes.
+  - Red against the old `additive_line`: the second assertion failed with `[]` (no failure reported).
+- **Fix** (`8c9c89a`): `additivity_failures` filters by `judged`. `additive_line` is removed. Doc comments on `judged` and `additivity_failures` state the single shared line set. Nothing under `src/` changed.
+- **Red line after the fix:** `additivity red (ID3v2_3): ID3v2_3:Artist=Someone: the input prints it 1 time(s), the carriers and no-carriers readings together 2`.
+- **Nothing else moved:**
+  - `the_readings_add_up_on_every_carrier_fixture`: passes on all 36, replay and live.
+  - `git diff -- tests/oracle-fixtures` is empty; `just oracle-record` gave no diff.
+  - Judge counts, replay and live: (a) 677, (b) 354, (c) 24; 2583 sections judged.
+- **Gates** at the final commit: see the report to the orchestrator; recorded below.
+- **Deviations:** none from the rulings.
+
 ### Cost self-report
 
 - **Tokens (total):** 258,606, filled by the orchestrator from the harness subagent result (96 tool calls).
