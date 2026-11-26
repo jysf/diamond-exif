@@ -459,6 +459,14 @@ dependency, no question added, no deviation from the brief.
   red true`.
 - `fuzz/Cargo.lock` untouched (no fuzz run). Working tree clean after the commits. No background process left.
 
+**Orchestrator notes on the fix round** (claude-opus-5-5, 2026-11-26)
+- Re-run on 1.90.0 with ExifTool required: `just test` rc 0, 41 `test result: ok` lines, 1,535 passed, 0 failed.
+  `just mutation-oracle` passed 67 + 42 + 43.
+- No `src/` changes. `git diff 9900b2b HEAD -- tests/oracle-fixtures` touches 36 files, +634 −0, all additions: the
+  `## carriers` sections plus the new `png-xmp-and-raw-xmp` record.
+- Fix-round cost, from the harness subagent result: 194,326 tokens, 63 tool calls, 1,263 s (about 21 min). Recorded in
+  the spec's `cost.sessions` as a build session against HANDOFF-091.
+
 ### Cost self-report
 
 - **Tokens (total):** 258,606, filled by the orchestrator from the harness subagent result (96 tool calls).

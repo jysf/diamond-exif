@@ -98,10 +98,20 @@ cost:
       duration_minutes: 26
       recorded_at: 2026-11-26
       notes: "Verdict applies to f5e24c1 (build tip plus this handoff). Cost filled by the orchestrator from the harness subagent result: 258,606 tokens, 96 tool calls, 1,553 s. Punch list of 3 items: 1 (M) judge exception (a) is group-level and excuses a dropped plain Exif/XMP block when a carrier coexists; 2 (L) the AC11 grid has no ICC finding; 3 (L) the README PNG keyword sentence omits Make, Model and TimeStamp."
+    - cycle: build
+      handoff: HANDOFF-091
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 194326
+      estimated_usd: null
+      duration_minutes: 21
+      recorded_at: 2026-11-26
+      notes: "Punch-list fix round for HANDOFF-091 (items 1 M, 2 L, 3 L), one subagent. The orchestrator transcribed this from the harness subagent result: 194,326 tokens, 63 tool calls, 1,263 s."
   totals:
-    tokens_total: 1118096
+    tokens_total: 1312422
     estimated_usd: 0.00
-    session_count: 3
+    session_count: 4
 ---
 
 # SPEC-039: ExifTool write parity (I3) for PNG and WebP strip, audit and CLI switch-over
