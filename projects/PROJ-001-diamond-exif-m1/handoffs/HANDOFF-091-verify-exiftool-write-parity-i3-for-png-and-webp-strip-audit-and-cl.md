@@ -57,7 +57,7 @@ handback:
   branch: claude/spec-039-verify
   pr: null
   completed_at: 2026-11-26         # YYYY-MM-DD
-  notes: "Verdict applies to f5e24c1 (build tip plus this handoff). Cost filled by the orchestrator from the harness subagent result: 258,606 tokens, 96 tool calls, 1,553 s. Punch list of 3 items: 1 (M) judge exception (a) is group-level and excuses a dropped plain Exif/XMP block when a carrier coexists; 2 (L) the AC11 grid has no ICC finding; 3 (L) the README PNG keyword sentence omits Make, Model and TimeStamp."                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  notes: "Round 2 (2026-11-26, branch claude/spec-039-verify-r2): PUNCH LIST against 34008cc, 2 items (L): the multiplicity bound and the plain-block carrier-left-in check have no red-proof (mutants M1, M3 survive); the line-level model inverts on a non-additive (carrier-before-plain) shape, not in the corpus. Round-1 items 1-3 fixed. Round 1: Verdict applies to f5e24c1 (build tip plus this handoff). Cost filled by the orchestrator from the harness subagent result: 258,606 tokens, 96 tool calls, 1,553 s. Punch list of 3 items: 1 (M) judge exception (a) is group-level and excuses a dropped plain Exif/XMP block when a carrier coexists; 2 (L) the AC11 grid has no ICC finding; 3 (L) the README PNG keyword sentence omits Make, Model and TimeStamp."                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
   synced_at: 2026-11-26
 ---
 
@@ -466,6 +466,155 @@ dependency, no question added, no deviation from the brief.
   `## carriers` sections plus the new `png-xmp-and-raw-xmp` record.
 - Fix-round cost, from the harness subagent result: 194,326 tokens, 63 tool calls, 1,263 s (about 21 min). Recorded in
   the spec's `cost.sessions` as a build session against HANDOFF-091.
+
+### Verify round 2 (2026-11-26)
+
+Independent verifier (claude-opus-5-5), cold, on `claude/spec-039-verify-r2` from
+`feat/spec-039-png-webp-write-parity-build` at `34008cc`. Scope: the three round-1 items and regressions. Change
+reviewed: `git diff fef653a 34008cc` (amendment `9900b2b`; fixes `c105798`, `0b82da9`, `720b899`, `3437f11`,
+`47ada16`; bookkeeping `34008cc`). Read-only on library, tests and records.
+
+**Verdict: ⚠ PUNCH LIST, against `34008cc`.** Items 1 to 3 of round 1 are fixed as specified. The line-level code
+matches the DEC-023 amendment and my own attacks are now red. Two low-severity items remain: two guards the amendment
+names are not pinned by any test, and the line-level model breaks when ExifTool's reading is not additive.
+
+**Punch list**
+
+1. **(L) Two line-level guards have no red-proof. Mutants of each survive the whole `strip_png_webp_oracle` test.**
+   - Where: `tests/support/i3_judge.rs`, `judge`.
+   - M1 deletes the `*n -= 1` decrement of `excusable`, so the multiplicity bound of amendment item 2 goes. Result:
+     `34 passed; 0 failed`.
+   - M3 replaces the new "carrier tag left in" by-line block (`if (carriers.exif && carriers.exif_plain) || ...`) with
+     `if false`, so amendment item 3 goes. Result: `34 passed; 0 failed`.
+   - What M1 lets through, with my own inputs (below) run through the mutated judge: a plain block and a carrier that
+     print the identical `(group, tag, value)` (`a3`, `a3c`, `a4c`). Dropping the plain block gives 0 failures under
+     M1. With the committed judge it gives 1 failure (`kept tag missing IFD0:Make=SameCam`, and the same for
+     `XMP-xmp:CreatorTool=SameTool`).
+   - What M3 lets through: a carrier left in beside a plain block. On `a1`, "output = input" names
+     `carrier tag left in IFD0:Make=CarrierCam` only through that block. On `png-exif-and-raw-exif` (no GPS) nothing
+     else would catch `IFD0:Make=RawCam` left in under `gps`.
+   - For contrast, M5 (the group-level rule restored) is red: both new red-proofs fail. M4 (the "no carriers section"
+     failure removed) survives too. That is harmless, because `expected_sections` already requires the section on
+     every carrier fixture.
+   - Suggested fix: two in-memory red-proofs with controls.
+     - (i) A plain block and a carrier that print the same line: the `a3` shape (`eXIf` Make `SameCam`, then a
+       raw-profile Exif with Make `SameCam`; ExifTool prints the line twice), or an in-memory plant on
+       `png-exif-and-raw-exif`. Both lines dropped must be red "kept tag missing", and one dropped must pass.
+     - (ii) `png-exif-and-raw-exif` under `gps` with `IFD0:Make=RawCam` put back into the output must be red
+       "carrier tag left in".
+2. **(L) The line-level model assumes ExifTool's reading is additive. When a carrier comes before the plain block, it
+   is not, and the judge is inverted.**
+   - The amendment reads the carriers-only file as "what the carriers contribute". With a raw-profile Exif carrier
+     *before* a plain `eXIf`, ExifTool reads only the carrier's IFD0 in context. It prints
+     `Warning IFD0 pointer references previous IFD0 directory`, and the plain block's tags are absent from the input
+     reading.
+   - `b1` (carrier `CarrierCam` first, plain `VerifyCam`/`VerifyModel` + GPS second):
+     - the correct strip under `gps` is **red** (`kept value changed IFD0:Make=VerifyCam`,
+       `phantom tag IFD0:Model=VerifyModel`);
+     - an over-cut (all `IFD0` lines dropped) is **green** (0 failures).
+   - `a3b` (the same shape, identical values) behaves the same way: genuine red (`carrier tag left in`), over-cut green.
+   - Exposure today is none:
+     - the two corpus fixtures with a carrier and a plain block of the same family (`png-exif-and-raw-exif`,
+       `png-xmp-and-raw-xmp`) put the plain block first, and their readings are additive (checked with ExifTool on
+       the dumped bytes and their carriers-only files);
+     - no corpus WebP has a plain `EXIF`/`XMP ` beside a carrier row;
+     - a correct writer is red on this shape, so such a fixture cannot be added silently.
+   - `the_carriers_reading_prints_nothing_the_input_does_not` checks only that the carriers reading is a
+     sub-multiset of the input, so it does not see this.
+   - Suggested fix (architect's choice):
+     - add a fixture-set invariant: on judged lines, the input reading equals the carriers reading plus the reading
+       of the input with the carrier chunks removed. A non-additive fixture then fails loudly instead of inverting the
+       judge;
+     - or record the limit in DEC-023 next to the (c) converse limit.
+
+**Evidence per item**
+
+1. **Item 1 (M), exception (a) line-level: fixed, matches the amendment.**
+   - Code against the amendment:
+     - `excusable` is the multiset of judged `## carriers` lines. A missing line is excused only while its
+       `(group, tag, value)` count is above 0, and only if the fixture `scan`s as holding a carrier (`carrier_read` is
+       empty otherwise).
+     - The old `derived` `Composite:GPS*` clause is gone. A `Composite:GPS*` line is excused only through
+       `excusable`, so only when the carriers section prints it.
+     - "Carrier tag left in" with a plain block of the same family fails when `n_out > n_in - n_car`.
+     - A carrier fixture judged with no section fails: on `a1`, `no carriers section` gives
+       `the fixture holds a carrier and the record has no carriers section`.
+   - Carrier typing is independent of `src/`:
+     - `PngKind`/`png_kind`, `PNG_SKELETON` (14), `WEBP_SKELETON` (6), `png_chunks`/`webp_chunks` and `webp_rows` live
+       in `tests/support/i3_records.rs`.
+     - `webp_carriers.rs` and `webp_shapes.rs` import nothing from `exif_core`. `i3_records` imports only `Category`
+       and `StripPolicy`/`StripSpec`, for `policies()`.
+   - `carriers_only` keeps exactly the skeleton and the carriers. My own Python chunk walk of the dumped files:
+     `png-exif-and-raw-exif` `[IHDR, eXIf, tEXt(Raw profile type exif), IDAT, IEND]` becomes
+     `[IHDR, tEXt(Raw profile type exif), IDAT, IEND]`, and `png-xmp-and-raw-xmp` likewise drops only the plain
+     `iTXt(XML:com.adobe.xmp)`.
+   - My attack, rebuilt fresh: Python builder and Rust harness in the session scratchpad, calling the committed
+     `scan`, `carriers_only` and `judge` on my own inputs, stripped by `exif_core::strip`, read by ExifTool 13.55.
+     - `a1`: plain `eXIf` (`VerifyCam`, `VerifyModel`, GPS N 10) plus a raw-profile Exif zTXt (`CarrierCam`). The
+       genuine strip under `gps` and `gps_and_device` gives 0 failures. With `IFD0` dropped it is red:
+       `kept tag missing IFD0:Make=VerifyCam`, `IFD0:Model=VerifyModel`.
+     - `a2`: plain XMP `iTXt` plus a raw-profile XMP `tEXt`. With `XMP*` dropped it is red:
+       `kept tag missing XMP-xmp:CreatorTool=PlainTool`, `XMP-xmp:Label=PlainLabel`.
+   - Further attacks:
+     - identical lines, where the multiplicity decides (`a3` Exif, `a3c` XMP, `a4c` WebP `XMP ` + `_PMX`): genuine 0
+       failures, plain dropped red;
+     - WebP `EXIF` + `IDIT` (`a4`) and WebP `XMP ` + `_PMX` (`a4b`): genuine 0 failures, plain dropped red;
+     - a malformed carrier (`a5`, raw-profile length field corrupted): ExifTool still prints its line in both
+       readings, and the judge is right;
+     - an `EXIF` nested in `ANMF` beside an `IDIT` (`a6`): ExifTool reads neither nested block, so there is no
+       difference;
+     - a carrier before the plain block: punch item 2.
+   - Records are honest:
+     - `git diff fef653a 34008cc -- tests/oracle-fixtures` gives 36 files, +634 −0, 36 hunks: 35 files gain one
+       `## carriers` hunk, and `png-xmp-and-raw-xmp.txt` is new (192 lines);
+     - 36 records hold `## carriers`, always as the second section;
+     - re-record into a `git archive 34008cc` scratch repo (`cargo run --release --example oracle_record`, own
+       `CARGO_TARGET_DIR`) printed `wrote 239 PNG and WebP strip records`, rc 0, and `git status --porcelain` was
+       empty, so the records are byte-equal.
+   - Red first: `git archive c105798` with its own `CARGO_TARGET_DIR`. Both
+     `comparator_is_red_when_a_plain_{exif_block,xmp_packet}_is_dropped_beside_a_carrier` FAILED at the red
+     assertions (lines 917 and 955) with `[]`, after their controls passed.
+   - Bounds: `assert_judge_holds` has lower bounds only (sections ≥2,500, removable sections ≥590, removable tags
+     ≥2,400, carrier ≥670, whole block ≥350, residual ≥24), no upper bounds.
+     - They guard against vacuity, and they are honest against the stated 677/354/24.
+     - They cannot see a loosening, since group-level would raise the counts. That is covered by the two red-proofs
+       (M5 red), not by the bounds.
+     - Upper bounds are not needed given those red-proofs. Punch item 1 covers the two guards nothing pins.
+2. **Item 2 (L), ICC in the AC11 grid: fixed.**
+   - `grid_png` gains `iCCP` and `grid_webp` gains `ICCP` with `FLAG_ICC`. `Icc` is in `want_present`.
+   - The grid has `Icc` in `removed` only for `Everything`, never in `kept_unread`. The explicit assertion is `kept`
+     for the four other presets and `removed` for `everything`.
+   - That matches DEC-009: the table row `Icc | | | | | removed`, rule 3 (`All` keeps `Icc`), and clarification 1
+     (`may_hold(Icc)` is empty).
+3. **Item 3 (L), README: fixed.** The sentence now lists `TimeStamp` among the timestamps and `Make` and `Model` as
+   camera model. That matches DEC-020 amendment (2026-11-24) item 3 and `TEXT_KEYWORDS` in `src/audit/category.rs`.
+4. **No regressions.**
+   - `git diff --stat fef653a 34008cc -- src fuzz Cargo.toml Cargo.lock` is empty.
+   - The differential counts come from my own Python over the committed records: the 174 = all records minus
+     `png-carrier-*`, `png-kw-*`, `webp-row-*`, `png-cabx-jumbf` and the three added shapes. Pairs are
+     `everything`/`exiftool:all` and `gps`/`exiftool:gps:all`, compared as multisets without File/System/ExifTool.
+   - At `34008cc` and at `fef653a` alike: identical 157, key level 86, value level 34, outcome differences 41, both
+     refuse 30.
+   - The per-class split (D1 72, D2 2, D3 7, D4 4, D5 1; D4 3, D6 31) is held by the pinned `DIFFERENCES`. The only
+     change to them is one D3 entry for `png-xmp-and-raw-xmp`, which is not one of the 174. The differential tests
+     pass at the gate.
+   - Gates on rustc 1.90.0, clippy 0.1.90 (1159e78c47), in the worktree at `34008cc`:
+     - `just lint`, `just lint-no-allow`, `just forbid-unsafe` and `just validate`: rc 0 each.
+     - `DIAMOND_EXIF_REQUIRE_ORACLE=1 just test`: rc 0. 41 `test result: ok` lines, 1,535 passed, 0 failed, 20
+       ignored, no SKIP.
+     - `just mutation-oracle`: rc 0, 67 + 42 + 43 passed, 1 ignored each.
+     - `writer_mutant` W1 to W4: each `control digest equal true; strip Ok true; replay red true; live red true`. The
+       live reds:
+       - W1 `png-carrier-tXMP under gps: carrier tag left in XMP-dc:Creator=Zed`;
+       - W2 `webp-row-05-seal under gps: carrier tag left in XML-dc:Creator`;
+       - W3 `png-kw-04-copyright under all_pii: kept tag missing PNG:Copyright=SweepCopyright`;
+       - W4 `webp-row-22-c2pa under all: kept tag missing JUMBF:JUMDLabel=c2pa`.
+     - No fuzz run, so `fuzz/Cargo.lock` was untouched. `git status` afterwards showed only this handoff. No
+       background process is left.
+
+Scratch apparatus (outside the repo, session scratchpad `r2/`): `scripts/build.py` (my inputs `a1`–`a6`, `b1`–`b3`),
+`attack/tests/zz_verify_attack.rs` (a harness over the committed judge, plus the M1/M3/M4/M5 mutants applied to a
+scratch copy only), `scripts/diffcount.py`, and the `tip/` and `red/` archives.
 
 ### Cost self-report
 
