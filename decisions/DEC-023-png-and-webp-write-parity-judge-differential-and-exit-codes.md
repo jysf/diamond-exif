@@ -134,3 +134,14 @@ This amendment closes HANDOFF-091 punch item 1 (M). As built, exception (a) excu
 4. **Red-proof.** Build a PNG with a plain `eXIf` and a raw-profile Exif carrier. Strip it under `gps`, then delete the plain block's `IFD0` lines from the reading. The judge must fail with "kept tag missing". The same holds for XMP: a plain packet plus a raw-profile XMP carrier.
 
 The design counts over the 174 oracle fixtures do not change. Rule 4's differential is untouched. The judge's exception-use counts may change, and the handback states the new ones.
+
+## Amendment (2026-11-26, SPEC-039 verify round 2): line-level exception (a) requires readings that add up
+
+This closes HANDOFF-091 round-2 punch item 2 (L). The line-level exception (a) assumes that ExifTool's reading of a file is the sum of what its carriers print and what the rest of the file prints. That fails when a raw-profile Exif carrier comes before a plain `eXIf`. ExifTool then reports `IFD0 pointer references previous IFD0 directory` and hides the plain block. The judge would fail a correct strip and pass an over-cut. No fixture has that shape today. This amendment makes the assumption checked instead of silent:
+
+1. **A third reading.** For every fixture that holds a carrier, the record also gains a `## no-carriers` section. It is ExifTool's reading of a file the test builds from the fixture with the carrier chunks removed and everything else kept. The carrier typing is the same as for `## carriers`. Replay reads the section and the live run re-reads it.
+2. **The additivity check.** On the lines in the groups exception (a) can excuse (the Exif and XMP/XML families and `Composite:GPS*`), the multiset of `## input` lines must equal the multiset of `## carriers` lines plus the multiset of `## no-carriers` lines. The comparison is on `(group, tag, value)`. Skeleton and structure lines are not compared.
+3. **What a failure means.** A fixture that fails the check is one where the readings interfere. The judge cannot excuse lines on it. The fixture-set test fails and names the fixture. Such a fixture needs its own rule, which means another amendment. Neither the check nor the judge may be loosened to make it pass.
+4. **Red-proof.** A carrier-before-plain-block PNG built in the test (the verifier's `b1` shape) must fail the check. Both corpus fixtures that pair a plain block with a carrier must pass it.
+
+This adds to the line-level amendment above and changes none of its rules.
