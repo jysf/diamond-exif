@@ -1307,6 +1307,29 @@ fn the_additivity_check_is_red_on_readings_that_do_not_add_up() {
     assert!(f.iter().any(|m| m.contains("IFD0:Make=VerifyCam")), "{f:?}");
 }
 
+#[test]
+fn the_additivity_check_compares_a_judged_line_outside_the_exif_and_xml_groups() {
+    // `ID3v2_3:Artist` is judged (Authorship), so exception (a) can excuse it,
+    // but it is in neither the Exif nor the XMP/XML family. In memory, as the
+    // verifier's round-3 punch item: the input prints it once, the carriers
+    // reading once, the no-carriers reading once more.
+    let artist = || line("ID3v2_3", "Artist", "Someone");
+    let make = || line("IFD0", "Make", "SameCam");
+    let input = vec![make(), artist()];
+    let car = vec![make()];
+    // Control: the readings add up.
+    let mut plain = vec![artist()];
+    assert!(i3_judge::additivity_failures(&input, &car, &plain).is_empty());
+    // Red: the same readings but for one more print of the Artist line.
+    plain.push(artist());
+    let f = i3_judge::additivity_failures(&input, &car, &plain);
+    assert!(
+        f.iter().any(|m| m.contains("ID3v2_3:Artist=Someone")),
+        "{f:?}"
+    );
+    println!("additivity red (ID3v2_3): {}", f.first().cloned().unwrap_or_default());
+}
+
 /// The verifier's `b1` shape: a raw-profile Exif carrier first, a plain
 /// `eXIf` second.
 fn carrier_before_plain_exif() -> Vec<u8> {
