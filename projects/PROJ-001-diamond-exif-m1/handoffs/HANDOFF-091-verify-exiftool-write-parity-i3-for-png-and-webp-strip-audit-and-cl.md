@@ -857,6 +857,7 @@ Implementer (claude-sonnet-5-5) on `feat/spec-039-png-webp-write-parity-build`, 
   - Stop 1: the excuse path's eligibility was `judged`, not `judged || xml_group` as the first amendment wording said. `XML*` and `SEAL*` lines are not `judged` and are never excused. The architect corrected DEC-023 (`f9aed69`).
   - Stop 2: the by-line left-in check does arithmetic with the carriers reading only through `carrier_judged`. The scan for a carrier XML block with no plain block reads the output alone. So the set the judge uses with the carriers reading is `judged` only. The architect ruled option A and rewrote the amendment (`9e37e8f`).
 - **Red first** (`a96af47`): `the_additivity_check_compares_a_judged_line_outside_the_exif_and_xml_groups`, in memory. The input prints `ID3v2_3:Artist=Someone` once, the carriers reading once (no Artist), the no-carriers reading once more.
+  - *Correction (2026-11-26, fix round 4):* the sentence above is wrong about the readings. The test builds `input = [IFD0:Make=SameCam, ID3v2_3:Artist=Someone]` and `carriers = [IFD0:Make=SameCam]`, so the carriers reading prints no Artist. Control: no-carriers `[Artist]`, which adds up. Red: no-carriers `[Artist, Artist]`, so input 1 != 0 + 2. The test comment is fixed in `da8f4f7`.
   - Control: readings that add up, passes.
   - Red against the old `additive_line`: the second assertion failed with `[]` (no failure reported).
 - **Fix** (`8c9c89a`): `additivity_failures` filters by `judged`. `additive_line` is removed. Doc comments on `judged` and `additivity_failures` state the single shared line set. Nothing under `src/` changed.
@@ -976,6 +977,25 @@ coverage gap that predates this fix. Item 2 is a wrong test comment.
 - **Process.** I started and waited on only my own processes. The gate run was PID 87389, waited on by PID. No
   background processes are left. Scratch copies are under the session scratchpad. Nothing was changed outside this
   file.
+
+### Fix round 4 (2026-11-26)
+
+Implementer (claude-sonnet-5-5) on `feat/spec-039-png-webp-write-parity-build`, from `d13e7c2`. Scope: both round-4 punch items (L, L).
+
+- **Item 1: two named predicates** (DEC-023 amendment "XML and SEAL carrier lines are checked as left in beside a plain block").
+  - The excuse predicate `judged` is unchanged, and `excusable` is still built from `judged` lines only. `XML*` and `SEAL*` lines are never excused.
+  - New carrier-check predicate `carrier_checked(l) = judged(l) || xml_group(&l.group)`, without Warning and Error lines. It is used in two places: the by-line "carrier tag left in" check beside a plain block (`carrier_ms`, and the input and output counts it compares against, are now built with it) and `additivity_failures`.
+  - The module header and the doc comments on `judged`, `carrier_checked` and `additivity_failures` no longer claim XML/SEAL lines are caught only by the output-only scan, or that carrier tags are always checked.
+- **Red first** (`da8f4f7`): two tests, a PNG with a plain `iTXt` `XML:com.adobe.xmp` packet plus a `seAl` chunk (`<a><b>Zed</b></a>`), both chunk orders, policies `gps` and `all`.
+  - `comparator_is_red_when_a_seal_line_is_put_back_beside_a_plain_xmp_packet`: live, the library's real `strip` output read by ExifTool; skips loudly without ExifTool (`live_gate`). The prior reading also checks that the three readings add up.
+  - `..._in_memory`: the same shape with the readings given by hand, so no ExifTool is needed.
+  - Against the old judge, the control passed and the doctored output judged clean (`[]`): both tests failed at the red assertion (`gps seal_first=true: []`).
+- **Fix** (`506f2fb`): `tests/support/i3_judge.rs` only.
+- **Red lines after the fix**, live and replay (in-memory), `seal_first` true and false, `gps` and `all`: `seal-probe under <policy>: carrier tag left in SEAL:AB=Zed`. All eight (four live, four in-memory) print that. The controls (real output, and the in-memory output without the SEAL line) pass.
+- **Item 2:** the comment on `the_additivity_check_compares_a_judged_line_outside_the_exif_and_xml_groups` now says what is built (`da8f4f7`, in the same commit as the red tests). The wrong sentence in "Fix round 3" above carries a dated correction note.
+- **Nothing else moved:** `the_readings_add_up_on_every_carrier_fixture` passes on all 36, replay and live. Judge counts, replay and live: (a) 677, (b) 354, (c) 24; 2583 sections judged, 598 with a removable tag (2408 tags). `git diff -- tests/oracle-fixtures` is empty. Nothing under `src/` changed; no new dependencies.
+- **Gates** at the final commit: `just lint`, `just lint-no-allow`, `just forbid-unsafe` and `just validate` exit 0. `DIAMOND_EXIF_REQUIRE_ORACLE=1 just test` exits 0: 41 result lines, 1,543 passed, 0 failed (1,541 before, plus the two new tests). `just mutation-oracle` exits 0: 67 + 42 + 43 passed.
+- **Deviations:** the item 2 comment fix went into the red-test commit rather than its own commit. `just oracle-record` was run twice by mistake (a stray first invocation in the same command line, output discarded); both completed and wrote 239 records, and `git status` and `git diff -- tests/oracle-fixtures` show no change. The gate commit for this entry is the handoff-only commit that follows `506f2fb`.
 
 ### Cost self-report
 
