@@ -145,3 +145,11 @@ This closes HANDOFF-091 round-2 punch item 2 (L). The line-level exception (a) a
 4. **Red-proof.** A carrier-before-plain-block PNG built in the test (the verifier's `b1` shape) must fail the check. Both corpus fixtures that pair a plain block with a carrier must pass it.
 
 This adds to the line-level amendment above and changes none of its rules.
+
+## Amendment (2026-11-26, SPEC-039 verify round 3): the additivity check compares every line exception (a) can excuse
+
+This closes HANDOFF-091 round-3 punch item 1 (L). Item 2 of the previous amendment listed the compared groups as "the Exif and XMP/XML families and `Composite:GPS*`". That list was narrower than what exception (a) can excuse. Exception (a) excuses any judged line that the `## carriers` reading prints, and the judge's categorised groups include `ID3v2_3`, maker-note groups such as `Olympus`, the PNG text tags, `ICC*` and `JUMBF`/`JSON`. On the committed records, 3 excusable lines were never compared: `ID3v2_3:Artist` twice and `Olympus:Model` once.
+
+1. **The compared set is the excusable set.** The check now compares every line the judge classifies (`judged`), plus the XMP/XML family. That is exactly the set of lines exception (a) can excuse. It never compares more than that set and never less. Warning and Error lines are still excluded. The judge never excuses them, and the `b1` interference shows up in the hidden lines.
+2. **One definition, shared.** The check and exception (a) take their line set from a single shared predicate, so the two cannot drift apart again.
+3. **Measured beforehand.** The round-3 verifier ran the wider set on the 36 carrier fixtures and all of them still add up. No record changes.
