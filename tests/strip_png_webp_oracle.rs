@@ -122,6 +122,7 @@ fn expected_sections(fx: &Fixture) -> Vec<String> {
     // A fixture that holds a carrier has its carriers' own reading next.
     if i3_records::carriers_only(fx.ext, &fx.bytes).is_some() {
         want.push("carriers".to_string());
+        want.push("no-carriers".to_string());
     }
     for (name, policy) in i3_records::policies() {
         if exif_core::strip(&fx.bytes, policy).is_ok() {
@@ -1070,6 +1071,69 @@ fn comparator_is_red_when_a_plain_xmp_packet_is_dropped_beside_a_carrier() {
 }
 
 #[test]
+fn comparator_is_red_when_the_excuse_outruns_the_carriers_multiplicity() {
+    // A plain block and a carrier that print the identical line: the input
+    // has `IFD0:Make=SameCam` twice, the `## carriers` reading once. The
+    // fixture bytes are the plain-plus-carrier PNG; the readings are given.
+    let bytes = fixture_bytes(EXIF_PAIR);
+    let same = line("IFD0", "Make", "SameCam");
+    let run = |output: Vec<Line>| {
+        judge(
+            "same-line",
+            "png",
+            &bytes,
+            "gps",
+            &[same.clone(), same.clone()],
+            Some(&[same.clone()]),
+            &output,
+        )
+        .failures
+    };
+    // Control: the carrier's copy is gone, the plain block's stays.
+    let f = run(vec![same.clone()]);
+    assert!(f.is_empty(), "{f:?}");
+    // Both copies gone: the carrier excuses one, the second is a plain
+    // block's line that went missing.
+    let f = run(vec![]);
+    assert!(
+        contains_all(&f, &["same-line", "kept tag missing", "IFD0:Make=SameCam"]),
+        "{f:?}"
+    );
+    println!(
+        "AC4 (a) multiplicity red: {}",
+        f.first().cloned().unwrap_or_default()
+    );
+}
+
+#[test]
+fn comparator_is_red_when_a_carrier_tag_is_put_back_beside_a_plain_block() {
+    // Control: the genuine output.
+    assert!(judged_with(EXIF_PAIR, "gps", &|_, _| {}).is_empty());
+    // The carrier's `IFD0:Make=RawCam` is left in the output. The input
+    // prints it, so nothing is missing or phantom: only the by-line check on
+    // the carriers' reading sees it.
+    let f = judged_with(EXIF_PAIR, "gps", &|out, _| {
+        out.push(line("IFD0", "Make", "RawCam"));
+    });
+    assert!(
+        contains_all(
+            &f,
+            &[
+                EXIF_PAIR,
+                "under gps",
+                "carrier tag left in",
+                "IFD0:Make=RawCam"
+            ]
+        ),
+        "{f:?}"
+    );
+    println!(
+        "AC4 (a) carrier left in red: {}",
+        f.first().cloned().unwrap_or_default()
+    );
+}
+
+#[test]
 fn comparator_is_red_when_the_whole_block_exception_is_claimed_under_all_pii() {
     // Control: the output of `all` (the whole `eXIf` gone) judged as `all`.
     assert!(judged_as(
@@ -1186,4 +1250,119 @@ fn comparator_is_red_when_one_output_byte_is_flipped_against_the_digest() {
         "AC7 (ix) red: {}",
         [e.clone()].first().cloned().unwrap_or_default()
     );
+}
+
+// ── DEC-023 amendment of verify round 2: the readings must add up ───────────
+
+/// Fixtures whose `## input` reading is not `## carriers` plus
+/// `## no-carriers` on the lines exception (a) can excuse: one entry each,
+/// naming the fixture and the lines.
+fn non_additive(source: &dyn Fn(&Fixture) -> Record) -> Vec<String> {
+    let mut bad = Vec::new();
+    let mut checked = 0;
+    for fx in fixtures() {
+        let rec = source(fx);
+        let Some(c) = rec.section("carriers") else {
+            continue;
+        };
+        checked += 1;
+        let none = rec
+            .section("no-carriers")
+            .unwrap_or_else(|| panic!("{}: no `## no-carriers` section", fx.name));
+        let input = rec.section("input").expect("input");
+        for f in i3_judge::additivity_failures(&input.lines, &c.lines, &none.lines) {
+            bad.push(format!("{}: {f}", fx.name));
+        }
+    }
+    assert_eq!(checked, 36, "fixtures that hold a carrier");
+    bad
+}
+
+#[test]
+fn the_readings_add_up_on_every_carrier_fixture() {
+    let bad = non_additive(&committed);
+    assert!(bad.is_empty(), "readings do not add up: {bad:#?}");
+    if live_gate("the_readings_add_up_on_every_carrier_fixture (live)") {
+        let bad = non_additive(&live);
+        assert!(bad.is_empty(), "readings do not add up (live): {bad:#?}");
+    }
+}
+
+#[test]
+fn the_additivity_check_is_red_on_readings_that_do_not_add_up() {
+    // In memory (replay and live): the input prints the carrier's line and
+    // nothing of the plain block, as ExifTool does when the carrier comes
+    // first.
+    let car = vec![line("IFD0", "Make", "CarrierCam")];
+    let plain = vec![
+        line("IFD0", "Make", "VerifyCam"),
+        line("IFD0", "Model", "VerifyModel"),
+    ];
+    // Control: a reading that adds up.
+    let mut sum = car.clone();
+    sum.extend(plain.clone());
+    sum.push(line("PNG", "ImageWidth", "1")); // a structure line is not compared
+    assert!(i3_judge::additivity_failures(&sum, &car, &plain).is_empty());
+    let f = i3_judge::additivity_failures(&car, &car, &plain);
+    assert!(f.iter().any(|m| m.contains("IFD0:Make=VerifyCam")), "{f:?}");
+}
+
+/// The verifier's `b1` shape: a raw-profile Exif carrier first, a plain
+/// `eXIf` second.
+fn carrier_before_plain_exif() -> Vec<u8> {
+    use oracle_tiff as t;
+    let tiff = |entries: &[(u16, &str)]| {
+        let ents: Vec<t::Ent> = entries
+            .iter()
+            .map(|(tag, text)| t::ascii(*tag, &[text.as_bytes(), b"\0"].concat()))
+            .collect();
+        t::assemble(false, &[t::ifd(ents)])
+    };
+    let raw = [&b"Exif\0\0"[..], &tiff(&[(t::T_MAKE, "CarrierCam")])].concat();
+    let carrier = oracle_png::text(
+        b"Raw profile type exif",
+        &oracle_png::raw_profile_body("exif", &raw),
+    );
+    let plain = oracle_png::exif_chunk(&tiff(&[
+        (t::T_MAKE, "VerifyCam"),
+        (t::T_MODEL, "VerifyModel"),
+    ]));
+    oracle_png::png(&[carrier, plain], &[], &[])
+}
+
+#[test]
+fn the_additivity_check_is_red_on_a_carrier_before_a_plain_exif_block() {
+    if !live_gate("the_additivity_check_is_red_on_a_carrier_before_a_plain_exif_block") {
+        return;
+    }
+    let read = |label: &str, bytes: &[u8]| {
+        i3_records::read_bytes(label, "png", bytes)
+            .expect("exiftool reads")
+            .0
+    };
+    let bytes = carrier_before_plain_exif();
+    let carriers = i3_records::carriers_only("png", &bytes).expect("holds a carrier");
+    let none = i3_records::no_carriers("png", &bytes).expect("holds a carrier");
+    let f = i3_judge::additivity_failures(
+        &read("b1-input", &bytes),
+        &read("b1-carriers", &carriers),
+        &read("b1-no-carriers", &none),
+    );
+    assert!(f.iter().any(|m| m.contains("IFD0:Make=VerifyCam")), "{f:?}");
+    println!(
+        "additivity red (b1): {}",
+        f.first().cloned().unwrap_or_default()
+    );
+    // Controls: the two corpus pairs, plain block first, pass (also asserted
+    // for every fixture by `the_readings_add_up_on_every_carrier_fixture`).
+    for name in [EXIF_PAIR, XMP_PAIR] {
+        let fx = fixture(name);
+        let rec = committed(fx);
+        let f = i3_judge::additivity_failures(
+            &rec.section("input").expect("input").lines,
+            &rec.section("carriers").expect("carriers").lines,
+            &rec.section("no-carriers").expect("no-carriers").lines,
+        );
+        assert!(f.is_empty(), "{name}: {f:?}");
+    }
 }

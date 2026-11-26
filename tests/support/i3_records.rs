@@ -550,6 +550,13 @@ pub fn carriers_only(ext: &str, bytes: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
+/// The file ExifTool reads for the `## no-carriers` section (DEC-023, amendment
+/// of verify round 2). Stub.
+pub fn no_carriers(ext: &str, bytes: &[u8]) -> Option<Vec<u8>> {
+    let _ = (ext, bytes);
+    None
+}
+
 // ── making a record ─────────────────────────────────────────────────────────
 
 fn push_section(out: &mut String, name: &str, extra: &[String], stderr: &[String], lines: &[Line]) {

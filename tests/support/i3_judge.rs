@@ -458,3 +458,21 @@ pub fn judge(
     v.failures.dedup();
     v
 }
+
+/// The groups exception (a) can excuse a line in: the Exif and XMP/XML
+/// families and `Composite:GPS*`. Warnings and errors are not compared.
+fn additive_line(l: &Line) -> bool {
+    todo_stub(l)
+}
+
+fn todo_stub(_l: &Line) -> bool {
+    false
+}
+
+/// DEC-023 amendment of verify round 2: on the lines exception (a) can
+/// excuse, `input` must equal `carriers` plus `no_carriers` as multisets of
+/// `(group, tag, value)`. Returns one message per line whose counts differ.
+pub fn additivity_failures(input: &[Line], carriers: &[Line], no_carriers: &[Line]) -> Vec<String> {
+    let _ = (input, carriers, no_carriers, additive_line);
+    Vec::new()
+}
