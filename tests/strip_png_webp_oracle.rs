@@ -1311,8 +1311,11 @@ fn the_additivity_check_is_red_on_readings_that_do_not_add_up() {
 fn the_additivity_check_compares_a_judged_line_outside_the_exif_and_xml_groups() {
     // `ID3v2_3:Artist` is judged (Authorship), so exception (a) can excuse it,
     // but it is in neither the Exif nor the XMP/XML family. In memory, as the
-    // verifier's round-3 punch item: the input prints it once, the carriers
-    // reading once, the no-carriers reading once more.
+    // verifier's round-3 punch item. What the test builds:
+    //   input:       [IFD0:Make=SameCam, ID3v2_3:Artist=Someone]
+    //   carriers:    [IFD0:Make=SameCam]  (no Artist)
+    //   control:     no-carriers [Artist]          -> adds up
+    //   red:         no-carriers [Artist, Artist]  -> input 1 != 0 + 2
     let artist = || line("ID3v2_3", "Artist", "Someone");
     let make = || line("IFD0", "Make", "SameCam");
     let input = vec![make(), artist()];
@@ -1320,7 +1323,7 @@ fn the_additivity_check_compares_a_judged_line_outside_the_exif_and_xml_groups()
     // Control: the readings add up.
     let mut plain = vec![artist()];
     assert!(i3_judge::additivity_failures(&input, &car, &plain).is_empty());
-    // Red: the same readings but for one more print of the Artist line.
+    // Red: the no-carriers reading prints the Artist line twice.
     plain.push(artist());
     let f = i3_judge::additivity_failures(&input, &car, &plain);
     assert!(
@@ -1390,5 +1393,134 @@ fn the_additivity_check_is_red_on_a_carrier_before_a_plain_exif_block() {
             &rec.section("no-carriers").expect("no-carriers").lines,
         );
         assert!(f.is_empty(), "{name}: {f:?}");
+    }
+}
+
+// ── XML and SEAL carrier lines beside a plain XMP packet (DEC-023, verify
+// round 4) ────────────────────────────────────────────────────────────────
+
+const SEAL_BODY: &[u8] = b"<a><b>Zed</b></a>";
+
+/// A PNG with a plain `iTXt` `XML:com.adobe.xmp` packet and a `seAl` carrier
+/// chunk, in either order.
+fn xmp_beside_seal(seal_first: bool) -> Vec<u8> {
+    let plain = oracle_png::itxt(oracle_png::XMP_KEYWORD, 0, &oracle_png::xmp_packet());
+    let seal = oracle_png::chunk(b"seAl", SEAL_BODY);
+    let chunks = if seal_first {
+        [seal, plain]
+    } else {
+        [plain, seal]
+    };
+    oracle_png::png(&chunks, &[], &[])
+}
+
+fn named_policy(name: &str) -> exif_core::policy::StripPolicy {
+    i3_records::policies()
+        .into_iter()
+        .find(|(n, _)| *n == name)
+        .unwrap_or_else(|| panic!("no policy {name}"))
+        .1
+}
+
+/// Judge `output` against `input` and `carriers` for the probe PNG; with
+/// `doctored`, the carrier's SEAL line is put back into the output first.
+fn judge_seal_probe(
+    bytes: &[u8],
+    policy: &str,
+    input: &[Line],
+    carriers: &[Line],
+    output: &[Line],
+    doctored: bool,
+) -> Vec<String> {
+    let mut out = output.to_vec();
+    if doctored {
+        let seal = carriers
+            .iter()
+            .find(|l| l.group.starts_with("SEAL"))
+            .expect("the carriers reading prints a SEAL line");
+        out.push(seal.clone());
+    }
+    judge(
+        "seal-probe",
+        "png",
+        bytes,
+        policy,
+        input,
+        Some(carriers),
+        &out,
+    )
+    .failures
+}
+
+#[test]
+fn comparator_is_red_when_a_seal_line_is_put_back_beside_a_plain_xmp_packet_in_memory() {
+    // The same shape with the readings given, so the guard holds without
+    // ExifTool: input = the plain packet's line and the SEAL line, carriers =
+    // the SEAL line, output = the plain packet's line (gps) or nothing (all).
+    let xmp = || line("XMP-xmp", "CreatorTool", "DiamondTool");
+    let seal = || line("SEAL", "AB", "Zed");
+    for seal_first in [true, false] {
+        let bytes = xmp_beside_seal(seal_first);
+        let input = vec![xmp(), seal()];
+        let car = vec![seal()];
+        for (policy, output) in [("gps", vec![xmp()]), ("all", vec![])] {
+            // Control: the carrier's line is gone.
+            let f = judge_seal_probe(&bytes, policy, &input, &car, &output, false);
+            assert!(f.is_empty(), "{policy} seal_first={seal_first}: {f:?}");
+            let f = judge_seal_probe(&bytes, policy, &input, &car, &output, true);
+            assert!(
+                contains_all(&f, &[policy, "carrier tag left in SEAL:AB=Zed"]),
+                "{policy} seal_first={seal_first}: {f:?}"
+            );
+            println!(
+                "SEAL red (replay, {policy}, seal_first={seal_first}): {}",
+                f.first().cloned().unwrap_or_default()
+            );
+        }
+    }
+}
+
+#[test]
+fn comparator_is_red_when_a_seal_line_is_put_back_beside_a_plain_xmp_packet() {
+    if !live_gate("comparator_is_red_when_a_seal_line_is_put_back_beside_a_plain_xmp_packet") {
+        return;
+    }
+    let read = |label: &str, bytes: &[u8]| {
+        i3_records::read_bytes(label, "png", bytes)
+            .expect("exiftool reads")
+            .0
+    };
+    for seal_first in [true, false] {
+        let bytes = xmp_beside_seal(seal_first);
+        let input = read("seal-input", &bytes);
+        let car_bytes = i3_records::carriers_only("png", &bytes).expect("holds a carrier");
+        let carriers = read("seal-carriers", &car_bytes);
+        let none_bytes = i3_records::no_carriers("png", &bytes).expect("holds a carrier");
+        let none = read("seal-no-carriers", &none_bytes);
+        assert!(
+            i3_judge::additivity_failures(&input, &carriers, &none).is_empty(),
+            "seal_first={seal_first}: the readings do not add up"
+        );
+        for policy in ["gps", "all"] {
+            let stripped = exif_core::strip(&bytes, named_policy(policy)).expect("strips");
+            let output = read("seal-output", stripped.bytes());
+            assert!(
+                !output.iter().any(|l| l.group.starts_with("SEAL")),
+                "{policy}: the library leaves a SEAL line: {output:?}"
+            );
+            // Control: the real output.
+            let f = judge_seal_probe(&bytes, policy, &input, &carriers, &output, false);
+            assert!(f.is_empty(), "{policy} seal_first={seal_first}: {f:?}");
+            // Red: the SEAL line put back.
+            let f = judge_seal_probe(&bytes, policy, &input, &carriers, &output, true);
+            assert!(
+                contains_all(&f, &[policy, "carrier tag left in SEAL:"]),
+                "{policy} seal_first={seal_first}: {f:?}"
+            );
+            println!(
+                "SEAL red (live, {policy}, seal_first={seal_first}): {}",
+                f.first().cloned().unwrap_or_default()
+            );
+        }
     }
 }
