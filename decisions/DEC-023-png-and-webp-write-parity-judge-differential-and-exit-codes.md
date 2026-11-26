@@ -114,3 +114,12 @@ Answers question `i3-differential-value-level-differences`. Rule 4 compares valu
 4. A value-level difference is pinned like a key-level one: it gives (fixture, pair, class, the exact tag lines on each side). It fails when unpinned, and a stale pin fails too. The consequence "review of D1 to D5" now reads "D1 to D6".
 
 The architect's design measurement left the values out. The build's harness found the gap, raised it as a question and did not re-pin anything. That is how the stop-and-report rule is meant to work.
+
+## Amendment (2026-11-26, SPEC-039 build): exception (c) covers its converse
+
+This answers question `i3-judge-exception-c-converse`. Rule 3 (c) excuses `Composite:GPS*` tags derived from XMP when they survive a preset that keeps `Xmp`. It now also covers the opposite direction. When a policy removes `Xmp` and the input's XMP has a GPS property, the `Composite:GPS*` tags ExifTool derives from that packet disappear with it. That is not a "kept tag missing" failure: a derived tag depends on its source, so the residual applies in both directions.
+
+1. **Where it applies:** the tag is in the `Composite` group, its name starts with `GPS`, the input's XMP has a GPS property, and the policy removes `Xmp`. Nowhere else.
+2. **Measured:** the two extra fixtures added in Part B, `png-xmp-plain-gps` and `webp-xmp-plain-gps`, under the Custom `xmp` policy give 6 uses (3 tags per fixture: `GPSLatitudeRef`, `GPSLongitudeRef`, `GPSPosition`). Exception (c) is used 24 times in all: 18 in the kept-XMP direction and these 6. None of the design's counts over the 174 oracle fixtures change.
+3. **Red-proof:** `comparator_is_red_when_exception_c_is_claimed_without_an_xmp_source`. The same missing `Composite:GPSLatitude` on a fixture whose GPS comes only from Exif stays red.
+4. **Stated limit:** the condition does not also require the input to have no Exif GPS. If a file has GPS in both Exif and XMP, a `Composite:GPS*` tag that should have stayed, derived from the kept Exif, would be excused when it goes missing under a policy that removes `Xmp`. No fixture has that shape. The `GPS:` group tags themselves are still checked as kept, so a lost Exif GPS block is caught directly. Revisit if a fixture is added that has GPS in both Exif and XMP.

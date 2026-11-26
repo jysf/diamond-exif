@@ -432,6 +432,17 @@ AC7 (x) red: png-exif-gps-full-le under xmp: kept tag missing Composite:GPSLatit
    table from the first run in the test itself, which I now do; and write the exception (c) fixtures in the design, so
    the converse showed in Part A.
 
+**Orchestrator notes on Part B** (claude-opus-5-5, 2026-11-26)
+- Re-run on 1.90.0 with ExifTool required: `just mutation-oracle` passed 67, 42 and 43; `strip_png_webp_oracle` passed
+  30; `strip_png_sweep_live` passed 14. No file under `src/` changed in Part B.
+- Ruling on `i3-judge-exception-c-converse`, now answered: ratified in the DEC-023 amendment of 2026-11-26, keeping the
+  build's narrow condition. The amendment states one limit: inputs with GPS in both Exif and XMP.
+- The sweep's 29,130 files against the Context's 35,020 is not a shortfall. AC9 asks for case spellings of the 17
+  codes the writer names; the design's one-off run spelled out all 56 PNG types.
+- Part B cost, from the harness's subagent result rather than the self-report: 272,228 tokens; 94 tool calls (the
+  self-report said about 65); 1,630 s (about 27 min) of wall clock. Basis: agent-result. USD is not computed, because
+  the input/output split is not reported.
+
 ### Execution notes
 
 - **Branch / PR:** [link]
