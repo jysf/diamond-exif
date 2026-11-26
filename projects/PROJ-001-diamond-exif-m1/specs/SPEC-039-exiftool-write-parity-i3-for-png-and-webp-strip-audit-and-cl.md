@@ -128,10 +128,20 @@ cost:
       duration_minutes: 20
       recorded_at: 2026-11-26
       notes: "Round-2 punch-list fix round, one subagent: both guards pinned, plus the no-carriers additivity check. The orchestrator transcribed the cost from the harness subagent result: 144,285 tokens, 46 tool calls, 1,209 s."
+    - cycle: verify
+      handoff: HANDOFF-091
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 191215
+      estimated_usd: null
+      duration_minutes: 19
+      recorded_at: 2026-11-26
+      notes: "Verify round 3, against 2f790d4, one subagent. The orchestrator transcribed the cost from the harness subagent result: 191,215 tokens, 79 tool calls, 1,159 s. Punch list of 1 item (L): the additivity check compares fewer groups than exception (a) can excuse (ID3v2_3, Olympus, PNG text, ICC, JUMBF/JSON are not compared)."
   totals:
-    tokens_total: 1641298
+    tokens_total: 1832513
     estimated_usd: 0.00
-    session_count: 6
+    session_count: 7
 ---
 
 # SPEC-039: ExifTool write parity (I3) for PNG and WebP strip, audit and CLI switch-over
