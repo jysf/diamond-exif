@@ -36,6 +36,14 @@ RIFF	AlphaIsUsed	0
 Composite	ImageSize	8 8
 Composite	Megapixels	6.4e-05
 Composite	GPSPosition	0 0
+## no-carriers
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
 ## gps
 # output: 44 9b58c96f182ec9d0
 RIFF	WebP_Flags	0

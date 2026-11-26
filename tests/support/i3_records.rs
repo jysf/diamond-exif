@@ -16,6 +16,8 @@
 //! <group> TAB <tag> TAB <value>      (ExifTool's reading of the input)
 //! ## carriers                        (only a fixture that holds a carrier:
 //! <lines>                             ExifTool's reading of `carriers_only`)
+//! ## no-carriers                     (the same fixtures: ExifTool's reading of
+//! <lines>                             `no_carriers`, the file less its carriers)
 //! ## <policy>                        (each recorded policy that strips)
 //! # output: <len> <fnv1a64>          (the bytes the reading was made from)
 //! <lines>
@@ -516,6 +518,21 @@ pub fn scan(ext: &str, bytes: &[u8]) -> Carriers {
 /// What is a carrier is typed here from DEC-021 clause 4 and DEC-022 clause 4
 /// (the same classification as [`scan`]); nothing is read from `src/`.
 pub fn carriers_only(ext: &str, bytes: &[u8]) -> Option<Vec<u8>> {
+    split_by_carrier(ext, bytes, true)
+}
+
+/// The file ExifTool reads for the `## no-carriers` section (DEC-023, amendment
+/// of verify round 2): `bytes` with the carrier chunks removed and everything
+/// else kept, in order and byte for byte (for a WebP the `RIFF` size is
+/// recomputed). `None` when the fixture holds no carrier. The carrier typing is
+/// that of [`carriers_only`].
+pub fn no_carriers(ext: &str, bytes: &[u8]) -> Option<Vec<u8>> {
+    split_by_carrier(ext, bytes, false)
+}
+
+/// The two halves of a file that holds a carrier. `carriers` true: the
+/// skeleton and the carrier chunks. False: every chunk that is not a carrier.
+fn split_by_carrier(ext: &str, bytes: &[u8], carriers: bool) -> Option<Vec<u8>> {
     if !scan(ext, bytes).any() {
         return None;
     }
@@ -527,7 +544,12 @@ pub fn carriers_only(ext: &str, bytes: &[u8]) -> Option<Vec<u8>> {
                 png_kind(ch.ty, ch.data),
                 PngKind::CarrierExif | PngKind::CarrierXml
             );
-            if skeleton || carrier {
+            let keep = if carriers {
+                skeleton || carrier
+            } else {
+                !carrier
+            };
+            if keep {
                 out.extend_from_slice(ch.raw);
             }
         }
@@ -537,7 +559,13 @@ pub fn carriers_only(ext: &str, bytes: &[u8]) -> Option<Vec<u8>> {
         for ch in webp_chunks(bytes) {
             let code4 = [ch.ty[0], ch.ty[1], ch.ty[2], ch.ty[3]];
             let skeleton = WEBP_SKELETON.iter().any(|t| code4 == **t);
-            if skeleton || !webp_rows(code4, ch.data).is_empty() {
+            let carrier = !webp_rows(code4, ch.data).is_empty();
+            let keep = if carriers {
+                skeleton || carrier
+            } else {
+                !carrier
+            };
+            if keep {
                 body.extend_from_slice(ch.raw);
             }
         }
@@ -548,13 +576,6 @@ pub fn carriers_only(ext: &str, bytes: &[u8]) -> Option<Vec<u8>> {
         out.extend_from_slice(&body);
         Some(out)
     }
-}
-
-/// The file ExifTool reads for the `## no-carriers` section (DEC-023, amendment
-/// of verify round 2). Stub.
-pub fn no_carriers(ext: &str, bytes: &[u8]) -> Option<Vec<u8>> {
-    let _ = (ext, bytes);
-    None
 }
 
 // ── making a record ─────────────────────────────────────────────────────────
@@ -588,6 +609,12 @@ pub fn record_text(fx: &Fixture, version: &str) -> Result<String, String> {
     if let Some(carriers) = carriers_only(fx.ext, &fx.bytes) {
         let (lines, stderr) = read_bytes(&format!("{}-carriers", fx.name), fx.ext, &carriers)?;
         push_section(&mut out, "carriers", &[], &stderr, &lines);
+    }
+    // The rest of the file, for the additivity check (DEC-023, amendment of
+    // verify round 2).
+    if let Some(rest) = no_carriers(fx.ext, &fx.bytes) {
+        let (lines, stderr) = read_bytes(&format!("{}-no-carriers", fx.name), fx.ext, &rest)?;
+        push_section(&mut out, "no-carriers", &[], &stderr, &lines);
     }
     for (name, policy) in policies() {
         let Ok(stripped) = exif_core::strip(&fx.bytes, policy) else {

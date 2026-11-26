@@ -462,17 +462,42 @@ pub fn judge(
 /// The groups exception (a) can excuse a line in: the Exif and XMP/XML
 /// families and `Composite:GPS*`. Warnings and errors are not compared.
 fn additive_line(l: &Line) -> bool {
-    todo_stub(l)
-}
-
-fn todo_stub(_l: &Line) -> bool {
-    false
+    l.tag != "Warning"
+        && l.tag != "Error"
+        && (exif_group(&l.group)
+            || xml_group(&l.group)
+            || (l.group == "Composite" && l.tag.starts_with("GPS")))
 }
 
 /// DEC-023 amendment of verify round 2: on the lines exception (a) can
 /// excuse, `input` must equal `carriers` plus `no_carriers` as multisets of
 /// `(group, tag, value)`. Returns one message per line whose counts differ.
 pub fn additivity_failures(input: &[Line], carriers: &[Line], no_carriers: &[Line]) -> Vec<String> {
-    let _ = (input, carriers, no_carriers, additive_line);
-    Vec::new()
+    let pick = |ls: &[Line]| {
+        let v: Vec<&Line> = ls.iter().filter(|l| additive_line(l)).collect();
+        multiset(&v)
+    };
+    let want = pick(input);
+    let mut have = pick(carriers);
+    for (k, n) in pick(no_carriers) {
+        *have.entry(k).or_insert(0) += n;
+    }
+    let mut keys: Vec<&(String, String, String)> = want.keys().chain(have.keys()).collect();
+    keys.sort();
+    keys.dedup();
+    keys.into_iter()
+        .filter_map(|k| {
+            let (a, b) = (
+                want.get(k).copied().unwrap_or(0),
+                have.get(k).copied().unwrap_or(0),
+            );
+            (a != b).then(|| {
+                format!(
+                    "{}:{}={}: the input prints it {a} time(s), the carriers and no-carriers \
+                     readings together {b}",
+                    k.0, k.1, k.2
+                )
+            })
+        })
+        .collect()
 }

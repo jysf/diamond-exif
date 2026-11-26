@@ -26,6 +26,18 @@ PNG	Interlace	0
 IFD0	Make	RawCam
 Composite	ImageSize	1 1
 Composite	Megapixels	1e-06
+## no-carriers
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
 ## gps
 # output: 138 07f3a6b0649633ec
 PNG	ImageWidth	1

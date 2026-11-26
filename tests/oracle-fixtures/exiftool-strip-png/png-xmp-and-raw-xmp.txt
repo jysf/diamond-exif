@@ -25,6 +25,17 @@ PNG	Interlace	0
 XMP-xmp	CreatorTool	RawTool
 Composite	ImageSize	1 1
 Composite	Megapixels	1e-06
+## no-carriers
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+XMP-xmp	CreatorTool	DiamondTool
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
 ## gps
 # output: 436 0881c28b02b6dfb0
 PNG	ImageWidth	1
