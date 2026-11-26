@@ -515,20 +515,24 @@ fn rich_webp() -> Vec<u8> {
     ])
 }
 
-/// A PNG with Exif GPS, XMP, a `Copyright` text and a `caBX` (C2PA) chunk.
+/// A PNG with Exif GPS, an `iCCP` profile, XMP, a `Copyright` text and a `caBX`
+/// (C2PA) chunk.
 fn grid_png() -> Vec<u8> {
     png_with(&[
         p::exif_chunk(&tiff_with_gps()),
+        p::iccp(b"sRGB", 0, b"zz"),
         p::text(b"XML:com.adobe.xmp", b"<x/>"),
         p::text(b"Copyright", b"(c) me"),
         p::chunk(b"caBX", b"\x00\x00\x00\x08jumb"),
     ])
 }
 
-/// A WebP with Exif GPS, XMP and a `C2PA` chunk (a WebP has no keyword text).
+/// A WebP with Exif GPS, an `ICCP` profile, XMP and a `C2PA` chunk (a WebP has
+/// no keyword text).
 fn grid_webp() -> Vec<u8> {
     w::riff(&[
-        w::vp8x(w::FLAG_EXIF | w::FLAG_XMP, 1, 1),
+        w::vp8x(w::FLAG_ICC | w::FLAG_EXIF | w::FLAG_XMP, 1, 1),
+        w::chunk(b"ICCP", b"profile!"),
         w::vp8l(),
         w::exif_chunk(&tiff_with_gps()),
         w::chunk(b"XMP ", b"<x/>"),
@@ -537,31 +541,40 @@ fn grid_webp() -> Vec<u8> {
 }
 
 /// SPEC-039 AC11: DEC-009 rule 2 over a clean PNG and a clean WebP, a
-/// hand-typed grid. The findings are Gps, Xmp and Jumbf (and Rights for the
-/// PNG). Per preset, from DEC-009's columns and the may-hold rule:
+/// hand-typed grid. The findings are Gps, Icc, Xmp and Jumbf (and Rights for
+/// the PNG). Per preset, from DEC-009's columns and the may-hold rule:
 ///
 /// * `gps`, `gps_and_device`, `all_pii`: remove Gps only. The kept Xmp and
 ///   Jumbf could hold a Gps tag, so they are `kept_unread`; Rights holds no
 ///   tag, so it is plain `kept`.
 /// * `all`: removes Gps, Xmp and Rights; the kept Jumbf is `kept_unread`.
-/// * `everything`: removes all four.
+/// * `everything`: removes every finding (Gps, Icc, Xmp, Jumbf, and Rights for
+///   the PNG).
+///
+/// `Icc` is plain `kept` under the four presets that keep it (DEC-009 rule 3:
+/// `All` keeps it by the design's requirement, and `may_hold(Icc)` is empty, so
+/// it is never `kept_unread`) and `removed` under `everything` only.
 #[test]
 fn png_and_webp_dispositions_per_preset() {
-    use Category::{Gps, Jumbf, Rights, Xmp};
+    use Category::{Gps, Icc, Jumbf, Rights, Xmp};
     // (policy, removed, kept_unread); every other finding is kept.
     let grid: [(StripPolicy, &[Category], &[Category]); 5] = [
         (StripPolicy::Gps, &[Gps], &[Xmp, Jumbf]),
         (StripPolicy::GpsAndDevice, &[Gps], &[Xmp, Jumbf]),
         (StripPolicy::AllPii, &[Gps], &[Xmp, Jumbf]),
         (StripPolicy::All, &[Gps, Xmp, Rights], &[Jumbf]),
-        (StripPolicy::Everything, &[Gps, Xmp, Rights, Jumbf], &[]),
+        (
+            StripPolicy::Everything,
+            &[Gps, Icc, Xmp, Rights, Jumbf],
+            &[],
+        ),
     ];
     for (name, bytes, has_rights) in [("png", grid_png(), true), ("webp", grid_webp(), false)] {
         let a = audit(&bytes);
         assert!(a.health().clean, "{name}: premise, the file is clean");
         let mut present = categories(&a);
         present.sort_by_key(|c| c.name());
-        let mut want_present = vec![Gps, Xmp, Jumbf];
+        let mut want_present = vec![Gps, Icc, Xmp, Jumbf];
         if has_rights {
             want_present.push(Rights);
         }
@@ -582,6 +595,15 @@ fn png_and_webp_dispositions_per_preset() {
                     n_kept += 1;
                     "kept"
                 };
+                if f.category == Icc {
+                    // DEC-009: kept by four presets, removed by `everything`.
+                    let icc = if policy.name() == "everything" {
+                        "removed"
+                    } else {
+                        "kept"
+                    };
+                    assert_eq!(d.name(), icc, "{name} under {}: Icc", policy.name());
+                }
                 assert_eq!(
                     d.name(),
                     want,
