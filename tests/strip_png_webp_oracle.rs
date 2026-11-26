@@ -1327,7 +1327,10 @@ fn the_additivity_check_compares_a_judged_line_outside_the_exif_and_xml_groups()
         f.iter().any(|m| m.contains("ID3v2_3:Artist=Someone")),
         "{f:?}"
     );
-    println!("additivity red (ID3v2_3): {}", f.first().cloned().unwrap_or_default());
+    println!(
+        "additivity red (ID3v2_3): {}",
+        f.first().cloned().unwrap_or_default()
+    );
 }
 
 /// The verifier's `b1` shape: a raw-profile Exif carrier first, a plain

@@ -232,7 +232,9 @@ pub fn category_of(group: &str, tag: &str) -> Option<Cat> {
 
 /// A line the judge looks at: it has a category, or it is a tag of an Exif
 /// block (uncategorised Exif tags are kept by every policy but a whole-block
-/// one). Warnings and errors are not judged.
+/// one). Warnings and errors are not judged. This is the one line set the
+/// judge uses with the `## carriers` reading: the excuse, the by-line left-in
+/// check and `additivity_failures` all filter by it.
 fn judged(l: &Line) -> bool {
     if l.tag == "Warning" || l.tag == "Error" {
         return false;
@@ -459,22 +461,14 @@ pub fn judge(
     v
 }
 
-/// The groups exception (a) can excuse a line in: the Exif and XMP/XML
-/// families and `Composite:GPS*`. Warnings and errors are not compared.
-fn additive_line(l: &Line) -> bool {
-    l.tag != "Warning"
-        && l.tag != "Error"
-        && (exif_group(&l.group)
-            || xml_group(&l.group)
-            || (l.group == "Composite" && l.tag.starts_with("GPS")))
-}
-
-/// DEC-023 amendment of verify round 2: on the lines exception (a) can
-/// excuse, `input` must equal `carriers` plus `no_carriers` as multisets of
-/// `(group, tag, value)`. Returns one message per line whose counts differ.
+/// DEC-023 amendment of verify round 2 and round 3: on the `judged` lines (the
+/// only lines the judge does arithmetic on with the `## carriers` reading:
+/// exception (a)'s excuse and the by-line left-in check), `input` must equal
+/// `carriers` plus `no_carriers` as multisets of `(group, tag, value)`.
+/// Returns one message per line whose counts differ.
 pub fn additivity_failures(input: &[Line], carriers: &[Line], no_carriers: &[Line]) -> Vec<String> {
     let pick = |ls: &[Line]| {
-        let v: Vec<&Line> = ls.iter().filter(|l| additive_line(l)).collect();
+        let v: Vec<&Line> = ls.iter().filter(|l| judged(l)).collect();
         multiset(&v)
     };
     let want = pick(input);
