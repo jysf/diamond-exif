@@ -1012,6 +1012,13 @@ Implementer (claude-sonnet-5-5) on `feat/spec-039-png-webp-write-parity-build`, 
 - **Nothing else moved:** `cargo test --test strip_png_webp_oracle` with ExifTool required: 43 passed, 0 failed, 1 ignored. Judge counts, replay and live: (a) 677, (b) 354, (c) 24; 2583 sections judged, 598 with a removable tag (2408 tags). `the_readings_add_up_on_every_carrier_fixture` passes on all 36. `git status` shows no change to `tests/oracle-fixtures`; `git diff HEAD~1 -- src tests/support tests/oracle-fixtures` is empty at `18079a6`. No new dependencies. No mutant was committed.
 - **Gates** at `18079a6` on 1.90.0 (this entry is the handoff-only commit after it): `just lint`, `just lint-no-allow`, `just forbid-unsafe` and `just validate` rc 0. `DIAMOND_EXIF_REQUIRE_ORACLE=1 just test` rc 0, 41 result lines, 1,544 passed, 0 failed (1,543 before, plus the one new test). `just mutation-oracle` rc 0: 67 + 42 + 43 passed.
 
+**Orchestrator self-check of fix round 5 and close of the verify cycle** (claude-opus-5-5, 2026-11-26)
+- **Mutant B is equivalent; checked in the code.** `missing` is built from `in_m`, which is the multiset of `judged` input lines (`in_j`). `excusable` is looked up only by `missing` keys. Widening `excusable` to `carrier_checked` adds only `XML*`/`SEAL*` keys, and those keys are never read. "XML/SEAL lines are never excused" therefore holds by construction.
+- **Mutant C** (additivity reverted to `judged`), run in a `git archive` copy with its own target dir: 42 passed, 1 failed. The failure is `the_additivity_check_compares_a_seal_line_which_the_judge_does_not_judge_in_memory`. **Pinned.**
+- **Gates at `33f912f`, on 1.90.0:** `just lint`, `just lint-no-allow`, `just forbid-unsafe` and `just validate` rc 0. `just test` rc 0, with 41 result lines, 1,544 passed and 0 failed. `just mutation-oracle` passed 67 + 42 + 43.
+- **Close.** The user chose to close the verify cycle with orchestrator self-checks rather than a round-5 verify. `handback.verdict` stays `punch-list`, as round 4's independent verdict, and is not upgraded. Every punch item from rounds 1 to 4 has a fix recorded above, and each guard added is shown to bite by a mutant, apart from B, which is equivalent.
+- **Fix round 5 cost**, from the harness subagent result: 92,174 tokens, 14 tool calls, 528 s (about 9 min). Basis: agent-result.
+
 ### Cost self-report
 
 - **Tokens (total):** 258,606, filled by the orchestrator from the harness subagent result (96 tool calls).

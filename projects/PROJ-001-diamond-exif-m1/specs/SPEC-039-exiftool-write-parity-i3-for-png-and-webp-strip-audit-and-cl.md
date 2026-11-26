@@ -168,10 +168,20 @@ cost:
       duration_minutes: 14
       recorded_at: 2026-11-26
       notes: "Round-4 fix round (carrier_checked drives the by-line left-in check and additivity; the excuse stays judged), one subagent. The orchestrator transcribed the cost from the harness subagent result: 137,987 tokens, 57 tool calls, 840 s. Checked by the orchestrator instead of a round-5 verify."
+    - cycle: build
+      handoff: HANDOFF-091
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 92174
+      estimated_usd: null
+      duration_minutes: 9
+      recorded_at: 2026-11-26
+      notes: "Fix round 5: pin two guards. Mutant C is pinned; mutant B is equivalent. One subagent. The orchestrator transcribed the cost from the harness subagent result: 92,174 tokens, 14 tool calls, 528 s."
   totals:
-    tokens_total: 2220585
+    tokens_total: 2312759
     estimated_usd: 0.00
-    session_count: 10
+    session_count: 11
 ---
 
 # SPEC-039: ExifTool write parity (I3) for PNG and WebP strip, audit and CLI switch-over
