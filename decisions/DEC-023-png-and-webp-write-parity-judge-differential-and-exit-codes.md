@@ -150,6 +150,10 @@ This adds to the line-level amendment above and changes none of its rules.
 
 This closes HANDOFF-091 round-3 punch item 1 (L). Item 2 of the previous amendment listed the compared groups as "the Exif and XMP/XML families and `Composite:GPS*`". That list was narrower than what exception (a) can excuse. Exception (a) excuses any judged line that the `## carriers` reading prints, and the judge's categorised groups include `ID3v2_3`, maker-note groups such as `Olympus`, the PNG text tags, `ICC*` and `JUMBF`/`JSON`. On the committed records, 3 excusable lines were never compared: `ID3v2_3:Artist` twice and `Olympus:Model` once.
 
-1. **The compared set is the excusable set.** The check now compares every line the judge classifies (`judged`), plus the XMP/XML family. That is exactly the set of lines exception (a) can excuse. It never compares more than that set and never less. Warning and Error lines are still excluded. The judge never excuses them, and the `b1` interference shows up in the hidden lines.
-2. **One definition, shared.** The check and exception (a) take their line set from a single shared predicate, so the two cannot drift apart again.
+1. **The compared set is every line on which the judge does arithmetic with the `## carriers` reading.** There are two such uses:
+   - exception (a)'s excuse, which applies to judged lines (`judged`) only;
+   - the by-line "carrier tag left in" check, which applies to judged lines and to the XMP/XML family (`XML*` and `SEAL*` lines are not `judged`, so they are never excused, but they are checked as left in).
+
+   The check therefore compares `judged(l) || xml_group(&l.group)`, without Warning and Error lines. The judge never excuses those, and the `b1` interference shows in the hidden lines. Excuse eligibility does not change; it stays `judged`. *(Correction, the same day, before push: the first wording of this item called `judged` plus the XMP/XML family "exactly the set exception (a) can excuse". That was wrong: XML and SEAL lines are never excused. The round-3 fix implementer found the error before changing any code.)*
+2. **Named predicates, shared.** The check uses a named predicate for the union. The excuse uses a named predicate for `judged`. The union is defined in terms of the excuse predicate, so the two cannot drift apart: anything the excuse can use is compared.
 3. **Measured beforehand.** The round-3 verifier ran the wider set on the 36 carrier fixtures and all of them still add up. No record changes.
