@@ -108,10 +108,20 @@ cost:
       duration_minutes: 21
       recorded_at: 2026-11-26
       notes: "Punch-list fix round for HANDOFF-091 (items 1 M, 2 L, 3 L), one subagent. The orchestrator transcribed this from the harness subagent result: 194,326 tokens, 63 tool calls, 1,263 s."
+    - cycle: verify
+      handoff: HANDOFF-091
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 184591
+      estimated_usd: null
+      duration_minutes: 16
+      recorded_at: 2026-11-26
+      notes: "Verify round 2, against 34008cc. One subagent. The orchestrator transcribed this from the harness subagent result: 184,591 tokens, 48 tool calls, 944 s. The verdict is a punch list of 2 L items: two line-level guards are unpinned (multiplicity decrement, by-line left-in check), and the line-level rule assumes readings add up, which a carrier placed before the plain block breaks."
   totals:
-    tokens_total: 1312422
+    tokens_total: 1497013
     estimated_usd: 0.00
-    session_count: 4
+    session_count: 5
 ---
 
 # SPEC-039: ExifTool write parity (I3) for PNG and WebP strip, audit and CLI switch-over
