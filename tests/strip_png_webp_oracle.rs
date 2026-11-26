@@ -234,6 +234,41 @@ fn records_reproduce_live() {
     }
 }
 
+// ── AC12: honesty on the corpus ─────────────────────────────────────────────
+
+/// SPEC-039 AC12 (DEC-020 amendment 2): for every I3 fixture under every
+/// preset, if `strip` refuses then the preview says "not reliable". The
+/// design measured no refused fixture with a clean audit; a failure names the
+/// fixture, the policy and the refusal's reason.
+#[test]
+fn refused_strips_never_preview_as_reliable() {
+    let mut refused = 0usize;
+    let mut failures = Vec::new();
+    for fx in fixtures() {
+        let a = exif_core::audit::audit(&fx.bytes);
+        for policy in exif_core::StripPolicy::PRESETS {
+            if let Err(e) = exif_core::strip(&fx.bytes, policy) {
+                refused += 1;
+                let pv = exif_core::audit::preview(&a, policy);
+                if pv.reliable() {
+                    failures.push(format!(
+                        "{} under {}: strip refuses ({e:?}) but the preview is reliable",
+                        fx.name,
+                        policy.name()
+                    ));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
+    // Premise: the corpus really does refuse (113 of the 174 oracle fixtures'
+    // preset pairs, DEC-023), so the loop above is not vacuous.
+    assert!(
+        refused >= i3_records::DESIGN_REFUSED_PRESET_PAIRS,
+        "{refused}"
+    );
+}
+
 // ── AC3: the refusal pins ───────────────────────────────────────────────────
 
 fn actual_refusals() -> BTreeSet<(String, String, String)> {

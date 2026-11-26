@@ -498,8 +498,9 @@ fn nesting_holds_on_every_committed_seed_for_every_preset() {
             assert_eq!(last.residual_findings(), 0, "{name}");
             assert_eq!(last.residual_severity(), None, "{name}");
         } else {
-            // DEC-020: a PNG or a WebP is audited but the writer refuses it, so
-            // no preset removes anything.
+            // A container the writer refuses (GIF, HEIC, BigTIFF, empty,
+            // unknown) has no findings and no preset removes anything. PNG and
+            // WebP are strippable since SPEC-039, so they take the branch above.
             assert_eq!(last.residual_findings(), a.findings().len(), "{name}");
             assert!(previews.iter().all(|p| p.counts().removed == 0), "{name}");
         }

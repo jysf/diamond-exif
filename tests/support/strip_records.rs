@@ -40,6 +40,10 @@ pub fn policies() -> Vec<(&'static str, StripPolicy)> {
         ),
         // SPEC-033: Copyright alone.
         ("rights", StripPolicy::Custom(spec_of(&[Category::Rights]))),
+        // SPEC-039 AC14: the two presets the JFIF thumbnail rule is about,
+        // appended last so the older sections keep their order.
+        ("gps", StripPolicy::Gps),
+        ("all-pii", StripPolicy::AllPii),
     ]
 }
 

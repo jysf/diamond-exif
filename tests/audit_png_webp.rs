@@ -468,7 +468,7 @@ fn webp_sixteen_blocks_list_the_last_gps_seventeen_do_not() {
         );
         for policy in StripPolicy::PRESETS {
             let pv = preview(a, policy);
-            assert!(!pv.reliable() && !pv.strippable());
+            assert!(!pv.reliable() && pv.strippable());
         }
     }
 }
@@ -515,20 +515,98 @@ fn rich_webp() -> Vec<u8> {
     ])
 }
 
+/// A PNG with Exif GPS, XMP, a `Copyright` text and a `caBX` (C2PA) chunk.
+fn grid_png() -> Vec<u8> {
+    png_with(&[
+        p::exif_chunk(&tiff_with_gps()),
+        p::text(b"XML:com.adobe.xmp", b"<x/>"),
+        p::text(b"Copyright", b"(c) me"),
+        p::chunk(b"caBX", b"\x00\x00\x00\x08jumb"),
+    ])
+}
+
+/// A WebP with Exif GPS, XMP and a `C2PA` chunk (a WebP has no keyword text).
+fn grid_webp() -> Vec<u8> {
+    w::riff(&[
+        w::vp8x(w::FLAG_EXIF | w::FLAG_XMP, 1, 1),
+        w::vp8l(),
+        w::exif_chunk(&tiff_with_gps()),
+        w::chunk(b"XMP ", b"<x/>"),
+        w::chunk(b"C2PA", b"\x00\x00\x00\x08jumb"),
+    ])
+}
+
+/// SPEC-039 AC11: DEC-009 rule 2 over a clean PNG and a clean WebP, a
+/// hand-typed grid. The findings are Gps, Xmp, Jumbf (and Rights for the PNG);
+/// the presets remove, per DEC-009's columns: `gps`, `gps_and_device` and
+/// `all_pii` only Gps; `all` also Xmp and Rights, keeping Jumbf; `everything`
+/// all of them.
 #[test]
-fn png_and_webp_previews_keep_everything_for_every_policy() {
-    for bytes in [rich_png(), rich_webp()] {
+fn png_and_webp_dispositions_per_preset() {
+    let png_rows: [(StripPolicy, &[Category]); 5] = [
+        (StripPolicy::Gps, &[Category::Gps]),
+        (StripPolicy::GpsAndDevice, &[Category::Gps]),
+        (StripPolicy::AllPii, &[Category::Gps]),
+        (
+            StripPolicy::All,
+            &[Category::Gps, Category::Xmp, Category::Rights],
+        ),
+        (
+            StripPolicy::Everything,
+            &[
+                Category::Gps,
+                Category::Xmp,
+                Category::Rights,
+                Category::Jumbf,
+            ],
+        ),
+    ];
+    for (name, bytes, has_rights) in [("png", grid_png(), true), ("webp", grid_webp(), false)] {
         let a = audit(&bytes);
-        assert!(!a.findings().is_empty(), "premise");
-        for policy in StripPolicy::PRESETS {
+        assert!(a.health().clean, "{name}: premise, the file is clean");
+        let mut present = categories(&a);
+        present.sort_by_key(|c| c.name());
+        let mut want_present = vec![Category::Gps, Category::Xmp, Category::Jumbf];
+        if has_rights {
+            want_present.push(Category::Rights);
+        }
+        want_present.sort_by_key(|c| c.name());
+        assert_eq!(present, want_present, "{name}: premise, the findings");
+        for (policy, removed) in png_rows {
+            let removed: Vec<Category> = removed
+                .iter()
+                .copied()
+                .filter(|c| *c != Category::Rights || has_rights)
+                .collect();
             let pv = preview(&a, policy);
-            assert_eq!(pv.counts().removed, 0, "{}", policy.name());
-            assert_eq!(pv.counts().kept, a.findings().len());
-            assert_eq!(pv.counts().kept_unread, 0);
-            assert!(pv.dispositions().iter().all(|d| d.name() == "kept"));
-            assert!(!pv.reliable() && !pv.strippable());
-            assert_eq!(pv.residual_findings(), a.findings().len());
-            assert_eq!(pv.residual_severity(), a.max_severity());
+            assert!(pv.strippable() && pv.reliable(), "{name} {}", policy.name());
+            assert_eq!(
+                pv.counts().removed,
+                removed.len(),
+                "{name} under {}",
+                policy.name()
+            );
+            assert_eq!(pv.counts().kept_unread, 0, "{name} {}", policy.name());
+            assert_eq!(
+                pv.counts().kept,
+                a.findings().len() - removed.len(),
+                "{name} {}",
+                policy.name()
+            );
+            for (f, d) in a.findings().iter().zip(pv.dispositions()) {
+                let want = if removed.contains(&f.category) {
+                    "removed"
+                } else {
+                    "kept"
+                };
+                assert_eq!(
+                    d.name(),
+                    want,
+                    "{name} under {}: {}",
+                    policy.name(),
+                    f.category.name()
+                );
+            }
         }
     }
 }
@@ -549,19 +627,18 @@ fn jpeg_and_tiff_previews_are_strippable_and_unchanged() {
 }
 
 #[test]
-fn png_and_webp_strip_while_not_strippable_and_heic_and_gif_still_refuse() {
+fn png_and_webp_strip_and_are_strippable_and_heic_and_gif_still_refuse() {
     for policy in StripPolicy::PRESETS {
-        // SPEC-037 and SPEC-038: a PNG and a WebP strip now (DEC-021, DEC-022);
-        // the audit still says neither is strippable until SPEC-039 shows
-        // ExifTool agrees (DEC-020 clause 6, DEC-022 clause 10).
+        // SPEC-037 and SPEC-038: a PNG and a WebP strip (DEC-021, DEC-022), and
+        // since SPEC-039 the audit says so too (DEC-020 amendment 2026-11-24).
         let out = strip(&rich_png(), policy)
             .unwrap_or_else(|e| panic!("png under {}: {e:?}", policy.name()));
         assert!(out.bytes().len() <= rich_png().len());
-        assert!(!preview(&audit(&rich_png()), policy).strippable());
+        assert!(preview(&audit(&rich_png()), policy).strippable());
         let out = strip(&rich_webp(), policy)
             .unwrap_or_else(|e| panic!("webp under {}: {e:?}", policy.name()));
         assert!(out.bytes().len() <= rich_webp().len());
-        assert!(!preview(&audit(&rich_webp()), policy).strippable());
+        assert!(preview(&audit(&rich_webp()), policy).strippable());
         // Even a minimal WebP or PNG: the output is the input.
         assert_eq!(
             strip(&webp_shapes::minimal(), policy).unwrap().bytes(),
@@ -628,20 +705,20 @@ fn garbage_after_the_signature_does_not_panic() {
     }
 }
 
-/// `ContainerKind::strippable` is true for JPEG and TIFF only (DEC-020 clause
-/// 6); the preview reads it, so GIF, HEIC, BigTIFF, empty and unknown files
-/// say `strippable` false.
+/// `ContainerKind::strippable` is true for JPEG, TIFF, PNG and WebP (DEC-020
+/// amendment of 2026-11-24); the preview reads it, so GIF, HEIC, BigTIFF,
+/// empty and unknown files say `strippable` false.
 #[test]
-fn only_jpeg_and_tiff_are_strippable() {
+fn png_and_webp_are_strippable_and_unsupported_kinds_are_not() {
     assert!(ContainerKind::Jpeg.strippable());
     assert!(ContainerKind::Tiff.strippable());
-    assert!(!ContainerKind::Png.strippable());
-    assert!(!ContainerKind::Webp.strippable());
+    assert!(ContainerKind::Png.strippable());
+    assert!(ContainerKind::Webp.strippable());
     let inputs: Vec<(&str, Vec<u8>, bool)> = vec![
         ("tiff", tiff_with_gps(), true),
         ("jpeg", b"\xFF\xD8\xFF\xD9".to_vec(), true),
-        ("png", p::minimal(), false),
-        ("webp", w::minimal(), false),
+        ("png", p::minimal(), true),
+        ("webp", w::minimal(), true),
         (
             "gif",
             b"GIF89a\x01\x00\x01\x00\x00\x00\x00;".to_vec(),

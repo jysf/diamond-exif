@@ -1310,17 +1310,17 @@ fn a_trailer_with_more_chunks_than_the_scan_examines_is_refused_unless_it_goes_w
     );
 }
 
-// ── honesty: the preview still says not strippable ──────────────────────────
+// ── honesty: strip works and the preview agrees (SPEC-039) ──────────────────
 
 #[test]
-fn strip_works_while_strippable_is_still_false_for_png() {
-    assert!(!ContainerKind::Png.strippable());
+fn strip_works_and_strippable_is_true_for_png() {
+    assert!(ContainerKind::Png.strippable());
     let input = minimal_parts(&[text(b"Author", b"x")]);
     assert!(strip(&input, StripPolicy::AllPii).is_ok());
-    assert!(!ContainerKind::Png.strippable());
-    // The audit still previews every finding as kept.
+    // The audit previews the Authorship finding as removed under all-pii.
     let p = exif_core::audit::preview(&audit(&input), StripPolicy::AllPii);
-    assert!(!p.strippable());
+    assert!(p.strippable() && p.reliable());
+    assert_eq!(p.counts().removed, 1);
 }
 
 #[test]
@@ -1368,7 +1368,8 @@ fn c2pa_cabx() -> Vec<u8> {
 /// M2 (SPEC-037 verify), the stated residual: `caBX` is `Jumbf`, as in a JPEG
 /// (C2PA provenance). Every preset but `Everything` keeps it, so a C2PA
 /// manifest that carries Exif or creator assertions survives them. The preview
-/// claims no removal for a PNG yet (`strippable` is false).
+/// follows DEC-009 rule 2 (SPEC-039): `KeptUnread` where a policy removes a
+/// category the kept `caBX` may hold, `Removed` under `Everything`.
 #[test]
 fn a_cabx_with_exif_assertions_is_kept_by_the_presets_and_removed_by_everything() {
     let parts = shape(
@@ -1395,17 +1396,16 @@ fn a_cabx_with_exif_assertions_is_kept_by_the_presets_and_removed_by_everything(
         let out = strip(&input, policy).unwrap();
         let has = out.bytes().windows(4).any(|w| w == b"caBX");
         assert_eq!(!has, goes, "{policy:?}");
-        // While `strippable` is false for PNG (until SPEC-039) the preview
-        // describes no removal at all: `Kept`, and not reliable. The
-        // `KeptUnread` a JPEG `caBX`-like block gets applies once it flips; the
-        // JPEG grid in `tests/policy_preview.rs` pins that disposition.
+        // The preview follows DEC-009 rule 2: a kept `caBX` could hold what
+        // every preset but `Everything` removes, so it is `KeptUnread`.
         let p = preview(&a, policy);
-        assert_eq!(
-            p.disposition(finding),
-            Some(Disposition::Kept),
-            "{policy:?}"
-        );
-        assert!(!p.strippable() && !p.reliable(), "{policy:?}");
+        let want = if goes {
+            Disposition::Removed
+        } else {
+            Disposition::KeptUnread
+        };
+        assert_eq!(p.disposition(finding), Some(want), "{policy:?}");
+        assert!(p.strippable() && p.reliable(), "{policy:?}");
         if !goes {
             assert_eq!(out.bytes(), input.as_slice(), "{policy:?} keeps it whole");
         }
