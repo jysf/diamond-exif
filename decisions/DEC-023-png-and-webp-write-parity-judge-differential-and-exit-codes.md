@@ -157,3 +157,17 @@ This closes HANDOFF-091 round-3 punch item 1 (L). Item 2 of the previous amendme
    The other left-in checks (no plain block of the family, and the WebP row tags) scan the output only and do not use the carriers reading. `XML*` and `SEAL*` lines are not `judged`, so they are never excused and never compared line by line. They are caught only by the output-only scan. The additivity check therefore compares `judged` lines, which already excludes Warning and Error. `Composite:GPS*` is `judged` through `category_of`. *(Correction history: on the same day and before push, this item was worded wrongly twice. First it called `judged` plus the XMP/XML family "exactly the set exception (a) can excuse". Then it claimed the by-line check covers `judged` plus the XML family. The round-3 fix implementer stopped both times before changing any code, and showed from the code that both claims were false.)*
 2. **One predicate, shared.** The excuse, the by-line check and the additivity check all take their line set from one named predicate, `judged`. They cannot drift apart. Dropping the `xml_group` lines from the additivity comparison removes a check that nothing in the judge depended on.
 3. **Measured beforehand.** The round-3 verifier ran the wider set on the 36 carrier fixtures and all of them still add up. No record changes.
+
+## Amendment (2026-11-26, SPEC-039 verify round 4): XML and SEAL carrier lines are checked as left in beside a plain block
+
+This closes HANDOFF-091 round-4 punch item 1 (L). It also corrects a sentence in the previous amendment. That amendment said `XML*` and `SEAL*` lines "are caught only by the output-only scan". That is true only when the file has no plain XMP/XML block. With a plain packet present, the output-only scan does not run. The by-line check covered only `judged` lines, and `XML*`/`SEAL*` lines are not `judged`. So a SEAL or XML carrier line left in the output beside a plain packet was caught by nothing. The verifier showed this live: a PNG with a plain `iTXt` XMP packet and a `seAl` chunk, with `SEAL:AB=Zed` put back into the output, judged clean. Nothing leaks today. The library's output prints no SEAL line, and no fixture has the shape.
+
+1. **Two named predicates, the second defined from the first:**
+   - **The excuse predicate is `judged`, unchanged.** Exception (a) excuses only `judged` lines, so `XML*`/`SEAL*` lines are still never excused.
+   - **The carrier-check predicate is the excuse predicate plus the XMP/XML family** (`judged(l) || xml_group(&l.group)`, without Warning and Error lines). Two places use it:
+     - the by-line "carrier tag left in" check when a plain block of the same family exists;
+     - the additivity check.
+
+   Every carrier line the by-line check counts is therefore also compared for additivity. Every line the excuse uses is in both.
+2. **Red-proof.** The verifier's shape must judge red, with "carrier tag left in SEAL:AB=Zed", in both chunk orders: a PNG with a plain XMP packet plus a `seAl` carrier, and `SEAL:AB=Zed` put back into the output. Its control is the real output, which passes.
+3. **Measured beforehand (round 3).** All 36 carrier fixtures add up on the wider set. No corpus fixture holds a plain packet beside an XML/SEAL carrier, so no count and no record changes.
