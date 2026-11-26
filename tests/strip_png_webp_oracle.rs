@@ -1336,6 +1336,35 @@ fn the_additivity_check_compares_a_judged_line_outside_the_exif_and_xml_groups()
     );
 }
 
+#[test]
+fn the_additivity_check_compares_a_seal_line_which_the_judge_does_not_judge_in_memory() {
+    // Fix round 5 pin. `SEAL:AB=Zed` is `carrier_checked` but not `judged`
+    // (no category, not an Exif group), so only a filter on `carrier_checked`
+    // compares it; a filter on `judged` would skip it and report nothing.
+    // The readings agree on every `judged` line (IFD0:Make) and differ only
+    // on the SEAL line:
+    //   input:       [IFD0:Make, SEAL:AB=Zed]
+    //   carriers:    [SEAL:AB=Zed]
+    //   control:     no-carriers [IFD0:Make]               -> adds up
+    //   red:         no-carriers [IFD0:Make, SEAL:AB=Zed]  -> input 1 != 1 + 1
+    let make = || line("IFD0", "Make", "SameCam");
+    let seal = || line("SEAL", "AB", "Zed");
+    let input = vec![make(), seal()];
+    let car = vec![seal()];
+    let mut plain = vec![make()];
+    // Control: the readings add up.
+    assert!(i3_judge::additivity_failures(&input, &car, &plain).is_empty());
+    // Red: the no-carriers reading prints the SEAL line once more.
+    plain.push(seal());
+    let f = i3_judge::additivity_failures(&input, &car, &plain);
+    assert!(f.iter().any(|m| m.contains("SEAL:AB=Zed")), "{f:?}");
+    assert_eq!(f.len(), 1, "only the SEAL line disagrees: {f:?}");
+    println!(
+        "additivity red (SEAL): {}",
+        f.first().cloned().unwrap_or_default()
+    );
+}
+
 /// The verifier's `b1` shape: a raw-profile Exif carrier first, a plain
 /// `eXIf` second.
 fn carrier_before_plain_exif() -> Vec<u8> {
