@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-24
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-039
@@ -46,18 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                # completed | blocked | rejected
+  agent: claude-sonnet-5-5         # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
   basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
   duration_minutes: null
-  branch: null
+  branch: feat/spec-039-png-webp-write-parity-build
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-26         # YYYY-MM-DD
+  notes: "Parts A, B and C are done on one branch. basis and tokens_total are left null on purpose: the orchestrator fills them from the harness's per-part subagent results (Part A and B are already recorded in the notes under Handback). No wall-clock estimate is given."                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -443,40 +443,148 @@ AC7 (x) red: png-exif-gps-full-le under xmp: kept tag missing Composite:GPSLatit
   self-report said about 65); 1,630 s (about 27 min) of wall clock. Basis: agent-result. USD is not computed, because
   the input/output split is not reported.
 
+### Part C (AC11 to AC15), claude-sonnet-5-5, 2026-11-26
+
+Branch `feat/spec-039-png-webp-write-parity-build`. Part C is done: AC11 to AC15 green. `handoff.status` is
+`completed`, the spec's `task.cycle` is `verify`, the timeline's build line is `[x]`.
+
+**What was done**
+- AC11, the switch-over: `ContainerKind::strippable()` is true for `Jpeg`, `Tiff`, `Png` and `Webp` (one `matches!`).
+  The preview follows DEC-009 rule 2 with no other change in `preview.rs`: its docs and the `strippable()` and
+  `reliable()` docs were rewritten. The "has not been checked against ExifTool yet" strings are deleted from
+  `src/report/text.rs` (the PNG and WebP arms); the generic "writer refuses this container" branch stays for a future
+  unstrippable kind (no current kind reaches it).
+- AC13: `NotJpeg` displays "not a JPEG, TIFF, PNG or WebP"; `Unstrippable` displays "the file cannot be cut
+  safely (...)"; the docs of `NotJpeg` and `UnstrippableReason` say "file". The variant keeps its name.
+- AC12: `refused_strips_never_preview_as_reliable` (in `strip_png_webp_oracle.rs`) over all 238 I3 fixtures under the
+  five presets: no refused strip has a reliable preview. It passed before the flip (nothing was reliable) and after.
+- AC14: `strip_records::policies()` gains `("gps", Gps)` and `("all-pii", AllPii)`, appended last. One re-record of
+  `exiftool-strip/`, then a second with no diff. See "JPEG re-record" below.
+- README: the PNG and WebP paragraphs say strippable (the CLI still never writes); the one sentence from DEC-020
+  amendment item 2 (a strip can still refuse a file whose preview shows removals, with the measured fact); I3 and its
+  four layers; the three residuals (C2PA kept except under `Everything`; XMP GPS as `Composite:GPS*` under `Gps`,
+  `GpsAndDevice`, `AllPii`, which `-gps:all=` also leaves; carriers and every WebP `LIST` removed under every preset).
+- Fuzz mirror: only a doc comment in `fuzz/shared/audit_invariants.rs` (`strippable_kind` already asks the one
+  definition).
+
+**Commits** (on `feat/spec-039-png-webp-write-parity-build`)
+- `09768e6` test(strip): SPEC-039 Part C red: switch-over pins, neutral errors, honesty test, JPEG gps and all-pii rows
+  (no stubs needed; the tests compile against the old library. Red before the code: 4 in `audit_png_webp`, 2 in `cli`,
+  1 in `report_render`, 1 in `strip`, 6 in `strip_oracle` (the missing `gps`/`all-pii` sections and the JFIF test), 2 in
+  `strip_png`, 1 in `strip_webp`. `refused_strips_never_preview_as_reliable` is green on purpose: it guards the flip.)
+- `9c202b8` feat(audit): SPEC-039 AC11 to AC14 PNG and WebP are strippable; neutral strip errors; JPEG gps and all-pii records
+- the bookkeeping commit (this entry) follows (see `git log`).
+
+**Goldens and pins that changed, and why each follows from the switch-over**
+- `tests/golden/report-png-webp.txt`: finding lines "kept (not strippable)" become `removed`, `kept_unread (may hold
+  what this policy removes)` or `kept (not targeted by this policy)`; the two "preview (all_pii): not strippable: the
+  PNG/WebP strip exists but has not been checked ..." lines become "removed 4, kept 0, kept_unread 2; residual findings 2,
+  residual severity medium" (PNG) and "removed 1, kept 1, kept_unread 1; ..." (WebP); the summary lines become "reliable
+  files: 2, unreliable files: 0" and "policy all_pii: residual findings 4 (reliable files only)".
+- `.json`: `"disposition"` per finding, `"counts"`, `"reliable":true`, `"residual_findings"`, `"residual_severity"`,
+  `"strippable":true` (both files), and the summary's `residual_findings:4, reliable_files:2, unreliable_files:0`.
+- `.csv`: the `not_strippable` disposition cell becomes `removed`, `kept_unread` or `kept` (12 data lines).
+- Every PNG and WebP finding follows DEC-009 rule 2 for `all_pii`: Gps, Authorship, FreeText, Timestamps removed; the
+  `xmp` and the trailing `other_segment` are kept and could hold what the policy removes, so `kept_unread`; the WebP
+  ICC stays `kept` (an `Icc` block holds no tag). Both files read clean (the PNG's trailer is a finding, not an issue),
+  so both are reliable. No line outside these classes changed.
+- Pins: `audit_png_webp.rs` (the keep-everything test became `png_and_webp_dispositions_per_preset`, a hand-typed
+  grid; the strip test and the kind test now say strippable; the 16/17 block test now expects `strippable && !reliable`),
+  `policy_preview.rs` (a comment), `report_render.rs` (counts of `strippable`, the deleted wording, the reliable
+  files), `cli.rs` (the PNG with GPS says "removed 1, kept 0, kept_unread 0"; the kind grid), `strip_png.rs` and
+  `strip_webp.rs` (the two "strippable is still false" tests; the `caBX` preview is `KeptUnread` under the four
+  presets that keep it and `Removed` under `Everything`), and `fuzz_layout.rs` (the PNG plants of the audit and
+  render harnesses, reversed: "reported not strippable", "reported not reliable", "counted as unreliable", the CSV
+  plant `,removed,` to `,not_strippable,`, plus two re-aimed preview plants; each still goes red alone).
+- `strip_oracle` group table: a JPEG output's Exif groups no longer come only from kept segments. A new hand-typed
+  `entry_edit_groups` in `strip_records.rs` lists, per fixture, the groups whose every entry a policy deletes
+  (`kitchen-sink`: ExifIFD, GPS, IFD1; `exif-without-gps`: IFD0; `mpo-*`: IFD0, ExifIFD), typed from the builders
+  (`full_tiff`, `no_gps_tiff`, `exif_camera`). It is the only test-side change not named in the spec; see Deviations.
+
+**JPEG re-record (AC14)**
+- 25 of the 39 `exiftool-strip/` records gained a `gps` section and 21 an `all-pii` section: 1074 lines added, none
+  deleted or changed. The other 14 files are the 12 `exif-*` entry records and `gps-count-overflow`, `unreadable-exif`
+  (refused shapes), which this apparatus does not record under the new policies. `just oracle-record` twice: the second
+  run left `git status` empty.
+- No kept tag is missing and no removed tag is left in. `kitchen-sink` under `gps` prints every group but `GPS`
+  (IFD0, ExifIFD, IFD1 intact); under `all-pii` only `IFD0:Orientation` and `IFD0:Software` remain (the policy keeps
+  both). The four `jfif-*` fixtures: under `gps` the three with a thumbnail still print `JFIF:ThumbnailTIFF`; under
+  `all-pii` the `JFIF` group is gone with the cut APP0; `jfif-no-thumbnail` keeps its `JFIFVersion` under both.
+  `jfif_fixtures_keep_the_thumbnail_under_gps_and_lose_it_under_all_pii` is green by replay and live.
+
+**Measured numbers**
+- `DIAMOND_EXIF_REQUIRE_ORACLE=1 just test`: rc 0, 41 `test result: ok` lines, 0 failed (ExifTool 13.55 present).
+- `just mutation-oracle`: rc 0, 67 + 42 + 43 passed (1 ignored each).
+- Fuzz smokes, 60 s each, rc 0, no crash: `audit` 121,518 runs; `audit_render` 35,281; `rewrite_png` 564,377;
+  `rewrite_webp` 989,827.
+
+**Gates on 1.90.0 (clippy 0.1.90)**: `just lint` rc 0; `just lint-no-allow` rc 0; `just forbid-unsafe` rc 0;
+`just lint-fuzz` rc 0; `just deny` rc 0; `just deny-fuzz` rc 0; `just test` with `DIAMOND_EXIF_REQUIRE_ORACLE=1` rc 0;
+`just mutation-oracle` rc 0; the four smokes above; `just validate` rc 0 (run again after this entry);
+`git diff origin/main -- fuzz/Cargo.lock` empty (restored after the lint-fuzz, deny-fuzz and the smokes).
+
+**Deviations**
+1. The group-table test needed `entry_edit_groups` (above). Before it, `kitchen-sink under gps` failed with "missing
+   [GPS]": the table expected the GPS group because the Exif segment is kept, while ExifTool correctly prints no GPS
+   tag after the entries are deleted. This is the table being segment-level, not the writer being wrong (the record
+   keeps every other tag), so I extended the table rather than stopping. The architect should confirm.
+2. The `fuzz_layout.rs` plants were not in the spec's Inputs list as such (it lists the file for the pinned
+   "not strippable"); they had to be reversed because the old plants became no-ops after the flip.
+3. The preview and render goldens regenerated by a one-off edit of `golden_png_and_webp_report_in_all_three_formats`
+   that wrote the files (reverted before commit); there is no bless mechanism.
+
+**Reflection (Part C)**
+1. *What was unclear?* Whether the JPEG group-table test was expected to pass unchanged with `gps` and `all-pii`
+   (AC14 says "pass with the new sections"): it cannot, for a fixture whose Exif has a group that the policy empties.
+2. *A missing constraint or decision?* The spec should say the group table models entry edits, and that the
+   `fuzz_layout.rs` plants must be re-aimed.
+3. *What would I do differently?* Run the JPEG re-record before writing the AC14 test, so the group-table gap shows
+   first; and grep `fuzz_layout.rs` for "strippable" at design.
+
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `feat/spec-039-png-webp-write-parity-build` (no PR; the orchestrator opens it)
+- **Completed at:** 2026-11-26
+- **All acceptance criteria met?** yes. AC1 to AC15 are green: Part A (AC1 to AC7), Part B (AC8 to AC10, plus the two
+  exception (c) fixtures) and Part C (AC11 to AC15). One test-side addition is unlisted (Part C, Deviation 1).
+- **For `verify`:** not applicable (build handoff).
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null. The orchestrator fills `basis` and `tokens_total` from the harness's per-part subagent
+  results; Parts A and B are recorded under Handback. This agent cannot read its own token count.
+- **Estimated USD:** null
+- **Duration (minutes):** null (no wall-clock estimate is given)
+- **Source of the number:** none available to the executing agent
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
+- **New decisions emitted:** none. Two amendments to DEC-023, both by the orchestrator:
+  - 2026-11-25: values are compared; D4 at value level, and a new class D6 (`RIFF:WebP_Flags`, ExifTool recomputes the
+    `VP8X` flags, DEC-022 clause 7). Answered question `i3-differential-value-level-differences`.
+  - 2026-11-26: judge exception (c) has a converse (XMP removed, derived `Composite:GPS*` removed with it), limited to
+    inputs with GPS in both Exif and XMP. Answered question `i3-judge-exception-c-converse`.
 - **Deviations from spec:**
-  - [list]
+  - Part A: the fixture set is 236 (then 238), the differential's value level, exception (c) never used (fixed in B).
+  - Part B: `tests/support/writer_mutants.rs` is a new support file; the type sweep has 29,130 files (AC9's
+    candidate set), not the design's 35,020; exception (c)'s converse.
+  - Part C: `entry_edit_groups` in `strip_records.rs`; the `fuzz_layout.rs` plants reversed.
 - **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - JPEG and TIFF differentials against `-all=` and `-gps:all=` (the spec's open question after ship).
+  - Rename `StripError::NotJpeg`, or not: the Display is neutral now, the name is a public API cost.
+  - A bless mechanism for `tests/golden/`.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — The differential's identity criterion and the value-level pairs (Part A), whether the judge could excuse a
+   derived `Composite:GPS*` (Part B), and whether the JPEG group table should pass unchanged with `gps` and `all-pii`
+   (Part C).
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — DEC-023 (c)'s converse and the VP8X flag of the exception (c) WebP fixture (both now settled); and that the
+   `fuzz_layout.rs` plants and the JPEG group table are touched by the flip.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Generate the pin tables from a first record run, put the exception (c) fixtures in the design, and run the JPEG
+   re-record before writing its tests.
