@@ -21,8 +21,12 @@
 //!   record's `## carriers` section, ExifTool's reading of a file that keeps
 //!   the container skeleton and the carrier chunks and nothing else, compared
 //!   on `(group, tag, value)`. A plain `eXIf`/XMP block beside a carrier keeps
-//!   its lines. Allowed only on a fixture that holds a carrier, and then the
-//!   carrier's tags must in fact be gone;
+//!   its lines. Allowed only on a fixture that holds a carrier. The carrier's
+//!   tags must then be gone, checked two ways (DEC-023 amendments of
+//!   2026-11-26): with no plain block of the family, any output line of the
+//!   family is a failure; with one, by line, on the carrier-check set (the
+//!   excused `judged` lines plus every XMP/XML/SEAL line, so a `SEAL:*` or
+//!   `XML:*` line is checked there but never excused);
 //! * (b) the whole-block rule: a policy that holds every category an Exif
 //!   entry can have (`all`, `everything`) removes the whole `eXIf`/`EXIF`
 //!   chunk, so the uncategorised Exif tags go with it;
@@ -232,14 +236,25 @@ pub fn category_of(group: &str, tag: &str) -> Option<Cat> {
 
 /// A line the judge looks at: it has a category, or it is a tag of an Exif
 /// block (uncategorised Exif tags are kept by every policy but a whole-block
-/// one). Warnings and errors are not judged. This is the one line set the
-/// judge uses with the `## carriers` reading: the excuse, the by-line left-in
-/// check and `additivity_failures` all filter by it.
+/// one). Warnings and errors are not judged. This is the excuse predicate:
+/// exception (a) excuses only these lines. `carrier_checked` is defined from it.
 fn judged(l: &Line) -> bool {
     if l.tag == "Warning" || l.tag == "Error" {
         return false;
     }
     category_of(&l.group, &l.tag).is_some() || exif_group(&l.group)
+}
+
+/// The carrier-check predicate: the excuse predicate plus the XMP/XML/SEAL
+/// groups (Warning and Error lines stay out). The by-line left-in check beside
+/// a plain block and `additivity_failures` use it. It is wider than `judged`
+/// only by `XMP*`, `XML*` and `SEAL*` lines that are not `judged`, which are
+/// checked and compared but never excused.
+fn carrier_checked(l: &Line) -> bool {
+    if l.tag == "Warning" || l.tag == "Error" {
+        return false;
+    }
+    judged(l) || xml_group(&l.group)
 }
 
 // ── the judge ───────────────────────────────────────────────────────────────
@@ -375,6 +390,8 @@ pub fn judge(
              carriers section"
         ));
     }
+    // The excuse is built from `judged` lines only: an `XML*`/`SEAL*` line is
+    // never excused.
     let carrier_judged: Vec<&Line> = carrier_read.iter().filter(|l| judged(l)).collect();
     let mut excusable = multiset(&carrier_judged);
     // Missing lines.
@@ -408,8 +425,9 @@ pub fn judge(
     }
     // The carrier rule fires: what the carriers print is gone. With no plain
     // block of the same family in the file, nothing in those groups may be
-    // left. With one, the plain block's lines stay, so the check is by line:
-    // a carrier line is left in when the output prints more of it than the
+    // left. With one, the plain block's lines stay, so the check is by line,
+    // on the carrier-check set (`carrier_checked`, wider than the excuse): a
+    // carrier line is left in when the output prints more of it than the
     // input printed beyond the carriers.
     if removes_carriers(policy) {
         if carriers.exif && !carriers.exif_plain {
@@ -432,15 +450,20 @@ pub fn judge(
             }
         }
         if (carriers.exif && carriers.exif_plain) || (carriers.xml && carriers.xml_plain) {
-            let carrier_ms = multiset(&carrier_judged);
+            let multiset_of = |ls: &[Line]| {
+                let v: Vec<&Line> = ls.iter().filter(|l| carrier_checked(l)).collect();
+                multiset(&v)
+            };
+            let (in_c, out_c) = (multiset_of(input), multiset_of(output));
+            let carrier_ms = multiset_of(carrier_read);
             for (k, n_car) in &carrier_ms {
                 let family =
                     (carriers.exif && exif_group(&k.0)) || (carriers.xml && xml_group(&k.0));
                 if !family || removed_cat(k) {
                     continue;
                 }
-                let n_in = in_m.get(k).copied().unwrap_or(0);
-                let n_out = out_m.get(k).copied().unwrap_or(0);
+                let n_in = in_c.get(k).copied().unwrap_or(0);
+                let n_out = out_c.get(k).copied().unwrap_or(0);
                 if n_out > n_in.saturating_sub(*n_car) {
                     v.failures.push(format!(
                         "{fixture} under {policy}: carrier tag left in {}:{}={}",
@@ -461,14 +484,15 @@ pub fn judge(
     v
 }
 
-/// DEC-023 amendment of verify round 2 and round 3: on the `judged` lines (the
-/// only lines the judge does arithmetic on with the `## carriers` reading:
-/// exception (a)'s excuse and the by-line left-in check), `input` must equal
-/// `carriers` plus `no_carriers` as multisets of `(group, tag, value)`.
+/// DEC-023 amendment of verify rounds 2, 3 and 4: on the `carrier_checked`
+/// lines (every line the judge does arithmetic on with the `## carriers`
+/// reading: exception (a)'s excuse, which uses the `judged` part, and the
+/// by-line left-in check), `input` must equal `carriers` plus `no_carriers` as
+/// multisets of `(group, tag, value)`.
 /// Returns one message per line whose counts differ.
 pub fn additivity_failures(input: &[Line], carriers: &[Line], no_carriers: &[Line]) -> Vec<String> {
     let pick = |ls: &[Line]| {
-        let v: Vec<&Line> = ls.iter().filter(|l| judged(l)).collect();
+        let v: Vec<&Line> = ls.iter().filter(|l| carrier_checked(l)).collect();
         multiset(&v)
     };
     let want = pick(input);
