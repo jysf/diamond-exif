@@ -388,6 +388,77 @@ Scratch apparatus (outside the repo, session scratchpad): `dumper/` (fixture byt
 reliability), `scripts/diff.py` (differential), `scripts/riff.py` (VP8X/kind walker), `scripts/build.py` (my
 inputs), `judgerun/` (calls the committed `i3_judge::judge` on arbitrary readings, with a stub `Line`).
 
+### Fix round (2026-11-26)
+
+Implementer of the punch list above, on `feat/spec-039-png-webp-write-parity-build`. No change under `src/`, no new
+dependency, no question added, no deviation from the brief.
+
+**Commits** (in order):
+
+- `c105798` test(spec-039): red-proofs for line-level judge exception (a), red (HANDOFF-091)
+- `0b82da9` test(spec-039): judge exception (a) is line-level, carriers section recorded (HANDOFF-091)
+- `720b899` test(spec-039): add ICC to the AC11 dispositions grid (HANDOFF-091)
+- `3437f11` docs(spec-039): README PNG keyword sentence names Make, Model, TimeStamp (HANDOFF-091)
+
+**Item 1 (M), exception (a) is line-level: done.**
+
+- Red first. `c105798` adds the fixture `png-xmp-and-raw-xmp` (a plain XMP `iTXt` with `CreatorTool=DiamondTool` plus a
+  raw-profile XMP `tEXt` with `RawTool`), its record, and its D3 pin (`gps`, theirs only `XMP-xmp:CreatorTool`). It adds
+  two red-proof tests. Against the group-level judge both failed: the judge returned `[]` (no failures) for the planted
+  over-cut. The controls passed.
+- The fix, `0b82da9`:
+  - `carriers_only(ext, bytes)` in `tests/support/i3_records.rs` builds the carriers file. PNG: signature, the 14
+    skeleton chunk types (IHDR, PLTE, IDAT, IEND, tRNS, gAMA, cHRM, sRGB, sBIT, bKGD, pHYs, acTL, fcTL, fdAT) and the
+    carrier chunks, byte for byte, in order. WebP: the RIFF header with a recomputed size, the skeleton chunks (VP8,
+    VP8L, VP8X, ANIM, ANMF, ALPH) and the carrier rows. Every other chunk is dropped.
+  - Carrier identification is typed there (DEC-021 clause 4, DEC-022 clause 4). `scan` was moved into the same file and
+    shares the classification. Nothing is read from `src/`.
+  - `record_text` writes `## carriers` right after `## input`, with the same read flags and dropped groups.
+  - `judge` takes the carriers lines. A missing line is excused only up to its `(group, tag, value)` count there, and
+    only if the file holds a carrier. `Composite:GPS*` is excused only when that section prints it. "Carrier tag left
+    in" compares against the carriers lines by count when a plain block of the same family exists (output count above
+    input count minus carrier count).
+  - A missing `## carriers` section on a carrier fixture is a judge failure.
+- Red-proof lines after the fix (`--nocapture`):
+  - `png-exif-and-raw-exif under gps: kept tag missing IFD0:Make=AlphaCam` (plain `IFD0` lines deleted from the output
+    reading; `IFD0:Model=OnlyInA` is missing too)
+  - `png-xmp-and-raw-xmp under gps: kept tag missing XMP-xmp:CreatorTool=DiamondTool` (plain XMP lines deleted)
+  - Controls pass: Exif under `gps` and `gps_and_device`; XMP under `gps`, `gps_and_device` and `all_pii`.
+  - The old test `comparator_is_red_when_the_carrier_exception_is_claimed_without_a_carrier` is reworked to give the
+    carriers reading explicitly: excused with a carrier file, red on a file with no carrier.
+- New test `the_carriers_reading_prints_nothing_the_input_does_not`: over all 36 carrier fixtures, the carriers reading
+  is a sub-multiset of the input reading. It holds.
+- Re-record: `just oracle-record` twice. Run 1 added 36 `## carriers` sections (14 PNG, 22 WebP): 36 files, +453
+  lines, 0 deleted. A script confirmed that every record minus its `## carriers` section equals the committed text.
+  Run 2 gave no diff. `png-xmp-and-raw-xmp.txt` itself was added in `c105798`. No machine path in any record.
+- The differential counts over the 174 oracle fixtures are unchanged. The tests that hold them pass.
+- Judge exception uses over 239 fixtures x all recorded policies (2,583 sections, 598 with a removable tag, 2,408 tags):
+  - **(a) carrier 677, (b) whole block 354, (c) residual 24.**
+  - Before the round (HANDOFF-090): 670 / 354 / 24 over 238 fixtures. The 7 extra (a) uses are the new fixture, which
+    has 7 carrier-removing policies that keep `Xmp`'s `CreatorTool=RawTool` line missing. So line-level excuses exactly
+    as many lines as the group-level rule did on the 238 fixtures.
+  - No real fixture failed the judge, so no writer finding and no question.
+- Lower bounds in `assert_judge_holds` were raised to honest values: sections 2,000 to 2,500; removable sections 550 to
+  590; removable tags 2,000 to 2,400; carrier 600 to 670; whole block 300 to 350; residual 20 to 24.
+- Fixture-set test: 239 fixtures (92 PNG, 147 WebP), the new one last.
+
+**Item 2 (L), ICC in the AC11 grid: done** (`720b899`). `grid_png` has an `iCCP`, `grid_webp` an `ICCP` (with
+`FLAG_ICC`). `png_and_webp_dispositions_per_preset` now has Icc in the findings, and asserts `kept` under `gps`,
+`gps_and_device`, `all_pii` and `all`, `removed` under `everything`. Hand-typed from DEC-009: `Icc` is removed only by
+`Everything` (table row, rule 3), and `may_hold(Icc)` is empty (clarification 1), so it is never `kept_unread`.
+
+**Item 3 (L), README: done** (`3437f11`). The PNG keyword sentence now reads `Creation Time`, `create-date`,
+`modify-date` and `TimeStamp` timestamps, `Software` software, `Make` and `Model` camera model, the rest free text.
+
+**Gates, Rust 1.90.0, `DIAMOND_EXIF_REQUIRE_ORACLE=1`, ExifTool 13.55:**
+
+- `just lint` rc 0; `just lint-no-allow` rc 0; `just forbid-unsafe` rc 0; `just validate` rc 0.
+- `just test` rc 0: 41 `test result: ok` lines, 1,535 passed, 0 failed, 20 ignored (1,532 before, plus the 3 new tests).
+- `just mutation-oracle` rc 0: 67 + 42 + 43 passed, 1 ignored each.
+- W1 to W4 (`writer_mutant`, replay and live): each `control digest equal true; strip Ok true; replay red true; live
+  red true`.
+- `fuzz/Cargo.lock` untouched (no fuzz run). Working tree clean after the commits. No background process left.
+
 ### Cost self-report
 
 - **Tokens (total):** 258,606, filled by the orchestrator from the harness subagent result (96 tool calls).
