@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-27
-  status: pending                  # pending | accepted | completed | rejected
+  status: completed                # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-025
@@ -46,18 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                # completed | blocked | rejected
+  agent: claude-sonnet-5-5                      # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
   basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: null
-  branch: null
-  pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  duration_minutes: 90
+  branch: feat/spec-025-exif-block-build
+  pr: 71
+  completed_at: 2026-11-27               # YYYY-MM-DD
+  notes: "Part B. tokens_total is null: the delegated run cannot see its own spend, so the orchestrator records the harness figure. duration_minutes is an estimate."
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -176,38 +176,38 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `feat/spec-025-exif-block-build`, PR #71 (https://github.com/jysf/diamond-exif/pull/71)
+- **Completed at:** 2026-11-27
+- **All acceptance criteria met?** Yes for Part B (AC9, AC11, AC12). Part A's commits `3b359a3` (red tests and API stub), `c3c1837` (library) and `551bde5` came first. Part B commits: `961202f` (the two live tests, the sweep tables, the mirror comparison), `130e177` (the fuzz target, seeds, pins, CI, lists), `dd3f594` (README, CHANGELOG, DEC-015 note, lint fixes). The Part B tests were written against a library that already existed, so there was no red phase for them; the live tests were red on first run in two ways, both fixed in the tests and neither in the library (see Deviations).
+- **Reproduced numbers (ExifTool 13.55):** 1,178 sweep sources (573 Exif ids x Exif and Interop IFDs, 32 GPS ids). Writer pass: 22 refused, all with `No size tag` (11 tags x 2 IFDs); 2 changed (0x014A in the Exif and Interop IFDs); 1 lost its Exif IFD (Exif 0x013B Artist); 1,153 unchanged. Reader pass: 2 listings change (0x014A in both IFDs; `SubIFD:Software` disappears). ExifTool's offset set (24 sources) is inside the block's `OffsetCarrying` set; the only other omissions are MakerNotes and the documented extras.
+- **Gates (Rust 1.90.0):** `just lint`, `lint-no-allow`, `lint-fuzz`, `forbid-unsafe`, `deny`, `deny-fuzz` green; `DIAMOND_EXIF_REQUIRE_ORACLE=1 just test` 1,599 passed, 0 failed, 22 ignored (the pre-existing `tools::tests::env_limit_child` copy per test binary; none in the new files), 0 `SKIP` lines; `just mutation-oracle` 152 passed, 0 failed; `just validate` and `just cost-audit` green; `cargo fmt --check` for both crates clean. `just fuzz-smoke exif_block`: 385,235 runs in 61 s, no crash.
+- **Seeds:** 473 (234 shapes x bases 8 and 1000, three edge bases for the design sample, an empty and a one-byte input), pinned as `EXIF_BLOCK_SEEDS` in `tests/fuzz_layout.rs`.
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null. The delegated run cannot see its own spend; the orchestrator records the harness figure.
+- **Estimated USD:** null
+- **Duration (minutes):** about 90 (estimate)
+- **Source of the number:** none available
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
+- **New decisions emitted:** none. A note was added to DEC-015's clarification of 2026-11-27: a non-empty block refuses `base < 8` (`BadBase`).
 - **Deviations from spec:**
-  - [list]
-- **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - The writer pass of the sweep runs `exiftool -m`. Without it ExifTool also refuses the swept 0xC612 (DNGVersion) and 0x927C (MakerNote) with a `[minor]` error about the value 4096 (4 more refusals, 26 in all), which is about the swept value and not an offset. With `-m` the 22 `No size tag` refusals reproduce exactly. The design's numbers did not say whether it used `-m` or a different target value.
+  - AC9(a) does not run ExifTool on one source, `ok-subifd-loop` (IFD0's SubIFD leads to an IFD whose SubIFD leads back to IFD0): ExifTool recurses on it without returning in 60 s ("Deep recursion", the `two-hop-cycle` hazard of `tests/support/tools.rs`). For that shape only the placed files are read, against a pinned expectation.
+  - AC9(a) pins, per shape, the lines ExifTool prints for the source that the block cannot hold (an Exif IFD reached through a SubIFD or IFD1, an Interop IFD pointed to from IFD0, the DNG's GPS in its raw SubIFD) and the lines only the placed file prints (ExifTool stops reading an IFD at a first entry of an unknown type, so the `unknown-types` source prints nothing from those three IFDs). Every pin is checked to be present, so a change turns the test red.
+  - ExifTool runs once per shape (its files) over a few threads in AC9(a), because one hostile source took a whole-directory run down.
+  - The fuzz harness accepts `BadBase` from `write` only for a base below 8 and a non-empty block, and retries under the default budget when the small budget cannot hold the self-check scratch image. It predicts no omission reasons, so it holds no table for `omission_table_mirrors_agree`; that test compares the sweep tables with the shapes file and the model.
+- **Follow-up work identified:** none new. The sweep's `-m` and the `ok-subifd-loop` handling are the points SPEC-026 (recorded parity) should know about.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — The design's sweep command: whether `-m` was used decides whether 22 or 26 sources are refused. The ExifTool hang on `ok-subifd-loop` was not mentioned although the shape is in the grid.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — A note that ExifTool must not be run on SubIFD-cycle sources (the repo already knows it for `two-hop-cycle`), and that ExifTool stops an IFD at a first unknown-type entry, which makes "same as the source" false for the `unknown-types` shape.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — Run ExifTool one shape at a time from the start, and read its output on the shapes before writing the comparison, instead of discovering the divergent shapes one run at a time.
