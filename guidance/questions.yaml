@@ -1387,8 +1387,9 @@ questions:
     raised_at: 2026-11-20
     assigned_to: null
     notes: |
-      DEC-014 item 3. Settle at SPEC-025 design: confirm the candidate list against the Exif
-      specification and ExifTool, then pick per tag. Copying one unchanged into the other byte order is
+      DEC-014 item 3. Moved to SPEC-041 at the 2026-11-27 re-frame (SPEC-025 builds in the
+      source's byte order only; DEC-014 amendment 2026-11-27 item 1). Settle at SPEC-041 design:
+      confirm the candidate list against the Exif specification and ExifTool, then pick per tag. Copying one unchanged into the other byte order is
       ruled out. Measure first which source and target orders the consumer's fixtures actually pair:
       if they never cross, the converters can wait.
 
@@ -1851,3 +1852,21 @@ questions:
       converse is ratified with the build's narrow condition: a Composite:GPS* tag, the input's
       XMP holds GPS, and the policy removes Xmp. The amendment states one limit: inputs with GPS
       in both Exif and XMP. No fixture has that shape.
+
+  - id: strip-offset-tags-incomplete
+    question: "Should the strip planner's OFFSET_TAGS also protect the targets of 0x8781 SharedData, 0xA010 SamsungRawPointersOffset, 0xBCC0 ImageOffset and 0xBCC2 AlphaOffset, which ExifTool 13.55 treats as offset tags?"
+    priority: low
+    status: open
+    raised_by: claude-opus-5-5
+    raised_at: 2026-11-27
+    assigned_to: null
+    notes: |
+      Found at SPEC-025 design. The offset sweep (DEC-014 amendment 2026-11-27 item 3) has ExifTool's
+      writer refuse 11 tags in the Exif and Interop IFDs with "No size tag"; src/write/exif.rs
+      OFFSET_TAGS names 7 of them. The strip planner uses OFFSET_TAGS to keep the bytes a kept
+      entry points at from being zeroed, so a kept entry of one of the other four could point at
+      bytes a removal scrubs. Not measured in IFD0 or IFD1 (the sweep placed tags in the Exif,
+      Interop and GPS IFDs only), where JPEG XR's ImageOffset normally lives. SPEC-025 does not
+      change OFFSET_TAGS; it adds the four in src/write/block.rs. Decide with a measurement of the
+      strip (a TIFF with each tag pointing into a removed value) whether this is a real leak or
+      overwrite, and if so, a patch.
