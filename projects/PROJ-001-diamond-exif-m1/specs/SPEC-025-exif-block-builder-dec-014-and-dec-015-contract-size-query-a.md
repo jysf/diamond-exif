@@ -99,10 +99,19 @@ cost:
       duration_minutes: 15
       recorded_at: 2026-11-27
       notes: "Verified at 7cda5d3; punch list of 1 M and 4 L items. The orchestrator transcribed the harness subagent result: 223,885 tokens, 69 tool calls, 928 s."
+    - cycle: build
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 140759
+      estimated_usd: null
+      duration_minutes: 11
+      recorded_at: 2026-11-27
+      notes: "Verify round 1 fix round, one subagent: the unknown-type mechanism (comment, DEC-014 note, a not-first fixture), the sweep doc and doc-comment placement, the README example, slack-byte zero checks in check_block (red ed784aa), Interop in the mirrors sweep. Pushed 7bdb98f..fbd360a. The orchestrator transcribed the harness subagent result: 140,759 tokens, 56 tool calls, 687 s."
   totals:
-    tokens_total: 787937
+    tokens_total: 928696
     estimated_usd: 0.00
-    session_count: 3
+    session_count: 4
 ---
 
 # SPEC-025: Exif block builder in the source's byte order: DEC-014 and DEC-015 contract, size query and write at a base, MakerNote and offset-carrying entries left out and reported, budget, readback self-check, `exif_block` fuzz target
