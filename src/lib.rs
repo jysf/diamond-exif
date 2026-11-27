@@ -10,6 +10,9 @@
 //! does not read PNG yet. WebP is walked chunk by chunk ([`webp`], DEC-019: the
 //! RIFF size never limits the walk) and [`webp::read`] hands `EXIF` to the TIFF
 //! engine and locates `XMP ` and `ICCP`; the audit does not read WebP yet.
+//! [`write::exif_block`] builds the relocatable Exif, GPS and Interop block for
+//! another TIFF writer, at a caller-given base, read back before it is returned
+//! (DEC-014, DEC-015).
 
 #![forbid(unsafe_code)]
 #![deny(
