@@ -83,8 +83,7 @@ clarification of 2026-11-27** are normative. Do not re-decide them. If the code 
 measured count does not reproduce, or a sweep finds a tag the table lacks), add a question to
 `guidance/questions.yaml`, stop, and report it. Do not change the table to match what you got.
 
-**Gate on starting:** DEC-014 is `proposed` until jysf accepts it as amended. The orchestrator starts you only after
-that. If you find it still `proposed`, stop and say so.
+**Gate on starting:** cleared. jysf accepted DEC-014 as amended on 2026-11-27 (`status: accepted`).
 
 ## Context the Receiving Agent Needs
 

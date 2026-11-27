@@ -96,7 +96,7 @@ The original framing (2026-11-20) gave these reasons. The first two still hold; 
 
 ## Spec Backlog
 
-- [ ] SPEC-025 (design, 2026-11-27: DEC-014 amendment, DEC-015 clarification, HANDOFF-092) — [M, was L; split 2026-11-27] Exif block builder in the source's byte order: DEC-014 and DEC-015 contract, size query and write at a base, MakerNote and unsafe entries left out and reported, budget, readback self-check, `exif_block` fuzz target
+- [ ] SPEC-025 (build, 2026-11-27: DEC-014 amended and accepted, DEC-015 clarification, HANDOFF-092) — [M, was L; split 2026-11-27] Exif block builder in the source's byte order: DEC-014 and DEC-015 contract, size query and write at a base, MakerNote and unsafe entries left out and reported, budget, readback self-check, `exif_block` fuzz target
 - [ ] SPEC-041 (frame) — [M, split out of SPEC-025 on 2026-11-27] Byte-order conversion: a big-endian source to the little-endian block the consumer needs, value by value; the UNDEFINED rule (question `exif-block-byte-order-sensitive-undefined`); self-check and fuzz cover the cross-order path
 - [ ] SPEC-026 (frame) — [M] ExifTool parity of a placed Exif block: test-only TIFF placer, DNG and TIFF fixtures, both byte orders, Interop and no-GPS cases, red-proofed
 - [ ] SPEC-027 (frame) — [S] Strip-policy presets while building the Exif block (DEC-009), with the self-check extended to the policy
@@ -110,7 +110,7 @@ The original framing (2026-11-20) gave these reasons. The first two still hold; 
 - **SPEC-025 split at the 2026-11-27 re-frame (jysf approved).** As framed it was L, and every L spec in STAGE-010 took two builder parts and a fix round. The seam is byte order: SPEC-025 builds in the source's own byte order (layout, size query, write at a base, omissions, budget, readback self-check, `exif_block` fuzz target) [M]; SPEC-041 converts into the other order, including the UNDEFINED rule [M]. Both are needed before the release, since the consumer requires little-endian from any source. Order: SPEC-025, then SPEC-041, then SPEC-026 (its parity covers all four byte-order pairs, so it depends on both), then SPEC-027 (depends on SPEC-025 only, deferrable).
 - **Lessons from STAGE-010 that apply here.** Design measures a variant grid of hostile sources against ExifTool, not only clean DNGs (AGENTS.md §15): a pointer loop between IFDs, an Interop pointer from the GPS IFD, two Exif IFD pointers, offsets past the end, odd counts, an out-of-line value overlapping an IFD, an empty Exif IFD with a GPS IFD. ExifTool runs on the builder's output during build, not only at verify (SPEC-037). Any table the design amends (the omission list, the UNDEFINED rule) lists every hand-typed mirror in src, tests and fuzz (signal `hand-typed-mirrors-of-a-decision-table-drift`).
 - **SPEC-027 reads DEC-009 as amended by SPEC-033:** `AllPii` keeps the `Rights` category (Copyright) and removes the rest.
-- **DEC-014 is still `proposed`.** Its GPS-only clause was pending on irradiance's confirmation, which arrived on 2026-11-21 (irradiance/DEC-072 accepted with the amendment). Accepting DEC-014 is jysf's call, and happens at SPEC-025 design at the latest.
+- **DEC-014 accepted** by jysf on 2026-11-27, with the SPEC-025 design amendment (its GPS-only clause binding since irradiance/DEC-072's acceptance on 2026-11-21).
 - The consumer's requests are referred to as monorail-000/DEC-075 and its requests document. They are never `depends_on` entries: depends_on names specs in this repo only.
 
 ## Dependencies

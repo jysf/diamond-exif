@@ -6,7 +6,7 @@
 task:
   id: SPEC-025
   type: story                      # epic | story | task | bug | chore
-  cycle: design                    # frame | design | build | verify | ship
+  cycle: build  # frame | design | build | verify | ship
   blocked: false                   # irradiance/DEC-072 accepted as amended (optional Exif offset), checked 2026-11-27
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -93,7 +93,7 @@ First spec of STAGE-007 (PROJ-001). So far the writer only removes bytes in plac
 
 At the 2026-11-27 re-frame this spec was split by byte order. It builds the block in the **source's** byte order only. SPEC-041 adds conversion into the other order. SPEC-026 adds recorded, red-proofed ExifTool parity. SPEC-027 adds policy presets.
 
-The design measured ExifTool 13.55 before writing these criteria (see *Design measurements* below). It amends DEC-014 (2026-11-27: byte-order staging, the measured omission list, which walk issues refuse, layout) and clarifies DEC-015 (how the self-check reads the block at its base). **DEC-014 is still `proposed`: jysf accepts it as amended before build starts.** irradiance/DEC-072 is accepted with the optional Exif offset, so GPS-only blocks are in scope.
+The design measured ExifTool 13.55 before writing these criteria (see *Design measurements* below). It amends DEC-014 (2026-11-27: byte-order staging, the measured omission list, which walk issues refuse, layout) and clarifies DEC-015 (how the self-check reads the block at its base). **DEC-014 was accepted as amended by jysf on 2026-11-27.** irradiance/DEC-072 is accepted with the optional Exif offset, so GPS-only blocks are in scope.
 
 ## Goal
 
