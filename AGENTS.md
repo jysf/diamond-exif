@@ -628,6 +628,16 @@ expected size *actually* landed in — at which point the size you assign double
 as a token estimate, measured from this repo rather than guessed. None of this
 gates anything; the feedback loop is the whole value.
 
+For any parity, audit or strip spec, **measure a variant grid of hostile
+shapes against the oracle in the design**, not only the central keys: repeated
+blocks (several `EXIF` per selector), wrong-case or unexpected chunk codes,
+odd lengths, empty regions, data after the end marker, and a completeness sweep
+against the oracle's own tag-id list where it has one. Put what the grid finds
+into the ACs. Verify keeps its own grid; this one exists so the builder's
+fixtures already hold the shapes verify kept finding (signal
+`design-must-measure-hostile-edges-not-only-the-happy-keys`, codified at
+STAGE-010 close, N=6).
+
 ### During **build** (implementer reads this)
 
 Before writing code:
