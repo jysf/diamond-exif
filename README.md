@@ -133,6 +133,23 @@ exif-audit --csv --inventory --policy all-pii photos/ > exif-inventory.csv
 
 **Privacy default.** The report does not repeat the data it was run to find: `--values` is off by default, and when you turn it on each value excerpt is cut at 64 bytes. File names in the report are escaped, so a hostile name cannot break the JSON or CSV or smuggle control characters into a terminal. A symlink found inside a directory is reported and not followed; a FIFO or device is reported and never opened; hidden files are scanned.
 
+## Exif block for another TIFF writer
+
+A library user who writes the surrounding TIFF or DNG themselves (an image library that owns the file but not the Exif details) can ask for the source's Exif, Interop and GPS IFDs as one relocatable block. It is a library API only; the CLI does not use it.
+
+```rust
+use exif_core::write::{exif_block, BlockOptions};
+
+let plan = exif_block(source_tiff_bytes, &BlockOptions::new())?;
+let len = plan.len();                 // the size, before you choose where it goes
+let base = 8;                         // even, and past the 8-byte header
+let block = plan.write(base)?;        // bytes with final offsets for that base
+// Copy `block` to `base`, then point your IFD0's 0x8769 at `base + plan.exif_position()?`
+// and 0x8825 at `base + plan.gps_position()?` (LONG, count 1).
+```
+
+The block is in the source's byte order. It is read back through the crate's own walk before it is returned, and an entry it leaves out is named in `plan.omissions()` with a reason: a MakerNote (never moved), an entry that carries an offset the block does not rewrite (the strip and tile offsets, `SubIFDs`, and the others ExifTool relocates), or a field type it cannot size. A source it cannot rebuild safely is refused with a typed reason and no bytes. A non-empty block cannot start inside the TIFF header (`base` of at least 8). A cross-byte-order request is not available yet.
+
 ## Build and test
 
 App commands live in `app.just` (details in `AGENTS.md` §6):

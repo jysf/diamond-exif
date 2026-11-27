@@ -206,7 +206,8 @@ mod exif_block_invariants {
         let ifd0_at = if f.block.is_empty() {
             8
         } else {
-            f.base.saturating_add(u32::try_from(f.block.len()).unwrap_or(0))
+            f.base
+                .saturating_add(u32::try_from(f.block.len()).unwrap_or(0))
         };
         out.extend_from_slice(&w32(ifd0_at));
         if !f.block.is_empty() {
@@ -282,10 +283,10 @@ mod exif_block_invariants {
     }
 
     fn positions_hold(f: &Facts) -> bool {
-        let ok = |p: Option<u32>| p.is_none_or(|p| p % 2 == 0 && p < f.len);
+        let ok = |p: Option<u32>| p.is_none_or(|p| p.is_multiple_of(2) && p < f.len);
         ok(f.exif_pos)
             && ok(f.gps_pos)
-            && f.len % 2 == 0
+            && f.len.is_multiple_of(2)
             && (f.len != 0 || (f.exif_pos.is_none() && f.gps_pos.is_none()))
     }
 
@@ -307,10 +308,8 @@ mod exif_block_invariants {
         let present = se.is_some() == pe.is_some()
             && si.is_some() == pi.is_some()
             && sg.is_some() == pg.is_some();
-        let want = 1
-            + usize::from(pe.is_some())
-            + usize::from(pi.is_some())
-            + usize::from(pg.is_some());
+        let want =
+            1 + usize::from(pe.is_some()) + usize::from(pi.is_some()) + usize::from(pg.is_some());
         present && c.ifds().len() == want
     }
 

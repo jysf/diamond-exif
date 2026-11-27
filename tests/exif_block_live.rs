@@ -43,28 +43,31 @@ use exif_core::reader::ByteOrder;
 use exif_core::write::{exif_block, BlockIfd, BlockOptions};
 use sweep::{live_gate, Scratch};
 
+type Pin = (&'static str, &'static str, &'static str, &'static str);
+
+/// One shape: index, name, the files written for it, the omitted entries.
+struct Case {
+    n: usize,
+    name: String,
+    files: Vec<(String, Vec<u8>)>,
+    omitted: BTreeSet<(String, String)>,
+}
+
 /// Shapes whose SOURCE ExifTool is never run on, with the entries the placed
 /// file must print instead (`group`, `id`, `name`, `value`, typed from the
 /// shape). `ok-subifd-loop` has IFD0's SubIFD lead to an IFD whose SubIFD leads
 /// back to IFD0; ExifTool recurses without bound on a SubIFD cycle (the same
 /// hazard as `two-hop-cycle`, see `tests/support/tools.rs`: it did not return
 /// in 60 s here), so only the placed files, which hold no cycle, are read.
-const SOURCE_NOT_RUN: [(&str, [(&str, &str, &str, &str); 1]); 1] =
-    [("ok-subifd-loop/", [("ExifIFD", "0x8827", "ISO", "1")])];
+const SOURCE_NOT_RUN: [(&str, &[Pin]); 1] =
+    [("ok-subifd-loop/", &[("ExifIFD", "0x8827", "ISO", "1")])];
 
 fn source_not_run(name: &str) -> Option<Vec<Line>> {
     SOURCE_NOT_RUN
         .iter()
         .find(|(prefix, _)| name.starts_with(prefix))
-        .map(|(_, lines)| {
-            lines
-                .iter()
-                .map(|(g, i, n, v)| (g.to_string(), i.to_string(), n.to_string(), v.to_string()))
-                .collect()
-        })
+        .map(|(_, lines)| lines.iter().map(line_of).collect())
 }
-
-type Pin = (&'static str, &'static str, &'static str, &'static str);
 
 /// Where ExifTool's reading of the SOURCE and of the placed block differ for a
 /// reason that is the point of the shape, not a fault: per shape (name prefix),
@@ -255,12 +258,7 @@ fn placed_block_reads_as_source_in_exiftool() {
     }
     let scratch = Scratch::new("block-live");
     // One directory, one ExifTool run: `<n>_src`, `<n>_b8`, `<n>_b1000`.
-    let mut cases: Vec<(
-        usize,
-        String,
-        Vec<(String, Vec<u8>)>,
-        BTreeSet<(String, String)>,
-    )> = Vec::new();
+    let mut cases: Vec<Case> = Vec::new();
     for s in all_shapes() {
         if s.expect != Expect::Block {
             continue;
@@ -291,7 +289,12 @@ fn placed_block_reads_as_source_in_exiftool() {
         for (name, bytes) in &files {
             std::fs::write(scratch.0.join(name), bytes).expect("write file");
         }
-        cases.push((n, s.name.clone(), files, omitted));
+        cases.push(Case {
+            n,
+            name: s.name.clone(),
+            files,
+            omitted,
+        });
     }
     assert!(cases.len() > 200, "{} shapes", cases.len());
 
@@ -318,7 +321,7 @@ fn placed_block_reads_as_source_in_exiftool() {
                         .iter()
                         .skip(w)
                         .step_by(workers)
-                        .map(|(n, _, files, _)| {
+                        .map(|Case { n, files, .. }| {
                             let mut a = selectors.clone();
                             let paths: Vec<_> =
                                 files.iter().map(|(name, _)| dir.join(name)).collect();
@@ -350,14 +353,17 @@ fn placed_block_reads_as_source_in_exiftool() {
     for (n, r) in results {
         match r {
             Ok(text) => listed.extend(listing(&text)),
-            Err(e) => run_failures.push(format!("shape {n} {}: exiftool: {e}", cases[n].1)),
+            Err(e) => run_failures.push(format!("shape {n} {}: exiftool: {e}", cases[n].name)),
         }
     }
     assert!(run_failures.is_empty(), "{run_failures:#?}");
 
     let mut failures: Vec<String> = Vec::new();
     let (mut compared, mut with_entries) = (0usize, 0usize);
-    for (n, name, _files, omitted) in &cases {
+    for Case {
+        n, name, omitted, ..
+    } in &cases
+    {
         let read = |suffix: &str| -> Vec<Line> {
             listed
                 .get(&format!("{n:04}_{suffix}.tif"))

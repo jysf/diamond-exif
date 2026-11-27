@@ -80,6 +80,8 @@ Item 4 requires the check to run on the exact returned bytes at the caller's bas
 
 So the check needs `base + length + 34` bytes. That total counts against the same budget as the block (`max_len`, default 16 MiB): a base so large that the image would exceed it is a typed refusal before anything is allocated, and a caller with a large base raises the budget. For irradiance's base of 8 the cost is the block's own size. This adds no condition to item 2: the base is still any even value with `base + length` in a `u32`, within the budget.
 
+Build note (SPEC-025, 2026-11-27): the base is also refused when it is below 8 for a non-empty block (`BadBase`), because the block would overlap the 8-byte TIFF header, which the scratch image, and every real file, holds there. An empty block has no bytes to overlap and accepts any even base. This is a condition the item 2 wording ("any even value") left implicit; `tests/exif_block.rs` and the `exif_block` fuzz target pin it.
+
 ## References
 
 - Related specs: SPEC-025 (implements), SPEC-026 (test placer)
