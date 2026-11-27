@@ -38,7 +38,7 @@ const TAG_GPS_POINTER: u16 = 0x8825;
 /// IFD1 `JPEGInterchangeFormat`: the thumbnail's offset.
 const TAG_THUMB_OFFSET: u16 = 0x0201;
 /// The tags the walk follows as pointers: `SubIFDs`, Exif, GPS, Interop.
-const POINTER_TAGS: [u16; 4] = [0x014A, 0x8769, TAG_GPS_POINTER, 0xA005];
+pub(crate) const POINTER_TAGS: [u16; 4] = [0x014A, 0x8769, TAG_GPS_POINTER, 0xA005];
 /// IFD pointer tags that ExifTool opens as sub-IFDs and the walk does not
 /// follow (DEC-005 names only [`POINTER_TAGS`]). From a scan of every tag id
 /// 0x0000..=0xFFFF as a LONG pointer in IFD0, the Exif IFD and IFD1 against
@@ -47,7 +47,7 @@ const POINTER_TAGS: [u16; 4] = [0x014A, 0x8769, TAG_GPS_POINTER, 0xA005];
 /// KodakIFD and 0xFE00 KDC_IFD. Nothing is followed: an entry with one of these
 /// tags, in any IFD and of any type, makes a partial policy refuse
 /// (`HiddenPointer`), because an entry of a removed category could sit behind it.
-const EXIFTOOL_SUBDIRECTORY_TAGS: [u16; 4] = [0x0190, 0x888A, 0x8290, 0xFE00];
+pub(crate) const EXIFTOOL_SUBDIRECTORY_TAGS: [u16; 4] = [0x0190, 0x888A, 0x8290, 0xFE00];
 /// Tags whose VALUE is a blob that ExifTool 13.55 reads as metadata the walk
 /// and the audit never see (a blob, not an offset to an IFD, so nothing here
 /// can follow it): 0xC51B HasselbladExif (an UNDEFINED blob parsed as an
@@ -58,7 +58,7 @@ const EXIFTOOL_SUBDIRECTORY_TAGS: [u16; 4] = [0x0190, 0x888A, 0x8290, 0xFE00];
 /// (a DEC-008 note, question `audit-blob-carrier-parsing`); until then an entry
 /// with one of these tags, in any IFD kind and of any type, makes a partial
 /// policy refuse with `HiddenPointer`, as for the sub-IFD tags above.
-const EXIFTOOL_BLOB_CARRIER_TAGS: [u16; 4] = [0xC51B, 0x8568, 0xCD41, 0xC6F5];
+pub(crate) const EXIFTOOL_BLOB_CARRIER_TAGS: [u16; 4] = [0xC51B, 0x8568, 0xCD41, 0xC6F5];
 /// The tags an IFD1 may hold when it is removed whole (the allow-list; any
 /// other tag is refused as `ThumbnailNotLocated`). Each is a tag whose only
 /// offset to data is its own out-of-line value (which the planner zeroes), or
@@ -232,7 +232,7 @@ fn kept_value_range(
 /// Tag pairs `(offsets, lengths)` whose targets a KEPT entry makes data of the
 /// file: strips, tiles, free blocks, the JPEG thumbnail, and the JPEG tables
 /// (offsets only; their length is not stated).
-const OFFSET_TAGS: [(u16, Option<u16>); 7] = [
+pub(crate) const OFFSET_TAGS: [(u16, Option<u16>); 7] = [
     (0x0111, Some(0x0117)),
     (0x0144, Some(0x0145)),
     (0x0120, Some(0x0121)),

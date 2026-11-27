@@ -128,7 +128,7 @@ impl<'a> Ascii<'a> {
 /// type 13 `IFD` from TIFF/EP). `None` for a type this reader does not know,
 /// TIFF says a reader should skip such a field rather than reject the file, so
 /// the entry is still recorded and only reading its payload fails.
-pub(super) fn type_size(field_type: u16) -> Option<u64> {
+pub(crate) fn type_size(field_type: u16) -> Option<u64> {
     match field_type {
         1 | 2 | 6 | 7 => Some(1),   // BYTE, ASCII, SBYTE, UNDEFINED
         3 | 8 => Some(2),           // SHORT, SSHORT
