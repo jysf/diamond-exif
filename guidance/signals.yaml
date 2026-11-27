@@ -272,9 +272,21 @@ signals:
     summary: "The strip oracle records no Gps, GpsAndDevice or AllPii policy, so for the JFIF fixtures the presets that keep the thumbnail as kept-unread (SPEC-040 AC9/AC11) are checked against ExifTool only by the verifier's one-off probe; the recorded Custom policies (xmp, icc, rights...) cover 'kept' but not the preset path, which tests/strip.rs unit-tests."
     evidence: "SPEC-040 build (HANDOFF-088 deviation 3: adding a recorded policy changes every existing strip record) and verify (HANDOFF-089, optional suggestion; the verifier checked the kept presets live by hand). N=1."
     bar: null
-    status: open
+    status: done
     disposition_at: project-close
     first_flagged: 2026-11-24
-    last_touched: 2026-11-24
+    last_touched: 2026-11-27
     raised_by: claude
-    notes: "Fix: add a Gps (or AllPii) row to the recorded policies for the four jfif-* strip fixtures only, or to all fixtures with a one-time re-record of tests/oracle-fixtures/exiftool-strip/. Small; schedule it with the next spec that touches the strip oracle. Scheduled 2026-11-24 as SPEC-039 part C (AC14: gps and all-pii recorded for every JPEG strip fixture, one re-record); close at SPEC-039 ship, or re-defer if part C is cut."
+    notes: "Fix: add a Gps (or AllPii) row to the recorded policies for the four jfif-* strip fixtures only, or to all fixtures with a one-time re-record of tests/oracle-fixtures/exiftool-strip/. Small; schedule it with the next spec that touches the strip oracle. Scheduled 2026-11-24 as SPEC-039 part C (AC14: gps and all-pii recorded for every JPEG strip fixture, one re-record); close at SPEC-039 ship, or re-defer if part C is cut. Done 2026-11-27: SPEC-039 shipped with AC14 (PR #67); the four jfif-* fixtures keep the thumbnail under gps and lose it under all-pii, by replay and live, and verify rounds 1 and 5 checked it."
+
+  - id: hand-typed-mirrors-of-a-decision-table-drift
+    type: lesson
+    summary: "A decision table that tests and fuzz models re-type by hand (DEC-020's PNG text keywords: the library, two fuzz models, one oracle test) was amended in one spec and two of its four mirrors were missed; independent typing is the point, but the design must list every mirror the amendment has to reach."
+    evidence: "SPEC-039 AC1 (DEC-020 amendment of 2026-11-24): the rewrite_png fuzz model was missed and failed the 60 s CI smoke on PR #67 (Records guard, a Model text chunk); tests/audit_png_webp_oracle.rs category_of_printed_name was missed and found by verify round 5. N=1 (two misses, one amendment)."
+    bar: "N=3 same-outcome"
+    status: watch
+    disposition_at: stage-close
+    first_flagged: 2026-11-27
+    last_touched: 2026-11-27
+    raised_by: claude
+    notes: "Candidate codification: when a design amends a category or keyword table, its handoff lists every hand-typed mirror (grep the table's row names across src, tests and fuzz) as part of the AC, and a seed or fixture carries each new row so the mirror is exercised."

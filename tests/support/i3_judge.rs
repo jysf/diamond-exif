@@ -26,7 +26,9 @@
 //!   2026-11-26): with no plain block of the family, any output line of the
 //!   family is a failure; with one, by line, on the carrier-check set (the
 //!   excused `judged` lines plus every XMP/XML/SEAL line, so a `SEAL:*` or
-//!   `XML:*` line is checked there but never excused);
+//!   `XML:*` line that is not `judged` is checked there but never excused; one
+//!   with a category through the tag-name match, such as `SEAL:Copyright`, is
+//!   `judged` and excused like any other, DEC-023 amendment of 2026-11-27);
 //! * (b) the whole-block rule: a policy that holds every category an Exif
 //!   entry can have (`all`, `everything`) removes the whole `eXIf`/`EXIF`
 //!   chunk, so the uncategorised Exif tags go with it;
@@ -249,7 +251,8 @@ fn judged(l: &Line) -> bool {
 /// groups (Warning and Error lines stay out). The by-line left-in check beside
 /// a plain block and `additivity_failures` use it. It is wider than `judged`
 /// only by `XMP*`, `XML*` and `SEAL*` lines that are not `judged`, which are
-/// checked and compared but never excused.
+/// checked and compared but never excused. (`SEAL:Copyright` or `XML:Make`
+/// has a category through the tag-name match, so it is `judged` already.)
 fn carrier_checked(l: &Line) -> bool {
     if l.tag == "Warning" || l.tag == "Error" {
         return false;
@@ -390,8 +393,8 @@ pub fn judge(
              carriers section"
         ));
     }
-    // The excuse is built from `judged` lines only: an `XML*`/`SEAL*` line is
-    // never excused.
+    // The excuse is built from `judged` lines only: an `XML*`/`SEAL*` line that
+    // is not `judged` is never excused (`SEAL:Copyright` is `judged`, by name).
     let carrier_judged: Vec<&Line> = carrier_read.iter().filter(|l| judged(l)).collect();
     let mut excusable = multiset(&carrier_judged);
     // Missing lines.
