@@ -108,10 +108,20 @@ cost:
       duration_minutes: 11
       recorded_at: 2026-11-27
       notes: "Verify round 1 fix round, one subagent: the unknown-type mechanism (comment, DEC-014 note, a not-first fixture), the sweep doc and doc-comment placement, the README example, slack-byte zero checks in check_block (red ed784aa), Interop in the mirrors sweep. Pushed 7bdb98f..fbd360a. The orchestrator transcribed the harness subagent result: 140,759 tokens, 56 tool calls, 687 s."
+    - cycle: verify
+      handoff: HANDOFF-093
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 170052
+      estimated_usd: null
+      duration_minutes: 17
+      recorded_at: 2026-11-27
+      notes: "Verify round 2, against 6055155, one subagent: all five round-1 items fixed (re-measured the unknown-type mechanism, 12,384 byte flips with none passing, the README example built in a scratch crate, 9 mutations all red), a fresh hostile-source pass, all gates. Verdict approved (a71c682). The orchestrator transcribed the harness subagent result: 170,052 tokens, 72 tool calls, 1,039 s."
   totals:
-    tokens_total: 928696
+    tokens_total: 1098748
     estimated_usd: 0.00
-    session_count: 4
+    session_count: 5
 ---
 
 # SPEC-025: Exif block builder in the source's byte order: DEC-014 and DEC-015 contract, size query and write at a base, MakerNote and offset-carrying entries left out and reported, budget, readback self-check, `exif_block` fuzz target
