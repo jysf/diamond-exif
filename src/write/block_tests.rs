@@ -424,6 +424,66 @@ fn fault_hook_makes_write_verify_failed() {
     assert!(p.write(8).is_ok());
 }
 
+/// A source whose Exif IFD holds one inline BYTE (3 unused inline bytes), an
+/// out-of-line UNDEFINED of 5 bytes (so one padding byte follows it) and an
+/// out-of-line RATIONAL after it (so the padding byte lies inside the block).
+fn slack_source(be: bool) -> Vec<u8> {
+    let ifd0 = vec![ptr(0x8769, 1)];
+    let exif = vec![
+        e(0x9101, UNDEFINED, 5, vec![1, 2, 3, 4, 5]),
+        e(0x9202, RATIONAL, 1, rationals(be, &[(1, 2)])),
+        e(0xA301, BYTE, 1, vec![7]),
+    ];
+    build(be, &[ifd0, exif])
+}
+
+/// Flip bit 0 of block byte `index` through the fault hook, then write.
+fn write_with_flip(p: &ExifBlock<'_>, index: usize) -> Result<Vec<u8>, BlockError> {
+    fault::FLIP.with(|f| f.set(Some(index)));
+    let got = p.write(8);
+    fault::FLIP.with(|f| f.set(None));
+    got
+}
+
+#[test]
+fn self_check_catches_a_flipped_inline_slack_byte() {
+    for be in [false, true] {
+        let data = slack_source(be);
+        let p = plan(&data);
+        let clean = p.write(8).unwrap();
+        // The BYTE entry's value field is [7, 0, 0, 0]: bytes 1 to 3 are slack.
+        let field = entry_at(be, &clean, 0, 0xA301) + 8;
+        assert_eq!(&clean[field..field + 4], &[7, 0, 0, 0]);
+        for slack in 1..4 {
+            let got = write_with_flip(&p, field + slack);
+            assert!(
+                matches!(got, Err(BlockError::VerifyFailed { .. })),
+                "slack byte {slack}: {got:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn self_check_catches_a_flipped_padding_byte() {
+    for be in [false, true] {
+        let data = slack_source(be);
+        let p = plan(&data);
+        let clean = p.write(8).unwrap();
+        let field = entry_at(be, &clean, 0, 0x9101) + 8;
+        let value = usize::try_from(rd32(be, &clean, field)).unwrap() - 8;
+        assert_eq!(&clean[value..value + 5], &[1, 2, 3, 4, 5]);
+        let pad = value + 5;
+        assert_eq!(clean[pad], 0, "the padding byte is zero");
+        assert!(pad < clean.len());
+        let got = write_with_flip(&p, pad);
+        assert!(
+            matches!(got, Err(BlockError::VerifyFailed { .. })),
+            "{got:?}"
+        );
+    }
+}
+
 // ── budget and base ─────────────────────────────────────────────────────────
 
 #[test]
