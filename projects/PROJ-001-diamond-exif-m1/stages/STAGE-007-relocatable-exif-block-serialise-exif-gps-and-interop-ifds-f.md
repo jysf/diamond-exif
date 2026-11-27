@@ -61,7 +61,9 @@ Requested by monorail-000 (its `docs/upstream/diamond-exif-requests.md`, request
 
 ## Why Now
 
-Nothing is urgent: the consumer is monorail-000's PROJ-002, which has not started. The stage comes before M1d anyway, for two reasons. It is the first code in this crate that **builds** IFDs instead of removing bytes in place, which DEC-013 part 1 left as "a later decision: it needs a growth rule". The M1d `set` operations and question `strip-keeps-orientation` (a minimal Exif block that keeps Orientation) need the same encoder. Building it against a concrete consumer with an acceptance test gives that encoder a sharper first contract than a speculative `set` would. Also, the offset contract has to be agreed with irradiance/STAGE-017 while that stage is in design, not after.
+**Re-framed 2026-11-27.** The other half of the contract now exists. irradiance/STAGE-017 shipped on 2026-11-25: its SPEC-081 places an opaque Exif block at the fixed base, writes the IFD0 pointers and never rebases the block (irradiance/DEC-072, accepted 2026-11-21 with the amendment that makes the Exif offset optional). This crate's builder is the missing producer. STAGE-008 (the PNG and WebP readers), STAGE-010 (M1d, the PNG and WebP strip) and STAGE-011 have shipped since the first framing, so nothing else in PROJ-001 is ahead of this stage except STAGE-012 (proposed, low). The consumer, monorail-000's PROJ-002, has still not started, so the date pressure is the consumer's pin (the crates.io pre-release that follows this stage), not a deadline.
+
+The original framing (2026-11-20) gave these reasons. The first two still hold; the third is done. It is the first code in this crate that **builds** IFDs instead of removing bytes in place, which DEC-013 part 1 left as "a later decision: it needs a growth rule". The M1d `set` operations and question `strip-keeps-orientation` (a minimal Exif block that keeps Orientation) need the same encoder. Building it against a concrete consumer with an acceptance test gives that encoder a sharper first contract than a speculative `set` would. Also, the offset contract had to be agreed with irradiance/STAGE-017 while that stage was in design (done 2026-11-21).
 
 ### Where it fits against the M1 milestones
 
@@ -77,6 +79,7 @@ Nothing is urgent: the consumer is monorail-000's PROJ-002, which has not starte
 - The same source and options give the same bytes. A block whose size or entry count exceeds the budget is refused before allocation.
 - The builder's fuzz target finds no panic in 60 s in CI, and every block it returns reads back clean.
 - The offset contract (DEC-015) is accepted by jysf with irradiance/STAGE-017's agreement before SPEC design starts. Done 2026-11-21: irradiance/DEC-072 agrees (base fixed at 8, little-endian).
+- A big-endian source converts to the little-endian block the consumer requires (monorail-000's requests document, request 1: "a big-endian source is converted value by value"), with the byte-order-sensitive UNDEFINED tags settled by question `exif-block-byte-order-sensitive-undefined`.
 
 ## Scope
 
@@ -93,23 +96,29 @@ Nothing is urgent: the consumer is monorail-000's PROJ-002, which has not starte
 
 ## Spec Backlog
 
-- [ ] SPEC-025 (frame) — [L] Exif block builder: DEC-014 and DEC-015 contract, size query and write at a base, byte-order conversion, MakerNote and unsafe entries left out and reported, budget, readback self-check, `exif_block` fuzz target
+- [ ] SPEC-025 (frame) — [M, was L; split 2026-11-27] Exif block builder in the source's byte order: DEC-014 and DEC-015 contract, size query and write at a base, MakerNote and unsafe entries left out and reported, budget, readback self-check, `exif_block` fuzz target
+- [ ] SPEC-041 (frame) — [M, split out of SPEC-025 on 2026-11-27] Byte-order conversion: a big-endian source to the little-endian block the consumer needs, value by value; the UNDEFINED rule (question `exif-block-byte-order-sensitive-undefined`); self-check and fuzz cover the cross-order path
 - [ ] SPEC-026 (frame) — [M] ExifTool parity of a placed Exif block: test-only TIFF placer, DNG and TIFF fixtures, both byte orders, Interop and no-GPS cases, red-proofed
 - [ ] SPEC-027 (frame) — [S] Strip-policy presets while building the Exif block (DEC-009), with the self-check extended to the policy
 
-**Count:** 0 shipped / 3 active / 0 pending
+**Count:** 0 shipped / 0 active / 4 pending
 
 ## Design Notes
 
 - The block is a new writer operation beside `strip`, not an edit plan: DEC-013's "no insert, grow or move" stays true for `strip`. DEC-014 records the block's own contract.
 - The builder reads entries through the existing tolerant walk and the audit's categories. It does not add a second definition of which tag is what.
+- **SPEC-025 split at the 2026-11-27 re-frame (jysf approved).** As framed it was L, and every L spec in STAGE-010 took two builder parts and a fix round. The seam is byte order: SPEC-025 builds in the source's own byte order (layout, size query, write at a base, omissions, budget, readback self-check, `exif_block` fuzz target) [M]; SPEC-041 converts into the other order, including the UNDEFINED rule [M]. Both are needed before the release, since the consumer requires little-endian from any source. Order: SPEC-025, then SPEC-041, then SPEC-026 (its parity covers all four byte-order pairs, so it depends on both), then SPEC-027 (depends on SPEC-025 only, deferrable).
+- **Lessons from STAGE-010 that apply here.** Design measures a variant grid of hostile sources against ExifTool, not only clean DNGs (AGENTS.md §15): a pointer loop between IFDs, an Interop pointer from the GPS IFD, two Exif IFD pointers, offsets past the end, odd counts, an out-of-line value overlapping an IFD, an empty Exif IFD with a GPS IFD. ExifTool runs on the builder's output during build, not only at verify (SPEC-037). Any table the design amends (the omission list, the UNDEFINED rule) lists every hand-typed mirror in src, tests and fuzz (signal `hand-typed-mirrors-of-a-decision-table-drift`).
+- **SPEC-027 reads DEC-009 as amended by SPEC-033:** `AllPii` keeps the `Rights` category (Copyright) and removes the rest.
+- **DEC-014 is still `proposed`.** Its GPS-only clause was pending on irradiance's confirmation, which arrived on 2026-11-21 (irradiance/DEC-072 accepted with the amendment). Accepting DEC-014 is jysf's call, and happens at SPEC-025 design at the latest.
 - The consumer's requests are referred to as monorail-000/DEC-075 and its requests document. They are never `depends_on` entries: depends_on names specs in this repo only.
 
 ## Dependencies
 
 ### Depends on
 - STAGE-001 (the tolerant walk, the entry budget), STAGE-004 and STAGE-005 (the TIFF writer path, the audit categories, the self-check pattern).
-- External: the offset contract is agreed with irradiance/STAGE-017 (DEC-015 accepted 2026-11-21; irradiance/DEC-072, still `proposed` there). A GPS-only block is allowed (monorail-000/DEC-077 item 1; DEC-014 amendment), and irradiance/DEC-072's amendment (jysf/irradiance#291) makes both offsets optional with at least one required. Gate: SPEC-025's design does not start until irradiance confirms the optional Exif offset (irradiance/DEC-072 accepted as amended, or a new DEC). GPS-only blocks are pending until then. If irradiance declines, tell jysf so monorail-000 can pick an empty Exif IFD or dropping the block. Consumer context: monorail-000/DEC-075, DEC-076 and DEC-077.
+- External: the offset contract is agreed with irradiance/STAGE-017 (DEC-015 accepted 2026-11-21; irradiance/DEC-072 accepted there the same day). A GPS-only block is allowed (monorail-000/DEC-077 item 1; DEC-014 amendment), and irradiance/DEC-072's amendment (jysf/irradiance#291) makes both offsets optional with at least one required. Gate: SPEC-025's design does not start until irradiance confirms the optional Exif offset (irradiance/DEC-072 accepted as amended, or a new DEC). **Cleared** (checked 2026-11-27): irradiance/DEC-072 is `accepted` (jysf, 2026-11-21) and carries "Amendment 2026-11-21: the Exif IFD offset is optional".
+- External, shipped: irradiance/STAGE-017 (2026-11-25), whose SPEC-081 places the block and reads the base from irradiance's public constant. Consumer context: monorail-000/DEC-075, DEC-076 and DEC-077.
 
 ### Enables
 - monorail-000's Linear DNG export (its PROJ-002), with irradiance/STAGE-017.
