@@ -10,12 +10,13 @@
 //! sources. They are written from this file; ExifTool is run, never read or
 //! linked.
 //!
-//! * Writer pass: `exiftool -m -Artist=sweep -o out/ in/` (`-m`, because
-//!   ExifTool also refuses the swept 0xC612 and 0x927C with a `[minor]` error
-//!   about the value 4096, which has nothing to do with an offset). A source
-//!   ExifTool refuses with `No size tag for <IFD>:<Name>`, or one whose value comes back
-//!   changed, holds a tag it relocates. A value that comes back unchanged does
-//!   not.
+//! * Writer pass: `exiftool -Artist=sweep -o out/ in/`, with no `-m` (DEC-023:
+//!   a `[minor]` error must stay visible). A source ExifTool refuses with
+//!   `No size tag for <IFD>:<Name>`, or one whose value comes back changed,
+//!   holds a tag it relocates. A value that comes back unchanged does not.
+//!   26 refusals are pinned: 22 `No size tag` (11 ids in each of the Exif and
+//!   Interop IFDs) and the four `[minor]` value refusals (0xC612 and 0x927C in
+//!   each of those IFDs, about the swept value 4096, not an offset).
 //! * Reader pass: the pointed-at bytes zeroed, as a moved value would leave
 //!   them; `exiftool -a -G1 -s -n -u` over both directories. A source whose
 //!   listing changes holds a tag ExifTool reads through the offset.

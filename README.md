@@ -144,8 +144,15 @@ let plan = exif_block(source_tiff_bytes, &BlockOptions::new())?;
 let len = plan.len();                 // the size, before you choose where it goes
 let base = 8;                         // even, and past the 8-byte header
 let block = plan.write(base)?;        // bytes with final offsets for that base
-// Copy `block` to `base`, then point your IFD0's 0x8769 at `base + plan.exif_position()?`
-// and 0x8825 at `base + plan.gps_position()?` (LONG, count 1).
+// Copy `block` to `base`, then point your IFD0's pointers at the block (LONG,
+// count 1). A pointer is `None` when the block holds no such IFD (a GPS-only
+// source has no Exif IFD), so write only the ones that are there.
+if let Some(p) = plan.exif_position() {
+    let exif_word = base + p;         // the value of IFD0's 0x8769
+}
+if let Some(p) = plan.gps_position() {
+    let gps_word = base + p;          // the value of IFD0's 0x8825
+}
 ```
 
 The block is in the source's byte order. It is read back through the crate's own walk before it is returned, and an entry it leaves out is named in `plan.omissions()` with a reason: a MakerNote (never moved), an entry that carries an offset the block does not rewrite (the strip and tile offsets, `SubIFDs`, and the others ExifTool relocates), or a field type it cannot size. A source it cannot rebuild safely is refused with a typed reason and no bytes. A non-empty block cannot start inside the TIFF header (`base` of at least 8). A cross-byte-order request is not available yet.

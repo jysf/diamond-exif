@@ -913,6 +913,39 @@ fn check_block(plan: &ExifBlock<'_>, base: u32, block: &[u8]) -> Result<(), Bloc
                 return Err(BlockCheck::Entries);
             }
         }
+        // Slack: the bytes no entry's value covers must be zero. A mismatch is
+        // reported as `Entries`, the entry's own bytes being wrong.
+        for (i, kept) in table.kept.iter().enumerate() {
+            let len = kept.payload.len();
+            let range: Option<(usize, usize)> = match kept.value_at {
+                // Out of line: the pad byte after an odd-length value.
+                Some(value_at) if len % 2 == 1 => {
+                    let at = usize::try_from(value_at)
+                        .ok()
+                        .and_then(|v| v.checked_add(base_at))
+                        .and_then(|v| v.checked_add(len))
+                        .ok_or(BlockCheck::Entries)?;
+                    Some((at, at.saturating_add(1)))
+                }
+                Some(_) => None,
+                // Inline: the value field's bytes past the payload.
+                None if !kept.interop_pointer && len < 4 => {
+                    let field = usize::try_from(ifd.offset())
+                        .ok()
+                        .and_then(|o| o.checked_add(i.checked_mul(12)?))
+                        .and_then(|o| o.checked_add(10))
+                        .ok_or(BlockCheck::Entries)?;
+                    Some((field.saturating_add(len), field.saturating_add(4)))
+                }
+                None => None,
+            };
+            if let Some((start, end)) = range {
+                let bytes = image.get(start..end).ok_or(BlockCheck::Entries)?;
+                if bytes.iter().any(|b| *b != 0) {
+                    return Err(BlockCheck::Entries);
+                }
+            }
+        }
     }
 
     // Omissions: what the source held is exactly what the block holds plus

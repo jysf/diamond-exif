@@ -662,10 +662,19 @@ fn default_budget_is_16_mib() {
 
 // ── AC4: the mirrors of the omission table ──────────────────────────────────
 
-/// A source whose single block IFD holds every tag `0..=0xFFFE` as an inline
-/// LONG 0 (a pointer of 0 leads nowhere). Which of them the builder omits is
-/// the library's omission table, read off its behaviour.
-fn sweep_source(be: bool, exif: bool) -> Vec<u8> {
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Sweep {
+    Gps,
+    Exif,
+    Interop,
+}
+
+/// A source whose swept IFD holds every tag `0..=0xFFFE` as an inline LONG 0 (a
+/// pointer of 0 leads nowhere). Which of them the builder omits is the
+/// library's omission table, read off its behaviour. `which` picks the swept
+/// IFD: the GPS, the Exif or the Interop IFD (reached through a one-entry Exif
+/// IFD that holds only 0xA005).
+fn sweep_source(be: bool, which: Sweep) -> Vec<u8> {
     let w16 = |v: u16| if be { v.to_be_bytes() } else { v.to_le_bytes() };
     let w32 = |v: u32| if be { v.to_be_bytes() } else { v.to_le_bytes() };
     let mut out = Vec::new();
@@ -673,11 +682,20 @@ fn sweep_source(be: bool, exif: bool) -> Vec<u8> {
     out.extend_from_slice(&w32(8));
     // IFD0 at 8: one pointer, 18 bytes; the swept IFD at 26.
     out.extend_from_slice(&w16(1));
-    out.extend_from_slice(&w16(if exif { 0x8769 } else { 0x8825 }));
+    out.extend_from_slice(&w16(if which == Sweep::Gps { 0x8825 } else { 0x8769 }));
     out.extend_from_slice(&w16(4));
     out.extend_from_slice(&w32(1));
     out.extend_from_slice(&w32(26));
     out.extend_from_slice(&w32(0));
+    if which == Sweep::Interop {
+        // The Exif IFD at 26 (one entry, 18 bytes): 0xA005 to the swept IFD.
+        out.extend_from_slice(&w16(1));
+        out.extend_from_slice(&w16(0xA005));
+        out.extend_from_slice(&w16(4));
+        out.extend_from_slice(&w32(1));
+        out.extend_from_slice(&w32(44));
+        out.extend_from_slice(&w32(0));
+    }
     out.extend_from_slice(&w16(0xFFFF));
     for tag in 0..=0xFFFEu16 {
         out.extend_from_slice(&w16(tag));
@@ -758,10 +776,10 @@ fn omission_table_mirrors_agree() {
         .collect();
     assert_eq!(sweep_union, model_set, "sweep tables vs the model");
 
-    // The library: sweep every tag through the GPS IFD and the Exif IFD.
+    // The library: sweep every tag through the GPS, Exif and Interop IFDs.
     for be in [false, true] {
-        for exif in [false, true] {
-            let data = sweep_source(be, exif);
+        for which in [Sweep::Gps, Sweep::Exif, Sweep::Interop] {
+            let data = sweep_source(be, which);
             let s = Shape {
                 name: "sweep".into(),
                 bytes: data,
@@ -779,7 +797,7 @@ fn omission_table_mirrors_agree() {
             }
             assert_eq!(
                 offset, model_set,
-                "library vs model (exif: {exif}, be: {be})"
+                "library vs model ({which:?}, be: {be})"
             );
             assert_eq!(maker, makernote, "library MakerNote set");
         }

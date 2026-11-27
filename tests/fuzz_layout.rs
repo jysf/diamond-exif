@@ -9168,11 +9168,11 @@ fn the_rewrite_webp_harness_does_not_read_the_writer() {
 
 include!("../fuzz/shared/exif_block_invariants.rs");
 
-/// The committed `exif_block` seed count, pinned: 234 shapes (the AC10 grid, a
+/// The committed `exif_block` seed count, pinned: 236 shapes (the AC10 grid, a
 /// DNG and a JPEG's Exif TIFF blob, in both byte orders, the refusal shapes
 /// included) at bases 8 and 1000, the design sample at three edge bases (0, 7,
 /// 65534), an empty input and a one-byte one.
-const EXIF_BLOCK_SEEDS: usize = 473;
+const EXIF_BLOCK_SEEDS: usize = 477;
 
 fn exif_block_seed_files() -> Vec<(String, Vec<u8>)> {
     let dir = root().join("fuzz/seeds/exif_block");

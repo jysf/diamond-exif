@@ -75,8 +75,11 @@ fn source_not_run(name: &str) -> Option<Vec<Line>> {
 /// selects the Exif and GPS IFDs whose parent is IFD0, DEC-014; ExifTool also
 /// prints an Exif IFD found through a SubIFD or IFD1, an Interop IFD pointed to
 /// from IFD0, a GPS IFD inside a SubIFD), and the lines only the placed file
-/// prints (ExifTool stops reading an IFD at a first entry of an unknown type,
-/// so the source prints nothing from it, and the block drops that entry). Each
+/// prints (ExifTool drops a whole IFD when its entry 0 has a bad format, an
+/// unknown type, so the source prints nothing from it; the block drops only the
+/// unknown-type entries and keeps the rest, which are the source's own. An
+/// unknown type in any later entry costs ExifTool just that entry, so the
+/// `unknown-type-not-first/` shape has no pin: its parity is exact). Each
 /// `source_only` line must be present; a line that is not is a failure.
 struct Diff {
     shape: &'static str,

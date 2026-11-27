@@ -614,6 +614,34 @@ pub fn grid() -> Vec<Shape> {
             Expect::Block,
         ));
 
+        // 7b. An unknown type in an entry that is NOT first (entry 1 in the
+        // Exif and Interop IFDs, type 14; entry 2 in GPS, type 255).
+        // ExifTool 13.55 warns about that entry and prints the others, so the
+        // parity with the placed block is exact (DEC-014 amendment item 2).
+        out.push(shape(
+            "unknown-type-not-first",
+            be,
+            &[
+                ifd(vec![ptr(0x8769, 1), ptr(0x8825, 3)]),
+                ifd(vec![
+                    c.short(0x8827, 1),
+                    raw(0x9101, 14, 1, [1, 2, 3, 4]),
+                    c.short(0xA001, 1),
+                    ptr(0xA005, 2),
+                ]),
+                ifd(vec![
+                    c.ascii(0x0001, "R98"),
+                    raw(0x0010, 14, 1, [0, 0, 0, 0]),
+                ]),
+                ifd(vec![
+                    c.ascii(0x0001, "N"),
+                    c.ascii(0x0003, "E"),
+                    raw(0x0020, 255, 4, [0, 0, 0, 0]),
+                ]),
+            ],
+            Expect::Block,
+        ));
+
         // 8. Count 0, unterminated ASCII, odd-length UNDEFINED, odd source
         // offsets, a shared value, a value that overlaps a table.
         out.push(shape(
