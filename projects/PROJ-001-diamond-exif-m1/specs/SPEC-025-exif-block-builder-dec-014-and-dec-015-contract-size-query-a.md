@@ -79,10 +79,20 @@ cost:
       recorded_at: 2026-11-27
       notes: "Main-loop design in the orchestrator session (d1fb0ea8): the ExifTool 13.55 offset-carrying sweep (1,178 sources, writer and reader passes), the unknown-type, count-0 and next-word probes, the layout probe at bases 8 and 1000, the DEC-014 amendment and DEC-015 clarification, the spec, HANDOFF-092. Not metered per cycle; it is counted in STAGE-007's orchestration_cost at stage close."
 
+    - cycle: build
+      handoff: HANDOFF-092
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 564052
+      estimated_usd: null
+      duration_minutes: 54
+      recorded_at: 2026-11-27
+      notes: "Parts A and B, one subagent each (claude-sonnet-5-5). tokens_total and duration are the sums of the harness subagent results, filled by the orchestrator: A 274,448 tokens / 68 tool calls / 1,318 s; B 289,604 tokens / 151 tool calls / 1,913 s. The orchestrator's own fix (b0b5130, the sweep without -m) is main-loop work, counted in STAGE-007's orchestration cost."
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 564052
+    estimated_usd: 0.00
+    session_count: 2
 ---
 
 # SPEC-025: Exif block builder in the source's byte order: DEC-014 and DEC-015 contract, size query and write at a base, MakerNote and offset-carrying entries left out and reported, budget, readback self-check, `exif_block` fuzz target

@@ -50,15 +50,15 @@ handback:
   agent: claude-sonnet-5-5                      # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
   verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
+  basis: agent-result             # transcript | agent-result | slash-cost | api-usage | estimate
+  tokens_total: 564052             # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: 90
+  duration_minutes: 54
   branch: feat/spec-025-exif-block-build
   pr: 71
   completed_at: 2026-11-27               # YYYY-MM-DD
-  notes: "Part B. tokens_total is null: the delegated run cannot see its own spend, so the orchestrator records the harness figure. duration_minutes is an estimate."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "Parts A and B, one subagent each (claude-sonnet-5-5). tokens_total and duration are the sums of the harness subagent results, filled by the orchestrator: A 274,448 tokens / 68 tool calls / 1,318 s; B 289,604 tokens / 151 tool calls / 1,913 s. The orchestrator's own fix (b0b5130, the sweep without -m) is main-loop work, counted in STAGE-007's orchestration cost."
+  synced_at: 2026-11-27
 ---
 
 # HANDOFF-092: SPEC-025 build: the Exif block builder in the source's byte order
