@@ -548,13 +548,16 @@ fn every_difference_has_a_question_a_reason_and_is_an_input_of_the_check() {
 
 /// The category the ExifTool tag name implies, written out here (not taken
 /// from the library): `Artist` and `Author` are authorship, `Copyright` is
-/// rights (SPEC-033), `CreationTime` a timestamp, `Software` software, every other name free text.
+/// rights (SPEC-033), `CreationTime` a timestamp, `Software` software,
+/// `Make` and `Model` camera model and `TimeStamp` a timestamp (DEC-020
+/// amendment of 2026-11-24, SPEC-039 AC1), every other name free text.
 fn category_of_printed_name(name: &str) -> Category {
     match name {
         "Artist" | "Author" => Category::Authorship,
         "Copyright" => Category::Rights,
-        "CreationTime" | "CreateDate" | "ModDate" => Category::Timestamps,
+        "CreationTime" | "CreateDate" | "ModDate" | "TimeStamp" => Category::Timestamps,
         "Software" => Category::Software,
+        "Make" | "Model" => Category::CameraModel,
         _ => Category::FreeText,
     }
 }

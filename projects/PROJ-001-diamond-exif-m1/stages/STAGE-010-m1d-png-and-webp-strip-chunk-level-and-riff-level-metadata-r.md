@@ -84,9 +84,9 @@ STAGE-008 shipped the readers and the audit, and the audit's preview states plai
 - [x] SPEC-036 (shipped on 2026-11-22) — [L, two builder parts and a fix round] Tag-level inventory parity against ExifTool for PNG and WebP (carried from STAGE-008)
 - [x] SPEC-037 (shipped on 2026-11-23) — [L, two builder parts and a fix round] PNG strip: whole-chunk removal under StripPolicy, `eXIf` decision, self-verify, `rewrite_png` fuzz, DEC-021
 - [x] SPEC-038 (shipped on 2026-11-23) — [L, two builder parts and a fix round] WebP strip: RIFF-level removal, size and `VP8X` rewrite, self-verify, `rewrite_webp` fuzz, DEC-022
-- [ ] SPEC-039 (design) — [L, three builder parts] ExifTool write parity (I3) for both strips (DEC-023: judge, differential against ExifTool's writer, exit codes); audit and CLI switch-over (DEC-020 amendment of 2026-11-24)
+- [x] SPEC-039 (shipped on 2026-11-27) — [L, three builder parts] ExifTool write parity (I3) for both strips (DEC-023: judge, differential against ExifTool's writer, exit codes); audit and CLI switch-over (DEC-020 amendment of 2026-11-24)
 
-**Count:** 3 shipped / 0 active / 1 pending
+**Count:** 4 shipped / 0 active / 0 pending
 
 ## Design Notes
 

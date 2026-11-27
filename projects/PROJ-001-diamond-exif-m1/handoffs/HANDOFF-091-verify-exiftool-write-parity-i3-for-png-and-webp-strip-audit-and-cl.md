@@ -1164,6 +1164,13 @@ CI fix is right and complete in the fuzz models. All gates are green.
   only in `git archive` copies under the scratchpad, each with its own target dir. Nothing outside this file was
   changed or committed. No cost numbers are filled in here.
 
+**Orchestrator fix of the round-5 items and close of the verify cycle** (claude-opus-5-5, 2026-11-27, branch `chore/spec-039-ship`)
+- **Item 1 (L), wording.** New DEC-023 amendment of 2026-11-27, "which XML and SEAL lines are never excused": an `XML*`/`SEAL*` line that is not `judged` is never excused; one with a category through the tag-name match (`SEAL:Copyright`, `SEAL:Make`, `XML:Make`) is `judged` and excused like any other. The two false sentences in the amendments of 2026-11-26 are marked in place. The module header of `tests/support/i3_judge.rs` and the comments on `carrier_checked` and `carrier_judged` now say the same. `judged` is not narrowed, for the reason the verifier gave. The amendment also states the by-line check's real scope (either family with a carrier beside a plain block, line 452), the minor imprecision round 5 noted. The mutant-B note above ("adds only `XML*`/`SEAL*` keys") is imprecise in the same way: the extra keys are the `XML*`/`SEAL*` lines that are not `judged`. The equivalence argument is unchanged, and round 5 confirmed it independently.
+- **Item 2 (L), test mirror.** `category_of_printed_name` in `tests/audit_png_webp_oracle.rs` gains `Make`/`Model` → CameraModel and `TimeStamp` → Timestamps, and its doc comment says so. Still latent: the keyword fixture holds none of the three keywords, and it was not re-recorded.
+- **Checks.** `cargo fmt --check` and `just lint` pass. With ExifTool required, `audit_png_webp_oracle` passed 29, and `strip_png_webp_oracle` passed 43 with 0 failed. Nothing under `src/`, `fuzz/` or `tests/oracle-fixtures/` changed. The full gate run at the ship commit is in the ship PR.
+- **Close.** Round 5's only items were documentation, and both are fixed here, so SPEC-039 leaves verify as `approved`. `task.verify_rounds` records five punch-list rounds and then the approval. `handback.verdict` above stays `punch-list`, the independent verifier's last verdict. The approval rests on round 5's evidence plus these documentation-only fixes, which were not re-verified independently.
+- **Round 5 cost**, from the harness subagent result: 167,420 tokens, 57 tool calls, 709 s (about 12 min). Basis: agent-result.
+
 ### Cost self-report
 
 - **Tokens (total):** 258,606, filled by the orchestrator from the harness subagent result (96 tool calls).

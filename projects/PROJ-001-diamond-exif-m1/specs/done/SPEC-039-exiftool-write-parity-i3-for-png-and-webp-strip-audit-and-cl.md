@@ -6,19 +6,19 @@
 task:
   id: SPEC-039
   type: story                      # epic | story | task | bug | chore
-  cycle: verify                    # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
   complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: approved  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
                                    #   rejects anything" stops being a hunch and becomes a number.
-  verify_rounds: []                # every verify outcome, oldest first, appended by
+  verify_rounds: [punch-list, punch-list, punch-list, punch-list, punch-list, approved]  # every verify outcome, oldest first, appended by
                                    #   `just advance-cycle` each time the spec leaves verify.
                                    #   verify_verdict keeps only the LAST one, so a spec sent
                                    #   back and then approved read as "approved": irradiance's
@@ -178,10 +178,21 @@ cost:
       duration_minutes: 9
       recorded_at: 2026-11-26
       notes: "Fix round 5: pin two guards. Mutant C is pinned; mutant B is equivalent. One subagent. The orchestrator transcribed the cost from the harness subagent result: 92,174 tokens, 14 tool calls, 528 s."
+    - cycle: verify
+      handoff: HANDOFF-091
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 167420
+      estimated_usd: null
+      duration_minutes: 12
+      recorded_at: 2026-11-27
+      notes: "Verify round 5, against d61cbf2 (merged main), one subagent. The orchestrator transcribed the harness subagent result: 167,420 tokens, 57 tool calls, 709 s. Punch list of 2 L documentation items (the never-excused wording is false for a judged SEAL line; a test mirror lacks the AC1 rows), fixed by the orchestrator in the ship PR; no code behaviour changed. The orchestrator's inline CI fix (5e8bc80) and round-5 fixes are not metered."
   totals:
-    tokens_total: 2312759
+    tokens_total: 2480179
     estimated_usd: 0.00
-    session_count: 11
+    session_count: 12
+shipped_at: 2026-11-27
 ---
 
 # SPEC-039: ExifTool write parity (I3) for PNG and WebP strip, audit and CLI switch-over
@@ -575,34 +586,31 @@ ship decides whether to record it.
 
 ## Reflection
 
-*Appended during **ship**. Three questions, short answers.*
-
 1. **What would I do differently next time?**
-   — <answer>
+   — Write judge exception (a) at line level, with the readings-add-up check, in the design, and read the judge's
+   code before writing any amendment about it. All five verify rounds were about the judge's precision, not the
+   writer. Two amendment drafts in round 3, and one sentence in round 4, were wrong because they were written from
+   memory of the code. Also: grep every hand-typed mirror of a table the design amends. Two were missed (the
+   `rewrite_png` fuzz model, which failed CI on PR #67, and an oracle test mirror, found by round 5).
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — Recorded in `guidance/signals.yaml` as lesson `hand-typed-mirrors-of-a-decision-table-drift` (watch, N=1).
+   Signal `strip-oracle-jfif-kept-presets-unrecorded` is closed by AC14. DEC-023 gained five amendments during
+   verify; the last (2026-11-27) is wording only.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — The JPEG/TIFF write differential against ExifTool (the spec's open question; I3 here covers PNG and WebP only).
+   Smaller: add `Make`, `Model` and `TimeStamp` to the PNG keyword fixture grid and re-record, so the test mirror's
+   new rows are exercised by a fixture, not only typed.
 
-4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
-   the defect-escape distribution is greppable across specs:
-   `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
-   `none` (clean first try).
-   — <one word>
-   *(Runtime/operational defects — the escape-prone class — only exist once the
-   artifact meets its real host. `escaped` here is a signal to strengthen the
-   §12 behavioral pre-flight for that surface.)*
+4. **Where was the worst defect caught?**
+   — verify
 
-5. **What can a user do now that they couldn't before?** — one sentence,
-   before → after; quote the confirming number if one exists, name the outcome
-   if not. Write `none` if this spec has no user-visible outcome — that is a
-   real, greppable result, not a blank. This is the line a downstream work-log's
-   `impact` field is transcribed from, and both halves are already written above
-   (## Context is the before, ## Goal is the after): confirm the prediction,
-   don't reconstruct it from memory.
-   — <answer | none>
+   *(Round 1, (M): judge exception (a) was group-level and excused a dropped plain Exif/XMP block beside a carrier,
+   so the oracle could pass a real over-cut. No writer defect was found.)*
+
+5. **What can a user do now that they couldn't before?**
+   — Before, `exif-audit` previewed PNG and WebP files as not strippable and the library's PNG/WebP strip was
+   unchecked against ExifTool; now both are strippable in the library and in the audit/CLI preview, with I3 parity
+   shown by 239 replayable ExifTool records (of 348 differential pairs: 157 identical, 120 classed D1–D6 and pinned,
+   41 outcome differences, 30 both refuse).
