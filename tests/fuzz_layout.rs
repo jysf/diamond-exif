@@ -7532,8 +7532,9 @@ include!("../fuzz/shared/rewrite_png_invariants.rs");
 
 /// The committed `rewrite_png` seed count, pinned: 51 shapes under eight policy
 /// bytes (all five presets, three customs), three shapes under seven more and a
-/// mask each, SPEC-033's `Rights` seed, and two degenerate seeds.
-const REWRITE_PNG_SEEDS: usize = 435;
+/// mask each, SPEC-033's `Rights` seed, two degenerate seeds, and the
+/// SPEC-039 smoke crash (a `Model` text keyword, DEC-020 amendment 2026-11-24).
+const REWRITE_PNG_SEEDS: usize = 436;
 
 fn rewrite_png_seed_files() -> Vec<(String, Vec<u8>)> {
     let dir = root().join("fuzz/seeds/rewrite_png");
