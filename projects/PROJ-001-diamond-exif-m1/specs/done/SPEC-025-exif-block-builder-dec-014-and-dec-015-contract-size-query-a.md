@@ -6,19 +6,19 @@
 task:
   id: SPEC-025
   type: story                      # epic | story | task | bug | chore
-  cycle: verify  # frame | design | build | verify | ship
+  cycle: ship  # frame | design | build | verify | ship
   blocked: false                   # irradiance/DEC-072 accepted as amended (optional Exif offset), checked 2026-11-27
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
-  complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
+  complexity_actual: M             # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
-  verify_verdict: null             # approved | punch-list | rejected — the OUTCOME of the verify
+  verify_verdict: approved  # approved | punch-list | rejected — the OUTCOME of the verify
                                    #   cycle, stamped by `just advance-cycle` when the spec leaves
                                    #   verify (same three verdicts Prompt 4 already returns).
                                    #   Recorded in front-matter, not just prose, so "verify never
                                    #   rejects anything" stops being a hunch and becomes a number.
-  verify_rounds: []                # every verify outcome, oldest first, appended by
+  verify_rounds: [punch-list, approved]  # every verify outcome, oldest first, appended by
                                    #   `just advance-cycle` each time the spec leaves verify.
                                    #   verify_verdict keeps only the LAST one, so a spec sent
                                    #   back and then approved read as "approved": irradiance's
@@ -122,6 +122,7 @@ cost:
     tokens_total: 1098748
     estimated_usd: 0.00
     session_count: 5
+shipped_at: 2026-11-27
 ---
 
 # SPEC-025: Exif block builder in the source's byte order: DEC-014 and DEC-015 contract, size query and write at a base, MakerNote and offset-carrying entries left out and reported, budget, readback self-check, `exif_block` fuzz target
@@ -435,34 +436,34 @@ Written at design. The builder makes them pass.
 
 ## Reflection
 
-*Appended during **ship**. Three questions, short answers.*
-
 1. **What would I do differently next time?**
-   — <answer>
+   — Run my own design probes under the same rules as the tests. The two defects that reached the PR both came from the
+   design: the offset sweep passed `-m`, which DEC-023 rules out (fixed by the orchestrator in b0b5130), and the
+   unknown-type probe placed the bad type only at entry 0, so DEC-014 and the code comment described an IFD-level drop
+   as an entry-level skip (verify round 1). A variant grid for the probe itself (entry 0 and entry 1 or later, each
+   type) would have caught the second in design.
 
 2. **Does any template, constraint, or decision need updating?**
-   — <answer — if yes but not done this session, record it in
-   `/guidance/signals.yaml`: `type: lesson` (with its N-count) for a recurring
-   coding pattern, `type: process-debt` for tooling/process friction. A close
-   then forces the decision. See `docs/signals.md`.>
+   — DEC-014 gained a refinement at verify round 1 (the unknown-type mechanism) and a wording addition at ship (type 0
+   drops the IFD silently). Signal `hand-typed-mirrors-of-a-decision-table-drift` gets a positive data point: the
+   design listed the omission table's mirrors and `omission_table_mirrors_agree` checks them; no mirror was missed,
+   though the check did not sweep Interop until fix round 1. It stays watch at N=1. Question
+   `strip-offset-tags-incomplete` (raised at design) is still open for the strip side.
 
 3. **Is there a follow-up spec I should write now before I forget?**
-   — <answer>
+   — SPEC-041 (byte-order conversion) is already framed and is next in STAGE-007. Not yet established and worth
+   carrying: a 24 h `exif_block` fuzz run (the M1 gate), real camera files through the builder, and a byte-flip sweep of
+   the four 2 MB blocks.
 
-4. **Where was the worst defect caught?** — one word from a fixed vocabulary so
-   the defect-escape distribution is greppable across specs:
-   `design` | `build` | `verify` | `ship` | `escaped` (reached prod/runtime) |
-   `none` (clean first try).
-   — <one word>
-   *(Runtime/operational defects — the escape-prone class — only exist once the
-   artifact meets its real host. `escaped` here is a signal to strengthen the
-   §12 behavioral pre-flight for that surface.)*
+4. **Where was the worst defect caught?**
+   — verify
 
-5. **What can a user do now that they couldn't before?** — one sentence,
-   before → after; quote the confirming number if one exists, name the outcome
-   if not. Write `none` if this spec has no user-visible outcome — that is a
-   real, greppable result, not a blank. This is the line a downstream work-log's
-   `impact` field is transcribed from, and both halves are already written above
-   (## Context is the before, ## Goal is the after): confirm the prediction,
-   don't reconstruct it from memory.
-   — <answer | none>
+   *(Round 1, (M): the unknown-type mechanism was described wrongly in DEC-014 and the code comment, from the design
+   probe; the fixture grid had no unknown type after entry 0. The behaviour was accepted; the description and the grid
+   were fixed.)*
+
+5. **What can a user do now that they couldn't before?**
+   — Before, another TIFF writer (monorail-000) had no way to carry a source's Exif, GPS and Interop IFDs into its own
+   file; now `exif_block` builds them as a self-checked block at a caller-given base, in the source's byte order, with
+   every left-out entry reported, and ExifTool reads the placed result as the source's tags (202 shapes, 404 placed
+   files, 7 pinned differences).

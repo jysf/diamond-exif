@@ -289,4 +289,4 @@ signals:
     first_flagged: 2026-11-27
     last_touched: 2026-11-27
     raised_by: claude
-    notes: "Candidate codification: when a design amends a category or keyword table, its handoff lists every hand-typed mirror (grep the table's row names across src, tests and fuzz) as part of the AC, and a seed or fixture carries each new row so the mirror is exercised. Walked at STAGE-010 close (2026-11-27): stays watch at N=1."
+    notes: "Candidate codification: when a design amends a category or keyword table, its handoff lists every hand-typed mirror (grep the table's row names across src, tests and fuzz) as part of the AC, and a seed or fixture carries each new row so the mirror is exercised. Walked at STAGE-010 close (2026-11-27): stays watch at N=1. SPEC-025 ship (2026-11-27): positive data point, no recurrence; the design listed the DEC-014 omission table's mirrors and tests/exif_block.rs omission_table_mirrors_agree checks them (its Interop sweep was added at verify fix round 1). Stays watch at N=1."
