@@ -49,7 +49,7 @@ handback:
   status: completed                # completed | blocked | rejected
   agent: claude-opus-5-5           # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
-  verdict: punch-list              # verify handoffs: approved | punch-list | rejected
+  verdict: approved                # verify handoffs: approved | punch-list | rejected
   basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
   tokens_total: 223885             # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
@@ -339,3 +339,84 @@ What I did not establish:
 
 3. **If you did this task again, what would you do differently?**
    — I would probe ExifTool's behaviour behind every pin first. It was the cheapest check and found the only M item.
+
+### Verify round 2 (at 6055155)
+
+**Verdict: ✅ APPROVED (at `6055155`).** An independent `claude-opus-5-5` verifier reviewed the fix round `git diff 7bdb98f 6055155` cold, on `claude/spec-025-verify-r2`. All five round-1 items are fixed correctly. The fixes broke nothing, a fresh pass over hostile sources found no defect, and every gate is green. One wording note follows the evidence. It is not a punch item.
+
+#### Round-1 items
+
+1. **M, unknown-type mechanism: fixed.**
+   - I wrote my own generator (scratch Python, outside the repo) and ran ExifTool 13.55 without `-m`. Each source had an Exif IFD (ISO, ColorSpace, 0xA005), an Interop IFD (InteropIndex, InteropVersion) and a GPS IFD (two refs), with one unknown-type entry in each IFD. I tried types 0, 14, 16 and 255, in both byte orders.
+   - Unknown type in entry 0 of all three IFDs: ExifTool prints `Bad format (N) for ExifIFD entry 0` and `... GPS entry 0`, and no tag at all. The Interop IFD is never reached, because the Exif IFD that holds its pointer is dropped.
+   - Unknown type in entry 0 of the Interop IFD only (entry 1 of Exif and GPS): Exif and GPS print in full, the Interop IFD prints nothing, and `Bad format (N) for InteropIFD entry 0` is warned.
+   - Unknown type in entry 1, or in the last entry, of each IFD: every other entry prints, and each bad entry gets its own `Bad format ... entry 1/2` warning. The warnings show under `-Warning`; `-EXIF:All` hides them.
+   - Type 0 behaves the same way, but with no warning: in entry 0 the whole IFD vanishes silently, and elsewhere only that entry is skipped.
+   - So the rule in the new `Diff` comment and in DEC-014 amendment item 2's "Refined at verify round 1" note matches what I measured, in all three IFDs.
+   - The new fixture `unknown-type-not-first` (`tests/support/exif_block_shapes.rs` 7b) has no pin, because `apply_diffs` matches by prefix and `"unknown-type-not-first/"` does not start with `"unknown-types/"`. Its committed source (`fuzz/seeds/exif_block/unknown-type-not-first-be-b8`, base bytes stripped), run through ExifTool, prints ISO, ColorSpace, InteropIndex and both GPS refs, plus three warnings. `exif_block_live` passes: 11 passed, 1 ignored.
+   - The seed pin (`EXIF_BLOCK_SEEDS = 477`) matches the 477 files, which is 473 plus the 4 new seeds.
+2. **L, `-m` text in the sweep's module doc: fixed.** The doc now reads `exiftool -Artist=sweep -o out/ in/`, with no `-m` (DEC-023), and states the 26 pinned refusals (22 + 4).
+3. **L, misplaced doc comment: fixed.** The `SUBIFD_TAG` doc now sits directly on `SUBIFD_TAG`, and `WRITER_MINOR_REFUSALS` keeps only its own doc.
+4. **L, README example: fixed.**
+   - I pasted the snippet verbatim into a scratch binary crate outside the repo (path dependency on a copy of the tip), inside `fn readme(source_tiff_bytes: &[u8]) -> Result<(), BlockError>`.
+   - It builds on 1.90.0, and run on a GPS-only source it returns `Ok(())`.
+5. **(a) L, slack check: fixed.** `check_block` now zero-checks the unused inline bytes, and the pad byte after an odd-length out-of-line value.
+   - The new tests, red at `ed784aa`, are `self_check_catches_a_flipped_inline_slack_byte` and `self_check_catches_a_flipped_padding_byte`.
+   - My own scratch unit test flipped every byte of every committed seed's block through the `#[cfg(test)]` hook, at the seed's base, for blocks up to 4 KiB. That was 389 blocks and 12,384 flips. **0 passed**: every flip gave `VerifyFailed`. In round 1, 4 of 154 flips had passed.
+   - Every seed plan wrote cleanly before its flips, so the new check accepts all good blocks. Four 2 MB `shared-2k-x1000` blocks were left out for time; they also wrote cleanly.
+
+   **(b) L, Interop sweep: fixed.** `sweep_source` gains `Sweep::Interop`, a one-entry Exif IFD holding 0xA005 that points at the swept IFD. The loop runs it in both byte orders. My mutation m7 (offset tags kept only in the Interop IFD) turns `omission_table_mirrors_agree` red, so the Interop pass really runs and compares.
+
+#### The fixes broke nothing
+
+- **Scratch mutations:** I applied 9 mutations of `src/write/block.rs`, each in a scratch copy, and ran `--lib --test exif_block --test fuzz_layout`. All 9 went red:
+
+  | Mutation | Failing tests |
+  |---|---|
+  | m1, drop the padding | both slack tests; the new pad check now also trips at runtime |
+  | m2, keep the measured offset tags | `each_offset_tag_is_omitted_in_each_ifd`, `grid_blocks_match_the_independent_model`, `omission_table_mirrors_agree` |
+  | m3, select by kind | `selects_exif_and_gps_by_parent_ifd0` |
+  | m4, skip the plan budget | `budget_is_checked_before_allocation` |
+  | m5, skip the write budget | `budget_is_checked_before_allocation` |
+  | m6, no slack check | both slack tests |
+  | m7, Interop keeps offset tags | 5 tests, including `omission_table_mirrors_agree` |
+  | m8, inline slack check only off | the inline slack test |
+  | m9, pad check only off | the padding test |
+
+- **Panic-freedom in the changed lines** (`block.rs` 916 to 948):
+  - Conversions use `usize::try_from`, and arithmetic uses `checked_add`, `checked_mul` and `saturating_add`.
+  - The one slice is `image.get(start..end)` with `ok_or`, and `start > end` yields `None`, not a panic.
+  - There is no indexing and no `allow`. `lint-no-allow` is green.
+
+#### Fresh look: hostile sources outside the grid
+
+I ran scratch probes through the public API, in both byte orders. Every one refused or built as DEC-014 amendment item 4 requires:
+
+- An Exif, Interop or GPS table that claims more entries than the file holds → `BrokenPointer` (0x8769, 0xA005, 0x8825 respectively).
+- 0x8769 as SHORT (`UnexpectedFieldType`), as LONG[2] (`BadPointerCount`), pointing at IFD0 (`CyclicIfd`), or past EOF → `BrokenPointer`.
+- The Interop pointer and the GPS pointer at one offset → `BrokenPointer { 0x8825 }`.
+- An empty Exif IFD → a 6-byte block.
+- An Exif IFD whose next-word leads to another IFD → that IFD is not walked, and the block's next-word is 0.
+- 0x8769 = 0 → the walk treats it as no pointer, with no issue, and the block is empty. That is lossless.
+- Not a block defect: in big-endian, 0x8769 = 4 lands on the header's `00 00` and the walk reads a 0-entry Exif IFD, which the block reproduces. That is the walk's reading of the source.
+
+#### Gates on `RUSTUP_TOOLCHAIN=1.90.0`
+
+- Each of these exited 0: `just lint`, `lint-no-allow`, `lint-fuzz`, `forbid-unsafe`, `deny`, `deny-fuzz`, `validate` (42 artifacts valid, 179 parse) and `cost-audit`.
+- `DIAMOND_EXIF_REQUIRE_ORACLE=1 just test`: **1,601 passed, 0 failed, 22 ignored, across 44 test binaries.** That is round 1's 1,599 plus the two slack tests.
+  - There are no `SKIP` lines.
+  - `exif_block_live` passes (11 passed, 1 ignored), and so does `exif_block_sweep_live` (11 passed, 1 ignored).
+- `just mutation-oracle`: exit 0, with three binaries at 67 / 42 / 43 passed and 1 ignored each.
+- `cargo fmt --check`: clean for the root and for `fuzz/`.
+- `just fuzz-smoke exif_block`: 329,150 runs in 61 s, exit 0, no crash. `exif_block` stays in the `ci.yml` matrix.
+- `fuzz/Cargo.lock` was restored after each fuzz or lint run, and the tree is clean.
+
+#### Note (not a punch item)
+
+DEC-014 item 2's refined note names type 14 as its entry-0 example, and the base text says type 0 "prints nothing". Measured, type 0 in entry 0 also drops the whole IFD, but with no warning. The `unknown-types` shape's Exif pin rests on exactly that case, since its entry 0 is type 0. The note's rule ("drops the whole IFD when entry 0 has a bad format") already covers it if type 0 counts as a bad format. If DEC-014 is touched again, it could add "type 0 included, silently".
+
+#### Not established
+
+- No 24 h fuzz run.
+- The four 2 MB `shared-2k-x1000` blocks were not flip-swept byte by byte.
+- No real camera files beyond the repo's shapes.
