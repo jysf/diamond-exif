@@ -1646,11 +1646,21 @@ fn a_png_with_gps_in_exif_exits_with_the_findings_code() {
         "{:?}",
         r.categories
     );
-    // The audit is real, the preview says it cannot strip.
-    assert_eq!(r.strippable, Some(false));
-    // The text report says so too.
+    // SPEC-039: the audit is real and the preview now counts removals.
+    assert_eq!(r.strippable, Some(true));
     let text = Cmd::new().args(["gps.png"]).cwd(&t.root).run();
-    assert!(text.text().contains("not strippable"), "{}", text.text());
+    assert!(!text.text().contains("not strippable"), "{}", text.text());
+    assert!(
+        text.text().contains("removed 1, kept 0, kept_unread 0"),
+        "{}",
+        text.text()
+    );
+    assert!(
+        !text
+            .text()
+            .contains("has not been checked against ExifTool"),
+        "no ExifTool-unchecked wording remains"
+    );
 }
 
 #[test]
@@ -1753,17 +1763,17 @@ fn a_png_raw_profile_is_unreadable_and_exits_three() {
     }
 }
 
-/// DEC-020 clause 6: `strippable` is true only for JPEG and TIFF, so every
-/// other file says false in JSON, including the containers the audit does not
-/// read at all.
+/// DEC-020 amendment of 2026-11-24: `strippable` is true for JPEG, TIFF, PNG
+/// and WebP, so every other file says false in JSON, including the
+/// containers the audit does not read at all.
 #[test]
-fn strippable_is_false_in_json_for_every_kind_but_jpeg_and_tiff() {
+fn strippable_is_false_in_json_for_every_kind_but_jpeg_tiff_png_and_webp() {
     let t = Tree::new("strippable");
     let files: Vec<(&str, Vec<u8>, bool)> = vec![
         ("a.tif", low_only(), true),
         ("a.jpg", house(), true),
-        ("a.png", png_shapes::minimal(), false),
-        ("a.webp", webp_shapes::minimal(), false),
+        ("a.png", png_shapes::minimal(), true),
+        ("a.webp", webp_shapes::minimal(), true),
         (
             "a.gif",
             b"GIF89a\x01\x00\x01\x00\x00\x00\x00;".to_vec(),

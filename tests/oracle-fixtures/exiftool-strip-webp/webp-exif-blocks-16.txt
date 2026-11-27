@@ -1,0 +1,307 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# writes: exiftool -all= -o <out> <file>; exiftool -gps:all= -o <out> <file>
+# exiftool-version: 13.55
+# fixture: webp-exif-blocks-16
+## input
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	Block00
+IFD0	Make	Block01
+IFD0	Make	Block02
+IFD0	Make	Block03
+IFD0	Make	Block04
+IFD0	Make	Block05
+IFD0	Make	Block06
+IFD0	Make	Block07
+IFD0	Make	Block08
+IFD0	Make	Block09
+IFD0	Make	Block10
+IFD0	Make	Block11
+IFD0	Make	Block12
+IFD0	Make	Block13
+IFD0	Make	Block14
+IFD0	Make	Block15
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## gps
+# output: 716 ad23717a9d625ba4
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	Block00
+IFD0	Make	Block01
+IFD0	Make	Block02
+IFD0	Make	Block03
+IFD0	Make	Block04
+IFD0	Make	Block05
+IFD0	Make	Block06
+IFD0	Make	Block07
+IFD0	Make	Block08
+IFD0	Make	Block09
+IFD0	Make	Block10
+IFD0	Make	Block11
+IFD0	Make	Block12
+IFD0	Make	Block13
+IFD0	Make	Block14
+IFD0	Make	Block15
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## gps_and_device
+# output: 716 ad23717a9d625ba4
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	Block00
+IFD0	Make	Block01
+IFD0	Make	Block02
+IFD0	Make	Block03
+IFD0	Make	Block04
+IFD0	Make	Block05
+IFD0	Make	Block06
+IFD0	Make	Block07
+IFD0	Make	Block08
+IFD0	Make	Block09
+IFD0	Make	Block10
+IFD0	Make	Block11
+IFD0	Make	Block12
+IFD0	Make	Block13
+IFD0	Make	Block14
+IFD0	Make	Block15
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## all_pii
+# output: 716 1f5d24a5607b0ee8
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## all
+# output: 44 f4e8867eeb98f4ea
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## everything
+# output: 44 f4e8867eeb98f4ea
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## xmp
+# output: 716 ad23717a9d625ba4
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	Block00
+IFD0	Make	Block01
+IFD0	Make	Block02
+IFD0	Make	Block03
+IFD0	Make	Block04
+IFD0	Make	Block05
+IFD0	Make	Block06
+IFD0	Make	Block07
+IFD0	Make	Block08
+IFD0	Make	Block09
+IFD0	Make	Block10
+IFD0	Make	Block11
+IFD0	Make	Block12
+IFD0	Make	Block13
+IFD0	Make	Block14
+IFD0	Make	Block15
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## icc
+# output: 716 ad23717a9d625ba4
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	Block00
+IFD0	Make	Block01
+IFD0	Make	Block02
+IFD0	Make	Block03
+IFD0	Make	Block04
+IFD0	Make	Block05
+IFD0	Make	Block06
+IFD0	Make	Block07
+IFD0	Make	Block08
+IFD0	Make	Block09
+IFD0	Make	Block10
+IFD0	Make	Block11
+IFD0	Make	Block12
+IFD0	Make	Block13
+IFD0	Make	Block14
+IFD0	Make	Block15
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## jumbf
+# output: 716 ad23717a9d625ba4
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	Block00
+IFD0	Make	Block01
+IFD0	Make	Block02
+IFD0	Make	Block03
+IFD0	Make	Block04
+IFD0	Make	Block05
+IFD0	Make	Block06
+IFD0	Make	Block07
+IFD0	Make	Block08
+IFD0	Make	Block09
+IFD0	Make	Block10
+IFD0	Make	Block11
+IFD0	Make	Block12
+IFD0	Make	Block13
+IFD0	Make	Block14
+IFD0	Make	Block15
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## rights
+# output: 716 ad23717a9d625ba4
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	Block00
+IFD0	Make	Block01
+IFD0	Make	Block02
+IFD0	Make	Block03
+IFD0	Make	Block04
+IFD0	Make	Block05
+IFD0	Make	Block06
+IFD0	Make	Block07
+IFD0	Make	Block08
+IFD0	Make	Block09
+IFD0	Make	Block10
+IFD0	Make	Block11
+IFD0	Make	Block12
+IFD0	Make	Block13
+IFD0	Make	Block14
+IFD0	Make	Block15
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## timestamps
+# output: 716 ad23717a9d625ba4
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	Block00
+IFD0	Make	Block01
+IFD0	Make	Block02
+IFD0	Make	Block03
+IFD0	Make	Block04
+IFD0	Make	Block05
+IFD0	Make	Block06
+IFD0	Make	Block07
+IFD0	Make	Block08
+IFD0	Make	Block09
+IFD0	Make	Block10
+IFD0	Make	Block11
+IFD0	Make	Block12
+IFD0	Make	Block13
+IFD0	Make	Block14
+IFD0	Make	Block15
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## free_text
+# output: 716 ad23717a9d625ba4
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	Block00
+IFD0	Make	Block01
+IFD0	Make	Block02
+IFD0	Make	Block03
+IFD0	Make	Block04
+IFD0	Make	Block05
+IFD0	Make	Block06
+IFD0	Make	Block07
+IFD0	Make	Block08
+IFD0	Make	Block09
+IFD0	Make	Block10
+IFD0	Make	Block11
+IFD0	Make	Block12
+IFD0	Make	Block13
+IFD0	Make	Block14
+IFD0	Make	Block15
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## other
+# output: 716 ad23717a9d625ba4
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	Block00
+IFD0	Make	Block01
+IFD0	Make	Block02
+IFD0	Make	Block03
+IFD0	Make	Block04
+IFD0	Make	Block05
+IFD0	Make	Block06
+IFD0	Make	Block07
+IFD0	Make	Block08
+IFD0	Make	Block09
+IFD0	Make	Block10
+IFD0	Make	Block11
+IFD0	Make	Block12
+IFD0	Make	Block13
+IFD0	Make	Block14
+IFD0	Make	Block15
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## exiftool:all
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+## exiftool:gps:all
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	Block15
+IFD0	Make	Block15
+IFD0	Make	Block15
+IFD0	Make	Block15
+IFD0	Make	Block15
+IFD0	Make	Block15
+IFD0	Make	Block15
+IFD0	Make	Block15
+IFD0	Make	Block15
+IFD0	Make	Block15
+IFD0	Make	Block15
+IFD0	Make	Block15
+IFD0	Make	Block15
+IFD0	Make	Block15
+IFD0	Make	Block15
+IFD0	Make	Block15
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06

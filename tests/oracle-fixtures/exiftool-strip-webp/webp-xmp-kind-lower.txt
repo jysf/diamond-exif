@@ -1,0 +1,151 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# writes: exiftool -all= -o <out> <file>; exiftool -gps:all= -o <out> <file>
+# exiftool-version: 13.55
+# fixture: webp-xmp-kind-lower
+## input
+RIFF	WebP_Flags	4
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+RIFF	Unknown_xmp	(Binary data 332 bytes, use -b option to extract)
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## gps
+# output: 384 01f616d28b1e3670
+RIFF	WebP_Flags	4
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+RIFF	Unknown_xmp	(Binary data 332 bytes, use -b option to extract)
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## gps_and_device
+# output: 384 01f616d28b1e3670
+RIFF	WebP_Flags	4
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+RIFF	Unknown_xmp	(Binary data 332 bytes, use -b option to extract)
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## all_pii
+# output: 384 01f616d28b1e3670
+RIFF	WebP_Flags	4
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+RIFF	Unknown_xmp	(Binary data 332 bytes, use -b option to extract)
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## all
+# output: 384 01f616d28b1e3670
+RIFF	WebP_Flags	4
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+RIFF	Unknown_xmp	(Binary data 332 bytes, use -b option to extract)
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## everything
+# output: 384 01f616d28b1e3670
+RIFF	WebP_Flags	4
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+RIFF	Unknown_xmp	(Binary data 332 bytes, use -b option to extract)
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## xmp
+# output: 384 01f616d28b1e3670
+RIFF	WebP_Flags	4
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+RIFF	Unknown_xmp	(Binary data 332 bytes, use -b option to extract)
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## icc
+# output: 384 01f616d28b1e3670
+RIFF	WebP_Flags	4
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+RIFF	Unknown_xmp	(Binary data 332 bytes, use -b option to extract)
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## jumbf
+# output: 384 01f616d28b1e3670
+RIFF	WebP_Flags	4
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+RIFF	Unknown_xmp	(Binary data 332 bytes, use -b option to extract)
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## rights
+# output: 384 01f616d28b1e3670
+RIFF	WebP_Flags	4
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+RIFF	Unknown_xmp	(Binary data 332 bytes, use -b option to extract)
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## timestamps
+# output: 384 01f616d28b1e3670
+RIFF	WebP_Flags	4
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+RIFF	Unknown_xmp	(Binary data 332 bytes, use -b option to extract)
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## free_text
+# output: 384 01f616d28b1e3670
+RIFF	WebP_Flags	4
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+RIFF	Unknown_xmp	(Binary data 332 bytes, use -b option to extract)
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## other
+# output: 384 01f616d28b1e3670
+RIFF	WebP_Flags	4
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+RIFF	Unknown_xmp	(Binary data 332 bytes, use -b option to extract)
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## exiftool:all
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+RIFF	Unknown_xmp	(Binary data 332 bytes, use -b option to extract)
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## exiftool:gps:all
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+RIFF	Unknown_xmp	(Binary data 332 bytes, use -b option to extract)
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06

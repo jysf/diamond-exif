@@ -440,6 +440,53 @@ fn exiftool_values_of_kept_tags_equal_the_inputs() {
     }
 }
 
+/// SPEC-039 AC14 (signal `strip-oracle-jfif-kept-presets-unrecorded`): the
+/// `gps` and `all-pii` presets are recorded for every fixture. Of the four
+/// `jfif-*` fixtures, three carry a thumbnail (typed from SPEC-040's shapes:
+/// `jfif-thumbnail`, `jfif-thumbnail-short`, `jfif-two-segments`). `Gps` keeps
+/// it, so its section still prints `JFIF:ThumbnailTIFF`; `AllPii` removes the
+/// whole APP0 (DEC-009: Thumbnail is in the column), so its section does not.
+/// The one without a thumbnail prints none under either.
+fn jfif_thumbnail_check(source: &dyn Fn(&Shape) -> Record) {
+    let thumb_tags = |s: &Section| {
+        s.lines
+            .iter()
+            .filter(|l| l.group == "JFIF" && l.tag == "ThumbnailTIFF")
+            .count()
+    };
+    let want = [
+        ("jfif-thumbnail", true),
+        ("jfif-thumbnail-short", true),
+        ("jfif-two-segments", true),
+        ("jfif-no-thumbnail", false),
+    ];
+    for (name, has_thumb) in want {
+        let shape = shapes()
+            .into_iter()
+            .find(|s| s.name == name)
+            .unwrap_or_else(|| panic!("no JPEG fixture named {name}"));
+        let record = source(&shape);
+        let input = record.section("input").unwrap();
+        let gps = record
+            .section("gps")
+            .unwrap_or_else(|| panic!("{name}: no gps section"));
+        let all_pii = record
+            .section("all-pii")
+            .unwrap_or_else(|| panic!("{name}: no all-pii section"));
+        assert_eq!(thumb_tags(input) > 0, has_thumb, "{name}: input");
+        assert_eq!(thumb_tags(gps), thumb_tags(input), "{name}: gps keeps it");
+        assert_eq!(thumb_tags(all_pii), 0, "{name}: all-pii removes it");
+    }
+}
+
+#[test]
+fn jfif_fixtures_keep_the_thumbnail_under_gps_and_lose_it_under_all_pii() {
+    jfif_thumbnail_check(&committed);
+    if live_gate("jfif_fixtures_keep_the_thumbnail_under_gps_and_lose_it_under_all_pii") {
+        jfif_thumbnail_check(&live);
+    }
+}
+
 #[test]
 fn exiftool_reads_every_output_without_new_warning_kinds() {
     each_exif_output(&exif_committed, &|_, _, s, i| {

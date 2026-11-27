@@ -6,7 +6,7 @@
 task:
   id: SPEC-039
   type: story                      # epic | story | task | bug | chore
-  cycle: design                    # frame | design | build | verify | ship
+  cycle: verify                    # frame | design | build | verify | ship
   blocked: false
   priority: medium                 # critical | high | medium | low
   complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -78,10 +78,110 @@ cost:
       duration_minutes: null
       recorded_at: 2026-11-24
       notes: "main-loop design (ExifTool write-mode exit codes, the ours-vs-ExifTool differential over 174 fixtures, PNG type and keyword sweeps, refusal-vs-preview measurement, DEC-023, DEC-020 amendment, spec, HANDOFF); un-metered, null by design"
+    - cycle: build
+      handoff: HANDOFF-090
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 859490
+      estimated_usd: null
+      duration_minutes: 97
+      recorded_at: 2026-11-26
+      notes: "Parts A, B and C done on one branch, one subagent each. tokens_total and duration are the sums of the harness subagent results, filled by the orchestrator: A 341,318 tokens / 86 tool calls / 1,910 s; B 272,228 / 94 / 1,630 s; C 245,944 / 88 / 2,292 s. USD is not computed because the input/output split is not reported."
+    - cycle: verify
+      handoff: HANDOFF-091
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 258606
+      estimated_usd: null
+      duration_minutes: 26
+      recorded_at: 2026-11-26
+      notes: "Verdict applies to f5e24c1 (build tip plus this handoff). Cost filled by the orchestrator from the harness subagent result: 258,606 tokens, 96 tool calls, 1,553 s. Punch list of 3 items: 1 (M) judge exception (a) is group-level and excuses a dropped plain Exif/XMP block when a carrier coexists; 2 (L) the AC11 grid has no ICC finding; 3 (L) the README PNG keyword sentence omits Make, Model and TimeStamp."
+    - cycle: build
+      handoff: HANDOFF-091
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 194326
+      estimated_usd: null
+      duration_minutes: 21
+      recorded_at: 2026-11-26
+      notes: "Punch-list fix round for HANDOFF-091 (items 1 M, 2 L, 3 L), one subagent. The orchestrator transcribed this from the harness subagent result: 194,326 tokens, 63 tool calls, 1,263 s."
+    - cycle: verify
+      handoff: HANDOFF-091
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 184591
+      estimated_usd: null
+      duration_minutes: 16
+      recorded_at: 2026-11-26
+      notes: "Verify round 2, against 34008cc. One subagent. The orchestrator transcribed this from the harness subagent result: 184,591 tokens, 48 tool calls, 944 s. The verdict is a punch list of 2 L items: two line-level guards are unpinned (multiplicity decrement, by-line left-in check), and the line-level rule assumes readings add up, which a carrier placed before the plain block breaks."
+    - cycle: build
+      handoff: HANDOFF-091
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 144285
+      estimated_usd: null
+      duration_minutes: 20
+      recorded_at: 2026-11-26
+      notes: "Round-2 punch-list fix round, one subagent: both guards pinned, plus the no-carriers additivity check. The orchestrator transcribed the cost from the harness subagent result: 144,285 tokens, 46 tool calls, 1,209 s."
+    - cycle: verify
+      handoff: HANDOFF-091
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 191215
+      estimated_usd: null
+      duration_minutes: 19
+      recorded_at: 2026-11-26
+      notes: "Verify round 3, against 2f790d4, one subagent. The orchestrator transcribed the cost from the harness subagent result: 191,215 tokens, 79 tool calls, 1,159 s. Punch list of 1 item (L): the additivity check compares fewer groups than exception (a) can excuse (ID3v2_3, Olympus, PNG text, ICC, JUMBF/JSON are not compared)."
+    - cycle: build
+      handoff: HANDOFF-091
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 114377
+      estimated_usd: null
+      duration_minutes: 14
+      recorded_at: 2026-11-26
+      notes: "Round-3 fix round (additivity compares judged lines). One subagent, resumed twice after two correct stops. The harness's last notification is read as cumulative: 114,377 tokens, 40 tool calls, 846 s. The earlier readings were 82,538 and 88,160."
+    - cycle: verify
+      handoff: HANDOFF-091
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 135708
+      estimated_usd: null
+      duration_minutes: 11
+      recorded_at: 2026-11-26
+      notes: "Verify round 4, against 9c368ba, one subagent. The orchestrator transcribed the final harness notification: 135,708 tokens, 47 tool calls, 683 s. Punch list of 2 L items: a SEAL/XML carrier line left in beside a plain XMP packet goes unchecked (pre-existing), and the red-proof comment misdescribes its readings."
+    - cycle: build
+      handoff: HANDOFF-091
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 137987
+      estimated_usd: null
+      duration_minutes: 14
+      recorded_at: 2026-11-26
+      notes: "Round-4 fix round (carrier_checked drives the by-line left-in check and additivity; the excuse stays judged), one subagent. The orchestrator transcribed the cost from the harness subagent result: 137,987 tokens, 57 tool calls, 840 s. Checked by the orchestrator instead of a round-5 verify."
+    - cycle: build
+      handoff: HANDOFF-091
+      agent: claude-sonnet-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 92174
+      estimated_usd: null
+      duration_minutes: 9
+      recorded_at: 2026-11-26
+      notes: "Fix round 5: pin two guards. Mutant C is pinned; mutant B is equivalent. One subagent. The orchestrator transcribed the cost from the harness subagent result: 92,174 tokens, 14 tool calls, 528 s."
   totals:
-    tokens_total: 0
-    estimated_usd: 0
-    session_count: 0
+    tokens_total: 2312759
+    estimated_usd: 0.00
+    session_count: 11
 ---
 
 # SPEC-039: ExifTool write parity (I3) for PNG and WebP strip, audit and CLI switch-over
@@ -107,14 +207,17 @@ the build rebuilds what it needs from these facts. **DEC-023 is normative** and 
    a `-if` condition failed. Across 348 write runs, `rc == 0` held exactly when the output file existed. `-m` turns
    `[minor]` errors into warnings and exit 0.
 2. **The differential** (`Everything` ↔ `exiftool -all=`, `Gps` ↔ `exiftool -gps:all=`, compared as ExifTool's
-   readings of the two outputs, `(group, tag)` multisets):
-   - 191 pairs are identical.
+   readings of the two outputs, `(group, tag)` multisets and the values of tags both keep):
+   - 157 pairs are identical. The design first counted 191 by comparing keys only. 34 of those agree on keys and
+     differ in value: D4 3 and D6 31 (DEC-023 amendment of 2026-11-25).
    - 86 differ, all in five classes (DEC-023 rule 4):
      - D1: ExifTool drops `VP8X` after `-all=` (72 pairs).
      - D2: ExifTool adds `VP8X` when writing `EXIF` into a simple WebP (2).
      - D3: ExifTool keeps raw-profile carriers that we remove (7).
      - D4: ExifTool rewrites duplicate `EXIF` chunks from the last one, which changes kept values (4).
      - D5: ExifTool can't delete a text chunk that has no keyword NUL (1).
+     - D6, value level only: ExifTool recomputes the `VP8X` flags from the chunks present. We clear only the bits
+       of kinds we removed (31).
    - 41 pairs are outcome differences: ExifTool refuses where we strip (hostile structure we tolerate), or we refuse
      where ExifTool writes (`Uneditable { BlockNotClean }` on an untrusted Exif block).
    - 30 pairs are refused by both.
@@ -277,8 +380,11 @@ now true.
 - [ ] **AC5 (Layer B differential, rule 4):**
   - For every fixture, run `Everything` against `exiftool -all=` and `Gps` against `exiftool -gps:all=`.
   - Compare the `(group, tag)` multisets, and the values of tags both outputs keep.
-  - Every difference must be in the pinned table, as (fixture, pair, class D1 to D5, the exact tag lines). The table
-    is typed by hand from DEC-023 and this design's counts: D1 72, D2 2, D3 7, D4 4, D5 1.
+  - Every difference must be in the pinned table, as (fixture, pair, class D1 to D6, level, the exact tag lines). The
+    table is typed by hand from DEC-023 and this design's counts:
+    - key level: D1 72, D2 2, D3 7, D4 4, D5 1;
+    - value level: D4 3, D6 31;
+    - 157 identical pairs.
   - Outcome pins: 41 (ExifTool refuses with its `Error:` line, or we refuse with our variant). Both refusing is
     agreement.
   - An unpinned difference fails, and so does a stale pin.
@@ -438,7 +544,8 @@ amendment and this spec's counts. Never derive one from the code under test.
     so `-t -n`, not `-H`.
 - **The differential's multiset compare:** duplicate `EXIF`/`eXIf` blocks print the same `(group, tag)` several times
   (`-a`). Compare as multisets. D4 is exactly a multiset-and-value difference.
-- **Reproducing the design's counts:** D1 72, D2 2, D3 7, D4 4, D5 1. There are 41 outcome differences, 30 both-refuse
+- **Reproducing the design's counts:** key level D1 72, D2 2, D3 7, D4 4, D5 1. Value level D4 3, D6 31, and 157
+  identical pairs (DEC-023 amendment of 2026-11-25). There are 41 outcome differences, 30 both-refuse
   pairs, and 113 refused `(fixture, preset)` pairs. If the rebuilt harness disagrees, stop and report the difference.
   Don't re-pin it to match. Either the harness or the measurement is wrong, and the architect decides which.
 - **The mutants must escape the self-check.** That's the point: a mutant the self-check catches proves nothing about

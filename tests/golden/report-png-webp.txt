@@ -4,13 +4,13 @@ file: photos/shot.png
   health: jpeg_issues=0 exif_issues=0 failed_blocks=0 inventory_truncated=false
   max severity: high
   6 findings
-    - gps [high] tag 0x0001 ifd=gps#1 type=2 count=2 block=0 segment=1 value="N": kept (not strippable)
-    - authorship [medium] region text len=9 block=- segment=2: kept (not strippable)
-    - free_text [medium] region text len=7 block=- segment=3: kept (not strippable)
-    - xmp [medium] region xmp len=12 block=- segment=4: kept (not strippable)
-    - timestamps [low] region time len=7 block=- segment=5: kept (not strippable)
-    - other_segment [medium] region trailer len=7 block=- segment=8 after_scan: kept (not strippable)
-  preview (all_pii): not strippable: the PNG strip exists but has not been checked against ExifTool yet, so no removal is claimed; every finding is kept
+    - gps [high] tag 0x0001 ifd=gps#1 type=2 count=2 block=0 segment=1 value="N": removed
+    - authorship [medium] region text len=9 block=- segment=2: removed
+    - free_text [medium] region text len=7 block=- segment=3: removed
+    - xmp [medium] region xmp len=12 block=- segment=4: kept_unread (may hold what this policy removes)
+    - timestamps [low] region time len=7 block=- segment=5: removed
+    - other_segment [medium] region trailer len=7 block=- segment=8 after_scan: kept_unread (may hold what this policy removes)
+  preview (all_pii): removed 4, kept 0, kept_unread 2; residual findings 2, residual severity medium
   inventory: 7 items
     - tag 0x8825 ifd=ifd0#0 type=4 count=1 block=0 segment=1 value="\x00\x00\x00\x1a"
     - tag 0x0001 ifd=gps#1 type=2 count=2 block=0 segment=1 category=gps value="N"
@@ -26,10 +26,10 @@ file: photos/shot.webp
   health: jpeg_issues=0 exif_issues=0 failed_blocks=0 inventory_truncated=false
   max severity: high
   3 findings
-    - gps [high] tag 0x0001 ifd=gps#1 type=2 count=2 block=0 segment=2 after_scan value="N": kept (not strippable)
-    - xmp [medium] region xmp len=12 block=- segment=3 after_scan: kept (not strippable)
-    - icc [low] region icc len=11 block=- segment=4 after_scan: kept (not strippable)
-  preview (all_pii): not strippable: the WebP strip exists but has not been checked against ExifTool yet, so no removal is claimed; every finding is kept
+    - gps [high] tag 0x0001 ifd=gps#1 type=2 count=2 block=0 segment=2 after_scan value="N": removed
+    - xmp [medium] region xmp len=12 block=- segment=3 after_scan: kept_unread (may hold what this policy removes)
+    - icc [low] region icc len=11 block=- segment=4 after_scan: kept (not targeted by this policy)
+  preview (all_pii): removed 1, kept 1, kept_unread 1; residual findings 2, residual severity medium
   inventory: 4 items
     - tag 0x8825 ifd=ifd0#0 type=4 count=1 block=0 segment=2 after_scan value="\x00\x00\x00\x1a"
     - tag 0x0001 ifd=gps#1 type=2 count=2 block=0 segment=2 after_scan category=gps value="N"
@@ -52,5 +52,5 @@ summary
   category timestamps: 1
   category icc: 1
   category other_segment: 1
-  reliable files: 0, unreliable files: 2
-  policy all_pii: residual not available: no file was read reliably
+  reliable files: 2, unreliable files: 0
+  policy all_pii: residual findings 4 (reliable files only)

@@ -1,0 +1,31 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# writes: exiftool -all= -o <out> <file>; exiftool -gps:all= -o <out> <file>
+# exiftool-version: 13.55
+# fixture: webp-header-12-bytes
+## input
+## gps
+# output: 12 f4a279213ffdbfec
+## gps_and_device
+# output: 12 f4a279213ffdbfec
+## all_pii
+# output: 12 f4a279213ffdbfec
+## all
+# output: 12 f4a279213ffdbfec
+## everything
+# output: 12 f4a279213ffdbfec
+## xmp
+# output: 12 f4a279213ffdbfec
+## icc
+# output: 12 f4a279213ffdbfec
+## jumbf
+# output: 12 f4a279213ffdbfec
+## rights
+# output: 12 f4a279213ffdbfec
+## timestamps
+# output: 12 f4a279213ffdbfec
+## free_text
+# output: 12 f4a279213ffdbfec
+## other
+# output: 12 f4a279213ffdbfec
+## exiftool:all
+## exiftool:gps:all

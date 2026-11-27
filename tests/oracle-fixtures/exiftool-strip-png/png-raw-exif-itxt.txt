@@ -1,0 +1,261 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# writes: exiftool -all= -o <out> <file>; exiftool -gps:all= -o <out> <file>
+# exiftool-version: 13.55
+# fixture: png-raw-exif-itxt
+## input
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	ModifyDate	2024:05:06 07:08:09
+IFD0	Artist	A. Photographer
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	DateTimeOriginal	2024:05:06 07:08:08
+ExifIFD	ExposureCompensation	-0.3333333333
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## carriers
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	ModifyDate	2024:05:06 07:08:09
+IFD0	Artist	A. Photographer
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	DateTimeOriginal	2024:05:06 07:08:08
+ExifIFD	ExposureCompensation	-0.3333333333
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## no-carriers
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## gps
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## gps_and_device
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## all_pii
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## all
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## everything
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## xmp
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## icc
+# output: 826 55fbb0f8e1b97199
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	ModifyDate	2024:05:06 07:08:09
+IFD0	Artist	A. Photographer
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	DateTimeOriginal	2024:05:06 07:08:08
+ExifIFD	ExposureCompensation	-0.3333333333
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## jumbf
+# output: 826 55fbb0f8e1b97199
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	ModifyDate	2024:05:06 07:08:09
+IFD0	Artist	A. Photographer
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	DateTimeOriginal	2024:05:06 07:08:08
+ExifIFD	ExposureCompensation	-0.3333333333
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## rights
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## timestamps
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## free_text
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## other
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## exiftool:all
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## exiftool:gps:all
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	ModifyDate	2024:05:06 07:08:09
+IFD0	Artist	A. Photographer
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	DateTimeOriginal	2024:05:06 07:08:08
+ExifIFD	ExposureCompensation	-0.3333333333
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06

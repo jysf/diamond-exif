@@ -1,0 +1,157 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# writes: exiftool -all= -o <out> <file>; exiftool -gps:all= -o <out> <file>
+# exiftool-version: 13.55
+# fixture: webp-row-05-seal
+## input
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+XML-dc	Creator	Jane Creator
+XML-photoshop	City	Springfield
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+## carriers
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+XML-dc	Creator	Jane Creator
+XML-photoshop	City	Springfield
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+## no-carriers
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+## gps
+# output: 44 9b58c96f182ec9d0
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+## gps_and_device
+# output: 44 9b58c96f182ec9d0
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+## all_pii
+# output: 44 9b58c96f182ec9d0
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+## all
+# output: 44 9b58c96f182ec9d0
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+## everything
+# output: 44 9b58c96f182ec9d0
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+## xmp
+# output: 44 9b58c96f182ec9d0
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+## icc
+# output: 506 18c6265a0b93df02
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+XML-dc	Creator	Jane Creator
+XML-photoshop	City	Springfield
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+## jumbf
+# output: 506 18c6265a0b93df02
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+XML-dc	Creator	Jane Creator
+XML-photoshop	City	Springfield
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+## rights
+# output: 44 9b58c96f182ec9d0
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+## timestamps
+# output: 44 9b58c96f182ec9d0
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+## free_text
+# output: 44 9b58c96f182ec9d0
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+## other
+# output: 44 9b58c96f182ec9d0
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+## exiftool:all
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+## exiftool:gps:all
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+XML-dc	Creator	Jane Creator
+XML-photoshop	City	Springfield
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05

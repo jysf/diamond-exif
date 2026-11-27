@@ -7,10 +7,11 @@
 //! [`Disposition::KeptUnread`], not [`Disposition::Kept`]. Nothing else is
 //! consulted (not the severity, the container or the origin).
 //!
-//! A container the writer refuses (everything but JPEG and TIFF; in practice a
-//! PNG or a WebP, the only others with findings) is the exception to the lookup
-//! (DEC-020): every finding is [`Disposition::Kept`], nothing is removed,
-//! [`Preview::strippable`] is false and [`Preview::reliable`] is false.
+//! A container the writer refuses (GIF, HEIC, BigTIFF, an empty or unknown
+//! file; none has findings) is the exception to the lookup (DEC-020): nothing
+//! is removed, [`Preview::strippable`] is false and [`Preview::reliable`] is
+//! false. JPEG, TIFF, PNG and WebP all take the lookup (DEC-020 amendment of
+//! 2026-11-24).
 //!
 //! The preview covers findings only. Inventory-only entries have no category
 //! and are out of scope (DEC-009, "What the preview does not say").
@@ -104,16 +105,18 @@ impl Preview {
         self.residual_severity
     }
 
-    /// Whether the audit was clean and its findings complete. Always false for
-    /// a container the writer cannot strip (see [`Preview::strippable`]).
+    /// Whether the audit was clean and its findings complete: strippable, clean
+    /// and not truncated. Always false for a container the writer cannot strip
+    /// (see [`Preview::strippable`]). A strip may still refuse a reliable
+    /// file's removals with a typed reason; the preview does not run the strip.
     pub fn reliable(&self) -> bool {
         self.reliable
     }
 
     /// Whether the writer can strip this container: [`ContainerKind::strippable`],
-    /// true only for JPEG and TIFF (DEC-020 clause 6). False for a PNG and a WebP
-    /// (audited, but [`crate::write::strip`] refuses them) and for GIF, HEIC,
-    /// BigTIFF, an empty file and an unknown one, so the dispositions describe
+    /// true for JPEG, TIFF, PNG and WebP (DEC-020 amendment of 2026-11-24). False
+    /// for GIF, HEIC, BigTIFF, an empty file and an unknown one
+    /// ([`crate::write::strip`] refuses them), so the dispositions describe
     /// nothing the writer would do.
     pub fn strippable(&self) -> bool {
         self.strippable

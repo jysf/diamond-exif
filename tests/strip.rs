@@ -158,6 +158,32 @@ fn empty_one_byte_and_non_jpeg_inputs() {
     assert!(out.removals().is_empty() && out.patches().is_empty());
 }
 
+/// SPEC-039 AC13 (decision 3): the two strings that said "JPEG" now say what
+/// the writer handles. The variant keeps its name (`NotJpeg`); only its words
+/// and the words of `Unstrippable` are neutral.
+#[test]
+fn strip_error_display_is_container_neutral() {
+    assert_eq!(
+        StripError::NotJpeg.to_string(),
+        "not a JPEG, TIFF, PNG or WebP"
+    );
+    assert_eq!(
+        StripError::Unstrippable {
+            reason: UnstrippableReason::BadSegmentLength,
+            offset: 7,
+        }
+        .to_string(),
+        "the file cannot be cut safely (BadSegmentLength at offset 7)"
+    );
+    // A RIFF `WAVE` still sniffs as unknown and gets the (renamed-in-words) error.
+    let mut wave = b"RIFF\x04\0\0\0WAVE".to_vec();
+    wave.extend_from_slice(&[0; 8]);
+    assert_eq!(
+        strip(&wave, StripPolicy::Gps).unwrap_err().to_string(),
+        "not a JPEG, TIFF, PNG or WebP"
+    );
+}
+
 #[test]
 fn bad_segment_length_is_unstrippable() {
     let s = shape("bad-length");

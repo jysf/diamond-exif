@@ -1,0 +1,17 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# writes: exiftool -all= -o <out> <file>; exiftool -gps:all= -o <out> <file>
+# exiftool-version: 13.55
+# fixture: webp-xmp-odd-unpadded-then-exif
+## input
+RIFF	WebP_Flags	12
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+XMP-xmp	CreatorTool	DiamondTool
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## exiftool:all
+# refused: Error: Truncated RIFF chunk - <file>
+## exiftool:gps:all
+# refused: Error: Truncated RIFF chunk - <file>

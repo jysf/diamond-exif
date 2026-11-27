@@ -60,6 +60,12 @@
 //! and ExifTool must print no `Error` for it that it did not print for the
 //! input. The check is also shown red: [`the_check_goes_red_on_an_unstripped_file`].
 
+#[path = "support/i3_judge.rs"]
+mod i3_judge;
+#[path = "support/i3_records.rs"]
+mod i3_records;
+#[path = "support/i3_shapes.rs"]
+mod i3_shapes;
 #[path = "support/oracle.rs"]
 mod oracle;
 #[path = "support/oracle_png.rs"]
@@ -77,6 +83,8 @@ mod webp_shapes;
 
 use exif_core::policy::StripPolicy;
 use exif_core::{strip, StripError};
+use i3_judge::{Cat, ALL_CATS};
+use i3_shapes::rich_tiff;
 use oracle_tiff as t;
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -169,99 +177,15 @@ fn has_error(tags: &[Tag]) -> bool {
     tags.iter().any(|t| t.name == "Error")
 }
 
-/// The DEC-008 categories a WebP can hold and this judge classifies.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum Cat {
-    Gps,
-    DeviceId,
-    Authorship,
-    Rights,
-    FreeText,
-    Timestamps,
-    CameraModel,
-    Thumbnail,
-    MakerNote,
-    Software,
-    Xmp,
-    Icc,
-    Jumbf,
-}
-
-const ALL_CATS: [Cat; 13] = [
-    Cat::Gps,
-    Cat::DeviceId,
-    Cat::Authorship,
-    Cat::Rights,
-    Cat::FreeText,
-    Cat::Timestamps,
-    Cat::CameraModel,
-    Cat::Thumbnail,
-    Cat::MakerNote,
-    Cat::Software,
-    Cat::Xmp,
-    Cat::Icc,
-    Cat::Jumbf,
-];
-
-/// DEC-009: the categories each preset (index into `StripPolicy::PRESETS`)
-/// removes, typed here, not read from the library. `Iptc` is left out (no WebP
-/// chunk carries it).
+/// DEC-009 (`support/i3_judge.rs`, typed there): does `preset` (index into
+/// `StripPolicy::PRESETS`) remove `cat`?
 fn preset_removes(preset: usize, cat: Cat) -> bool {
-    let first = match cat {
-        Cat::Gps => 0,
-        Cat::DeviceId => 1,
-        Cat::Authorship
-        | Cat::FreeText
-        | Cat::Timestamps
-        | Cat::CameraModel
-        | Cat::Thumbnail
-        | Cat::MakerNote => 2,
-        Cat::Software | Cat::Xmp | Cat::Rights => 3,
-        Cat::Icc | Cat::Jumbf => 4,
-    };
-    preset >= first
+    i3_judge::removes(i3_judge::PRESET_NAMES[preset], cat)
 }
 
-/// The category a printed tag stands for, or `None` for a tag the judge does
-/// not classify (structure, pixel tags, `Unknown_*`, the tags of a chunk that
-/// only the carrier rule decides).
+/// The category a printed tag stands for, from the shared table.
 fn category_of(tag: &Tag) -> Option<Cat> {
-    let (g, n) = (tag.group.as_str(), tag.name.as_str());
-    if g == "GPS" || (g == "Composite" && n.starts_with("GPS")) {
-        return Some(Cat::Gps);
-    }
-    if g.starts_with("XMP") {
-        return Some(Cat::Xmp);
-    }
-    if g.starts_with("ICC") {
-        return Some(Cat::Icc);
-    }
-    if g == "JUMBF" || g == "JSON" {
-        return Some(Cat::Jumbf);
-    }
-    if n.starts_with("MakerNote") {
-        return Some(Cat::MakerNote);
-    }
-    // The tags of an `EXIF` chunk's TIFF: not those a `RIFF`-group carrier
-    // prints under the same name (`RIFF:Artist` from a `LIST`).
-    if g == "RIFF" {
-        return None;
-    }
-    match n {
-        "SerialNumber"
-        | "BodySerialNumber"
-        | "InternalSerialNumber"
-        | "LensSerialNumber"
-        | "ImageUniqueID" => Some(Cat::DeviceId),
-        "Author" | "Artist" | "OwnerName" | "CameraOwnerName" => Some(Cat::Authorship),
-        "Copyright" => Some(Cat::Rights),
-        "ImageDescription" | "UserComment" => Some(Cat::FreeText),
-        "ModifyDate" | "DateTimeOriginal" | "CreateDate" => Some(Cat::Timestamps),
-        "Make" | "Model" | "LensModel" => Some(Cat::CameraModel),
-        "ThumbnailImage" | "ThumbnailOffset" | "ThumbnailLength" => Some(Cat::Thumbnail),
-        "Software" => Some(Cat::Software),
-        _ => None,
-    }
+    i3_judge::category_of(&tag.group, &tag.name)
 }
 
 /// The classified tags of `listing`, by category.
@@ -522,30 +446,6 @@ fn run_all(cases: Vec<Case>) -> Tally {
 }
 
 // ── the inputs ──────────────────────────────────────────────────────────────
-
-/// A TIFF with a GPS position, a body serial, an owner name, an artist and a
-/// copyright: every tag family the pinned list names, in the three IFDs.
-fn rich_tiff() -> Vec<u8> {
-    let big = false;
-    let ifd0 = t::ifd(vec![
-        t::ascii(0x010F, b"MakeCorp\0"),
-        t::ascii(0x013B, b"Artist Zed\0"),
-        t::ascii(0x8298, b"Copy Zed\0"),
-        t::ptr(0x8769, 1),
-        t::ptr(0x8825, 2),
-    ]);
-    let exif = t::ifd(vec![
-        t::ascii(0xA430, b"Owner Zed\0"),
-        t::ascii(0xA431, b"SN123456\0"),
-    ]);
-    let gps = t::ifd(vec![
-        t::ascii(0x0001, b"N\0"),
-        t::rational(big, 0x0002, &[(51, 1), (30, 1), (0, 1)]),
-        t::ascii(0x0003, b"E\0"),
-        t::rational(big, 0x0004, &[(0, 1), (7, 1), (0, 1)]),
-    ]);
-    t::assemble(big, &[ifd0, exif, gps])
-}
 
 /// The bare file every carrier file is compared with: a `VP8L` image only.
 fn bare() -> Vec<u8> {

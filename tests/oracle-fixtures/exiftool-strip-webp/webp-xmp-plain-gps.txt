@@ -1,0 +1,197 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# writes: exiftool -all= -o <out> <file>; exiftool -gps:all= -o <out> <file>
+# exiftool-version: 13.55
+# fixture: webp-xmp-plain-gps
+## input
+RIFF	WebP_Flags	4
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+XMP-exif	GPSLatitude	51.5
+XMP-exif	GPSLongitude	0.116666666666667
+XMP-dc	Creator	Zed
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+Composite	GPSLatitudeRef	N
+Composite	GPSLongitudeRef	E
+Composite	GPSPosition	51.5 0.116666666666667
+## gps
+# output: 416 f3027cd80f62f557
+RIFF	WebP_Flags	4
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+XMP-exif	GPSLatitude	51.5
+XMP-exif	GPSLongitude	0.116666666666667
+XMP-dc	Creator	Zed
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+Composite	GPSLatitudeRef	N
+Composite	GPSLongitudeRef	E
+Composite	GPSPosition	51.5 0.116666666666667
+## gps_and_device
+# output: 416 f3027cd80f62f557
+RIFF	WebP_Flags	4
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+XMP-exif	GPSLatitude	51.5
+XMP-exif	GPSLongitude	0.116666666666667
+XMP-dc	Creator	Zed
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+Composite	GPSLatitudeRef	N
+Composite	GPSLongitudeRef	E
+Composite	GPSPosition	51.5 0.116666666666667
+## all_pii
+# output: 416 f3027cd80f62f557
+RIFF	WebP_Flags	4
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+XMP-exif	GPSLatitude	51.5
+XMP-exif	GPSLongitude	0.116666666666667
+XMP-dc	Creator	Zed
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+Composite	GPSLatitudeRef	N
+Composite	GPSLongitudeRef	E
+Composite	GPSPosition	51.5 0.116666666666667
+## all
+# output: 44 9b58c96f182ec9d0
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+## everything
+# output: 44 9b58c96f182ec9d0
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+## xmp
+# output: 44 9b58c96f182ec9d0
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+## icc
+# output: 416 f3027cd80f62f557
+RIFF	WebP_Flags	4
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+XMP-exif	GPSLatitude	51.5
+XMP-exif	GPSLongitude	0.116666666666667
+XMP-dc	Creator	Zed
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+Composite	GPSLatitudeRef	N
+Composite	GPSLongitudeRef	E
+Composite	GPSPosition	51.5 0.116666666666667
+## jumbf
+# output: 416 f3027cd80f62f557
+RIFF	WebP_Flags	4
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+XMP-exif	GPSLatitude	51.5
+XMP-exif	GPSLongitude	0.116666666666667
+XMP-dc	Creator	Zed
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+Composite	GPSLatitudeRef	N
+Composite	GPSLongitudeRef	E
+Composite	GPSPosition	51.5 0.116666666666667
+## rights
+# output: 416 f3027cd80f62f557
+RIFF	WebP_Flags	4
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+XMP-exif	GPSLatitude	51.5
+XMP-exif	GPSLongitude	0.116666666666667
+XMP-dc	Creator	Zed
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+Composite	GPSLatitudeRef	N
+Composite	GPSLongitudeRef	E
+Composite	GPSPosition	51.5 0.116666666666667
+## timestamps
+# output: 416 f3027cd80f62f557
+RIFF	WebP_Flags	4
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+XMP-exif	GPSLatitude	51.5
+XMP-exif	GPSLongitude	0.116666666666667
+XMP-dc	Creator	Zed
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+Composite	GPSLatitudeRef	N
+Composite	GPSLongitudeRef	E
+Composite	GPSPosition	51.5 0.116666666666667
+## free_text
+# output: 416 f3027cd80f62f557
+RIFF	WebP_Flags	4
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+XMP-exif	GPSLatitude	51.5
+XMP-exif	GPSLongitude	0.116666666666667
+XMP-dc	Creator	Zed
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+Composite	GPSLatitudeRef	N
+Composite	GPSLongitudeRef	E
+Composite	GPSPosition	51.5 0.116666666666667
+## other
+# output: 416 f3027cd80f62f557
+RIFF	WebP_Flags	4
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+XMP-exif	GPSLatitude	51.5
+XMP-exif	GPSLongitude	0.116666666666667
+XMP-dc	Creator	Zed
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+Composite	GPSLatitudeRef	N
+Composite	GPSLongitudeRef	E
+Composite	GPSPosition	51.5 0.116666666666667
+## exiftool:all
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+## exiftool:gps:all
+RIFF	WebP_Flags	4
+RIFF	ImageWidth	8
+RIFF	ImageHeight	8
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+XMP-exif	GPSLatitude	51.5
+XMP-exif	GPSLongitude	0.116666666666667
+XMP-dc	Creator	Zed
+Composite	ImageSize	8 8
+Composite	Megapixels	6.4e-05
+Composite	GPSLatitudeRef	N
+Composite	GPSLongitudeRef	E
+Composite	GPSPosition	51.5 0.116666666666667

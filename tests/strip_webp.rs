@@ -1173,10 +1173,10 @@ fn every_oracle_webp_fixture_strips_or_refuses_under_every_preset_and_is_a_fixed
 }
 
 #[test]
-fn a_working_strip_and_strippable_false_coexist_for_webp() {
-    // DEC-022 clause 10: the audit and the CLI keep saying "not strippable"
-    // until SPEC-039 shows ExifTool agrees and flips it.
-    assert!(!ContainerKind::Webp.strippable());
+fn a_working_strip_and_strippable_true_agree_for_webp() {
+    // DEC-022 clause 10, closed by SPEC-039: the audit and the CLI say
+    // strippable now that ExifTool's agreement is shown.
+    assert!(ContainerKind::Webp.strippable());
     let image = keep("VP8L", vp8l());
     let by = |n: &str| rows().into_iter().find(|p| p.name == n).unwrap();
     let fx = Fixture {
@@ -1188,9 +1188,10 @@ fn a_working_strip_and_strippable_false_coexist_for_webp() {
     let out = strip(&input, StripPolicy::AllPii).unwrap();
     assert!(out.bytes().len() < input.len());
     let a = audit(&input);
-    let pv = exif_core::audit::preview(&a, StripPolicy::AllPii);
-    assert!(!pv.strippable());
-    assert_eq!(pv.counts().removed, 0);
+    // `All` removes the XMP finding; the `LIST` is a carrier, not a finding.
+    let pv = exif_core::audit::preview(&a, StripPolicy::All);
+    assert!(pv.strippable());
+    assert_eq!(pv.counts().removed, 1);
 }
 
 // ── a chunk coded `RIFF` (SPEC-038 fix round, DEC-022 clause 4) ─────────────

@@ -101,3 +101,73 @@ The comparator red-proofs and the mutated-copy writer red-proofs of SPEC-039 (AC
 - Related specs: SPEC-039; SPEC-020, SPEC-021 (the JPEG strip oracle), SPEC-037, SPEC-038
 - Related decisions: DEC-008, DEC-009, DEC-013, DEC-020, DEC-021, DEC-022
 - `docs/exif-core-design.md` §8 (I3) and §16; `docs/porting-brief-diamond-exif.md` (the write-side warning)
+
+## Amendment (2026-11-25, SPEC-039 build): value-level differences and class D6
+
+Answers question `i3-differential-value-level-differences`. Rule 4 compares values as well as `(group, tag)` keys, and that stands. The design's counts above were measured on keys only, so they missed 34 pairs whose keys agree and whose values differ (the 174 oracle fixtures, ExifTool 13.55). The design's key-level counts still hold. Each pin in the table now has a level, `keys` or `values`:
+
+1. **Key level** (unchanged): D1 72, D2 2, D3 7, D4 4, D5 1.
+2. **Value level:**
+   - **D4, 3 pairs:** `webp-exif-blocks-16`, `webp-exif-full-one-two` and `webp-exif-full-two-one` under `Gps`. The mechanism is D4's: ExifTool rewrites every `EXIF` chunk from the last one, so kept values change. The keys agree only because the chunks hold the same tags.
+   - **D6, 31 pairs: ExifTool recomputes the `VP8X` flags.** ExifTool sets `WebP_Flags` from the chunks the output contains: 23 pairs under `Gps`, and 8 under `Everything` where it keeps `VP8X`. We follow DEC-022 clause 7. We clear the ICC, Exif or XMP bit only when the strip removes every chunk of that kind, and leave every other bit as the input had it, including a bit that was already wrong (an `EXIF` flag with no `EXIF` chunk, or an `EXIF` chunk with no flag). Example: `webp-exif-flag-unset` under `Gps`, where we write `WebP_Flags=0` and ExifTool writes `8`. Repairing flags the input got wrong is out of scope for a strip, so this class is ours by decision, like D1 to D5.
+3. **Identical pairs: 157** (191 − 34). The outcome differences (41) and both-refuse pairs (30) are unchanged.
+4. A value-level difference is pinned like a key-level one: it gives (fixture, pair, class, the exact tag lines on each side). It fails when unpinned, and a stale pin fails too. The consequence "review of D1 to D5" now reads "D1 to D6".
+
+The architect's design measurement left the values out. The build's harness found the gap, raised it as a question and did not re-pin anything. That is how the stop-and-report rule is meant to work.
+
+## Amendment (2026-11-26, SPEC-039 build): exception (c) covers its converse
+
+This answers question `i3-judge-exception-c-converse`. Rule 3 (c) excuses `Composite:GPS*` tags derived from XMP when they survive a preset that keeps `Xmp`. It now also covers the opposite direction. When a policy removes `Xmp` and the input's XMP has a GPS property, the `Composite:GPS*` tags ExifTool derives from that packet disappear with it. That is not a "kept tag missing" failure: a derived tag depends on its source, so the residual applies in both directions.
+
+1. **Where it applies:** the tag is in the `Composite` group, its name starts with `GPS`, the input's XMP has a GPS property, and the policy removes `Xmp`. Nowhere else.
+2. **Measured:** the two extra fixtures added in Part B, `png-xmp-plain-gps` and `webp-xmp-plain-gps`, under the Custom `xmp` policy give 6 uses (3 tags per fixture: `GPSLatitudeRef`, `GPSLongitudeRef`, `GPSPosition`). Exception (c) is used 24 times in all: 18 in the kept-XMP direction and these 6. None of the design's counts over the 174 oracle fixtures change.
+3. **Red-proof:** `comparator_is_red_when_exception_c_is_claimed_without_an_xmp_source`. The same missing `Composite:GPSLatitude` on a fixture whose GPS comes only from Exif stays red.
+4. **Stated limit:** the condition does not also require the input to have no Exif GPS. If a file has GPS in both Exif and XMP, a `Composite:GPS*` tag that should have stayed, derived from the kept Exif, would be excused when it goes missing under a policy that removes `Xmp`. No fixture has that shape. The `GPS:` group tags themselves are still checked as kept, so a lost Exif GPS block is caught directly. Revisit if a fixture is added that has GPS in both Exif and XMP.
+
+## Amendment (2026-11-26, SPEC-039 verify punch list): exception (a) is line-level
+
+This amendment closes HANDOFF-091 punch item 1 (M). As built, exception (a) excused a missing tag by group: every missing Exif-group or XML-group line was excused whenever the file held a carrier. That held even when a plain `eXIf`/`EXIF` or XMP block in the same file printed the same groups. So a writer that also dropped the plain block passed the judge, and the verifier showed it doing so. Rule 3 (a) now reads at line level:
+
+1. **A carrier-only reading is recorded.** For every fixture that holds a carrier, the record gains a `## carriers` section: ExifTool's reading (same flags and dropped groups as every other section) of a file the test builds from the fixture. That file keeps the container skeleton and the carrier chunks, and nothing else that carries metadata. The rule for which chunks are carriers is DEC-021 clause 4 and DEC-022 clause 4, typed in the test and never read from the library. Replay reads this section. Live re-reads it.
+2. **What exception (a) excuses.** It excuses a missing line only up to that line's multiplicity in the `## carriers` section, compared on `(group, tag, value)`. A missing line beyond that count, or one the carriers never print, is a failure. This includes a kept tag from a plain block in the same file. The `Composite:GPS*` clause of (a) narrows the same way: it applies only when the `## carriers` section itself prints `Composite:GPS*`.
+3. **The positive half is unchanged.** A carrier's tags must be gone. "Carrier tag left in" now compares against the `## carriers` lines whenever a plain block of the same family also exists, instead of being skipped.
+4. **Red-proof.** Build a PNG with a plain `eXIf` and a raw-profile Exif carrier. Strip it under `gps`, then delete the plain block's `IFD0` lines from the reading. The judge must fail with "kept tag missing". The same holds for XMP: a plain packet plus a raw-profile XMP carrier.
+
+The design counts over the 174 oracle fixtures do not change. Rule 4's differential is untouched. The judge's exception-use counts may change, and the handback states the new ones.
+
+## Amendment (2026-11-26, SPEC-039 verify round 2): line-level exception (a) requires readings that add up
+
+This closes HANDOFF-091 round-2 punch item 2 (L). The line-level exception (a) assumes that ExifTool's reading of a file is the sum of what its carriers print and what the rest of the file prints. That fails when a raw-profile Exif carrier comes before a plain `eXIf`. ExifTool then reports `IFD0 pointer references previous IFD0 directory` and hides the plain block. The judge would fail a correct strip and pass an over-cut. No fixture has that shape today. This amendment makes the assumption checked instead of silent:
+
+1. **A third reading.** For every fixture that holds a carrier, the record also gains a `## no-carriers` section. It is ExifTool's reading of a file the test builds from the fixture with the carrier chunks removed and everything else kept. The carrier typing is the same as for `## carriers`. Replay reads the section and the live run re-reads it.
+2. **The additivity check.** On the lines in the groups exception (a) can excuse (the Exif and XMP/XML families and `Composite:GPS*`), the multiset of `## input` lines must equal the multiset of `## carriers` lines plus the multiset of `## no-carriers` lines. The comparison is on `(group, tag, value)`. Skeleton and structure lines are not compared.
+3. **What a failure means.** A fixture that fails the check is one where the readings interfere. The judge cannot excuse lines on it. The fixture-set test fails and names the fixture. Such a fixture needs its own rule, which means another amendment. Neither the check nor the judge may be loosened to make it pass.
+4. **Red-proof.** A carrier-before-plain-block PNG built in the test (the verifier's `b1` shape) must fail the check. Both corpus fixtures that pair a plain block with a carrier must pass it.
+
+This adds to the line-level amendment above and changes none of its rules.
+
+## Amendment (2026-11-26, SPEC-039 verify round 3): the additivity check compares every line exception (a) can excuse
+
+This closes HANDOFF-091 round-3 punch item 1 (L). Item 2 of the previous amendment listed the compared groups as "the Exif and XMP/XML families and `Composite:GPS*`". That list was narrower than what exception (a) can excuse. Exception (a) excuses any judged line that the `## carriers` reading prints, and the judge's categorised groups include `ID3v2_3`, maker-note groups such as `Olympus`, the PNG text tags, `ICC*` and `JUMBF`/`JSON`. On the committed records, 3 excusable lines were never compared: `ID3v2_3:Artist` twice and `Olympus:Model` once.
+
+1. **The compared set is the set the judge uses the `## carriers` reading for: `judged` lines.** I read this from `tests/support/i3_judge.rs`, not from memory. The judge uses the carriers reading in exactly two places, and both filter it by `judged` (as `carrier_judged`):
+   - exception (a)'s excuse;
+   - the by-line "carrier tag left in" check, which runs when a plain block of the same family exists. It compares `judged` carrier lines in the Exif or XMP/XML family.
+
+   The other left-in checks (no plain block of the family, and the WebP row tags) scan the output only and do not use the carriers reading. `XML*` and `SEAL*` lines are not `judged`, so they are never excused and never compared line by line. They are caught only by the output-only scan. The additivity check therefore compares `judged` lines, which already excludes Warning and Error. `Composite:GPS*` is `judged` through `category_of`. *(Correction history: on the same day and before push, this item was worded wrongly twice. First it called `judged` plus the XMP/XML family "exactly the set exception (a) can excuse". Then it claimed the by-line check covers `judged` plus the XML family. The round-3 fix implementer stopped both times before changing any code, and showed from the code that both claims were false.)*
+2. **One predicate, shared.** The excuse, the by-line check and the additivity check all take their line set from one named predicate, `judged`. They cannot drift apart. Dropping the `xml_group` lines from the additivity comparison removes a check that nothing in the judge depended on.
+3. **Measured beforehand.** The round-3 verifier ran the wider set on the 36 carrier fixtures and all of them still add up. No record changes.
+
+## Amendment (2026-11-26, SPEC-039 verify round 4): XML and SEAL carrier lines are checked as left in beside a plain block
+
+This closes HANDOFF-091 round-4 punch item 1 (L). It also corrects a sentence in the previous amendment. That amendment said `XML*` and `SEAL*` lines "are caught only by the output-only scan". That is true only when the file has no plain XMP/XML block. With a plain packet present, the output-only scan does not run. The by-line check covered only `judged` lines, and `XML*`/`SEAL*` lines are not `judged`. So a SEAL or XML carrier line left in the output beside a plain packet was caught by nothing. The verifier showed this live: a PNG with a plain `iTXt` XMP packet and a `seAl` chunk, with `SEAL:AB=Zed` put back into the output, judged clean. Nothing leaks today. The library's output prints no SEAL line, and no fixture has the shape.
+
+1. **Two named predicates, the second defined from the first:**
+   - **The excuse predicate is `judged`, unchanged.** Exception (a) excuses only `judged` lines, so `XML*`/`SEAL*` lines are still never excused.
+   - **The carrier-check predicate is the excuse predicate plus the XMP/XML family** (`judged(l) || xml_group(&l.group)`, without Warning and Error lines). Two places use it:
+     - the by-line "carrier tag left in" check when a plain block of the same family exists;
+     - the additivity check.
+
+   Every carrier line the by-line check counts is therefore also compared for additivity. Every line the excuse uses is in both.
+2. **Red-proof.** The verifier's shape must judge red, with "carrier tag left in SEAL:AB=Zed", in both chunk orders: a PNG with a plain XMP packet plus a `seAl` carrier, and `SEAL:AB=Zed` put back into the output. Its control is the real output, which passes.
+3. **Measured beforehand (round 3).** All 36 carrier fixtures add up on the wider set. No corpus fixture holds a plain packet beside an XML/SEAL carrier, so no count and no record changes.

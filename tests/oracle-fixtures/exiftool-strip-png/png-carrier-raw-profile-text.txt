@@ -1,0 +1,239 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# writes: exiftool -all= -o <out> <file>; exiftool -gps:all= -o <out> <file>
+# exiftool-version: 13.55
+# fixture: png-carrier-raw-profile-text
+## input
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+IFD0	Make	MakeCorp
+IFD0	Artist	Artist Zed
+IFD0	Copyright	Copy Zed
+ExifIFD	OwnerName	Owner Zed
+ExifIFD	SerialNumber	SN123456
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	51.5
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	0.116666666666667
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	GPSLatitude	51.5
+Composite	GPSLongitude	0.116666666666667
+Composite	GPSPosition	51.5 0.116666666666667
+## carriers
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+IFD0	Make	MakeCorp
+IFD0	Artist	Artist Zed
+IFD0	Copyright	Copy Zed
+ExifIFD	OwnerName	Owner Zed
+ExifIFD	SerialNumber	SN123456
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	51.5
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	0.116666666666667
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	GPSLatitude	51.5
+Composite	GPSLongitude	0.116666666666667
+Composite	GPSPosition	51.5 0.116666666666667
+## no-carriers
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## gps
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## gps_and_device
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## all_pii
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## all
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## everything
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## xmp
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## icc
+# output: 645 8bf12fb90cbd7763
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+IFD0	Make	MakeCorp
+IFD0	Artist	Artist Zed
+IFD0	Copyright	Copy Zed
+ExifIFD	OwnerName	Owner Zed
+ExifIFD	SerialNumber	SN123456
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	51.5
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	0.116666666666667
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	GPSLatitude	51.5
+Composite	GPSLongitude	0.116666666666667
+Composite	GPSPosition	51.5 0.116666666666667
+## jumbf
+# output: 645 8bf12fb90cbd7763
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+IFD0	Make	MakeCorp
+IFD0	Artist	Artist Zed
+IFD0	Copyright	Copy Zed
+ExifIFD	OwnerName	Owner Zed
+ExifIFD	SerialNumber	SN123456
+GPS	GPSLatitudeRef	N
+GPS	GPSLatitude	51.5
+GPS	GPSLongitudeRef	E
+GPS	GPSLongitude	0.116666666666667
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+Composite	GPSLatitude	51.5
+Composite	GPSLongitude	0.116666666666667
+Composite	GPSPosition	51.5 0.116666666666667
+## rights
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## timestamps
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## free_text
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## other
+# output: 70 2d3cc60e9a50b1be
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## exiftool:all
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## exiftool:gps:all
+PNG	ImageWidth	1
+PNG	ImageHeight	1
+PNG	BitDepth	8
+PNG	ColorType	0
+PNG	Compression	0
+PNG	Filter	0
+PNG	Interlace	0
+IFD0	Make	MakeCorp
+IFD0	Artist	Artist Zed
+IFD0	Copyright	Copy Zed
+ExifIFD	OwnerName	Owner Zed
+ExifIFD	SerialNumber	SN123456
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06

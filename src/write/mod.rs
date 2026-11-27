@@ -240,7 +240,9 @@ pub enum StripError {
         /// What the input was taken for.
         kind: ContainerKind,
     },
-    /// Fewer than two bytes, or no `FF D8` (and no other container's magic).
+    /// Not a JPEG, TIFF, PNG or WebP: fewer than two bytes, or none of those
+    /// containers' magic (the name is older than the PNG and WebP strips and
+    /// is kept, SPEC-039).
     NotJpeg,
     /// The structure is not trustworthy enough to cut.
     Unstrippable {
@@ -274,7 +276,7 @@ pub enum StripError {
     },
 }
 
-/// Why a JPEG is not strippable.
+/// Why a file is not strippable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum UnstrippableReason {
@@ -366,11 +368,11 @@ impl fmt::Display for StripError {
             StripError::Unsupported { kind } => {
                 write!(f, "the writer does not handle this container ({kind:?})")
             }
-            StripError::NotJpeg => write!(f, "not a JPEG"),
+            StripError::NotJpeg => write!(f, "not a JPEG, TIFF, PNG or WebP"),
             StripError::Unstrippable { reason, offset } => {
                 write!(
                     f,
-                    "the JPEG cannot be cut safely ({reason:?} at offset {offset})"
+                    "the file cannot be cut safely ({reason:?} at offset {offset})"
                 )
             }
             StripError::Uneditable { reason, offset } => write!(

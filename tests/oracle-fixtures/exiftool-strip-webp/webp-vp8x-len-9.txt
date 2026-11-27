@@ -1,0 +1,111 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# writes: exiftool -all= -o <out> <file>; exiftool -gps:all= -o <out> <file>
+# exiftool-version: 13.55
+# fixture: webp-vp8x-len-9
+## input
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## gps
+# output: 108 47786ea35522cf0e
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## gps_and_device
+# output: 108 47786ea35522cf0e
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## all_pii
+# output: 108 ffec7256c2b3708f
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+## all
+# output: 44 abafa61128c2fab9
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+## everything
+# output: 44 abafa61128c2fab9
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+## xmp
+# output: 108 47786ea35522cf0e
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## icc
+# output: 108 47786ea35522cf0e
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## jumbf
+# output: 108 47786ea35522cf0e
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## rights
+# output: 108 47786ea35522cf0e
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## timestamps
+# output: 108 47786ea35522cf0e
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## free_text
+# output: 108 47786ea35522cf0e
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## other
+# output: 108 47786ea35522cf0e
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## exiftool:all
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+## exiftool:gps:all
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA

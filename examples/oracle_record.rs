@@ -42,6 +42,10 @@ mod exif_layout;
 mod exif_records;
 #[path = "../tests/support/hostile.rs"]
 mod hostile;
+#[path = "../tests/support/i3_records.rs"]
+mod i3_records;
+#[path = "../tests/support/i3_shapes.rs"]
+mod i3_shapes;
 #[path = "../tests/support/inventory.rs"]
 mod inventory;
 #[path = "../tests/support/inventory_corpus.rs"]
@@ -70,6 +74,8 @@ mod tiff_records;
 mod tiff_shapes;
 #[path = "../tests/support/tools.rs"]
 mod tools;
+#[path = "../tests/support/webp_carriers.rs"]
+mod webp_carriers;
 #[path = "../tests/support/webp_shapes.rs"]
 mod webp_shapes;
 
@@ -226,6 +232,32 @@ fn main() {
     record_inventory(&root, &version);
     record_strip(&root, &version);
     record_strip_tiff(&root, &version);
+    record_strip_png_webp(&root, &version);
+}
+
+/// SPEC-039 (DEC-023): the PNG and WebP write-parity records. For every I3
+/// fixture, ExifTool (`-a -u -G1 -s -t -n`) on the input, on the library's
+/// output under each recorded policy that strips (with the output's length
+/// and digest), and on ExifTool's own `-all=` and `-gps:all=` outputs, into
+/// `tests/oracle-fixtures/exiftool-strip-{png,webp}/<fixture>.txt`.
+fn record_strip_png_webp(root: &std::path::Path, version: &str) {
+    let fixtures = i3_shapes::fixtures();
+    let threads = std::thread::available_parallelism().map_or(4, |n| n.get().min(8));
+    let records = i3_records::record_all(&fixtures, version, threads);
+    for ext in ["png", "webp"] {
+        fs::create_dir_all(root.join(i3_records::record_dir(ext)))
+            .expect("create strip png/webp record dir");
+    }
+    for (name, ext, text) in &records {
+        let path = root
+            .join(i3_records::record_dir(ext))
+            .join(format!("{name}.txt"));
+        fs::write(path, text).expect("write strip png/webp record");
+    }
+    println!(
+        "oracle-record: wrote {} PNG and WebP strip records",
+        records.len()
+    );
 }
 
 /// SPEC-031: the PNG records. Every shape was probed alone under a wall-clock

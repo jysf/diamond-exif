@@ -149,7 +149,7 @@ fn tiff_with_gps() -> Vec<u8> {
     d
 }
 
-/// A PNG and a WebP for the SPEC-032 golden: both audited, neither strippable.
+/// A PNG and a WebP for the SPEC-032 golden: both audited and (SPEC-039) strippable.
 fn png_and_webp() -> (Vec<u8>, Vec<u8>) {
     let mut png_parts = vec![
         png_shapes::ihdr(),
@@ -178,9 +178,9 @@ fn png_and_webp() -> (Vec<u8>, Vec<u8>) {
 }
 
 /// SPEC-032 / DEC-020: a PNG and a WebP in all three formats, with inventory
-/// and values. Both are audited ("located", never "valid"), neither is
-/// strippable: JSON `preview.strippable` is false, the text says "not
-/// strippable", the CSV disposition cell says `not_strippable`. Golden files
+/// and values. Both are audited ("located", never "valid") and, since
+/// SPEC-039, strippable: JSON `preview.strippable` is true, the text says
+/// "removed N, kept M", the CSV disposition cell is a real one. Golden files
 /// `tests/golden/report-png-webp.{txt,json,csv}`.
 #[test]
 fn golden_png_and_webp_report_in_all_three_formats() {
@@ -217,25 +217,30 @@ fn golden_png_and_webp_report_in_all_three_formats() {
     }
     // The facts the golden files carry, stated here as well.
     let json = render(Format::Json, &files, &opts);
-    assert_eq!(json.matches("\"strippable\":false").count(), 2);
+    assert_eq!(json.matches("\"strippable\":true").count(), 2);
+    assert!(!json.contains("\"strippable\":false"));
     assert!(json.contains("\"container\":\"png\""));
     assert!(json.contains("\"container\":\"webp\""));
     assert!(json.contains("\"region\":\"time\""));
     assert!(json.contains("\"region\":\"text\""));
     let text = render(Format::Text, &files, &opts);
-    assert!(text.matches("not strippable").count() >= 2);
+    assert!(!text.contains("not strippable"));
     assert!(!text.contains("valid"), "regions are located, never valid");
-    // SPEC-038 verify M1: both strips exist and neither is checked yet; the
-    // WebP line no longer says the writer refuses the container.
-    assert!(text.contains(
-        "the PNG strip exists but has not been checked against ExifTool yet, so no removal is claimed"
-    ));
-    assert!(text.contains(
-        "the WebP strip exists but has not been checked against ExifTool yet, so no removal is claimed"
-    ));
+    // SPEC-039 (DEC-020 amendment 1): "no ExifTool-unchecked wording remains".
+    assert!(!text.contains("has not been checked against ExifTool"));
     assert!(!text.contains("the writer refuses this container"));
-    // The summary does not count either file as a reliable one.
-    assert!(json.contains("\"reliable_files\":0,\"unreliable_files\":2"));
+    let csv = render(Format::Csv, &files, &opts);
+    assert!(!csv.contains("not_strippable"));
+    // Both files read clean (the PNG's trailer is a finding, not an issue), so
+    // both are reliable and the preview says what it would remove.
+    assert!(!text.contains("preview not reliable"));
+    assert!(text.contains(
+        "preview (all_pii): removed 4, kept 0, kept_unread 2; residual findings 2, residual severity medium"
+    ));
+    assert!(text.contains(
+        "preview (all_pii): removed 1, kept 1, kept_unread 1; residual findings 2, residual severity medium"
+    ));
+    assert!(json.contains("\"reliable_files\":2,\"unreliable_files\":0"));
 }
 
 // ── the cross product ───────────────────────────────────────────────────────

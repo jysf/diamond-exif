@@ -3286,7 +3286,8 @@ fn disp_at(p: &PreviewInput, case: usize, what: &str) -> usize {
 
 fn preview_plants() -> Vec<PreviewPlant> {
     const RICH: &str = "audit-exif-gps-and-thumbnail";
-    // SPEC-032 (DEC-020): a PNG is audited, never strippable.
+    // SPEC-032 / SPEC-039 (DEC-020): a PNG is audited and strippable, here
+    // not clean (two Exif regions), so never reliable.
     const PNG: &str = "audit-png-two-exif-regions";
     vec![
         PreviewPlant {
@@ -3296,22 +3297,23 @@ fn preview_plants() -> Vec<PreviewPlant> {
             apply: |p| p.cases[0].got.reliable = true,
         },
         PreviewPlant {
-            name: "a PNG preview reported strippable",
+            name: "a PNG preview reported not strippable",
             input: PNG,
             guard: "preview_residual_and_reliable",
-            apply: |p| p.cases[2].got.strippable = true,
+            apply: |p| p.cases[2].got.strippable = false,
         },
         PreviewPlant {
-            name: "a PNG finding removed by a preset",
+            // The first finding is CameraModel, which `gps` (case 0) keeps.
+            name: "a PNG finding a preset keeps shown as removed",
             input: PNG,
             guard: "preview_dispositions",
-            apply: |p| p.cases[3].got.dispositions[0] = "removed".into(),
+            apply: |p| p.cases[0].got.dispositions[0] = "removed".into(),
         },
         PreviewPlant {
-            name: "a PNG preset that removes something",
+            name: "a PNG preset that removes less than the one before it",
             input: PNG,
             guard: "preview_nesting",
-            apply: |p| p.cases[4].got.removed = 1,
+            apply: |p| p.cases[4].got.removed = 0,
         },
         // preview_shape
         PreviewPlant {
@@ -3586,7 +3588,7 @@ const PNG_VALUES: &str = "render-png-signature-values";
 /// An unsupported file with a policy and values (the plants that need a file
 /// that is not read at all).
 const GIF_VALUES: &str = "render-gif-all-pii-values";
-/// The PNG with inventory: audited, never reliable, not strippable.
+/// The PNG with inventory: audited and strippable (SPEC-039).
 const PNG_INVENTORY: &str = "render-png-all-pii-inventory-values";
 
 #[test]
@@ -3680,12 +3682,11 @@ fn audit_render_seeds_are_committed_and_have_the_shapes_they_claim() {
     let long = render_ctx(LONG_ASCII);
     assert!(long.values && long.payloads.iter().flatten().any(|p| p.len() == 65));
     assert!(long.json.contains("\"truncated\":true"));
-    // A PNG (GPS Exif, keywords, XMP, `tIME`, trailer: audited, not
-    // strippable), a WebP, a GIF that stays unsupported, and an empty file.
+    // A PNG (GPS Exif, keywords, XMP, `tIME`, trailer: audited, strippable), a WebP, a GIF that stays unsupported, and an empty file.
     let png = render_ctx(PNG_VALUES);
     assert_eq!(format!("{:?}", audit(&png.file).kind()), "Png");
-    assert!(png.json.contains("\"strippable\":false"));
-    assert!(png.text.contains("not strippable"));
+    assert!(png.json.contains("\"strippable\":true"));
+    assert!(!png.text.contains("not strippable"));
     let webp = render_ctx("render-webp-gps-inventory-values");
     assert_eq!(format!("{:?}", audit(&webp.file).kind()), "Webp");
     let gif = render_ctx("render-gif-all-pii-values");
@@ -3877,32 +3878,32 @@ fn render_plants() -> Vec<RenderPlant> {
 
 fn fact_render_plants() -> Vec<RenderPlant> {
     vec![
-        // SPEC-032 (DEC-020): a PNG is audited, not strippable, never reliable.
+        // SPEC-032 / SPEC-039 (DEC-020): a PNG is audited and strippable.
         RenderPlant {
-            name: "a PNG preview reported strippable (JSON)",
+            name: "a PNG preview reported not strippable (JSON)",
             input: PNG_INVENTORY,
             guard: "json_facts",
-            apply: |c| rep(&mut c.json, "\"strippable\":false", "\"strippable\":true"),
+            apply: |c| rep(&mut c.json, "\"strippable\":true", "\"strippable\":false"),
         },
         RenderPlant {
-            name: "a PNG preview reported reliable (JSON)",
+            name: "a PNG preview reported not reliable (JSON)",
             input: PNG_INVENTORY,
             guard: "json_facts",
-            apply: |c| rep(&mut c.json, "\"reliable\":false", "\"reliable\":true"),
+            apply: |c| rep(&mut c.json, "\"reliable\":true", "\"reliable\":false"),
         },
         RenderPlant {
-            name: "a PNG finding shown as an ordinary kept disposition (CSV)",
+            name: "a PNG finding shown as not strippable (CSV)",
             input: PNG_INVENTORY,
             guard: "csv_rows",
-            apply: |c| rep(&mut c.csv, ",not_strippable,", ",kept,"),
+            apply: |c| rep(&mut c.csv, ",removed,", ",not_strippable,"),
         },
         RenderPlant {
-            name: "a PNG counted as a reliable file",
+            name: "a clean strippable PNG counted as an unreliable file",
             input: PNG_INVENTORY,
             guard: "summary_facts",
             apply: |c| {
-                c.summary.reliable = 1;
-                c.summary.unreliable = 0;
+                c.summary.reliable = 0;
+                c.summary.unreliable = 1;
             },
         },
         // json_wellformed
@@ -7531,8 +7532,9 @@ include!("../fuzz/shared/rewrite_png_invariants.rs");
 
 /// The committed `rewrite_png` seed count, pinned: 51 shapes under eight policy
 /// bytes (all five presets, three customs), three shapes under seven more and a
-/// mask each, SPEC-033's `Rights` seed, and two degenerate seeds.
-const REWRITE_PNG_SEEDS: usize = 435;
+/// mask each, SPEC-033's `Rights` seed, two degenerate seeds, and the
+/// SPEC-039 smoke crash (a `Model` text keyword, DEC-020 amendment 2026-11-24).
+const REWRITE_PNG_SEEDS: usize = 436;
 
 fn rewrite_png_seed_files() -> Vec<(String, Vec<u8>)> {
     let dir = root().join("fuzz/seeds/rewrite_png");

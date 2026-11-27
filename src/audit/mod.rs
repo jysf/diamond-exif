@@ -28,11 +28,14 @@
 //! after the image data). Nothing is merged or deduplicated: a privacy report
 //! must show every copy (DEC-020).
 //!
-//! # PNG and WebP are readable, not strippable
+//! # PNG and WebP are readable and strippable
 //!
-//! The audit reads both (DEC-020), but [`crate::write::strip`] refuses them, so
-//! [`preview`] keeps every finding and [`Preview::strippable`] is false. That
-//! flag is [`ContainerKind::strippable`], true only for JPEG and TIFF.
+//! The audit reads both (DEC-020) and [`crate::write::strip`] cuts both
+//! (DEC-021, DEC-022). Since SPEC-039 ExifTool's agreement is shown (DEC-023),
+//! so [`preview`] follows DEC-009 rule 2 as for a JPEG and
+//! [`Preview::strippable`] is true. That flag is
+//! [`ContainerKind::strippable`], true for JPEG, TIFF, PNG and WebP. A strip
+//! can still refuse a file whose preview shows removals, with a typed reason.
 //!
 //! A non-empty PNG raw profile (ImageMagick `Raw profile type exif`, ...) can
 //! hold Exif with GPS that this library does not decode, so it counts as a
@@ -96,12 +99,16 @@ pub enum ContainerKind {
 }
 
 impl ContainerKind {
-    /// Whether the writer can strip this container: true only for JPEG and
-    /// TIFF (DEC-020 clause 6). It is the single definition the preview, the
-    /// report summary and the fuzz harness use; GIF, HEIC, BigTIFF, an empty
-    /// or unknown file, PNG and WebP are all false.
+    /// Whether the writer can strip this container: true for JPEG, TIFF, PNG
+    /// and WebP (DEC-020, amendment of 2026-11-24, resting on DEC-023). It is
+    /// the single definition the preview, the report summary and the fuzz
+    /// harness use; GIF, HEIC, BigTIFF and an empty or unknown file are false.
+    /// It is per container kind: a strip may still refuse one file, typed.
     pub fn strippable(self) -> bool {
-        matches!(self, ContainerKind::Jpeg | ContainerKind::Tiff)
+        matches!(
+            self,
+            ContainerKind::Jpeg | ContainerKind::Tiff | ContainerKind::Png | ContainerKind::Webp
+        )
     }
 }
 

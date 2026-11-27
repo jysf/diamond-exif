@@ -20,6 +20,12 @@
 //! (`DIAMOND_EXIF_REQUIRE_ORACLE=1` makes that a failure). Library code under
 //! `src/` is never modified.
 
+#[path = "support/i3_judge.rs"]
+mod i3_judge;
+#[path = "support/i3_records.rs"]
+mod i3_records;
+#[path = "support/i3_shapes.rs"]
+mod i3_shapes;
 #[path = "support/mutate.rs"]
 mod mutate;
 #[path = "support/oracle.rs"]
@@ -28,10 +34,18 @@ mod oracle;
 mod oracle_png;
 #[path = "support/oracle_tiff.rs"]
 mod oracle_tiff;
+#[path = "support/oracle_webp.rs"]
+mod oracle_webp;
 #[path = "support/probe.rs"]
 mod probe;
 #[path = "support/tools.rs"]
 mod tools;
+#[path = "support/webp_carriers.rs"]
+mod webp_carriers;
+#[path = "support/webp_shapes.rs"]
+mod webp_shapes;
+#[path = "support/writer_mutants.rs"]
+mod writer_mutants;
 
 use oracle::{JpegComparison, Mismatch};
 use probe::{TempDir, MARKER};
@@ -637,6 +651,93 @@ fn byte_mutation_truncation_between_ihdr_and_idat_is_named() {
         .unexplained
         .is_empty());
     println!("{test} (live variant): ExifTool agrees on both cuts");
+}
+
+// ── SPEC-039 AC10: writer mutants W1 and W3 ────────────────────────────────
+
+use writer_mutants::Mutant;
+
+/// W1: `tXMP` is dropped from `png::metadata::chunk_class`. The audit and the
+/// writer both read `chunk_class`, so they agree the chunk is not metadata and
+/// the self-check passes; ExifTool still decodes the chunk as XMP.
+const W1: Mutant = Mutant {
+    id: "W1",
+    fixture: "png-carrier-tXMP",
+    policy: "gps",
+    file: "png/metadata.rs",
+    needle: "b\"tXMP\" | b\"meTa\" | b\"seAl\" => Some(ChunkClass::XmlCarrier),",
+    replacement: "b\"meTa\" | b\"seAl\" => Some(ChunkClass::XmlCarrier),",
+};
+
+/// W3: the `Copyright` keyword row maps to `FreeText`. An over-removal under
+/// `AllPii`, which keeps `Rights`. Audit and writer both call
+/// `text_keyword_category`.
+const W3: Mutant = Mutant {
+    id: "W3",
+    fixture: "png-kw-04-copyright",
+    policy: "all_pii",
+    file: "audit/category.rs",
+    needle: "(b\"Copyright\", Category::Rights),",
+    replacement: "(b\"Copyright\", Category::FreeText),",
+};
+
+fn assert_four_results(m: &Mutant, name_needles: &[&str]) {
+    let live = live_gate(&format!("writer mutant {} (live)", m.id));
+    let r = writer_mutants::run(m, live);
+    println!("AC10 {}", writer_mutants::report(m, &r));
+    assert!(
+        r.control_matches,
+        "{}: the control must reproduce the committed digest",
+        m.id
+    );
+    assert!(
+        r.mutant_ok,
+        "{}: the mutant's strip must return Ok (escape the self-check)",
+        m.id
+    );
+    let replay = r
+        .replay_red
+        .as_deref()
+        .unwrap_or_else(|| panic!("{}: replay must go red on the digest, and did not", m.id));
+    println!("AC10 {} replay red: {replay}", m.id);
+    if let Some(failures) = &r.live_failures {
+        assert!(
+            failures
+                .iter()
+                .any(|f| name_needles.iter().all(|n| f.contains(n))),
+            "{}: live must go red naming {name_needles:?}, got {failures:?}",
+            m.id
+        );
+        println!(
+            "AC10 {} live red: {}",
+            m.id,
+            failures
+                .iter()
+                .find(|f| name_needles.iter().all(|n| f.contains(n)))
+                .cloned()
+                .unwrap_or_default()
+        );
+    }
+}
+
+#[test]
+fn writer_mutant_w1_txmp_not_a_carrier_escapes_the_self_check_and_i3_names_it() {
+    assert_four_results(
+        &W1,
+        &["png-carrier-tXMP", "under gps", "carrier tag left in XMP"],
+    );
+}
+
+#[test]
+fn writer_mutant_w3_copyright_as_free_text_is_named() {
+    assert_four_results(
+        &W3,
+        &[
+            "png-kw-04-copyright",
+            "under all_pii",
+            "kept tag missing PNG:Copyright",
+        ],
+    );
 }
 
 // ── The injection scaffolding is itself guarded ────────────────────────────

@@ -1,0 +1,53 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# writes: exiftool -all= -o <out> <file>; exiftool -gps:all= -o <out> <file>
+# exiftool-version: 13.55
+# fixture: webp-simple-vp8-exif
+## input
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## gps
+# output: 94 48f73d03ce3b7a93
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## gps_and_device
+# output: 94 48f73d03ce3b7a93
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## all_pii
+# output: 94 170ddfc68351b87a
+## all
+# output: 30 7537a561e7d9aa34
+## everything
+# output: 30 7537a561e7d9aa34
+## xmp
+# output: 94 48f73d03ce3b7a93
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## icc
+# output: 94 48f73d03ce3b7a93
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## jumbf
+# output: 94 48f73d03ce3b7a93
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## rights
+# output: 94 48f73d03ce3b7a93
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## timestamps
+# output: 94 48f73d03ce3b7a93
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## free_text
+# output: 94 48f73d03ce3b7a93
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## other
+# output: 94 48f73d03ce3b7a93
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## exiftool:all
+## exiftool:gps:all
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA

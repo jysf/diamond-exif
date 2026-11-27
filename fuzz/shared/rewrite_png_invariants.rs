@@ -489,7 +489,7 @@ mod rewrite_png_invariants {
     /// The category of a text keyword: a row of DEC-020's table when it equals
     /// the row's name, or equals it after its first letter is uppercased.
     fn keyword_category(kw: &[u8]) -> Category {
-        const ROWS: [(&[u8], Category); 7] = [
+        const ROWS: [(&[u8], Category); 10] = [
             (b"Artist", Category::Authorship),
             (b"Author", Category::Authorship),
             (b"Copyright", Category::Rights),
@@ -497,6 +497,10 @@ mod rewrite_png_invariants {
             (b"create-date", Category::Timestamps),
             (b"modify-date", Category::Timestamps),
             (b"Software", Category::Software),
+            // DEC-020 amendment (2026-11-24, SPEC-039 AC1).
+            (b"Make", Category::CameraModel),
+            (b"Model", Category::CameraModel),
+            (b"TimeStamp", Category::Timestamps),
         ];
         for (name, cat) in ROWS {
             let upper_first =

@@ -235,7 +235,7 @@ pub fn region_category(kind: RegionKind) -> Category {
 /// The PNG text keywords that are not free text (DEC-020), as data: one row per
 /// keyword, in ExifTool's standard spelling. SPEC-033 re-homed `Copyright` to
 /// `Rights` by editing its row (DEC-020 amendment).
-const TEXT_KEYWORDS: [(&[u8], Category); 7] = [
+const TEXT_KEYWORDS: [(&[u8], Category); 10] = [
     (b"Artist", Category::Authorship),
     (b"Author", Category::Authorship),
     (b"Copyright", Category::Rights),
@@ -245,6 +245,11 @@ const TEXT_KEYWORDS: [(&[u8], Category); 7] = [
     (b"create-date", Category::Timestamps),
     (b"modify-date", Category::Timestamps),
     (b"Software", Category::Software),
+    // DEC-020 amendment (2026-11-24, SPEC-039): ExifTool's `PNG::TextualData`
+    // table also has these three, found by the SPEC-039 build's keyword sweep.
+    (b"Make", Category::CameraModel),
+    (b"Model", Category::CameraModel),
+    (b"TimeStamp", Category::Timestamps),
 ];
 
 /// The category of a PNG text chunk (`tEXt`, `zTXt`, `iTXt`) by its keyword.
@@ -701,6 +706,42 @@ mod tests {
             (b"", FreeText),
             (b"Unknown Keyword", FreeText),
             (b"\xC3\xA9", FreeText),
+        ];
+        for (keyword, want) in rows {
+            assert_eq!(
+                text_keyword_category(keyword),
+                want,
+                "{}",
+                String::from_utf8_lossy(keyword)
+            );
+        }
+    }
+
+    /// DEC-020 amendment (2026-11-24, SPEC-039): ExifTool's `PNG::TextualData`
+    /// table has `Make`, `Model` and `TimeStamp`. Typed by hand. The three
+    /// all-caps spellings are their own tags (the first-letter rule, measured
+    /// live in the SPEC-039 build: `MAKE`, `MODEL` and `TIMESTAMP` print under
+    /// their own names), and so are the other table rows that stay free text.
+    #[test]
+    fn make_model_and_timestamp_keywords_have_their_categories() {
+        use Category::*;
+        let rows: [(&[u8], Category); 16] = [
+            (b"Make", CameraModel),
+            (b"make", CameraModel),
+            (b"Model", CameraModel),
+            (b"model", CameraModel),
+            (b"TimeStamp", Timestamps),
+            (b"timeStamp", Timestamps),
+            (b"MAKE", FreeText),
+            (b"MODEL", FreeText),
+            (b"TIMESTAMP", FreeText),
+            (b"Collection", FreeText),
+            (b"Document", FreeText),
+            (b"Label", FreeText),
+            (b"URL", FreeText),
+            (b"Source", FreeText),
+            (b"aesthetic_score", FreeText),
+            (b"parameters", FreeText),
         ];
         for (keyword, want) in rows {
             assert_eq!(

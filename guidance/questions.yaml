@@ -1795,3 +1795,59 @@ questions:
       the extra bytes. Options: treat a JFIF payload longer than 14 + 3·X·Y as OtherApp, which
       flags it under OtherSegment and removes it only under Everything; or leave it as it is.
       Needs a real-file count first, to make sure padded JFIF segments are not common.
+
+  - id: i3-differential-value-level-differences
+    question: "Does DEC-023 rule 4's 'values for the tags both keep' mean the 34 equal-key pairs whose values differ are D1/D4 differences to pin, or is the differential keyed by (group, tag) only?"
+    priority: low
+    status: answered
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-25
+    assigned_to: null
+    notes: |
+      SPEC-039 Part A build. The design's counts reproduce exactly when the two outputs' readings
+      are compared as (group, tag) multisets: 348 pairs over the 174 oracle fixtures = 191 identical
+      + 86 differing (D1 72, D2 2, D3 7, D4 4, D5 1) + 41 outcome differences + 30 both-refuse; 113
+      refused preset pairs (13 fixtures x 5, 16 x 3). But AC5 and DEC-023 rule 4 also say to compare
+      "the values of tags both outputs keep", and 34 of the 191 "identical" pairs have equal keys and
+      differing values: 31 are `RIFF:WebP_Flags` (we clear the flag bit of a removed kind and leave
+      the other bits; ExifTool normalises the flags to what it reads, e.g. fixtures with a mis-kinded
+      `EXIF`/`XMP `/`ICCP` chunk or a wrong flag byte), and 3 are duplicate-`EXIF` fixtures
+      (`webp-exif-blocks-16`, `-full-one-two`, `-full-two-one` under Gps: ExifTool rewrites every
+      chunk from the last one, the D4 mechanism). The build pins them in `DIFFERENCES` at level
+      `values`, labelled D1 (flags) and D4 (duplicate values), so no difference is unpinned and the
+      D1 to D5 key-level counts are unchanged. Needs the architect: either confirm those labels
+      (and amend DEC-023 rule 4 to name the value level), or say the differential is keyed by
+      (group, tag) only and the 34 pins are dropped.
+      Also found: the I3 fixture set holds no plain XMP packet with a GPS property, so judge
+      exception (c) (Composite GPS from a kept XMP packet) is never used (0 uses); it needs one
+      PNG and one WebP fixture at the end of `i3_shapes` if it is to be exercised.
+      Answered 2026-11-25 by the DEC-023 amendment "value-level differences and class D6".
+      Values are compared, and each pin carries a level. The 3 duplicate-EXIF pairs are D4 at
+      value level. The 31 WebP_Flags pairs are a new class, D6: ExifTool recomputes the VP8X flags
+      and we clear only the bits of kinds we removed (DEC-022 clause 7). They are not D1. There are
+      157 identical pairs. Exception (c) gets its two fixtures in Part B.
+
+  - id: i3-judge-exception-c-converse
+    question: "Is the converse of DEC-023 rule 3 exception (c) part of that exception: `Composite:GPS*` derived from a plain XMP packet go with the packet when a policy removes `Xmp`?"
+    priority: low
+    status: answered
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-25
+    assigned_to: null
+    notes: |
+      SPEC-039 Part B build. The two exception (c) fixtures (`png-xmp-plain-gps`,
+      `webp-xmp-plain-gps`, a plain XMP packet with GPS properties) showed that exception (c) as
+      written is one-directional: it excuses a `Composite:GPS*` tag that is still printed from a
+      kept XMP packet under a Gps-removing policy. Under the Custom `xmp` policy (removes `Xmp`,
+      keeps `Gps`) the packet goes, and the `Composite:GPS*` tags ExifTool derives from it go too:
+      6 "kept tag missing" lines (3 per fixture: GPSLatitudeRef, GPSLongitudeRef, GPSPosition). A
+      derived tag follows its source, so the build counts this under the same exception (c), in
+      `i3_judge::judge`, only when the input's XMP holds a GPS property and the policy removes
+      `Xmp`. A red-proof shows it is not a blanket excuse
+      (`comparator_is_red_when_exception_c_is_claimed_without_an_xmp_source`). The architect
+      should ratify it in DEC-023 rule 3 (c), or say what else to do. No count of the design
+      changes: the extra fixtures are not among the 174.
+      Answered 2026-11-26 by the DEC-023 amendment "exception (c) covers its converse". The
+      converse is ratified with the build's narrow condition: a Composite:GPS* tag, the input's
+      XMP holds GPS, and the policy removes Xmp. The amendment states one limit: inputs with GPS
+      in both Exif and XMP. No fixture has that shape.

@@ -1,0 +1,303 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# writes: exiftool -all= -o <out> <file>; exiftool -gps:all= -o <out> <file>
+# exiftool-version: 13.55
+# fixture: webp-exif-basic-be
+## input
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	ModifyDate	2024:05:06 07:08:09
+IFD0	Artist	A. Photographer
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	DateTimeOriginal	2024:05:06 07:08:08
+ExifIFD	ExposureCompensation	-0.3333333333
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## gps
+# output: 386 aacda9aa7f27d70f
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	ModifyDate	2024:05:06 07:08:09
+IFD0	Artist	A. Photographer
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	DateTimeOriginal	2024:05:06 07:08:08
+ExifIFD	ExposureCompensation	-0.3333333333
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## gps_and_device
+# output: 386 aacda9aa7f27d70f
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	ModifyDate	2024:05:06 07:08:09
+IFD0	Artist	A. Photographer
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	DateTimeOriginal	2024:05:06 07:08:08
+ExifIFD	ExposureCompensation	-0.3333333333
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## all_pii
+# output: 386 01e05193e31d1dc0
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	ExposureCompensation	-0.3333333333
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## all
+# output: 44 f4e8867eeb98f4ea
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## everything
+# output: 44 f4e8867eeb98f4ea
+RIFF	WebP_Flags	0
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## xmp
+# output: 386 aacda9aa7f27d70f
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	ModifyDate	2024:05:06 07:08:09
+IFD0	Artist	A. Photographer
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	DateTimeOriginal	2024:05:06 07:08:08
+ExifIFD	ExposureCompensation	-0.3333333333
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## icc
+# output: 386 aacda9aa7f27d70f
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	ModifyDate	2024:05:06 07:08:09
+IFD0	Artist	A. Photographer
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	DateTimeOriginal	2024:05:06 07:08:08
+ExifIFD	ExposureCompensation	-0.3333333333
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## jumbf
+# output: 386 aacda9aa7f27d70f
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	ModifyDate	2024:05:06 07:08:09
+IFD0	Artist	A. Photographer
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	DateTimeOriginal	2024:05:06 07:08:08
+ExifIFD	ExposureCompensation	-0.3333333333
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## rights
+# output: 386 a611e189c4850ae6
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	ModifyDate	2024:05:06 07:08:09
+IFD0	Artist	A. Photographer
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	DateTimeOriginal	2024:05:06 07:08:08
+ExifIFD	ExposureCompensation	-0.3333333333
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## timestamps
+# output: 386 a3a315d66ef50859
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	Artist	A. Photographer
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	ExposureCompensation	-0.3333333333
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## free_text
+# output: 386 aacda9aa7f27d70f
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	ModifyDate	2024:05:06 07:08:09
+IFD0	Artist	A. Photographer
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	DateTimeOriginal	2024:05:06 07:08:08
+ExifIFD	ExposureCompensation	-0.3333333333
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## other
+# output: 386 aacda9aa7f27d70f
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	ModifyDate	2024:05:06 07:08:09
+IFD0	Artist	A. Photographer
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	DateTimeOriginal	2024:05:06 07:08:08
+ExifIFD	ExposureCompensation	-0.3333333333
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06
+## exiftool:all
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+## exiftool:gps:all
+RIFF	WebP_Flags	8
+RIFF	ImageWidth	1
+RIFF	ImageHeight	1
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	ImageWidth	4000
+IFD0	ImageHeight	3000
+IFD0	Make	DiamondCam
+IFD0	Model	Model One
+IFD0	Orientation	6
+IFD0	XResolution	72
+IFD0	Software	oracle-fixtures 1.0
+IFD0	ModifyDate	2024:05:06 07:08:09
+IFD0	Artist	A. Photographer
+IFD0	Copyright	(c) nobody
+ExifIFD	FNumber	2.8
+ExifIFD	ISO	400
+ExifIFD	DateTimeOriginal	2024:05:06 07:08:08
+ExifIFD	ExposureCompensation	-0.3333333333
+Composite	Aperture	2.8
+Composite	ImageSize	1 1
+Composite	Megapixels	1e-06

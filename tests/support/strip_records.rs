@@ -40,6 +40,10 @@ pub fn policies() -> Vec<(&'static str, StripPolicy)> {
         ),
         // SPEC-033: Copyright alone.
         ("rights", StripPolicy::Custom(spec_of(&[Category::Rights]))),
+        // SPEC-039 AC14: the two presets the JFIF thumbnail rule is about,
+        // appended last so the older sections keep their order.
+        ("gps", StripPolicy::Gps),
+        ("all-pii", StripPolicy::AllPii),
     ]
 }
 
@@ -318,6 +322,29 @@ pub fn removed_ranges(shape: &Shape, spec: StripSpec) -> Option<Vec<std::ops::Ra
     }
 }
 
+/// Exif groups an entry edit can leave empty, typed from the fixture builders
+/// (`full_tiff`, `no_gps_tiff`, `exif_camera` in `strip_shapes.rs`): per group,
+/// the categories of all its entries. A group with an entry of no category
+/// (`Orientation`) is never listed, because it can never empty. A policy that
+/// holds every listed category deletes every entry of the group, and ExifTool
+/// prints no tag of an IFD left with no entry (rule 9, measured), so the
+/// group is gone from the output although its segment is kept. (SPEC-039 AC14:
+/// the `gps` and `all-pii` presets are the first to edit entries of these
+/// fixtures.)
+fn entry_edit_groups(shape: &Shape) -> &'static [(&'static str, &'static [Category])] {
+    use Category::*;
+    match shape.name {
+        "kitchen-sink" => &[
+            ("ExifIFD", &[Timestamps, DeviceId, FreeText, MakerNote]),
+            ("GPS", &[Gps]),
+            ("IFD1", &[Thumbnail]),
+        ],
+        "exif-without-gps" => &[("IFD0", &[CameraModel, Software])],
+        n if n.starts_with("mpo-") => &[("IFD0", &[CameraModel]), ("ExifIFD", &[Timestamps])],
+        _ => &[],
+    }
+}
+
 /// Compare one output section with the table: the groups equal, `File:Comment`
 /// present exactly when a COM is kept, and no warning the input did not have.
 pub fn check_groups(
@@ -327,7 +354,12 @@ pub fn check_groups(
     input: &Section,
 ) -> Result<(), String> {
     let removed = removed_ranges(shape, spec).ok_or("the library refuses this policy")?;
-    let (want, comment) = expected_groups(shape, &removed);
+    let (mut want, comment) = expected_groups(shape, &removed);
+    for (group, cats) in entry_edit_groups(shape) {
+        if cats.iter().all(|c| spec.contains(*c)) {
+            want.remove(*group);
+        }
+    }
     let got = group_set(&section.lines);
     if got != want {
         let extra: Vec<_> = got.difference(&want).collect();

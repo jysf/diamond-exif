@@ -1,0 +1,79 @@
+# command: exiftool -a -u -G1 -s -t -n <file>
+# writes: exiftool -all= -o <out> <file>; exiftool -gps:all= -o <out> <file>
+# exiftool-version: 13.55
+# fixture: webp-vp8x-len-3
+## input
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## gps
+# output: 102 7423c5961d8ae7ea
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## gps_and_device
+# output: 102 7423c5961d8ae7ea
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## all_pii
+# output: 102 6a14c74e744f0e2b
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+## all
+# output: 38 293d0915efcd388d
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+## everything
+# output: 38 293d0915efcd388d
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+## xmp
+# output: 102 7423c5961d8ae7ea
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## icc
+# output: 102 7423c5961d8ae7ea
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## jumbf
+# output: 102 7423c5961d8ae7ea
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## rights
+# output: 102 7423c5961d8ae7ea
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## timestamps
+# output: 102 7423c5961d8ae7ea
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## free_text
+# output: 102 7423c5961d8ae7ea
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## other
+# output: 102 7423c5961d8ae7ea
+RIFF	ImageWidth	1
+RIFF	AlphaIsUsed	0
+IFD0	Make	AlphaCam
+IFD0	Model	OnlyInA
+## exiftool:all
+# refused: Error: Truncated VP8X chunk - <file>
+## exiftool:gps:all
+# refused: Error: Truncated VP8X chunk - <file>
