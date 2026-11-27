@@ -191,9 +191,9 @@ signals:
     status: watch
     disposition_at: stage-close
     first_flagged: 2026-11-06
-    last_touched: 2026-11-06
+    last_touched: 2026-11-27
     raised_by: claude
-    notes: "At N=2. Third occurrence codifies 'every classification guard lists its classes and the harness test asserts a seed reaches each' into the spec design checklist."
+    notes: "At N=2. Third occurrence codifies 'every classification guard lists its classes and the harness test asserts a seed reaches each' into the spec design checklist. Walked at STAGE-010 close (2026-11-27): no new occurrence; the PR #67 rewrite_png smoke failure was the guard working, not a class without a seed."
 
   - id: equality-guard-plants-must-vary-in-kind
     type: lesson
@@ -203,9 +203,9 @@ signals:
     status: watch
     disposition_at: stage-close
     first_flagged: 2026-11-07
-    last_touched: 2026-11-06
+    last_touched: 2026-11-27
     raised_by: claude
-    notes: "At N=1. Walk at STAGE-003 close alongside the SPEC-014/015 guard lesson."
+    notes: "At N=1. Walk at STAGE-003 close alongside the SPEC-014/015 guard lesson. Walked at STAGE-010 close (2026-11-27): no new occurrence."
 
   - id: check-then-open-needs-a-safe-open
     type: lesson
@@ -215,9 +215,9 @@ signals:
     status: watch
     disposition_at: stage-close
     first_flagged: 2026-11-07
-    last_touched: 2026-11-06
+    last_touched: 2026-11-27
     raised_by: claude
-    notes: "At N=1. Walk at STAGE-003 close."
+    notes: "At N=1. Walk at STAGE-003 close. Walked at STAGE-010 close (2026-11-27): no new occurrence."
 
   - id: fuzz-shared-files-outside-the-fmt-gate
     type: process-debt
@@ -258,14 +258,14 @@ signals:
   - id: design-must-measure-hostile-edges-not-only-the-happy-keys
     type: lesson
     summary: "Designs that measure ExifTool on the central shapes leave hostile edges to verify: several-EXIF per selector (SPEC-034), raw-profile GPS read as ok, tIME lengths and empty PNG regions (SPEC-032); each was found by a verify variant grid, not by the builder's fixture list."
-    evidence: "SPEC-034 verify H1, SPEC-035 verify M1, SPEC-032 verify H2/M1/M3. N=3."
+    evidence: "SPEC-034 verify H1, SPEC-035 verify M1, SPEC-032 verify H2/M1/M3 (N=3); SPEC-036 verify H1/M1 (lowercase raw profile read as clean), SPEC-037 verify (mixed-case eXIf/zxIf kept full Exif), SPEC-038 verify (a nested RIFF chunk kept every carrier). N=6."
     bar: "N=3 same-outcome"
-    status: watch
+    status: codified
     disposition_at: stage-close
     first_flagged: 2026-11-22
-    last_touched: 2026-11-22
+    last_touched: 2026-11-27
     raised_by: claude
-    notes: "At the bar. Dispositioned at STAGE-008 close: make 'a variant grid of hostile shapes measured against the oracle' a design step for any parity or audit spec, not a verify-only one."
+    notes: "At the bar. Dispositioned at STAGE-008 close: make 'a variant grid of hostile shapes measured against the oracle' a design step for any parity or audit spec, not a verify-only one. That rule was not landed then; STAGE-010 close (2026-11-27) landed it in AGENTS.md §15 'During design' (with the completeness sweep against the oracle's tag-id list) and marked it codified."
 
   - id: strip-oracle-jfif-kept-presets-unrecorded
     type: process-debt
@@ -289,4 +289,4 @@ signals:
     first_flagged: 2026-11-27
     last_touched: 2026-11-27
     raised_by: claude
-    notes: "Candidate codification: when a design amends a category or keyword table, its handoff lists every hand-typed mirror (grep the table's row names across src, tests and fuzz) as part of the AC, and a seed or fixture carries each new row so the mirror is exercised."
+    notes: "Candidate codification: when a design amends a category or keyword table, its handoff lists every hand-typed mirror (grep the table's row names across src, tests and fuzz) as part of the AC, and a seed or fixture carries each new row so the mirror is exercised. Walked at STAGE-010 close (2026-11-27): stays watch at N=1."
