@@ -16,6 +16,14 @@ pub const WRITER_NO_SIZE_TAG: [u16; 11] = [
 
 /// The one id whose value the writer pass changes (it follows it as a SubIFD
 /// and relocates it) and whose target the reader pass sees move.
+/// The writer pass's `[minor]` refusals without `-m` (ExifTool 13.55): about
+/// the swept value 4096, not an offset, so they are not in the offset set.
+/// Each happens in the Exif and the Interop IFD.
+pub const WRITER_MINOR_REFUSALS: [(u16, &str); 2] = [
+    (0xC612, "[minor] DNG Version 4096 not yet tested"),
+    (0x927C, "[minor] Maker notes could not be parsed"),
+];
+
 pub const SUBIFD_TAG: u16 = 0x014A;
 
 /// The ids the block omits although ExifTool was not measured to relocate

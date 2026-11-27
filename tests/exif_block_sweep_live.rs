@@ -41,7 +41,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use exif_block_sweep_tables::{
-    CONSERVATIVE_EXTRAS, MAKERNOTE, POINTER_EXTRAS, SUBIFD_TAG, WRITER_NO_SIZE_TAG,
+    CONSERVATIVE_EXTRAS, MAKERNOTE, POINTER_EXTRAS, SUBIFD_TAG, WRITER_MINOR_REFUSALS,
+    WRITER_NO_SIZE_TAG,
 };
 use exif_core::write::{exif_block, BlockIfd, BlockOptions, OmitReason};
 use sweep::{exiftool_listx, live_gate, Scratch};
@@ -294,21 +295,39 @@ fn exiftool_offset_tags_are_all_omitted() {
     let limit = Duration::from_secs(300);
     let wrote = tools::run_tool_with_limit(
         "exiftool",
-        &args(&["-m", "-Artist=sweep", "-o", &out_arg]),
+        &args(&["-Artist=sweep", "-o", &out_arg]),
         &input,
         limit,
     )
     .unwrap_or_else(|e| panic!("exiftool writer pass: {e:?}"));
     let stderr = String::from_utf8_lossy(&wrote.stderr).into_owned();
-    let mut no_size_tag: BTreeSet<Key> = BTreeSet::new();
+    // No `-m` (DEC-023: a `[minor]` error must stay visible), so every refusal
+    // is kept with its `Error:` line and classified by it: `No size tag` is the
+    // offset signal; the `[minor]` refusals are about the swept VALUE (4096) and
+    // are pinned exactly in `WRITER_MINOR_REFUSALS`.
     let by_name: BTreeMap<String, Key> = keys.iter().map(|k| (file_name(*k), *k)).collect();
-    for line in stderr.lines().filter(|l| l.contains("No size tag for")) {
-        let file = line.rsplit(" - ").next().unwrap_or("");
+    let mut errors: BTreeMap<Key, Vec<String>> = BTreeMap::new();
+    for line in stderr.lines().filter(|l| l.starts_with("Error:")) {
+        let (message, file) = line.rsplit_once(" - ").unwrap_or((line, ""));
         let file = file.rsplit('/').next().unwrap_or(file);
-        if let Some(k) = by_name.get(file) {
-            no_size_tag.insert(*k);
-        }
+        let key = by_name
+            .get(file)
+            .unwrap_or_else(|| panic!("writer pass: an error for no swept source: {line}"));
+        errors
+            .entry(*key)
+            .or_default()
+            .push(message.trim_start_matches("Error: ").to_owned());
     }
+    let no_size_tag: BTreeSet<Key> = errors
+        .iter()
+        .filter(|(_, m)| m.iter().any(|m| m.starts_with("No size tag for")))
+        .map(|(k, _)| *k)
+        .collect();
+    let minor: BTreeMap<Key, Vec<String>> = errors
+        .iter()
+        .filter(|(k, _)| !no_size_tag.contains(k))
+        .map(|(k, m)| (*k, m.clone()))
+        .collect();
     let mut refused: BTreeSet<Key> = BTreeSet::new();
     let mut changed: BTreeSet<Key> = BTreeSet::new();
     let mut lost: BTreeSet<Key> = BTreeSet::new();
@@ -370,9 +389,29 @@ fn exiftool_offset_tags_are_all_omitted() {
         .flat_map(|k| WRITER_NO_SIZE_TAG.iter().map(move |t| (*k, *t)))
         .collect();
     let subifd: BTreeSet<Key> = [(Kind::Exif, SUBIFD_TAG), (Kind::Interop, SUBIFD_TAG)].into();
-    assert_eq!(refused, expected_refused, "writer pass: refused sources");
-    assert_eq!(refused.len(), 22);
-    assert_eq!(no_size_tag, refused, "every refusal says `No size tag`");
+    let expected_minor: BTreeMap<Key, Vec<String>> = [Kind::Exif, Kind::Interop]
+        .iter()
+        .flat_map(|k| {
+            WRITER_MINOR_REFUSALS
+                .iter()
+                .map(move |(t, m)| ((*k, *t), vec![(*m).to_owned()]))
+        })
+        .collect();
+    assert_eq!(
+        no_size_tag, expected_refused,
+        "writer pass: `No size tag` refusals"
+    );
+    assert_eq!(no_size_tag.len(), 22);
+    assert_eq!(
+        minor, expected_minor,
+        "writer pass: the `[minor]` value refusals"
+    );
+    let all_refused: BTreeSet<Key> = no_size_tag.iter().chain(minor.keys()).copied().collect();
+    assert_eq!(
+        refused, all_refused,
+        "writer pass: every missing output has its `Error:` line"
+    );
+    assert_eq!(refused.len(), 26);
     assert_eq!(changed, subifd, "writer pass: changed values");
     assert_eq!(
         lost,
@@ -392,7 +431,7 @@ fn exiftool_offset_tags_are_all_omitted() {
 
     // The assertion: ExifTool's offset set is inside the block's, and the block
     // omits nothing else beyond the documented extras.
-    let exiftool_offset: BTreeSet<Key> = refused
+    let exiftool_offset: BTreeSet<Key> = no_size_tag
         .union(&changed)
         .chain(moved.iter())
         .copied()
