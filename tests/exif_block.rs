@@ -10,6 +10,8 @@ mod exif_block_model;
 mod exif_block_place;
 #[path = "support/exif_block_shapes.rs"]
 mod exif_block_shapes;
+#[path = "support/exif_block_sweep_tables.rs"]
+mod exif_block_sweep_tables;
 #[path = "support/oracle_tiff.rs"]
 mod oracle_tiff;
 #[path = "support/real_shapes.rs"]
@@ -689,9 +691,9 @@ fn sweep_source(be: bool, exif: bool) -> Vec<u8> {
 
 #[test]
 fn omission_table_mirrors_agree() {
-    // Mirror 1: the shapes file's lists. Mirror 2: the model's table. (Part B
-    // extends this with the fuzz invariants file and the live sweep's expected
-    // set.) The library's table is read off its behaviour below.
+    // Mirror 1: the shapes file's lists. Mirror 2: the model's table. Mirror 3, below,
+    // is the live sweep's tables. The library's table is read off its behaviour
+    // at the end.
     let shapes_set: BTreeSet<u16> = offset_tags_under_test()
         .into_iter()
         .chain([0xA005])
@@ -700,6 +702,61 @@ fn omission_table_mirrors_agree() {
     assert_eq!(shapes_set, model_set, "shapes file vs model");
     let makernote: BTreeSet<u16> = exif_block_model::MAKERNOTE.iter().copied().collect();
     assert_eq!(makernote, BTreeSet::from([0x927C, 0xEA1D]));
+
+    // Mirror 3: the live sweep's tables (`exif_block_sweep_live.rs` asserts
+    // them against ExifTool; here they are compared with the other mirrors).
+    // The fuzz invariants (`fuzz/shared/exif_block_invariants.rs`) predict no
+    // omission reasons, so they hold no table to compare.
+    let writer: BTreeSet<u16> = exif_block_sweep_tables::WRITER_NO_SIZE_TAG
+        .iter()
+        .copied()
+        .collect();
+    assert_eq!(
+        writer,
+        MEASURED_OFFSET_TAGS
+            .iter()
+            .copied()
+            .collect::<BTreeSet<u16>>(),
+        "sweep tables vs the measured offset tags"
+    );
+    let conservative: BTreeSet<u16> = exif_block_sweep_tables::CONSERVATIVE_EXTRAS
+        .iter()
+        .copied()
+        .collect();
+    assert_eq!(
+        conservative,
+        CONSERVATIVE_TAGS.iter().copied().collect::<BTreeSet<u16>>(),
+        "sweep tables vs the conservative tags"
+    );
+    let pointers: BTreeSet<u16> = exif_block_sweep_tables::POINTER_EXTRAS
+        .iter()
+        .copied()
+        .collect();
+    assert_eq!(
+        pointers,
+        POINTER_OFFSET_TAGS
+            .iter()
+            .copied()
+            .chain([0xA005])
+            .collect::<BTreeSet<u16>>(),
+        "sweep tables vs the pointer tags"
+    );
+    assert!(pointers.contains(&exif_block_sweep_tables::SUBIFD_TAG));
+    assert_eq!(
+        exif_block_sweep_tables::MAKERNOTE
+            .iter()
+            .copied()
+            .collect::<BTreeSet<u16>>(),
+        makernote,
+        "sweep tables vs the model's MakerNote tags"
+    );
+    let sweep_union: BTreeSet<u16> = writer
+        .iter()
+        .chain(conservative.iter())
+        .chain(pointers.iter())
+        .copied()
+        .collect();
+    assert_eq!(sweep_union, model_set, "sweep tables vs the model");
 
     // The library: sweep every tag through the GPS IFD and the Exif IFD.
     for be in [false, true] {
