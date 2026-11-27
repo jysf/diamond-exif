@@ -51,14 +51,14 @@ handback:
                                    #   to_agent above is a prediction from tier_map
   verdict: punch-list              # verify handoffs: approved | punch-list | rejected
   basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
-  tokens_total: null               # REAL combined count — what cost-audit reads
+  tokens_total: 223885             # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: 75
+  duration_minutes: 15
   branch: claude/spec-025-verify
   pr: null
   completed_at: 2026-11-27         # YYYY-MM-DD
-  notes: "Verified at 7cda5d3. tokens_total left null on purpose: the verifier ran as a subagent and cannot see its own token count; the orchestrator records the harness figure."
-  synced_at: null                  # stamped by `just handback-sync` — do not edit
+  notes: "Verified at 7cda5d3; punch list of 1 M and 4 L items. The orchestrator transcribed the harness subagent result: 223,885 tokens, 69 tool calls, 928 s."
+  synced_at: 2026-11-27
 ---
 
 # HANDOFF-093: SPEC-025 verify: the Exif block builder in the source's byte order

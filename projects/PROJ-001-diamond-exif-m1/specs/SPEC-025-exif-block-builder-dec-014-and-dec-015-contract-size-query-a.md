@@ -6,7 +6,7 @@
 task:
   id: SPEC-025
   type: story                      # epic | story | task | bug | chore
-  cycle: build  # frame | design | build | verify | ship
+  cycle: verify  # frame | design | build | verify | ship
   blocked: false                   # irradiance/DEC-072 accepted as amended (optional Exif offset), checked 2026-11-27
   priority: medium                 # critical | high | medium | low
   complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
@@ -89,10 +89,20 @@ cost:
       duration_minutes: 54
       recorded_at: 2026-11-27
       notes: "Parts A and B, one subagent each (claude-sonnet-5-5). tokens_total and duration are the sums of the harness subagent results, filled by the orchestrator: A 274,448 tokens / 68 tool calls / 1,318 s; B 289,604 tokens / 151 tool calls / 1,913 s. The orchestrator's own fix (b0b5130, the sweep without -m) is main-loop work, counted in STAGE-007's orchestration cost."
+    - cycle: verify
+      handoff: HANDOFF-093
+      agent: claude-opus-5-5
+      interface: other
+      basis: agent-result
+      tokens_total: 223885
+      estimated_usd: null
+      duration_minutes: 15
+      recorded_at: 2026-11-27
+      notes: "Verified at 7cda5d3; punch list of 1 M and 4 L items. The orchestrator transcribed the harness subagent result: 223,885 tokens, 69 tool calls, 928 s."
   totals:
-    tokens_total: 564052
+    tokens_total: 787937
     estimated_usd: 0.00
-    session_count: 2
+    session_count: 3
 ---
 
 # SPEC-025: Exif block builder in the source's byte order: DEC-014 and DEC-015 contract, size query and write at a base, MakerNote and offset-carrying entries left out and reported, budget, readback self-check, `exif_block` fuzz target
