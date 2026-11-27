@@ -1405,7 +1405,7 @@ fn audit_target_is_declared_and_runs_in_ci() {
     let ci = read(".github/workflows/ci.yml");
     assert!(
         ci.contains(
-            "target: [tiff_ifd, jpeg_segments, rewrite_jpeg, rewrite_tiff, rewrite_png, rewrite_webp, audit, audit_render, cli_args, png_chunks, webp_riff]"
+            "target: [tiff_ifd, jpeg_segments, rewrite_jpeg, rewrite_tiff, rewrite_png, rewrite_webp, exif_block, audit, audit_render, cli_args, png_chunks, webp_riff]"
         ),
         "the fuzz-smoke matrix must run the audit target"
     );
@@ -8165,13 +8165,13 @@ fn rewrite_png_target_is_declared_and_runs_in_ci() {
         .join("fuzz/shared/rewrite_png_invariants.rs")
         .is_file());
     assert!(read(".github/workflows/ci.yml")
-        .contains("rewrite_tiff, rewrite_png, rewrite_webp, audit,"));
-    assert!(read("app.just").contains("rewrite_tiff rewrite_png rewrite_webp audit"));
+        .contains("rewrite_tiff, rewrite_png, rewrite_webp, exif_block, audit,"));
+    assert!(read("app.just").contains("rewrite_tiff rewrite_png rewrite_webp exif_block audit"));
     let readme = read("README.md");
-    assert!(readme.contains("eleven fuzz targets"));
-    assert!(readme.contains("rewrite_tiff, rewrite_png, rewrite_webp, audit"));
-    // Eleven bins in all.
-    assert_eq!(fuzz.matches("[[bin]]").count(), 11);
+    assert!(readme.contains("twelve fuzz targets"));
+    assert!(readme.contains("rewrite_tiff, rewrite_png, rewrite_webp, exif_block, audit"));
+    // Twelve bins in all.
+    assert_eq!(fuzz.matches("[[bin]]").count(), 12);
 }
 
 /// The harness is independent of the writer: no line of code names its module
@@ -9132,8 +9132,10 @@ fn rewrite_webp_target_is_declared_and_runs_in_ci() {
     assert!(root()
         .join("fuzz/shared/rewrite_webp_invariants.rs")
         .is_file());
-    assert!(read(".github/workflows/ci.yml").contains("rewrite_png, rewrite_webp, audit,"));
-    assert!(read("app.just").contains("rewrite_png rewrite_webp audit"));
+    assert!(
+        read(".github/workflows/ci.yml").contains("rewrite_png, rewrite_webp, exif_block, audit,")
+    );
+    assert!(read("app.just").contains("rewrite_png rewrite_webp exif_block audit"));
     assert!(read("README.md").contains("rewrite_png`, `rewrite_webp`"));
 }
 
@@ -9160,4 +9162,178 @@ fn the_rewrite_webp_harness_does_not_read_the_writer() {
     // The only reader items it names are the walk's two caps.
     assert!(h.contains("use exif_core::webp::{MAX_WEBP_CHUNKS, MAX_WEBP_ISSUES};"));
     assert_eq!(h.matches("exif_core::webp::").count(), 1);
+}
+
+// ── SPEC-025: the `exif_block` target (the Exif block builder, DEC-014) ──────
+
+include!("../fuzz/shared/exif_block_invariants.rs");
+
+/// The committed `exif_block` seed count, pinned: 236 shapes (the AC10 grid, a
+/// DNG and a JPEG's Exif TIFF blob, in both byte orders, the refusal shapes
+/// included) at bases 8 and 1000, the design sample at three edge bases (0, 7,
+/// 65534), an empty input and a one-byte one.
+const EXIF_BLOCK_SEEDS: usize = 477;
+
+fn exif_block_seed_files() -> Vec<(String, Vec<u8>)> {
+    let dir = root().join("fuzz/seeds/exif_block");
+    let mut v: Vec<(String, Vec<u8>)> = fs::read_dir(&dir)
+        .expect("read exif_block seeds")
+        .map(|e| {
+            let p = e.unwrap().path();
+            (
+                p.file_name().unwrap().to_string_lossy().into_owned(),
+                fs::read(&p).unwrap(),
+            )
+        })
+        .collect();
+    v.sort();
+    v
+}
+
+fn exif_block_seed(name: &str) -> Vec<u8> {
+    exif_block_seed_files()
+        .into_iter()
+        .find(|(n, _)| n == name)
+        .unwrap_or_else(|| panic!("no exif_block seed {name}"))
+        .1
+}
+
+#[test]
+fn exif_block_seeds_are_pinned_and_parse() {
+    let seeds = exif_block_seed_files();
+    assert_eq!(seeds.len(), EXIF_BLOCK_SEEDS, "the exif_block seed set");
+    let (mut built, mut refused, mut short) = (0usize, 0usize, 0usize);
+    for (name, data) in &seeds {
+        // The harness holds on every seed.
+        exif_block_invariants::check(data);
+        match (
+            exif_block_invariants::decode(data),
+            exif_block_invariants::facts(data),
+        ) {
+            (None, _) => short += 1,
+            (Some(_), Some(_)) => built += 1,
+            (Some(_), None) => refused += 1,
+        }
+        assert!(!name.is_empty());
+    }
+    // Most seeds build a block; the refusal shapes and the base inside the
+    // header are refused; the two short seeds are not an input at all.
+    assert!(built >= 200, "{built} seeds build a block");
+    assert!(refused >= 20, "{refused} seeds are refused");
+    assert_eq!(short, 2, "the empty and the one-byte seed");
+}
+
+#[test]
+fn exif_block_harness_holds_at_every_base_and_every_cut() {
+    let sample = exif_block_seed("sample-le-b8");
+    let src = sample.get(2..).unwrap().to_vec();
+    // Every even base through the header and a few pages, the largest base, and
+    // an odd one (made even by the decoder).
+    for base in (0u32..=2048).chain([4094, 4096, 32768, 65534, 65535]) {
+        let mut v = (base as u16).to_le_bytes().to_vec();
+        v.extend_from_slice(&src);
+        exif_block_invariants::check(&v);
+    }
+    // Every prefix of the sample, at two bases.
+    for cut in 0..=src.len() {
+        for base in [8u16, 1000] {
+            let mut v = base.to_le_bytes().to_vec();
+            v.extend_from_slice(&src[..cut]);
+            exif_block_invariants::check(&v);
+        }
+    }
+    // Every single-byte flip of the sample.
+    for at in 0..src.len() {
+        let mut s = src.clone();
+        s[at] ^= 0xFF;
+        let mut v = 8u16.to_le_bytes().to_vec();
+        v.extend_from_slice(&s);
+        exif_block_invariants::check(&v);
+    }
+    exif_block_invariants::check(&[]);
+    exif_block_invariants::check(&[8]);
+}
+
+/// A planted bug in the flattened answer turns its guard red, and only a guard
+/// that was meant to.
+#[test]
+fn each_exif_block_guard_goes_red_when_planted() {
+    let seed = exif_block_seed("sample-le-b8");
+    let good = exif_block_invariants::facts(&seed).expect("the design sample builds a block");
+    assert!(
+        exif_block_invariants::failures(&good).is_empty(),
+        "control: {:?}",
+        exif_block_invariants::failures(&good)
+    );
+    assert!(good.exif_pos.is_some() && good.gps_pos.is_some());
+    type Plant = fn(&mut exif_block_invariants::Facts);
+    use exif_block_invariants::Guard;
+    let plants: [(Guard, Plant); 6] = [
+        (Guard::Length, |f| f.len += 2),
+        (Guard::Positions, |f| f.exif_pos = Some(1)),
+        (Guard::Deterministic, |f| f.again.push(0)),
+        (Guard::PlacesClean, |f| f.gps_pos = Some(f.len + 100)),
+        (Guard::EntriesEqual, |f| f.omissions.push((0, 0x9003, 5))),
+        (Guard::OmissionsExist, |f| f.omissions.push((0, 0xFFFF, 4))),
+    ];
+    let covered: Vec<Guard> = plants.iter().map(|p| p.0).collect();
+    for g in exif_block_invariants::GUARDS {
+        assert!(covered.contains(&g), "{g:?} has no plant");
+    }
+    for (guard, plant) in plants {
+        let mut bad = good.clone();
+        plant(&mut bad);
+        assert!(
+            exif_block_invariants::failures(&bad).contains(&guard),
+            "{guard:?} stayed green on its planted bug"
+        );
+    }
+}
+
+#[test]
+fn exif_block_target_is_declared_and_runs_in_ci() {
+    let fuzz = read("fuzz/Cargo.toml");
+    assert!(
+        fuzz.contains("name = \"exif_block\"") && fuzz.contains("fuzz_targets/exif_block.rs"),
+        "fuzz/Cargo.toml must declare the exif_block bin"
+    );
+    assert!(root().join("fuzz/fuzz_targets/exif_block.rs").is_file());
+    let target = read("fuzz/fuzz_targets/exif_block.rs");
+    assert!(target.contains("exif_block_invariants::check"));
+    assert!(target.contains("../shared/exif_block_invariants.rs"));
+    assert!(read(".github/workflows/ci.yml").contains("rewrite_webp, exif_block, audit,"));
+    assert!(read("app.just").contains("rewrite_webp exif_block audit"));
+    assert!(read("README.md").contains("`rewrite_webp`, `exif_block`"));
+}
+
+/// The harness is independent of the builder: no line of code names its module
+/// or its internals.
+#[test]
+fn the_exif_block_harness_does_not_read_the_builder() {
+    let h = read("fuzz/shared/exif_block_invariants.rs");
+    for needle in [
+        "write::block",
+        "src/write/block",
+        "check_block",
+        "fill_and_verify",
+        "MEASURED_EXTRA_OFFSET_TAGS",
+        "OFFSET_TAGS",
+        "POINTER_TAGS",
+        "SCRATCH_TAIL",
+    ] {
+        let uses = h
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//") && l.contains(needle))
+            .count();
+        assert_eq!(uses, 0, "{needle}");
+    }
+    // The only builder items it names are the public API.
+    assert!(h.contains(
+        "use exif_core::write::{exif_block, BlockError, BlockIfd, BlockOptions, ExifBlock};"
+    ));
+    let code_uses = h
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("//") && l.contains("exif_core::write::"))
+        .count();
+    assert_eq!(code_uses, 1);
 }

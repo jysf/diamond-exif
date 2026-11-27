@@ -74,6 +74,14 @@ The length does not depend on the base: every offset field in a classic TIFF is 
 
 irradiance/STAGE-017's design accepted the shape (irradiance/DEC-072), with the base fixed at 8. irradiance/SPEC-081 places a block through its writer and checks it with ExifTool, and its red-proof shifts the base by 2. SPEC-026's test placer uses the API exactly as irradiance would, at an arbitrary even base, and ExifTool reads the result. Revisit if irradiance cannot compute the base before writing, or if a second consumer needs placement-independent bytes.
 
+## Clarification (2026-11-27, SPEC-025 design): how the self-check reads the block at its base
+
+Item 4 requires the check to run on the exact returned bytes at the caller's base. The crate's walk reads a whole TIFF from offset 0, so the self-check builds a scratch image: an 8-byte header, a gap of zeros up to `base`, the block, then an IFD0 holding only 0x8769 and 0x8825 as item 3 would write them. It walks that image with `Container::parse` and compares. Changing the walk to read at an offset was rejected: the walk is the crate's core and the one reader every other check trusts.
+
+So the check needs `base + length + 34` bytes. That total counts against the same budget as the block (`max_len`, default 16 MiB): a base so large that the image would exceed it is a typed refusal before anything is allocated, and a caller with a large base raises the budget. For irradiance's base of 8 the cost is the block's own size. This adds no condition to item 2: the base is still any even value with `base + length` in a `u32`, within the budget.
+
+Build note (SPEC-025, 2026-11-27): the base is also refused when it is below 8 for a non-empty block (`BadBase`), because the block would overlap the 8-byte TIFF header, which the scratch image, and every real file, holds there. An empty block has no bytes to overlap and accepts any even base. This is a condition the item 2 wording ("any even value") left implicit; `tests/exif_block.rs` and the `exif_block` fuzz target pin it.
+
 ## References
 
 - Related specs: SPEC-025 (implements), SPEC-026 (test placer)

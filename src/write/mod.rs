@@ -24,6 +24,7 @@
 //! Provenance (DEC-003, class 1): net-new code written from DEC-013 over this
 //! crate's own reader and audit. No ExifTool source is read.
 
+mod block;
 mod exif;
 mod jpeg;
 mod plan;
@@ -38,6 +39,10 @@ use crate::audit::{sniff, Category, ContainerKind, Sniffed};
 use crate::policy::{StripPolicy, StripSpec};
 use crate::tiff::IfdKind;
 
+pub use block::{
+    exif_block, BlockCheck, BlockError, BlockIfd, BlockOptions, ExifBlock, Omission, OmitReason,
+    UnbuildableReason, DEFAULT_MAX_BLOCK_LEN,
+};
 pub use plan::{Edit, EditPlan, PlanError};
 
 /// What kind of bytes a [`Removal`] deleted. The audit's region kinds, plus the

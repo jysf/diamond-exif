@@ -93,3 +93,10 @@ path = "fuzz_targets/rewrite_webp.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "exif_block"
+path = "fuzz_targets/exif_block.rs"
+test = false
+doc = false
+bench = false

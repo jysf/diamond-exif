@@ -33,6 +33,9 @@ mod webp_shapes;
 // SPEC-038: the measured carrier rows become the `rewrite_webp` shapes.
 #[path = "../tests/support/webp_carriers.rs"]
 mod webp_carriers;
+// SPEC-025: the Exif block shapes become the `exif_block` seeds.
+#[path = "../tests/support/exif_block_shapes.rs"]
+mod exif_block_shapes;
 // SPEC-020: the strip fixtures.
 #[path = "../tests/support/strip_shapes.rs"]
 mod strip_shapes;
@@ -3051,6 +3054,57 @@ fn rewrite_webp_seeds() -> Vec<(String, Vec<u8>)> {
     out
 }
 
+/// SPEC-025: the seeds of `exif_block`. Bytes 0 and 1 are the base (`u16`,
+/// little-endian), the rest is the source (see
+/// `fuzz/shared/exif_block_invariants.rs`). Every shape of the AC10 grid, the
+/// DNG and a JPEG's Exif TIFF blob (both byte orders, the refusals too) at bases
+/// 8 and 1000; the design sample at a base inside the header (0), an odd base
+/// made even (7 reads as 6) and the largest (65534); an empty input and a
+/// one-byte one.
+fn exif_block_seeds() -> Vec<(String, Vec<u8>)> {
+    let mut shapes = exif_block_shapes::grid();
+    for be in [false, true] {
+        let tag = if be { "be" } else { "le" };
+        shapes.push(exif_block_shapes::Shape {
+            name: format!("dng/{tag}"),
+            bytes: tiff_shapes::dng(be).bytes,
+            expect: exif_block_shapes::Expect::Block,
+        });
+        shapes.push(exif_block_shapes::Shape {
+            name: format!("jpeg-exif-blob/{tag}"),
+            bytes: strip_shapes::full_tiff(be),
+            expect: exif_block_shapes::Expect::Block,
+        });
+    }
+    let with_base = |base: u16, src: &[u8]| {
+        let mut v = base.to_le_bytes().to_vec();
+        v.extend_from_slice(src);
+        v
+    };
+    let mut out: Vec<(String, Vec<u8>)> = Vec::new();
+    for s in &shapes {
+        for base in [8u16, 1000] {
+            out.push((
+                format!("{}-b{base}", s.name.replace('/', "-")),
+                with_base(base, &s.bytes),
+            ));
+        }
+    }
+    let sample = shapes
+        .iter()
+        .find(|s| s.name == "sample/le")
+        .expect("the design sample");
+    for base in [0u16, 7, 65534] {
+        out.push((
+            format!("sample-le-edge-b{base}"),
+            with_base(base, &sample.bytes),
+        ));
+    }
+    out.push(("short-empty".to_string(), Vec::new()));
+    out.push(("short-one-byte".to_string(), vec![8]));
+    out
+}
+
 fn main() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/tiff_ifd");
     fs::create_dir_all(&dir).expect("create seeds dir");
@@ -3184,6 +3238,14 @@ fn main() {
         fs::write(mdir.join(name), bytes).expect("write seed");
     }
     println!("wrote {} seeds to {}", mseeds.len(), mdir.display());
+
+    let bdir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/exif_block");
+    fs::create_dir_all(&bdir).expect("create seeds dir");
+    let bseeds = exif_block_seeds();
+    for (name, bytes) in &bseeds {
+        fs::write(bdir.join(name), bytes).expect("write seed");
+    }
+    println!("wrote {} seeds to {}", bseeds.len(), bdir.display());
 
     let cdir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/seeds/cli_args");
     fs::create_dir_all(&cdir).expect("create seeds dir");
