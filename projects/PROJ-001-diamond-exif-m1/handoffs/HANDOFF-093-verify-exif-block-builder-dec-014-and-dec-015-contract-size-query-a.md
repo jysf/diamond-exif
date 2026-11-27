@@ -46,18 +46,18 @@ repo:
 # write why in `notes` — then set `cost.metering_source: none` in
 # .repo-context.yaml so the gate stops asking. Do not invent a number.
 handback:
-  status: null                     # completed | blocked | rejected
-  agent: null                      # the model that ACTUALLY ran (message.model) —
+  status: completed                # completed | blocked | rejected
+  agent: claude-opus-5-5           # the model that ACTUALLY ran (message.model) —
                                    #   to_agent above is a prediction from tier_map
-  verdict: null                    # verify handoffs: approved | punch-list | rejected
-  basis: null                      # transcript | agent-result | slash-cost | api-usage | estimate
+  verdict: punch-list              # verify handoffs: approved | punch-list | rejected
+  basis: agent-result              # transcript | agent-result | slash-cost | api-usage | estimate
   tokens_total: null               # REAL combined count — what cost-audit reads
   estimated_usd: null              # per component at `agent`'s rates (docs/cost-tracking.md "Pricing")
-  duration_minutes: null
-  branch: null
+  duration_minutes: 75
+  branch: claude/spec-025-verify
   pr: null
-  completed_at: null               # YYYY-MM-DD
-  notes: null                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  completed_at: 2026-11-27         # YYYY-MM-DD
+  notes: "Verified at 7cda5d3. tokens_total left null on purpose: the verifier ran as a subagent and cannot see its own token count; the orchestrator records the harness figure."
   synced_at: null                  # stamped by `just handback-sync` — do not edit
 ---
 
@@ -189,38 +189,153 @@ this — it transcribes it. The reflection questions are part of completion.*
 
 ### Execution notes
 
-- **Branch / PR:** [link]
-- **Completed at:** YYYY-MM-DD
-- **All acceptance criteria met?** yes/no (if no, explain)
-- **For `verify`:** the verdict — ✅ APPROVED (at commit SHA) / ⚠ PUNCH LIST / ❌ REJECTED
+- **Branch / PR:** `claude/spec-025-verify` (this handback only); verifies PR #71 at `7cda5d3`.
+- **Completed at:** 2026-11-27
+- **All acceptance criteria met?** Yes on behaviour. Every probe agrees with the code and every gate is green. The punch list covers one misdescribed mechanism (a test comment and a DEC-014 fact) and four small doc and test gaps.
+- **For `verify`:** ⚠ PUNCH LIST
+
+**Verdict: ⚠ PUNCH LIST** (at `7cda5d3`). There are no H items. Once item 1 is fixed, this approves with or without the L items.
+
+1. **M: the `unknown-types` pin explains the wrong mechanism, and DEC-014 amendment item 2 states an incomplete fact.**
+   - What the code says: `tests/exif_block_live.rs` (the `Diff` doc comment) says ExifTool "stops reading an IFD at a first entry of an unknown type". Amendment item 2 says types 14 to 18 and 255 print `Bad format (N) for ExifIFD entry 0` and no value.
+   - What I measured: ExifTool 13.55, run without `-m` on scratch TIFFs whose Exif IFD holds ISO, an unknown-type entry and ColorSpace.
+     - Unknown type (14 or 255) in entry 1 or entry 2: ExifTool warns `Bad format` for that entry and still prints ISO and ColorSpace.
+     - Type 0 in entry 1: no warning, and both are printed.
+     - Type 14 in entry 0: only the warning, and no entry of the IFD is printed.
+   - So the real rule: ExifTool discards the whole IFD when entry 0 has a bad format, and skips a bad-format entry anywhere else. The pin passes only because every IFD of the shape puts its unknown-type entry first.
+   - Consequence: the block shows entries ExifTool never printed for such a source. That is acceptable, because TIFF says to skip unknown fields and the block loses nothing. It should be recorded.
+   - Fix:
+     - Correct the comment.
+     - Add a DEC-014 note: an IFD whose entry 0 has an unknown type is dropped by ExifTool, so the placed block shows more than the source.
+     - Add a live shape with an unknown-type entry that is not first. Parity there should be exact, so the pin is not the only unknown-type evidence.
+2. **L: the module doc of `tests/exif_block_sweep_live.rs` still describes the writer pass as `exiftool -m -Artist=sweep ...` "(`-m`, because ...)".** `b0b5130` removed `-m` from the call but not from the doc. Fix: rewrite the bullet to say no `-m` and 26 pinned refusals.
+3. **L: `b0b5130` put the `WRITER_MINOR_REFUSALS` doc comment between the `///` lines of `SUBIFD_TAG` and its item** (`tests/support/exif_block_sweep_tables.rs`). As a result, the `///` text about "the one id whose value the writer pass changes" now documents `WRITER_MINOR_REFUSALS`, and `SUBIFD_TAG` has no doc. Fix: move those two lines down to just above `SUBIFD_TAG`.
+4. **L: the README example uses `plan.exif_position()?` and `plan.gps_position()?`.** `?` on an `Option` does not compile in a function that returns `Result<_, BlockError>`. It also suggests both pointers are always written, but a GPS-only block has no Exif position (DEC-015 item 3). Fix: `if let Some(p) = plan.exif_position() { ... }`, and the same for GPS.
+5. **L: two narrow gaps in coverage. Neither is a defect today.**
+   - (a) The self-check does not check the slack bytes. I flipped every byte of the design sample's block through the `#[cfg(test)]` fault hook (in a scratch copy, both byte orders). 150 of 154 flips gave `VerifyFailed`: Entries 135, Parse 13, Positions 2. The 4 that passed are exactly the unused inline bytes of the two short inline values (bytes 24, 25, 84 and 85). Padding bytes between values would also pass, by reading the code. The byte-exact model tests cover these bytes; the runtime check does not. Fix: zero-check the slack in `check_block`, or note it in DEC-014 item 9.
+   - (b) The library sweep in `omission_table_mirrors_agree` covers every tag as a LONG in the Exif and GPS IFDs, but not the Interop IFD. Fix: add Interop to that loop. I ran that sweep myself and found nothing: 1,769,463 cases, listed under point 2.
+
+#### The nine points
+
+1. **The bytes are right: established.**
+   - I wrote my own builder and predictor (scratch `tests/zz_verify.rs`, outside the repo), working from amendment item 7 and not from `tests/support/exif_block_model.rs`.
+   - Eight sources, each in LE and BE:
+     - full Exif + Interop + GPS, unordered, with an odd ASCII length;
+     - a dangling 0xA005;
+     - GPS only;
+     - an omission mix (MakerNote, 0x0111, 0x8781, type 13, type 20, count 0, 0xEA1D, 0x8568);
+     - selection by parent (a SubIFD's Exif IFD walked first);
+     - 0xA005 as type 13 with odd UNDEFINED values and a non-zero Exif next-word;
+     - an all-omitted Exif IFD (a 0-entry table);
+     - offset tags inside Interop.
+   - Each was compared byte for byte with `write` at bases 8, 1000 and 4098, with `write_into` into a 0xAA-filled buffer, and on omissions and positions. All matched. Empty sources gave an empty block.
+2. **The omission table is right and complete: established.**
+   - My own generator (Python) built sources from `exiftool -listx -EXIF:All` (573 Exif ids, 32 GPS ids). Every writer pass ran without `-m`.
+   - LONG in the Exif and Interop IFDs:
+     - exactly the 11 `No size tag` ids in each IFD, so 22;
+     - 4 `[minor]` refusals (0x927C and 0xC612, in each IFD);
+     - 0x014A's value rewritten;
+     - in the reader pass, only 0x014A changed.
+   - Extra shapes:
+     - SHORT gives the same 11 plus 0x014A.
+     - LONG[2] gives the same 11. 0xA101 SamsungRawByteOrder came back corrupted by ExifTool's writer; it is an ExifTool quirk on a mistyped value, not an offset (the reader pass was unchanged).
+     - Type 13: ExifTool refuses to write any type-13 entry (`IFD format not handled`). The block drops them all anyway.
+     - GPS IFD with all 573 Exif ids and all 32 GPS ids, each of the four shapes: nothing.
+   - I found no offset tag that the LONG count-1 sweep misses.
+   - "Nothing beyond DEC-014's list": my classifier, typed from the amendment, against the library for every tag 0 to 0xFFFF, in three IFDs, with nine types (1,769,463 cases). The only differences were 7 cases where a non-LONG/IFD 0xA005 in the Exif IFD is refused as `BrokenPointer`, which is item 4 as designed.
+   - The dangling-0xA005 rule is sound: no Interop IFD means no target to rewrite. The precedence UnknownType > MakerNote > OffsetCarrying is sound. Note that a MakerNote with an unknown type is reported as `UnknownType`, not `MakerNote`.
+3. **Refusals are exactly item 4: established.** Every probe below gave the expected result.
+   - Should not refuse, and did not:
+     - an issue following 0xA005 from a SubIFD's Exif IFD;
+     - a duplicate 0x010F in IFD0;
+     - a broken IFD1;
+     - a broken 0x014A inside the Exif IFD;
+     - an omitted MakerNote whose value is out of range.
+   - Should refuse, and did:
+     - a 600-IFD chain halting after the Exif IFD was recorded → `WalkHalted`;
+     - 0xA005 as SHORT in the chosen Exif IFD → `BrokenPointer`;
+     - a kept value out of range → `UnreadableValue`;
+     - a duplicate GPS tag → `DuplicateTag`;
+     - a duplicate 0x8769 → `DuplicatePointer`;
+     - 0x8769 out of range → `BrokenPointer`.
+   - Judged, not punched:
+     - When a SubIFD's Exif pointer and IFD0's share one offset, IFD0's raises `CyclicIfd` and the source is refused. This is literal item 4 and the same class as AC5's "Exif and GPS pointers to the same offset".
+   - Allocation: I found none sized from the source before the budget check. The walk is entry-budgeted and the plan vectors are bounded by entries. The first block-sized buffer comes after `check_budget`, and so does the scratch image.
+   - `base < 8` as `BadBase` is a sound tightening of DEC-015 item 2, now recorded in the clarification. Bases probed: 0, 6, 7 and 9 are refused; 8 is accepted; `u32::MAX-20` gives OverBudget. Budget 60 with base 8 is accepted, and base 10 is refused (62 > 60).
+4. **The self-check cannot pass vacuously: established, with item 5(a).**
+   - The check compares with the plan, whose payloads borrow the source, so an encoding fault is caught (the flip results above).
+   - A plan that wrongly omits and reports an entry passes the check by design, because it is accounting. That case is caught by the independent model in `tests/exif_block.rs` and by the library sweep in `omission_table_mirrors_agree`. It is not caught by the live test (which subtracts reported omissions) or by the fuzz invariants (which only check that omissions name real entries).
+   - The fault hook and its call site are both `#[cfg(test)]`.
+5. **The tests are independent and not vacuous: established.**
+   - The model, the placer and `fuzz/shared/exif_block_invariants.rs` import nothing from `src/write/block.rs`. The fuzz invariants use only the public API.
+   - I ran 13 mutations of `block.rs` in a scratch copy (lib tests, `exif_block`, `fuzz_layout exif_block`). All 13 went red:
+     - drop the padding;
+     - keep 0x8781/0xA010/0xBCC0/0xBCC2;
+     - keep type 13;
+     - swap Interop and GPS;
+     - select by kind;
+     - skip the plan budget;
+     - skip the write budget;
+     - no zero-fill;
+     - MakerNote before UnknownType;
+     - no halt refusal;
+     - allow base < 8;
+     - keep a dangling 0xA005;
+     - no duplicate-tag check.
+   - `omission_table_mirrors_agree` compares the shapes file, the model, the sweep tables and the library's behaviour, which are all the mirrors AC4 lists. The fuzz harness holds no table.
+6. **The live tests are honest: established, with item 1.**
+   - Every `source_only` pin is an IFD outside the block by DEC-014 item 1 / amendment item 5 (an Exif IFD under a SubIFD or IFD1, 0xA005 in IFD0, SubIFDs inside Exif, the DNG's GPS in the raw SubIFD). Each must be present in the source's listing, so none hides a parity break.
+   - `placed_only` is allowed only when the source printed nothing.
+   - The `-m` fix in `b0b5130` is correct: no `"-m"` remains in any live test call, and the 22 + 4 refusals reproduce independently. The doc leftovers are items 2 and 3.
+7. **Panic-freedom and fuzz: established.**
+   - `block.rs` uses only `get`/`get_mut`, `checked_*`/`saturating_*` and `try_from`. It has no `allow`, and it is under the five-lint deny set (lint-no-allow is green).
+   - 60 s smokes:
+     - `exif_block`: 292,948 runs;
+     - `tiff_ifd`: 1,614,628 runs;
+     - `rewrite_tiff`: 156,595 runs;
+     - all exit 0, with 0 crashes.
+   - The seed count is pinned at 473 (`tests/fuzz_layout.rs`), matching 473 files, and `exif_block` is in the `ci.yml` fuzz matrix.
+8. **Docs: established, with items 1 to 4.**
+   - The CHANGELOG entry matches the evidence. The README matches except item 4.
+   - DEC-015 (base-first, the scratch image, `base + len + 34`, base < 8) matches the code.
+   - DEC-014's amendment matches the code, apart from the ExifTool fact in item 1.
+   - `just decisions-audit --changed origin/docs/spec-025-design` is advisory, exit 0.
+9. **Gates on 1.90.0: all green.**
+   - `just lint`, `lint-no-allow`, `lint-fuzz`, `forbid-unsafe`, `deny`, `deny-fuzz`, `validate`, `cost-audit`: each exit 0.
+   - `validate`: 42 artifacts valid, 179 parse.
+   - `just mutation-oracle`: 43 passed, 1 ignored.
+   - `DIAMOND_EXIF_REQUIRE_ORACLE=1 just test`: 1,599 passed, 0 failed, 22 ignored across 44 test binaries. The ignored ones are the same two utility tests repeated in every binary. There were no SKIP lines, and both live tests ran.
+   - `cargo fmt --check` passes for the root and `fuzz/`.
+   - `fuzz/Cargo.lock` was restored; the tree is clean.
+
+What I did not establish:
+- No 24 h fuzz run.
+- ExifTool's behaviour on real camera files beyond the repo's shapes.
+- Whether 0xC612 would be relocated with a value ExifTool accepts. The reader pass shows it is not read through, and the block keeps it.
 
 ### Cost self-report
 
-Mirror what you put in the `handback:` front-matter, and say where the number
-came from. **This is the number that lands in the spec** — the orchestrator
-transcribes it via `just handback-sync`, it does not estimate it.
-
-- **Tokens (total):** <real number, or null + why>
-- **Estimated USD:** <number, or null>
-- **Duration (minutes):** <estimate>
-- **Source of the number:** `/cost` | API `usage` | harness report | none available
+- **Tokens (total):** null. I ran as a subagent and cannot see my own token count; the orchestrator records the harness figure.
+- **Estimated USD:** null
+- **Duration (minutes):** about 75
+- **Source of the number:** none available to the verifier (harness report, via the orchestrator)
 
 ### Drift and new artifacts
 
-- **New decisions emitted:**
-  - `DEC-NNN` — <title> (if any)
-- **Deviations from spec:**
-  - [list]
+- **New decisions emitted:** none. Item 1 asks for a DEC-014 note.
+- **Deviations from spec:** none in behaviour.
 - **Follow-up work identified:**
-  - [any new specs that should be added to the stage's backlog]
+  - Item 1's live shape (unknown type not in entry 0).
+  - Item 5(b): add Interop to the mirror sweep.
+  - Item 5(a): optionally, the slack check.
 
 ### Reflection (3 questions, short answers)
 
 1. **What was unclear in the spec or handoff that slowed you down?**
-   — <answer>
+   — Very little. The handoff's own phrasing of the `unknown-types` mechanism ("stops reading an IFD at the first unknown-type entry") repeated the test's claim. I only saw it was wrong by probing.
 
 2. **Was there a constraint or decision that should have been listed but wasn't?**
-   — <answer>
+   — No. The worktree isolation rejects compound shell commands, so scratch scripts had to be written with the editor and then run.
 
 3. **If you did this task again, what would you do differently?**
-   — <answer>
+   — I would probe ExifTool's behaviour behind every pin first. It was the cheapest check and found the only M item.
