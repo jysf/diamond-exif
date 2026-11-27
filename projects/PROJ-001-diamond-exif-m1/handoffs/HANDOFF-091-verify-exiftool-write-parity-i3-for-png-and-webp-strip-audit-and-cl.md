@@ -57,7 +57,7 @@ handback:
   branch: claude/spec-039-verify
   pr: null
   completed_at: 2026-11-26         # YYYY-MM-DD
-  notes: "Round 4 (2026-11-26, branch claude/spec-039-verify-r4): PUNCH LIST against 9c368ba, 2 items (L): a non-judged SEAL/XML carrier line left in beside a plain XMP packet is caught by no check (probe red under neither gps nor all; latent, library output clean, not in corpus; not caused by the fix); the red-proof comment misdescribes its readings. Round-3 fix verified (judged is the one predicate, red-proof red at a96af47, M1/M3/group-level red, gates green, 1,541 passed). Round 3 (2026-11-26, branch claude/spec-039-verify-r3): PUNCH LIST against 2f790d4, 1 item (L): the additivity check compares the Exif/XMP/XML/Composite:GPS lines only, while exception (a) can also excuse judged lines such as ID3v2_3:Artist and Olympus:Model (3 such carrier lines in the corpus); latent, widening keeps 36/36 adding up. Round-2 items 1-2 fixed (M1/M3 red, b1 red, records byte-equal, gates green). Round 2 (2026-11-26, branch claude/spec-039-verify-r2): PUNCH LIST against 34008cc, 2 items (L): the multiplicity bound and the plain-block carrier-left-in check have no red-proof (mutants M1, M3 survive); the line-level model inverts on a non-additive (carrier-before-plain) shape, not in the corpus. Round-1 items 1-3 fixed. Round 1: Verdict applies to f5e24c1 (build tip plus this handoff). Cost filled by the orchestrator from the harness subagent result: 258,606 tokens, 96 tool calls, 1,553 s. Punch list of 3 items: 1 (M) judge exception (a) is group-level and excuses a dropped plain Exif/XMP block when a carrier coexists; 2 (L) the AC11 grid has no ICC finding; 3 (L) the README PNG keyword sentence omits Make, Model and TimeStamp."                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
+  notes: "Round 5 (2026-11-27, branch claude/spec-039-verify-r5): PUNCH LIST against d61cbf2, 2 items (L), both documentation only: the claim that XML/SEAL lines are never excused is false for a judged one (SEAL:Copyright is Rights through category_of's tag match and is excused live, uses.carrier 1); the test mirror category_of_printed_name in tests/audit_png_webp_oracle.rs lacks the three AC1 rows. Round-4 items closed (probe red in both orders under gps and all, control green), mutants A and C bite exactly their tests, B is equivalent (shown in the code and by identical verdicts on a live probe), the CI fix is right (seed sha1 matches the CI artifact name, red without the rows), gates green (1,544 passed). Round 4 (2026-11-26, branch claude/spec-039-verify-r4): PUNCH LIST against 9c368ba, 2 items (L): a non-judged SEAL/XML carrier line left in beside a plain XMP packet is caught by no check (probe red under neither gps nor all; latent, library output clean, not in corpus; not caused by the fix); the red-proof comment misdescribes its readings. Round-3 fix verified (judged is the one predicate, red-proof red at a96af47, M1/M3/group-level red, gates green, 1,541 passed). Round 3 (2026-11-26, branch claude/spec-039-verify-r3): PUNCH LIST against 2f790d4, 1 item (L): the additivity check compares the Exif/XMP/XML/Composite:GPS lines only, while exception (a) can also excuse judged lines such as ID3v2_3:Artist and Olympus:Model (3 such carrier lines in the corpus); latent, widening keeps 36/36 adding up. Round-2 items 1-2 fixed (M1/M3 red, b1 red, records byte-equal, gates green). Round 2 (2026-11-26, branch claude/spec-039-verify-r2): PUNCH LIST against 34008cc, 2 items (L): the multiplicity bound and the plain-block carrier-left-in check have no red-proof (mutants M1, M3 survive); the line-level model inverts on a non-additive (carrier-before-plain) shape, not in the corpus. Round-1 items 1-3 fixed. Round 1: Verdict applies to f5e24c1 (build tip plus this handoff). Cost filled by the orchestrator from the harness subagent result: 258,606 tokens, 96 tool calls, 1,553 s. Punch list of 3 items: 1 (M) judge exception (a) is group-level and excuses a dropped plain Exif/XMP block when a carrier coexists; 2 (L) the AC11 grid has no ICC finding; 3 (L) the README PNG keyword sentence omits Make, Model and TimeStamp."                      # if unusual; double-quote it — an unquoted " #" starts a YAML comment
   synced_at: 2026-11-26
 ---
 
@@ -1018,6 +1018,151 @@ Implementer (claude-sonnet-5-5) on `feat/spec-039-png-webp-write-parity-build`, 
 - **Gates at `33f912f`, on 1.90.0:** `just lint`, `just lint-no-allow`, `just forbid-unsafe` and `just validate` rc 0. `just test` rc 0, with 41 result lines, 1,544 passed and 0 failed. `just mutation-oracle` passed 67 + 42 + 43.
 - **Close.** The user chose to close the verify cycle with orchestrator self-checks rather than a round-5 verify. `handback.verdict` stays `punch-list`, as round 4's independent verdict, and is not upgraded. Every punch item from rounds 1 to 4 has a fix recorded above, and each guard added is shown to bite by a mutant, apart from B, which is equivalent.
 - **Fix round 5 cost**, from the harness subagent result: 92,174 tokens, 14 tool calls, 528 s (about 9 min). Basis: agent-result.
+
+### Verify round 5 (2026-11-27)
+
+Verifier (claude-opus-5-5) on `claude/spec-039-verify-r5`, cut from `origin/main` = `d61cbf2` (the merge of PR #67).
+Scope: `git diff 9c368ba origin/main`, which is fix rounds 4 and 5, the CI fix `5e8bc80`, and the DEC-023 amendment.
+
+**Verdict: ⚠ PUNCH LIST against `d61cbf2`, 2 items, both (L) and both documentation only.** Both round-4 items are
+closed. The two-predicate judge behaves correctly, mutants A and C bite exactly their tests, and B is equivalent. The
+CI fix is right and complete in the fuzz models. All gates are green.
+
+**Punch list.**
+
+1. **(L) "XML/SEAL lines are never excused" is false for a `judged` one.** `category_of` falls through to its tag
+   match for every group that is not GPS, Composite, `XMP*`, `ICC*`, JUMBF/JSON, PNG or RIFF. So `SEAL:Copyright`
+   (a standard ExifTool SEAL tag, from `copyright="..."`) is `Rights`, and `SEAL:Make` / `XML:Make` would be
+   `CameraModel`. Those lines are `judged`, and exception (a) excuses them like any other `judged` line.
+   - Evidence: a live probe on a scratch copy of `d61cbf2`, with ExifTool 13.55 and the library's real `strip`. The
+     PNG has a plain `iTXt` XMP packet plus `seAl` = `<seal seal="1" copyright="Joe"/>`, in both chunk orders. The
+     carriers reading prints `SEAL:SEALVersion=1` and `SEAL:Copyright=Joe`, and the readings add up.
+     - Under `gps` and `other`, the real output judges clean with `uses.carrier = 1`. The only `judged` missing line is
+       `SEAL:Copyright=Joe`, so that one use is a SEAL line excused by exception (a).
+     - Under `all` and `rights`, that line is a removed category, so it is skipped, not excused (`uses.carrier = 0`).
+   - The behaviour is right. The excused line is a genuine carrier line, and every guard still catches it when it is
+     put back: under `gps`/`other` the by-line check gives `carrier tag left in SEAL:Copyright=Joe`, and under
+     `all`/`rights` the output scan gives `removed tag left in SEAL:Copyright=Joe`. No corpus record has a `judged`
+     XML/SEAL line in its `## carriers` section. The only XML/SEAL lines there are `XML-dc:Creator`,
+     `XML-photoshop:City`, `XML:AB` and `SEAL:AB`. So no count moves.
+   - Where the false sentence is:
+     - DEC-023's round-4 amendment, item 1: "so `XML*`/`SEAL*` lines are still never excused". Its preamble also says
+       "`XML*`/`SEAL*` lines are not `judged`". The round-3 amendment has the same sentence.
+     - `tests/support/i3_judge.rs`: the comment above `carrier_judged` says "an `XML*`/`SEAL*` line is never excused",
+       and the module header says "a `SEAL:*` or `XML:*` line is checked there but never excused".
+     - The orchestrator's mutant-B note above says "adds only `XML*`/`SEAL*` keys". It means the non-`judged` ones.
+       The equivalence argument still holds (point 3 below).
+   - Suggested fix: reword all of these to "an `XML*`/`SEAL*` line that is not `judged` is never excused; one with a
+     category through `category_of`'s tag match (`SEAL:Copyright`) is `judged` and is excused like any judged line".
+     Optionally, pin it with an in-memory test that has a `SEAL:Copyright` carrier line excused under `gps`. Do not
+     narrow `judged`: that would drop `SEAL:Copyright` from the removed-category check under `all`.
+2. **(L) One test mirror of DEC-020's keyword table still lacks the three AC1 rows.** In
+   `tests/audit_png_webp_oracle.rs`, `category_of_printed_name` maps ExifTool's printed name to a category. It has
+   no `Make`/`Model` → `CameraModel` and no `TimeStamp` → `Timestamps`, and its doc comment says "every other name
+   free text".
+   - It is latent. The keyword fixture (`oracle_png::TEXT_KEYWORDS`, 36 keywords) holds none of the three keywords,
+     so `keyword_mismatches` never sees them. The AC1 rows are measured elsewhere: the I3 judge's `category_of` and
+     the `i3_shapes` keyword list.
+   - Fixed already: the library's unit tests have a separate three-row test, and both fuzz models have the rows
+     (`audit_invariants.rs` since AC1, and `rewrite_png_invariants.rs` since `5e8bc80`). A grep of `src`, `tests`
+     and `fuzz` for `Creation Time`, `create-date`, `modify-date`, `"Author"`, `"Copyright"` and `"Software" =>`
+     finds no other mirror.
+   - Suggested fix: add the three rows to `category_of_printed_name` and its comment. Optionally, add `Make`,
+     `Model` and `TimeStamp` to the keyword fixture's grid, with a re-record.
+
+**Evidence.**
+
+1. **Both round-4 items are closed.** I wrote my own probe on a `git archive d61cbf2` copy (own target dir): my own
+   `iTXt` XMP packet (`xmp:CreatorTool='R5Tool'`) plus `seAl` = `<a><b>Zed</b></a>`, both chunk orders, read live.
+   - `scan` gives `xml: true, xml_plain: true`, and `additivity_failures` is `[]` in both orders.
+   - Real output: `failures=[]` under `gps`, `all`, `rights` and `other`, and the output prints no SEAL line.
+   - Real output with `SEAL:AB=Zed` added: `["r5 under <policy>: carrier tag left in SEAL:AB=Zed"]` under all four
+     policies, in both orders. This is the exact red line.
+   - The committed live and in-memory tests make the same assertions and pass in the gate run.
+   - Item 2: the comment on `the_additivity_check_compares_a_judged_line_outside_the_exif_and_xml_groups` now matches
+     the body line for line (input `[Make, Artist]`, carriers `[Make]`, control `[Artist]`, red `[Artist, Artist]`).
+     The dated correction note in "Fix round 3" says the same.
+2. **Amendment and doc comments against the code.**
+   - True:
+     - `judged` is unchanged, and the excuse (`excusable`) is built from it.
+     - `carrier_checked` is `judged(l) || xml_group(&l.group)`, with Warning and Error excluded. It filters
+       `in_c`/`out_c`/`carrier_ms` in the by-line check and `pick` in `additivity_failures`.
+     - "Every carrier line the by-line check counts is also compared for additivity" and "every line the excuse uses
+       is in both" hold, since `judged ⊆ carrier_checked` and both checks use the same filter.
+     - "With a plain packet present, the output-only scan does not run" holds: it is guarded by
+       `carriers.xml && !carriers.xml_plain`.
+     - The doc comments on `carrier_checked` ("wider than `judged` only by `XMP*`, `XML*` and `SEAL*` lines that are
+       not `judged`") and on `additivity_failures` are accurate. `XMP*` lines are always `judged` via `Cat::Xmp`, so
+       that part is empty, but the statement is not wrong.
+     - Amendment item 3 holds: the 36 fixtures add up, and no corpus record has a plain packet beside an XML/SEAL
+       carrier.
+   - Not exact:
+     - "XML*/SEAL* … never excused" and "XML*/SEAL* lines are not judged" (punch item 1).
+     - Minor: the by-line block runs when either family has a carrier and a plain block, and its `family` filter then
+       also checks the other family's carrier lines, so "when a plain block of the same family exists" is narrower
+       than the code. That only overlaps the output-only scan. No item.
+3. **The guards bite.** Each mutant was in its own `git archive d61cbf2` copy with its own `CARGO_TARGET_DIR`, running
+   `cargo test --test strip_png_webp_oracle` with `DIAMOND_EXIF_REQUIRE_ORACLE=1`.
+   - **A** (the by-line `multiset_of` filter → `judged`): 41 passed, 2 failed, both SEAL red-proofs. The in-memory one
+     fails at `:1500` and the live one at `:1545`, each the red assertion, each with `gps seal_first=true: []`.
+   - **C** (the `additivity_failures` `pick` filter → `judged`): 42 passed, 1 failed:
+     `the_additivity_check_compares_a_seal_line_which_the_judge_does_not_judge_in_memory` at `:1360` (`[]`).
+   - **B** (`carrier_judged` built with `carrier_checked`): 43 passed, 0 failed. It is **equivalent**, checked in the
+     code:
+     - `carrier_judged` is read only by `excusable`, and `excusable` only through `get(k)`/`get_mut(k)` for `k` in
+       `missing`. `missing` is built from `in_m`, which is the `judged` input lines.
+     - `judged` and `carrier_checked` are both functions of `(group, tag)` alone, which is part of the key. So for a
+       `judged` key every carrier line with that key passes both filters, and its count is the same. The extra
+       entries B adds have non-`judged` keys and are never looked up.
+     - `carrier_ms` is built separately from `carrier_read` and does not depend on `carrier_judged`.
+     - Attempt to break it: I appended my live probe (both bodies above, four policies, both orders, controls and
+       every doctored SEAL line, 52 verdicts) to the B copy. B's output is byte-identical to the unmutated copy's,
+       including the case where `SEAL:Copyright` is excused. I found no input that separates B. The claim holds.
+4. **No new gap of the false-red kind.**
+   - The lines `carrier_checked` adds beyond `judged` are non-`judged` `XML*`/`SEAL*` lines. For them:
+     - the by-line check fails only if the output prints more of the line than the input printed beyond the carriers;
+     - a plain XMP block prints `XMP-*` groups, never `XML`/`SEAL`, so a legitimate strip cannot trip it;
+     - additivity on them holds on all 36 carrier fixtures and on both probe bodies.
+   - The one mismatch between the two predicates is punch item 1, which is a wording error and not a false red.
+   - Real fixtures, live, on the scratch copy: `the_readings_add_up_on_every_carrier_fixture` passes (asserts 36).
+     `the_judge_holds_both_ways_for_every_fixture_and_policy` prints, in replay and live: `2583 sections judged, 598
+     with a removable tag (2408 tags); exception (a) carrier used 677 times, (b) whole block 354 times, (c) residual
+     24 times`. These are unchanged.
+5. **The CI fix is right and complete in the fuzz models.**
+   - The rewrite_png model's `keyword_category` now has the library's 10 `TEXT_KEYWORDS` rows (`src/audit/category.rs`),
+     in the same order and with the same categories.
+   - Its match rule, `kw == name || (kw[0].to_ascii_uppercase() == name[0] && kw[1..] == name[1..])`, is the
+     library's rule: an exact match, or the first letter uppercased with the rest exact. With lowercase-first rows
+     (`create-date`) only the exact spelling matches, in both.
+   - `audit_invariants.rs`'s `png_keyword_category` already had the three rows.
+   - The other mirror is punch item 2.
+   - The seed's `shasum` is `fa312c03c2e1e99d32e3a8801e5b0dd66c280b09`. The failed CI run `45908377338` (job `fuzz smoke
+     — rewrite_png (60s)`, head `922482a`) logs `guards [Records] failed` at `rewrite_png_invariants.rs:936` and
+     `Test unit written to …/crash-fa312c03c2e1e99d32e3a8801e5b0dd66c280b09`. libFuzzer names an artifact by the
+     SHA-1 of its bytes, so the committed seed is that artifact byte for byte. I read the log only and downloaded no
+     artifact.
+   - The seed carries two `tEXt` `Model` chunks. `fuzz/seeds/rewrite_png` holds 436 files, matching
+     `REWRITE_PNG_SEEDS = 436`.
+   - Red without the fix: on a `git archive d61cbf2` copy with only the three rows removed (array back to 7),
+     `cargo test --test fuzz_layout rewrite_png_harness_holds` gives 0 passed and 1 failed:
+     `rewrite_png_harness_holds_on_every_seed_and_every_policy_byte` panics with `guards [Records] failed` (policy
+     `all_pii`, a `CameraModel` text removal). At the tip it is green: it is in the `just test` run below.
+6. **Gates at `d61cbf2`, in this worktree, rustc 1.90.0, clippy 0.1.90, ExifTool 13.55 required.**
+   - `just lint`, `just lint-fuzz`, `just lint-no-allow` and `just forbid-unsafe` each rc 0. `just lint-fuzz` uses
+     its own pinned stable clippy 0.1.98.
+   - `just deny` and `just deny-fuzz` each rc 0 (`licenses ok`).
+   - `DIAMOND_EXIF_REQUIRE_ORACLE=1 just test` rc 0: 41 result lines, 1,544 passed, 0 failed, 20 ignored, no SKIP.
+   - `just mutation-oracle` rc 0: 67 + 42 + 43 passed.
+   - `just validate` rc 0 (41 artifacts, 176 parse).
+   - `just decisions-audit --changed` rc 0. It reports no uncommitted change at the tip. `--changed 9c368ba` is
+     advisory and rc 0, and lists DEC-023 for the judge and tests.
+   - `just fuzz-smoke rewrite_png` rc 0 (482,592 runs in 61 s) and `just fuzz-smoke rewrite_webp` rc 0 (1,112,222
+     runs in 61 s). `fuzz/Cargo.lock` was restored after each fuzz and lint-fuzz run, and `git status` was clean
+     before this commit.
+- **Process.** I started and waited on only my own processes: the gate script, three mutant runs, the CI-revert run
+  and the probe runs, all from the session scratchpad. None is left running. Mutants, probes and the CI revert ran
+  only in `git archive` copies under the scratchpad, each with its own target dir. Nothing outside this file was
+  changed or committed. No cost numbers are filled in here.
 
 ### Cost self-report
 
