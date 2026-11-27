@@ -7,4 +7,4 @@ Cycle prompts live in `prompts/SPEC-025-<cycle>.md`.
 
 ## Instructions
 
-- [?] design — blocked: waits on irradiance confirming the optional Exif offset in irradiance/DEC-072 (jysf/irradiance#291) or a new DEC; if it declines, jysf decides with monorail-000 (2026-11-21)
+- [ ] design — unblocked 2026-11-27: irradiance/DEC-072 accepted as amended (optional Exif offset). Scope narrowed the same day: byte-order conversion split out to SPEC-041.

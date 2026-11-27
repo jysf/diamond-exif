@@ -38,12 +38,12 @@ handoff:
 references:
   decisions: [DEC-014, DEC-015]
   constraints: [oracle-must-be-shown-red, exiftool-never-linked, test-before-implementation]
-  related_specs: [SPEC-025]
+  related_specs: [SPEC-025, SPEC-041]
 
 # Blocking dependencies: specs that must SHIP before this one can start.
 # Distinct from references.related_specs (informational). Feeds the ready-set
 # (`just ready`) and safe fan-out. Optional; [] = no blockers.
-depends_on: [SPEC-025]
+depends_on: [SPEC-025, SPEC-041]
 
 # Fan-out lease — who/what holds this spec now (`just claim` / `just unclaim`).
 # Advisory; null = free. The hard lock for parallel agents is the worktree/branch.

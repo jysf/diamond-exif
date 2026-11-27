@@ -7,9 +7,9 @@ task:
   id: SPEC-025
   type: story                      # epic | story | task | bug | chore
   cycle: frame                     # frame | design | build | verify | ship
-  blocked: true                    # design waits on irradiance confirming the optional Exif offset (irradiance/DEC-072, jysf/irradiance#291)
+  blocked: false                   # irradiance/DEC-072 accepted as amended (optional Exif offset), checked 2026-11-27
   priority: medium                 # critical | high | medium | low
-  complexity: L                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
+  complexity: M                    # XS | S | M | L | XL | XXL — the EXPECTED size, set at design
                                    #   (XL/XXL almost certainly means it's a stage, not a spec)
   complexity_actual: null          # stamped at ship: what it ACTUALLY took, same scale.
                                    #   Expected-vs-actual drift is what `just calibration` reads.
@@ -38,7 +38,7 @@ handoff:
 references:
   decisions: [DEC-001, DEC-005, DEC-008, DEC-013, DEC-014, DEC-015]
   constraints: [panic-free-library, no-io-in-library, no-new-top-level-deps-without-decision, fuzz-target-per-surface, forbid-unsafe-code, test-before-implementation]
-  related_specs: [SPEC-022, SPEC-026, SPEC-027]
+  related_specs: [SPEC-022, SPEC-026, SPEC-027, SPEC-041]
 
 # Blocking dependencies: specs that must SHIP before this one can start.
 # Distinct from references.related_specs (informational). Feeds the ready-set
@@ -75,7 +75,7 @@ cost:
     session_count: 0
 ---
 
-# SPEC-025: Exif block builder: DEC-014 and DEC-015 contract, size query and write at a base, byte-order conversion, MakerNote and unsafe entries left out and reported, budget, readback self-check, `exif_block` fuzz target
+# SPEC-025: Exif block builder: DEC-014 and DEC-015 contract, size query and write at a base, MakerNote and unsafe entries left out and reported, budget, readback self-check, `exif_block` fuzz target
 
 > **OUTLINE — `cycle: frame`.** This spec exists so its ID is stable and
 > siblings can declare `depends_on: [SPEC-025]`. Capture **scope** (Context /
@@ -84,15 +84,17 @@ cost:
 
 ## Context
 
-First spec of STAGE-007 (PROJ-001). The writer can so far only remove bytes in place (DEC-013). This spec adds the first operation that builds IFDs: the relocatable Exif block of DEC-014, with the base-first offset contract of DEC-015. It is the stage's core. SPEC-026 adds ExifTool parity and SPEC-027 adds policy presets on top of it.
+First spec of STAGE-007 (PROJ-001). The writer can so far only remove bytes in place (DEC-013). This spec adds the first operation that builds IFDs: the relocatable Exif block of DEC-014, with the base-first offset contract of DEC-015. It is the stage's core. SPEC-041 adds byte-order conversion, SPEC-026 adds ExifTool parity and SPEC-027 adds policy presets on top of it.
 
-Design starts only after DEC-014 and DEC-015 are accepted. DEC-015 was accepted on 2026-11-21. Do not start design until irradiance has confirmed the optional Exif offset, by accepting irradiance/DEC-072 as amended in jysf/irradiance#291 or in a new irradiance DEC. Until then GPS-only blocks are pending (monorail-000/DEC-077 follow-up, 2026-11-21). If irradiance declines, tell jysf, so monorail-000 can choose between an empty Exif IFD and dropping the block, and DEC-014 item 1 is amended to match. Open for design: whether a JPEG Exif blob is accepted as a source as well as a bare TIFF or DNG, the result and error type names, the default budget, and the answer to question `exif-block-byte-order-sensitive-undefined`.
+**Split at the 2026-11-27 re-frame.** This spec builds the block in the source's own byte order only. Converting to the other order, and question `exif-block-byte-order-sensitive-undefined`, moved to SPEC-041. The API shape should let SPEC-041 add a target byte order without a breaking change; how is a design question.
+
+Design starts only after DEC-014 and DEC-015 are accepted. DEC-015 was accepted on 2026-11-21; DEC-014 is still `proposed` and is accepted by jysf at this spec's design at the latest. The irradiance gate is cleared: irradiance/DEC-072 is accepted with its 2026-11-21 amendment (the Exif offset is optional), so GPS-only blocks are in scope (checked 2026-11-27). Open for design: whether a JPEG Exif blob is accepted as a source as well as a bare TIFF or DNG, the result and error type names, and the default budget. Design measures a variant grid of hostile sources against ExifTool (AGENTS.md §15; the stage's Design Notes list the shapes).
 
 Requested by monorail-000 (its `docs/upstream/diamond-exif-requests.md`; consumer decision monorail-000/DEC-075). Cross-repo references are context only and never `depends_on` entries.
 
 ## Goal
 
-Given a source TIFF or DNG, a target byte order, options and an even base, return the DEC-014 block with final offsets (DEC-015) and its list of omissions, or a typed refusal with no bytes. The block is read back and checked against the source before it is returned, and a new `exif_block` fuzz target runs it on hostile input.
+Given a source TIFF or DNG, options and an even base, return the DEC-014 block with final offsets (DEC-015) and its list of omissions, in the source's byte order, or a typed refusal with no bytes. The block is read back and checked against the source before it is returned, and a new `exif_block` fuzz target runs it on hostile input.
 
 ## Inputs
 
