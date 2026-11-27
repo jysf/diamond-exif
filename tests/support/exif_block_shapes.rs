@@ -220,7 +220,7 @@ pub fn build(be: bool, ifds: &[IfdSpec]) -> Vec<u8> {
                     pos += bytes.len();
                 }
                 V::ValOdd(bytes) => {
-                    if pos % 2 == 0 {
+                    if pos & 1 == 0 {
                         pos += 1;
                     }
                     offs[j] = pos;
