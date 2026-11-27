@@ -795,10 +795,7 @@ fn omission_table_mirrors_agree() {
                     other => panic!("unexpected {other:?}"),
                 };
             }
-            assert_eq!(
-                offset, model_set,
-                "library vs model ({which:?}, be: {be})"
-            );
+            assert_eq!(offset, model_set, "library vs model ({which:?}, be: {be})");
             assert_eq!(maker, makernote, "library MakerNote set");
         }
     }
