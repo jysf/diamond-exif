@@ -97,7 +97,7 @@ The original framing (2026-11-20) gave these reasons. The first two still hold; 
 ## Spec Backlog
 
 - [x] SPEC-025 (shipped on 2026-11-27) — [M, was L; split 2026-11-27] Exif block builder in the source's byte order: DEC-014 and DEC-015 contract, size query and write at a base, MakerNote and unsafe entries left out and reported, budget, readback self-check, `exif_block` fuzz target
-- [ ] SPEC-041 (design, 2026-11-28: DEC-014 amendment proposed, HANDOFF-094) — [M, split out of SPEC-025 on 2026-11-27] Byte-order conversion: a big-endian source to the little-endian block the consumer needs, value by value; the UNDEFINED rule (question `exif-block-byte-order-sensitive-undefined`); self-check and fuzz cover the cross-order path
+- [ ] SPEC-041 (build, 2026-11-28: DEC-014 amendment accepted, HANDOFF-094) — [M, split out of SPEC-025 on 2026-11-27] Byte-order conversion: a big-endian source to the little-endian block the consumer needs, value by value; the UNDEFINED rule (question `exif-block-byte-order-sensitive-undefined`); self-check and fuzz cover the cross-order path
 - [ ] SPEC-026 (frame) — [M] ExifTool parity of a placed Exif block: test-only TIFF placer, DNG and TIFF fixtures, both byte orders, Interop and no-GPS cases, red-proofed
 - [ ] SPEC-027 (frame) — [S] Strip-policy presets while building the Exif block (DEC-009), with the self-check extended to the policy
 

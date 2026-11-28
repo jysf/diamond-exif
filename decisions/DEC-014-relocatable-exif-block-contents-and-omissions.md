@@ -19,7 +19,7 @@ repo:
 created_at: 2026-11-20
 supersedes: null
 superseded_by: null
-status: accepted                     # drafted by claude at STAGE-007 framing, 2026-11-20; accepted by jysf 2026-11-27 with the SPEC-025 design amendment; the SPEC-041 design amendment of 2026-11-28 is proposed
+status: accepted                     # drafted by claude at STAGE-007 framing, 2026-11-20; accepted by jysf 2026-11-27 with the SPEC-025 design amendment; the SPEC-041 design amendment of 2026-11-28 accepted by jysf 2026-11-28 as written
 deciders: [claude]
 
 affected_scope: []                   # no code yet; SPEC-025 design sets the module path
@@ -93,7 +93,7 @@ Measured against ExifTool 13.55 at SPEC-025 design (scripts in the spec's design
 
 ## Amendment (2026-11-28, SPEC-041 design): conversion into the other byte order; the measured byte-order omission table; two conversion rules
 
-**Proposed** at SPEC-041 design (claude); jysf accepts or changes it before the build starts. Measured against ExifTool 13.55 (scripts summarised in SPEC-041's design measurements; the build turns them into a gated live test). It completes items 2 and 3 and closes question `exif-block-byte-order-sensitive-undefined`.
+**Accepted** by jysf on 2026-11-28 as written, before the build started (proposed at SPEC-041 design by claude). Measured against ExifTool 13.55 (scripts summarised in SPEC-041's design measurements; the build turns them into a gated live test). It completes items 2 and 3 and closes question `exif-block-byte-order-sensitive-undefined`.
 
 1. **A target byte order, both directions (items 2 and 3; the 2026-11-27 amendment item 1).** `BlockOptions` gains a target byte order. Unset, the block is in the source's order, byte for byte what SPEC-025 builds. Set, the block is in that order whatever the source's, and the result reports both orders. Little-endian to big-endian is offered as well as the consumer's big-endian to little-endian: it is the same code, and DEC-014's validation already names all four pairs. Real sources cross: 3 of 26 local raw files are big-endian (an iPhone 12 Pro DNG, a second DNG, a Nikon NEF), and the NEF's CFAPattern is big-endian.
 2. **Conversion is by declared type (item 2).** SHORT and SSHORT swap 2 bytes per element; LONG, SLONG and FLOAT 4; RATIONAL and SRATIONAL each 4-byte half; DOUBLE 8. BYTE, ASCII, SBYTE and UNDEFINED are copied. A converted value has the same length, so the layout (2026-11-27 amendment item 7) is the same function of the kept entries in either order. 0xA005 and the next-words are written in the target order.

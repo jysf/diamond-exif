@@ -18,7 +18,7 @@ handoff:
   from_role: architect
   to_role: implementer             # implementer | verifier
   created_at: 2026-11-28
-  status: pending                  # pending | accepted | completed | rejected
+  status: accepted                 # pending | accepted | completed | rejected
 
 task:
   spec_id: SPEC-041
