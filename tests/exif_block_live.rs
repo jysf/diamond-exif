@@ -38,7 +38,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use exif_block_place::place;
-use exif_block_shapes::{grid, Expect, Shape};
+use exif_block_shapes::{grid, order_shapes, Expect, Shape};
 use exif_core::reader::ByteOrder;
 use exif_core::write::{exif_block, BlockIfd, BlockOptions};
 use sweep::{live_gate, Scratch};
@@ -255,19 +255,54 @@ fn sorted(mut v: Vec<Line>) -> Vec<Line> {
 
 #[test]
 fn placed_block_reads_as_source_in_exiftool() {
-    let test = "placed_block_reads_as_source_in_exiftool";
+    live("placed_block_reads_as_source_in_exiftool", false);
+}
+
+/// SPEC-041, AC9(a): the same judge over the block built in the OTHER byte
+/// order, both directions (every shape is built in both source orders, so
+/// asking for the opposite of each source's own order covers a big-endian
+/// source to little-endian and the reverse). The omissions now include the
+/// `ByteOrder` ones; a value that converted must read as the source's.
+#[test]
+fn placed_cross_order_block_reads_as_source_in_exiftool() {
+    live("placed_cross_order_block_reads_as_source_in_exiftool", true);
+}
+
+fn live(test: &str, cross: bool) {
     if !live_gate(test) {
         return;
     }
-    let scratch = Scratch::new("block-live");
+    let scratch = Scratch::new(if cross {
+        "block-live-cross"
+    } else {
+        "block-live"
+    });
     // One directory, one ExifTool run: `<n>_src`, `<n>_b8`, `<n>_b1000`.
     let mut cases: Vec<Case> = Vec::new();
-    for s in all_shapes() {
+    let mut shapes = all_shapes();
+    if cross {
+        shapes.extend(order_shapes());
+    }
+    let mut converted = 0usize;
+    for s in shapes {
         if s.expect != Expect::Block {
             continue;
         }
-        let plan = exif_block(&s.bytes, &BlockOptions::new())
+        let own = exif_block(&s.bytes, &BlockOptions::new())
             .unwrap_or_else(|e| panic!("{}: expected a block, got {e}", s.name));
+        let plan = if cross {
+            let other = match own.byte_order() {
+                ByteOrder::Big => ByteOrder::Little,
+                _ => ByteOrder::Big,
+            };
+            let p = exif_block(&s.bytes, &BlockOptions::new().with_byte_order(other))
+                .unwrap_or_else(|e| panic!("{} in {other:?}: {e}", s.name));
+            assert_ne!(p.byte_order(), p.source_byte_order(), "{}", s.name);
+            converted += usize::from(!p.is_empty());
+            p
+        } else {
+            own
+        };
         let be = plan.byte_order() == ByteOrder::Big;
         let n = cases.len();
         let mut files = Vec::new();
@@ -432,4 +467,8 @@ fn placed_block_reads_as_source_in_exiftool() {
         failures
     );
     assert!(with_entries > 100, "{with_entries} files printed an entry");
+    if cross {
+        println!("{converted} non-empty cross-order blocks");
+        assert!(converted > 200, "{converted} non-empty cross-order blocks");
+    }
 }

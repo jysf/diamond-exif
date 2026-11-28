@@ -1879,3 +1879,42 @@ questions:
       change OFFSET_TAGS; it adds the four in src/write/block.rs. Decide with a measurement of the
       strip (a TIFF with each tag pointing into a removed value) whether this is a real leak or
       overwrite, and if so, a patch.
+
+  - id: exif-block-order-sweep-payload
+    question: "The AC9(b) cross-order sweep needs the design sweep's exact payload bytes: with the counting-byte payload the builder chose, ExifTool 13.55 reads 11 tags under types the ByteOrder table keeps, so which payloads did the design use, and are those tags table gaps?"
+    priority: high
+    status: open
+    raised_by: claude-sonnet-5-5
+    raised_at: 2026-11-28
+    assigned_to: null
+    notes: |
+      SPEC-041 build Part B, HANDOFF-094. The spec gives the sweep's shape (573 Exif ids x 2 IFDs + 32
+      GPS ids, 12 types, 7 payload shapes for the one-byte types, "one 16-byte payload" for the
+      multi-byte types) but not the bytes. `tests/exif_block_order_sweep_live.rs` rebuilt it with the
+      one-byte shapes as named (CFA-like, OECF-like, UNICODE Latin, UNICODE CJK, bare UTF-16 CJK,
+      DSD-like, counting 1..16) and the multi-byte payload as counting bytes 0..15. Reproduced:
+      1,176 keys (0x014A dropped), 42,336 pairs (84,672 files), as in the design. Not reproduced:
+      852 pairs differ (design 798). Sensitive set 722 triples (Exif 356, Interop 356, GPS 10); table
+      less the sensitive set is exactly 0x8828, 0xA20C and 0xA40B x 12 types x Exif and Interop (72
+      triples), as AC9(b) wants. The assertion "S less rule cases is inside the table" fails on:
+        - GPS 0x001D (GPSDateStamp) as SHORT and SSHORT (the table has types 4,5,9,10,11,12): text
+          differs ("\u0001\u0002.." vs "\u0001\u0003..").
+        - Exif and Interop 0xA101 (SamsungRawByteOrder) as SHORT and SSHORT (table: 4,5,9..12): same.
+        - Exif and Interop 0x87AF (GeoTiffDirectory) as BYTE, ASCII, SBYTE, UNDEFINED, with the
+          DSD-like payload (00 02 00 01 ...): GeoTiff:GeoTiffVersion "2.1.88" vs "512.256.22528"
+          (table: DOUBLE only).
+        - Derived groups: 0xCD44 (DNG:SeqID, SeqType) and 0xCD47 (DNG:PDRVersion, DynamicRange,
+          HintMaxOutputValue) under every multi-byte type, and 0x83BB (ExifTool2:Warning "Bad IPTC
+          data tag (marker 0x..)") under every multi-byte type. ExifTool decodes those blobs with its
+          own fixed layout whatever the declared type.
+      With a printable payload (A..P) the set also grows by ColorMap 0x0140, ThumbnailData 0x501B and
+      the GeoTiff params 0x87B0 and 0x87B1, which print as text instead of a blob. Eight payload
+      variants were tried (NUL-terminated, leading zeros, counting from 0 or 1, printable); none
+      gives zero extras, and none gives 798. The rule cases pass: 12 places, 508 source-and-placed
+      pairs, 0 differ (the builder's own cross-order output reads as the source).
+      Nothing was changed in the table, the library or the sweep's judge to hide this. Asked: the
+      design sweep's payload bytes (or its script), and whether the entries above are gaps (a
+      DEC-014 amendment with a measurement) or artefacts of the payload (then the sweep gets the
+      design's payload). Until answered, `cross_order_sweep_matches_byte_order_table` is red, so
+      AC9(b), AC12's `DIAMOND_EXIF_REQUIRE_ORACLE=1 just test` and the PR are blocked. AC9(a) is green
+      (892 shapes, 1,784 placed files, no pin needed). AC11 and the docs are not started.
