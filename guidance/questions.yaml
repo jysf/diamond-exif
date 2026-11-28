@@ -1883,11 +1883,21 @@ questions:
   - id: exif-block-order-sweep-payload
     question: "The AC9(b) cross-order sweep needs the design sweep's exact payload bytes: with the counting-byte payload the builder chose, ExifTool 13.55 reads 11 tags under types the ByteOrder table keeps, so which payloads did the design use, and are those tags table gaps?"
     priority: high
-    status: open
+    status: answered
+    answered_by: jysf (DEC-014 table revision, 2026-11-28)
+    answered_at: 2026-11-28
     raised_by: claude-sonnet-5-5
     raised_at: 2026-11-28
     assigned_to: null
     notes: |
+      ANSWER (claude, accepted by jysf 2026-11-28): they are table gaps, not payload artefacts. The
+      design analysis compared only six ExifTool groups and its multi-byte payload began with a NUL.
+      The design's own sweep, re-run comparing every group except System and File and with a second
+      multi-byte payload (bytes 01..10), gives the build's 722 triples exactly (51,744 pairs, 1,516
+      differ). DEC-014's 2026-11-28 table is revised: 0x83BB, 0xCD44, 0xCD47 added under every
+      multi-byte type; 0xA101 and GPS 0x001D widened to every multi-byte type; 0x87AF widened to
+      types 1, 2, 6, 7 and 12. SPEC-041 AC9(b) now names both multi-byte payloads
+      (0001 0002 ... 0008 and 01..10) and the group rule. Original notes follow.
       SPEC-041 build Part B, HANDOFF-094. The spec gives the sweep's shape (573 Exif ids x 2 IFDs + 32
       GPS ids, 12 types, 7 payload shapes for the one-byte types, "one 16-byte payload" for the
       multi-byte types) but not the bytes. `tests/exif_block_order_sweep_live.rs` rebuilt it with the

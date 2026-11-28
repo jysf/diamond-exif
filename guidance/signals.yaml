@@ -282,11 +282,22 @@ signals:
   - id: hand-typed-mirrors-of-a-decision-table-drift
     type: lesson
     summary: "A decision table that tests and fuzz models re-type by hand (DEC-020's PNG text keywords: the library, two fuzz models, one oracle test) was amended in one spec and two of its four mirrors were missed; independent typing is the point, but the design must list every mirror the amendment has to reach."
-    evidence: "SPEC-039 AC1 (DEC-020 amendment of 2026-11-24): the rewrite_png fuzz model was missed and failed the 60 s CI smoke on PR #67 (Records guard, a Model text chunk); tests/audit_png_webp_oracle.rs category_of_printed_name was missed and found by verify round 5. N=1 (two misses, one amendment)."
+    evidence: "SPEC-039 AC1 (DEC-020 amendment of 2026-11-24): the rewrite_png fuzz model was missed and failed the 60 s CI smoke on PR #67 (Records guard, a Model text chunk); tests/audit_png_webp_oracle.rs category_of_printed_name was missed and found by verify round 5; a third, fuzz/shared/audit_invariants.rs category_shape (text-chunk categories lacked CameraModel), failed the 60 s audit smoke on PR #72 on 2026-11-28 (fixed in 88976b0). N=1 (three misses, one amendment)."
     bar: "N=3 same-outcome"
     status: watch
     disposition_at: stage-close
     first_flagged: 2026-11-27
-    last_touched: 2026-11-27
+    last_touched: 2026-11-28
     raised_by: claude
     notes: "Candidate codification: when a design amends a category or keyword table, its handoff lists every hand-typed mirror (grep the table's row names across src, tests and fuzz) as part of the AC, and a seed or fixture carries each new row so the mirror is exercised. Walked at STAGE-010 close (2026-11-27): stays watch at N=1. SPEC-025 ship (2026-11-27): positive data point, no recurrence; the design listed the DEC-014 omission table's mirrors and tests/exif_block.rs omission_table_mirrors_agree checks them (its Interop sweep was added at verify fix round 1). Stays watch at N=1."
+  - id: oracle-probe-filters-hide-differences
+    type: lesson
+    summary: "A design probe that narrows the oracle's output (a group allow-list) or uses one payload shape can call two readings equal when they are not; a measured table built on it then has gaps the build's independent sweep finds."
+    evidence: "SPEC-041 design (2026-11-28): the cross-order sweep compared only six ExifTool groups and used one multi-byte payload starting with NUL. Part B's sweep found 0x83BB, 0xCD44, 0xCD47 (differences under DNG: and ExifTool2:) and SHORT/SSHORT 0xA101 and GPS 0x001D (text read empty both ways); the re-run with every group and a NUL-free payload matched the build's 722 triples. DEC-014's accepted table was revised before verify. N=1."
+    bar: "N=3 same-outcome"
+    status: watch
+    disposition_at: stage-close
+    first_flagged: 2026-11-28
+    last_touched: 2026-11-28
+    raised_by: claude
+    notes: "Candidate codification: a design measurement against the oracle compares its whole output minus a named deny-list (file-system fields), never an allow-list, and varies payload content (a NUL-free and a NUL-led shape) as well as type and position. Related: the SPEC-025 lesson 'vary every dimension the rule names'. The build's independent re-measurement (AC9(b)) is what caught it, so keep that gate."
