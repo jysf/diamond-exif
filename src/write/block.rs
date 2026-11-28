@@ -2,7 +2,8 @@
 //!
 //! [`exif_block`] reads a TIFF-structured source and plans a block holding the
 //! source's Exif IFD, that IFD's Interop IFD and the GPS IFD, rebuilt in the
-//! source's byte order. The plan reports the block's length (which does not
+//! source's byte order or, when [`BlockOptions::with_byte_order`] asks, in the
+//! other one (SPEC-041, DEC-014's amendment of 2026-11-28). The plan reports the block's length (which does not
 //! depend on where the block will sit), the two IFD positions relative to the
 //! block, and every entry it left out. [`ExifBlock::write`] then produces
 //! exactly those bytes for a caller-given even base, with final offsets, after
@@ -12,11 +13,12 @@
 //! DEC-015 over this crate's own reader. No ExifTool source is read.
 
 use core::fmt;
+use std::borrow::Cow;
 use std::collections::BTreeSet;
 
 use crate::error::Error;
 use crate::reader::ByteOrder;
-use crate::tiff::types::{type_size, TYPE_IFD, TYPE_LONG};
+use crate::tiff::types::{type_size, TYPE_IFD, TYPE_LONG, TYPE_UNDEFINED};
 use crate::tiff::{Container, Entry, Ifd, IfdKind, Link};
 
 use super::exif::{
@@ -32,12 +34,14 @@ pub const DEFAULT_MAX_BLOCK_LEN: u32 = 1 << 24;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockOptions {
     max_len: u32,
+    byte_order: Option<ByteOrder>,
 }
 
 impl Default for BlockOptions {
     fn default() -> Self {
         BlockOptions {
             max_len: DEFAULT_MAX_BLOCK_LEN,
+            byte_order: None,
         }
     }
 }
@@ -59,6 +63,22 @@ impl BlockOptions {
     /// The budget in bytes.
     pub fn max_len(&self) -> u32 {
         self.max_len
+    }
+
+    /// The block's byte order, whatever the source's (DEC-014 amendment of
+    /// 2026-11-28, item 1). Unset, the block is in the source's order, byte for
+    /// byte what SPEC-025 builds. Set to the other order, every kept entry is
+    /// converted by its declared type and the entries whose meaning a
+    /// conversion cannot keep are left out as [`OmitReason::ByteOrder`].
+    #[must_use]
+    pub fn with_byte_order(mut self, order: ByteOrder) -> Self {
+        self.byte_order = Some(order);
+        self
+    }
+
+    /// The byte order asked for, or `None` when the source's is kept.
+    pub fn byte_order(&self) -> Option<ByteOrder> {
+        self.byte_order
     }
 }
 
@@ -84,6 +104,10 @@ pub enum OmitReason {
     OffsetCarrying,
     /// A field type the walk cannot size.
     UnknownType,
+    /// The entry's meaning depends on the byte order and no measured
+    /// conversion keeps it (DEC-014 amendment of 2026-11-28, item 3). Only
+    /// when the block's order differs from the source's.
+    ByteOrder,
 }
 
 /// One entry the block leaves out.
@@ -223,6 +247,7 @@ impl fmt::Display for OmitReason {
             OmitReason::MakerNote => "a MakerNote, which is never moved",
             OmitReason::OffsetCarrying => "it carries an offset the block does not rewrite",
             OmitReason::UnknownType => "its field type cannot be sized",
+            OmitReason::ByteOrder => "its contents depend on the byte order",
         })
     }
 }
@@ -326,6 +351,93 @@ const SCRATCH_TAIL: u64 = 34;
 /// The TIFF header the scratch image starts with.
 const HEADER_LEN: u32 = 8;
 
+/// A set of declared field types: bit `n` is type `n` (types 1 to 12).
+type TypeMask = u16;
+
+/// BYTE, ASCII, SBYTE, UNDEFINED (types 1, 2, 6, 7).
+const ONE_BYTE: TypeMask = 0b0000_0000_1100_0110;
+/// SHORT, LONG, RATIONAL, SSHORT, SLONG, SRATIONAL, FLOAT, DOUBLE (types 3, 4,
+/// 5, 8, 9, 10, 11, 12).
+const MULTI_BYTE: TypeMask = 0b0001_1111_0011_1000;
+/// Types 1 to 12.
+const ALL_TYPES: TypeMask = ONE_BYTE | MULTI_BYTE;
+
+/// Whether declared type `ty` is in `mask`.
+fn in_mask(mask: TypeMask, ty: u16) -> bool {
+    mask.checked_shr(u32::from(ty))
+        .is_some_and(|rest| rest & 1 == 1)
+}
+
+/// The `ByteOrder` table for the Exif and Interop IFDs (DEC-014 amendment of
+/// 2026-11-28, item 3): each row is a tag and the declared types under which
+/// ExifTool 13.55 reads it by a format of its own, so a conversion by declared
+/// type changes what it reads. Measured by SPEC-041's cross-order sweep; the
+/// three last rows (0x8828, 0xA20C, 0xA40B) come from the Exif specification.
+const BYTE_ORDER_EXIF: [(u16, TypeMask); 44] = [
+    (0x0303, MULTI_BYTE),
+    (0x4747, MULTI_BYTE),
+    (0x828E, MULTI_BYTE),
+    (0x8298, MULTI_BYTE),
+    // DOUBLE only.
+    (0x87AF, 0b0001_0000_0000_0000),
+    (0x8828, ALL_TYPES),
+    (0x9009, MULTI_BYTE),
+    (0x9101, MULTI_BYTE),
+    (0x9201, ONE_BYTE),
+    // Types 1, 2, 3, 6, 7, 8, 12.
+    (0x9204, 0b0001_0001_1100_1110),
+    (0x9286, MULTI_BYTE),
+    (0x9C9B, MULTI_BYTE),
+    (0x9C9C, MULTI_BYTE),
+    (0x9C9D, MULTI_BYTE),
+    (0x9C9E, MULTI_BYTE),
+    (0x9C9F, MULTI_BYTE),
+    // Types 4, 5, 9, 10, 11, 12.
+    (0xA101, 0b0001_1110_0011_0000),
+    (0xA20C, ALL_TYPES),
+    // Every type but UNDEFINED: item 4 converts CFAPattern as type 7.
+    (0xA302, ALL_TYPES & !0b0000_0000_1000_0000),
+    (0xA40B, ALL_TYPES),
+    (0xA462, ALL_TYPES),
+    (0xBC01, MULTI_BYTE),
+    (0xC615, MULTI_BYTE),
+    (0xC65D, MULTI_BYTE),
+    (0xC68B, MULTI_BYTE),
+    (0xC68C, MULTI_BYTE),
+    (0xC68F, MULTI_BYTE),
+    (0xC691, MULTI_BYTE),
+    (0xC6D2, MULTI_BYTE),
+    (0xC6D3, MULTI_BYTE),
+    (0xC6F3, MULTI_BYTE),
+    (0xC6F4, MULTI_BYTE),
+    (0xC6F6, MULTI_BYTE),
+    (0xC6F8, MULTI_BYTE),
+    (0xC6FE, MULTI_BYTE),
+    (0xC716, MULTI_BYTE),
+    (0xC717, MULTI_BYTE),
+    (0xC718, MULTI_BYTE),
+    (0xC719, MULTI_BYTE),
+    (0xC71C, MULTI_BYTE),
+    (0xC71D, MULTI_BYTE),
+    (0xC7A7, MULTI_BYTE),
+    (0xC7AA, MULTI_BYTE),
+    (0xCD48, MULTI_BYTE),
+];
+
+/// The `ByteOrder` table for the GPS IFD: 0x001D GPSDateStamp under types 4, 5,
+/// 9, 10, 11, 12.
+const BYTE_ORDER_GPS: [(u16, TypeMask); 1] = [(0x001D, 0b0001_1110_0011_0000)];
+
+/// Whether `(ifd, tag, ty)` is on the `ByteOrder` table.
+fn byte_order_sensitive(ifd: BlockIfd, tag: u16, ty: u16) -> bool {
+    let rows: &[(u16, TypeMask)] = match ifd {
+        BlockIfd::Gps => &BYTE_ORDER_GPS,
+        _ => &BYTE_ORDER_EXIF,
+    };
+    rows.iter()
+        .any(|(row, mask)| *row == tag && in_mask(*mask, ty))
+}
+
 /// Whether `tag` carries an offset the builder does not rewrite.
 fn is_offset_tag(tag: u16) -> bool {
     OFFSET_TAGS.iter().any(|(offset, _)| *offset == tag)
@@ -338,8 +450,14 @@ fn is_offset_tag(tag: u16) -> bool {
 /// Why `entry` of `ifd` is left out, or `None` when it is kept. Order: a type
 /// the walk cannot size always wins (its value's length is unknown, so it
 /// cannot be moved, DEC-014 amendment item 2); then the MakerNote pair; then
-/// the offset carriers.
-fn classify(ifd: BlockIfd, entry: &Entry, interop_present: bool) -> Option<OmitReason> {
+/// the offset carriers; then, only when the orders differ, the `ByteOrder`
+/// table.
+fn classify(
+    ifd: BlockIfd,
+    entry: &Entry,
+    interop_present: bool,
+    cross: bool,
+) -> Option<OmitReason> {
     let tag = entry.tag();
     if type_size(entry.field_type()).is_none() {
         return Some(OmitReason::UnknownType);
@@ -360,7 +478,129 @@ fn classify(ifd: BlockIfd, entry: &Entry, interop_present: bool) -> Option<OmitR
     if is_offset_tag(tag) || entry.field_type() == TYPE_IFD {
         return Some(OmitReason::OffsetCarrying);
     }
+    if cross && byte_order_sensitive(ifd, tag, entry.field_type()) {
+        return Some(OmitReason::ByteOrder);
+    }
     None
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Conversion into the other byte order (DEC-014 amendment items 2, 4 and 5)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The bytes a conversion swaps as one unit, by declared type: SHORT and SSHORT
+/// 2; LONG, SLONG and FLOAT 4; RATIONAL and SRATIONAL each 4-byte half; DOUBLE
+/// 8. Everything else is copied (1).
+fn swap_unit(ty: u16) -> usize {
+    match ty {
+        3 | 8 => 2,
+        4 | 5 | 9 | 10 | 11 => 4,
+        12 => 8,
+        _ => 1,
+    }
+}
+
+/// CFAPattern (0xA302, UNDEFINED) in the Exif or Interop IFD: its first two
+/// 16-bit words are in the file's byte order (item 4).
+fn is_cfa_pattern(ifd: BlockIfd, tag: u16, ty: u16) -> bool {
+    tag == 0xA302 && ty == TYPE_UNDEFINED && ifd != BlockIfd::Gps
+}
+
+/// Where a value may be UNICODE text (item 5): UserComment 0x9286 as a one-byte
+/// type in the Exif or Interop IFD; GPSProcessingMethod 0x001B and
+/// GPSAreaInformation 0x001C as UNDEFINED in the GPS IFD.
+fn is_text_place(ifd: BlockIfd, tag: u16, ty: u16) -> bool {
+    match ifd {
+        BlockIfd::Gps => (tag == 0x001B || tag == 0x001C) && ty == TYPE_UNDEFINED,
+        _ => tag == 0x9286 && in_mask(ONE_BYTE, ty),
+    }
+}
+
+/// Whether `bytes` starts with the 8-byte code `UNICODE` followed by 0x00 or
+/// 0x20, the two codes ExifTool accepts (item 5).
+fn has_unicode_code(bytes: &[u8]) -> bool {
+    bytes.get(..7) == Some(b"UNICODE".as_slice()) && matches!(bytes.get(7), Some(0x00 | 0x20))
+}
+
+/// The block's payload for an entry of the source, in the other order: swapped
+/// by declared type, then the two rules. Borrows when nothing changes.
+fn convert<'a>(ifd: BlockIfd, tag: u16, ty: u16, bytes: &'a [u8]) -> Cow<'a, [u8]> {
+    let unit = swap_unit(ty);
+    let cfa = is_cfa_pattern(ifd, tag, ty) && bytes.len() >= 4;
+    let text = is_text_place(ifd, tag, ty) && has_unicode_code(bytes);
+    if unit == 1 && !cfa && !text {
+        return Cow::Borrowed(bytes);
+    }
+    let mut out = bytes.to_vec();
+    if unit > 1 {
+        for chunk in out.chunks_exact_mut(unit) {
+            chunk.reverse();
+        }
+    }
+    if cfa {
+        if let Some(header) = out.get_mut(..4) {
+            for word in header.chunks_exact_mut(2) {
+                word.reverse();
+            }
+        }
+    }
+    if text {
+        if let Some(units) = out.get_mut(8..) {
+            for unit in units.chunks_exact_mut(2) {
+                unit.reverse();
+            }
+        }
+    }
+    Cow::Owned(out)
+}
+
+/// One unit of `bytes` as a number, read in `order`.
+fn read_unit(order: ByteOrder, bytes: &[u8]) -> u64 {
+    let fold = |acc: u64, b: &u8| acc.wrapping_shl(8) | u64::from(*b);
+    match order {
+        ByteOrder::Big => bytes.iter().fold(0, fold),
+        ByteOrder::Little => bytes.iter().rev().fold(0, fold),
+    }
+}
+
+/// `bytes` as numbers: each whole `width`-byte unit read in `order`, then a
+/// trailing partial unit byte by byte.
+fn read_units(order: ByteOrder, bytes: &[u8], width: usize) -> Vec<u64> {
+    let mut numbers: Vec<u64> = bytes
+        .chunks_exact(width)
+        .map(|unit| read_unit(order, unit))
+        .collect();
+    numbers.extend(
+        bytes
+            .chunks_exact(width)
+            .remainder()
+            .iter()
+            .map(|b| u64::from(*b)),
+    );
+    numbers
+}
+
+/// An entry's value as numbers, read in `order` (DEC-014 amendment item 6). It
+/// does not call [`convert`]: it reads each swap unit as a number, a
+/// CFAPattern's two header words as numbers and the rest as bytes, and the
+/// units of UNICODE text as numbers after the code's bytes. Equal values read
+/// in their own orders give equal numbers.
+fn decode_value(ifd: BlockIfd, tag: u16, ty: u16, bytes: &[u8], order: ByteOrder) -> Vec<u64> {
+    if is_cfa_pattern(ifd, tag, ty) {
+        if let Some((header, rest)) = bytes.split_at_checked(4) {
+            let mut numbers = read_units(order, header, 2);
+            numbers.extend(rest.iter().map(|b| u64::from(*b)));
+            return numbers;
+        }
+    }
+    if is_text_place(ifd, tag, ty) && has_unicode_code(bytes) {
+        if let Some((code, text)) = bytes.split_at_checked(8) {
+            let mut numbers: Vec<u64> = code.iter().map(|b| u64::from(*b)).collect();
+            numbers.extend(read_units(order, text, 2));
+            return numbers;
+        }
+    }
+    read_units(order, bytes, swap_unit(ty))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -373,7 +613,11 @@ struct Kept<'a> {
     tag: u16,
     field_type: u16,
     count: u32,
-    payload: &'a [u8],
+    /// The value as the source holds it (in the source's order).
+    src_payload: &'a [u8],
+    /// The value as the block holds it: the source's, borrowed, when the orders
+    /// match; converted otherwise (after the budget check).
+    payload: Cow<'a, [u8]>,
     /// 0xA005 in the Exif IFD: written as LONG, count 1, holding the Interop
     /// IFD's final offset.
     interop_pointer: bool,
@@ -397,7 +641,10 @@ struct Table<'a> {
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct ExifBlock<'a> {
+    /// The block's order: the target's when one was asked for.
     order: ByteOrder,
+    /// The source's order.
+    source_order: ByteOrder,
     tables: Vec<Table<'a>>,
     omissions: Vec<Omission>,
     len: u32,
@@ -426,7 +673,9 @@ fn wide(n: usize) -> u64 {
 /// buffer: the length is computed from the source's entries first.
 pub fn exif_block<'a>(data: &'a [u8], options: &BlockOptions) -> Result<ExifBlock<'a>, BlockError> {
     let container = Container::parse(data).map_err(BlockError::Source)?;
-    let order = container.byte_order();
+    let source_order = container.byte_order();
+    let order = options.byte_order().unwrap_or(source_order);
+    let cross = order != source_order;
     let ifds = container.ifds();
 
     // A halt can hide an IFD: refuse (amendment item 4).
@@ -491,6 +740,7 @@ pub fn exif_block<'a>(data: &'a [u8], options: &BlockOptions) -> Result<ExifBloc
             which,
             ifd,
             interop_idx.is_some(),
+            cross,
             &mut omissions,
         )?);
     }
@@ -542,6 +792,17 @@ pub fn exif_block<'a>(data: &'a [u8], options: &BlockOptions) -> Result<ExifBloc
             };
         }
     }
+    // The budget has passed: convert the payloads (never more than the block).
+    if cross {
+        for table in &mut tables {
+            let which = table.ifd;
+            for kept in &mut table.kept {
+                if !kept.interop_pointer {
+                    kept.payload = convert(which, kept.tag, kept.field_type, kept.src_payload);
+                }
+            }
+        }
+    }
     let position = |which: BlockIfd| tables.iter().find(|t| t.ifd == which).map(|t| t.at);
     let exif_position = position(BlockIfd::Exif);
     let gps_position = position(BlockIfd::Gps);
@@ -549,6 +810,7 @@ pub fn exif_block<'a>(data: &'a [u8], options: &BlockOptions) -> Result<ExifBloc
 
     Ok(ExifBlock {
         order,
+        source_order,
         omissions,
         len,
         exif_position,
@@ -566,6 +828,7 @@ fn plan_table<'a>(
     which: BlockIfd,
     ifd: &Ifd,
     interop_present: bool,
+    cross: bool,
     omissions: &mut Vec<Omission>,
 ) -> Result<Table<'a>, BlockError> {
     let mut tags: Vec<u16> = ifd.entries().iter().map(Entry::tag).collect();
@@ -587,7 +850,7 @@ fn plan_table<'a>(
     let mut source = Vec::with_capacity(sorted.len());
     for entry in sorted {
         source.push((entry.tag(), entry.field_type()));
-        if let Some(reason) = classify(which, entry, interop_present) {
+        if let Some(reason) = classify(which, entry, interop_present, cross) {
             omissions.push(Omission {
                 ifd: which,
                 tag: entry.tag(),
@@ -601,7 +864,8 @@ fn plan_table<'a>(
                 tag: entry.tag(),
                 field_type: TYPE_LONG,
                 count: 1,
-                payload: &[],
+                src_payload: &[],
+                payload: Cow::Borrowed(&[]),
                 interop_pointer: true,
                 value_at: None,
             });
@@ -617,7 +881,8 @@ fn plan_table<'a>(
             tag: entry.tag(),
             field_type: entry.field_type(),
             count: entry.count(),
-            payload,
+            src_payload: payload,
+            payload: Cow::Borrowed(payload),
             interop_pointer: false,
             value_at: None,
         });
@@ -679,9 +944,15 @@ impl<'a> ExifBlock<'a> {
         self.gps_position
     }
 
-    /// The block's byte order: the source's (DEC-014 amendment item 1).
+    /// The block's byte order: the one [`BlockOptions::with_byte_order`] asked
+    /// for, else the source's (DEC-014 amendment of 2026-11-28, item 1).
     pub fn byte_order(&self) -> ByteOrder {
         self.order
+    }
+
+    /// The source's byte order, whatever the block's.
+    pub fn source_byte_order(&self) -> ByteOrder {
+        self.source_order
     }
 
     /// Every entry left out, in Exif, Interop, GPS order and ascending tag
@@ -793,11 +1064,11 @@ impl<'a> ExifBlock<'a> {
                     let target = base.checked_add(self.interop_position?)?;
                     put(out, field_at, &enc32(order, target))?;
                 } else if let Some(value_at) = kept.value_at {
-                    put(out, usize::try_from(value_at).ok()?, kept.payload)?;
+                    put(out, usize::try_from(value_at).ok()?, &kept.payload)?;
                     put(out, field_at, &enc32(order, base.checked_add(value_at)?))?;
                 } else {
                     // Inline: the payload, then zeros (`out` was zeroed).
-                    put(out, field_at, kept.payload)?;
+                    put(out, field_at, &kept.payload)?;
                 }
                 entry_at = entry_at.checked_add(12)?;
             }
@@ -827,6 +1098,7 @@ fn check_block(plan: &ExifBlock<'_>, base: u32, block: &[u8]) -> Result<(), Bloc
         return Err(BlockCheck::Length);
     }
     let order = plan.order;
+    let cross = order != plan.source_order;
     let base_at = usize::try_from(base).map_err(|_| BlockCheck::Length)?;
     let ifd0_at = base_at.checked_add(block.len()).ok_or(BlockCheck::Length)?;
     let ifd0_word = u32::try_from(ifd0_at).map_err(|_| BlockCheck::Length)?;
@@ -909,8 +1181,25 @@ fn check_block(plan: &ExifBlock<'_>, base: u32, block: &[u8]) -> Result<(), Bloc
                 if got != enc32(order, target) {
                     return Err(BlockCheck::Entries);
                 }
-            } else if got != kept.payload {
-                return Err(BlockCheck::Entries);
+            } else {
+                if got != kept.payload.as_ref() {
+                    return Err(BlockCheck::Entries);
+                }
+                // In the other order the bytes differ from the source's by
+                // design: compare the values, each decoded in its own order
+                // by a decoder that does not call the converter (item 6).
+                if cross
+                    && decode_value(table.ifd, kept.tag, kept.field_type, got, order)
+                        != decode_value(
+                            table.ifd,
+                            kept.tag,
+                            kept.field_type,
+                            kept.src_payload,
+                            plan.source_order,
+                        )
+                {
+                    return Err(BlockCheck::Entries);
+                }
             }
         }
         // Slack: the bytes no entry's value covers must be zero. A mismatch is

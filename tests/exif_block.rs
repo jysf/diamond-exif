@@ -1058,9 +1058,9 @@ fn byte_order_precedence_fixtures() {
             got,
             vec![
                 (MIfd::Exif, 0x8828, 0, MReason::UnknownType),
+                (MIfd::Exif, 0x927C, 7, MReason::MakerNote),
                 (MIfd::Exif, 0x9286, 3, MReason::ByteOrder),
                 (MIfd::Exif, 0x9287, 13, MReason::OffsetCarrying),
-                (MIfd::Exif, 0x927C, 7, MReason::MakerNote),
                 (MIfd::Exif, 0xA20C, 14, MReason::UnknownType),
                 (MIfd::Exif, 0xA40B, 7, MReason::ByteOrder),
             ],
@@ -1431,10 +1431,12 @@ fn cross_order_readback_and_round_trip() {
                 let got = entries_of(&c, pi);
                 assert_eq!(got.len(), want.len(), "{} {which} entry count", s.name);
                 for (g, w) in got.iter().zip(&want) {
-                    assert_eq!((g.0, g.1, g.2), (w.0, w.1, w.2), "{} {which}", s.name);
                     if g.0 == 0xA005 && which == BlockIfd::Exif {
+                        // Rewritten: LONG, count 1, whatever the source's type.
+                        assert_eq!((g.0, g.1, g.2), (0xA005, 4, 1), "{}", s.name);
                         continue;
                     }
+                    assert_eq!((g.0, g.1, g.2), (w.0, w.1, w.2), "{} {which}", s.name);
                     let m = mifd_of(which);
                     assert_eq!(
                         decode(m, g.0, g.1, &g.3, !be),

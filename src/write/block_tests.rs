@@ -547,11 +547,6 @@ fn odd_base_and_overflowing_base_are_bad_base() {
 // ═════════════════════════════════════════════════════════════════════════════
 
 const SBYTE: u16 = 6;
-const SSHORT: u16 = 8;
-const SLONG: u16 = 9;
-const SRATIONAL: u16 = 10;
-const FLOAT: u16 = 11;
-const DOUBLE: u16 = 12;
 const TYPE_IFD_13: u16 = 13;
 
 /// The other byte order of a source.
