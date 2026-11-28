@@ -1382,7 +1382,7 @@ questions:
   - id: exif-block-byte-order-sensitive-undefined
     question: "When the block's byte order differs from the source's, should UNDEFINED entries with byte-order-dependent contents (candidates 0x8828 OECF, 0xA20C SpatialFrequencyResponse, 0xA302 CFAPattern, 0xA40B DeviceSettingDescription) be converted by a rule proved against ExifTool, or left out and reported?"
     priority: medium
-    status: open
+    status: answered
     raised_by: claude-opus-5-5
     raised_at: 2026-11-20
     assigned_to: null
@@ -1392,6 +1392,15 @@ questions:
       confirm the candidate list against the Exif specification and ExifTool, then pick per tag. Copying one unchanged into the other byte order is
       ruled out. Measure first which source and target orders the consumer's fixtures actually pair:
       if they never cross, the converters can wait.
+      Answered by DEC-014's amendment of 2026-11-28 (SPEC-041 design, ExifTool 13.55;
+      proposed, accepted at build start). Real sources cross: 3 of 26 local raw files are
+      big-endian. Per tag: CFAPattern (0xA302, UNDEFINED) is converted (its two header
+      SHORTs swapped; item 4); UNICODE-coded UserComment, GPSProcessingMethod and
+      GPSAreaInformation are converted (16-bit units swapped; item 5); OECF, SFR and
+      DeviceSettingDescription are left out as ByteOrder (ExifTool does not decode them,
+      so no rule can be shown). The cross-order sweep also found 42 more tags (41 in the
+      Exif and Interop IFDs, 1 in GPS) that ExifTool reads with a format of its own under
+      some declared types; under those types they are left out as ByteOrder (item 3).
 
   - id: exif-block-crates-io-release
     question: "Should exif-core get an early crates.io pre-release so monorail-000 can pin the Exif block builder exactly, or does the block wait for the M1f publish?"

@@ -1677,6 +1677,37 @@ fn audit_harness_holds_on_every_seed_and_degenerate_inputs() {
     }
 }
 
+/// The input CI's 60 s `audit` smoke found on PR #72 (2026-11-28): a PNG whose
+/// `tEXt` keyword is `Make`. SPEC-039 AC1 categorises the Make and Model
+/// keywords CameraModel (DEC-020 amendment of 2026-11-24), and the
+/// `category_shape` guard's list of text-chunk categories had not caught up.
+#[test]
+fn audit_harness_holds_on_a_png_make_text_chunk() {
+    use exif_core::audit::{audit, Category};
+    const HEX: [&str; 11] = [
+        "89504e470d0a1a0a0000000d49484452000000010000000108000000003a7e9b",
+        "550000000e74455874417574686f7200736f6d656f6e65bf83d1c00000000e74",
+        "455874617554686f7200736f6d656f6e6572e7a9180000000e744558744d616b",
+        "65002a000000080002010000040000000100000001014a000400000002000000",
+        "26000000000000002e0000004000010100000400000001000000010000000000",
+        "0101000004000000010000000100000000c50000000d74455874536f66747761",
+        "726500746f6f6c3b184646000000450d7454587469746c65006120ffffffffff",
+        "ff7469746c6537c2e00d0000000774494d4507e80102030405b7ea5da6000000",
+        "0374494d4507e801455a1be200000006494441547801636000008ba32c110000",
+        "001c74455874436f6d6d656e740061667465722074686520696d616765206461",
+        "7461f83948f40000000049454e44ae426082545241494c4552204259544553",
+    ];
+    let hex: String = HEX.concat();
+    let data: Vec<u8> = (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).expect("hex"))
+        .collect();
+    assert_eq!(data.len(), 351);
+    let cats: Vec<Category> = audit(&data).findings().iter().map(|f| f.category).collect();
+    assert!(cats.contains(&Category::CameraModel), "{cats:?}");
+    audit_invariants::check(&data);
+}
+
 /// One planted bug: a wrong answer put into the library's flattened answer for
 /// `input`, which the named guard, run ALONE, must reject.
 /// A plant input built in the test rather than read from a seed: the one

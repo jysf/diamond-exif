@@ -966,12 +966,13 @@ mod audit_invariants {
                             "OtherSegment"
                         }
                         "Time" => "Timestamps",
-                        // A text chunk is categorised by its keyword: any of
-                        // these four, never a block category.
+                        // A text chunk is categorised by its keyword: one of
+                        // these six, never a block category. CameraModel is
+                        // the Make and Model rows of the DEC-020 amendment of
+                        // 2026-11-24 (SPEC-039 AC1).
                         "Text" => match f.category.as_str() {
-                            "FreeText" | "Authorship" | "Rights" | "Timestamps" | "Software" => {
-                                f.category.as_str()
-                            }
+                            "FreeText" | "Authorship" | "Rights" | "Timestamps" | "Software"
+                            | "CameraModel" => f.category.as_str(),
                             _ => "FreeText",
                         },
                         other => return Err(format!("finding {n}: unknown region kind {other}")),
