@@ -800,3 +800,756 @@ fn omission_table_mirrors_agree() {
         }
     }
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SPEC-041 (Part A): conversion into the other byte order. The expectations
+// come from the independent model's cross-order predictor and its own typed
+// copy of the ByteOrder table, from literals, and from this file's own
+// decoder; never from the library's self-check.
+// ═════════════════════════════════════════════════════════════════════════════
+
+use exif_block_model::{byte_order_sensitive, model_to};
+use exif_block_shapes::{
+    byte_order_rows, cfa_cases, elem_size, one_entry_source, order_shapes, typed_value,
+    unicode_cases, unicode_places, Enc,
+};
+
+/// Every shape that builds a block: SPEC-025's grid, the DNG and the JPEG
+/// blob, and SPEC-041's cross-order shapes. Each is in both source orders.
+fn cross_shapes() -> Vec<Shape> {
+    let mut v = block_shapes();
+    v.extend(order_shapes());
+    v
+}
+
+fn order_shape(name: &str) -> Shape {
+    order_shapes()
+        .into_iter()
+        .find(|s| s.name == name)
+        .unwrap_or_else(|| panic!("no order shape {name}"))
+}
+
+fn src_be(s: &Shape) -> bool {
+    s.bytes.get(0..2) == Some(&b"MM"[..])
+}
+
+fn order_of(be: bool) -> ByteOrder {
+    if be {
+        ByteOrder::Big
+    } else {
+        ByteOrder::Little
+    }
+}
+
+fn cross_options(s: &Shape) -> BlockOptions {
+    BlockOptions::new().with_byte_order(order_of(!src_be(s)))
+}
+
+fn cross_plan(s: &Shape) -> ExifBlock<'_> {
+    exif_block(&s.bytes, &cross_options(s))
+        .unwrap_or_else(|e| panic!("{}: expected a cross-order block, got {e}", s.name))
+}
+
+fn map_reason2(r: OmitReason) -> MReason {
+    match r {
+        OmitReason::ByteOrder => MReason::ByteOrder,
+        other => map_reason(other),
+    }
+}
+
+fn omissions2(p: &ExifBlock<'_>) -> Vec<(MIfd, u16, u16, MReason)> {
+    p.omissions()
+        .iter()
+        .map(|o| {
+            (
+                map_ifd(o.ifd()),
+                o.tag(),
+                o.field_type(),
+                map_reason2(o.reason()),
+            )
+        })
+        .collect()
+}
+
+// ── AC2: the same order is unchanged ────────────────────────────────────────
+
+#[test]
+fn same_order_bytes_unchanged_for_every_shape() {
+    for s in cross_shapes() {
+        let be = src_be(&s);
+        let default = plan(&s);
+        let explicit = exif_block(&s.bytes, &BlockOptions::new().with_byte_order(order_of(be)))
+            .unwrap_or_else(|e| panic!("{}: {e}", s.name));
+        for p in [&default, &explicit] {
+            assert_eq!(p.byte_order(), order_of(be), "{}", s.name);
+            assert_eq!(p.source_byte_order(), order_of(be), "{}", s.name);
+            assert!(
+                p.omissions()
+                    .iter()
+                    .all(|o| o.reason() != OmitReason::ByteOrder),
+                "{}: ByteOrder in a same-order plan",
+                s.name
+            );
+        }
+        assert_eq!(default.len(), explicit.len(), "{}", s.name);
+        assert_eq!(
+            default.exif_position(),
+            explicit.exif_position(),
+            "{}",
+            s.name
+        );
+        assert_eq!(
+            default.gps_position(),
+            explicit.gps_position(),
+            "{}",
+            s.name
+        );
+        assert_eq!(default.omissions(), explicit.omissions(), "{}", s.name);
+        for base in [8u32, 1000] {
+            let m = model(&s.bytes, base);
+            let a = default.write(base).unwrap();
+            let b = explicit.write(base).unwrap();
+            assert_eq!(a, m.bytes, "{} default at {base}", s.name);
+            assert_eq!(b, m.bytes, "{} explicit at {base}", s.name);
+        }
+    }
+}
+
+// ── AC3: conversion by declared type ────────────────────────────────────────
+
+#[test]
+fn cross_order_bytes_match_model_both_directions() {
+    let mut seen = [0usize; 2];
+    for s in cross_shapes() {
+        let be = src_be(&s);
+        seen[usize::from(be)] += 1;
+        let p = cross_plan(&s);
+        assert_eq!(p.byte_order(), order_of(!be), "{}", s.name);
+        assert_eq!(p.source_byte_order(), order_of(be), "{}", s.name);
+        let same = plan(&s);
+        // Without a ByteOrder omission the layout is the same function of the
+        // kept entries in either order, and the other omissions are SPEC-025's.
+        let crossed_only: Vec<_> = p
+            .omissions()
+            .iter()
+            .filter(|o| o.reason() != OmitReason::ByteOrder)
+            .copied()
+            .collect();
+        assert_eq!(crossed_only.as_slice(), same.omissions(), "{}", s.name);
+        if crossed_only.len() == p.omissions().len() {
+            assert_eq!(p.len(), same.len(), "{} len", s.name);
+            assert_eq!(p.exif_position(), same.exif_position(), "{}", s.name);
+            assert_eq!(p.gps_position(), same.gps_position(), "{}", s.name);
+        }
+        for base in [8u32, 1000] {
+            let m = model_to(&s.bytes, base, Some(!be));
+            assert_eq!(m.be, !be, "{}", s.name);
+            assert_eq!(p.len() as usize, m.bytes.len(), "{} len", s.name);
+            assert_eq!(p.exif_position(), m.exif_pos, "{} exif position", s.name);
+            assert_eq!(p.gps_position(), m.gps_pos, "{} gps position", s.name);
+            let want: Vec<_> = m
+                .omissions
+                .iter()
+                .map(|o| (o.ifd, o.tag, o.field_type, o.reason))
+                .collect();
+            assert_eq!(omissions2(&p), want, "{} omissions", s.name);
+            let got = p.write(base).unwrap_or_else(|e| panic!("{}: {e}", s.name));
+            assert_eq!(got, m.bytes, "{} bytes at base {base}", s.name);
+        }
+    }
+    assert!(seen[0] > 100 && seen[1] > 100, "both directions: {seen:?}");
+}
+
+// ── AC4: the ByteOrder table ────────────────────────────────────────────────
+
+const IFDS: [(&str, BlockIfd, MIfd); 3] = [
+    ("exif", BlockIfd::Exif, MIfd::Exif),
+    ("interop", BlockIfd::Interop, MIfd::Interop),
+    ("gps", BlockIfd::Gps, MIfd::Gps),
+];
+
+/// Every tag of any row, in any IFD.
+fn row_tags() -> Vec<u16> {
+    let mut tags: BTreeSet<u16> = BTreeSet::new();
+    for which in ["exif", "gps"] {
+        tags.extend(byte_order_rows(which).into_iter().map(|(t, _)| t));
+    }
+    tags.into_iter().collect()
+}
+
+#[test]
+fn byte_order_table_every_row_and_type() {
+    let mut masked_seen = 0usize;
+    let mut kept_seen = 0usize;
+    for be in [false, true] {
+        let c = Enc { be };
+        for (which, ifd, mifd) in IFDS {
+            for tag in row_tags() {
+                for ty in 1..=12u16 {
+                    let bytes =
+                        one_entry_source(be, which, c.ent(tag, ty, 1, typed_value(be, ty, 1)));
+                    let name = format!("{which} {tag:#06x} type {ty}, source be {be}");
+                    let s = Shape {
+                        name: name.clone(),
+                        bytes,
+                        expect: Expect::Block,
+                    };
+                    // In its own order nothing is left out.
+                    assert!(plan(&s).omissions().is_empty(), "{name}");
+                    let p = cross_plan(&s);
+                    let masked = byte_order_sensitive(mifd, tag, ty);
+                    let want: Vec<_> = if masked {
+                        vec![(mifd, tag, ty, MReason::ByteOrder)]
+                    } else {
+                        vec![]
+                    };
+                    assert_eq!(omissions2(&p), want, "{name}");
+                    // The other entries are kept, in ascending tag order,
+                    // whether or not this one is.
+                    let block = p.write(8).unwrap();
+                    assert_eq!(block, model_to(&s.bytes, 8, Some(!be)).bytes, "{name}");
+                    let placed = place(!be, 8, &block, p.exif_position(), p.gps_position());
+                    let parsed = Container::parse(&placed).unwrap();
+                    assert!(parsed.is_clean(), "{name}");
+                    let idx = parsed
+                        .ifds()
+                        .iter()
+                        .position(|i| {
+                            i.kind()
+                                == match ifd {
+                                    BlockIfd::Exif => IfdKind::Exif,
+                                    BlockIfd::Interop => IfdKind::Interop,
+                                    _ => IfdKind::Gps,
+                                }
+                        })
+                        .unwrap();
+                    let tags: Vec<u16> = parsed.ifds()[idx]
+                        .entries()
+                        .iter()
+                        .map(|e| e.tag())
+                        .collect();
+                    let mut expected = vec![0xF000, 0xF0F0];
+                    if !masked {
+                        expected.push(tag);
+                    }
+                    expected.sort_unstable();
+                    assert_eq!(tags, expected, "{name}");
+                    if masked {
+                        masked_seen += 1;
+                    } else {
+                        kept_seen += 1;
+                    }
+                }
+            }
+        }
+    }
+    // 45 tags in 3 IFDs under 12 types in 2 directions, 720 + 12 masked
+    // (IFD, tag, type) triples per direction.
+    assert_eq!(masked_seen, 2 * 720, "masked fixtures");
+    assert_eq!(masked_seen + kept_seen, 2 * 3 * 45 * 12);
+}
+
+#[test]
+fn byte_order_precedence_fixtures() {
+    for be in ["le", "be"] {
+        let s = order_shape(&format!("precedence/{be}"));
+        let got: Vec<_> = omissions2(&cross_plan(&s));
+        assert_eq!(
+            got,
+            vec![
+                (MIfd::Exif, 0x8828, 0, MReason::UnknownType),
+                (MIfd::Exif, 0x9286, 3, MReason::ByteOrder),
+                (MIfd::Exif, 0x9287, 13, MReason::OffsetCarrying),
+                (MIfd::Exif, 0x927C, 7, MReason::MakerNote),
+                (MIfd::Exif, 0xA20C, 14, MReason::UnknownType),
+                (MIfd::Exif, 0xA40B, 7, MReason::ByteOrder),
+            ],
+            "{}",
+            s.name
+        );
+        let s = order_shape(&format!("precedence-9286-type13/{be}"));
+        assert_eq!(
+            omissions2(&cross_plan(&s)),
+            vec![(MIfd::Exif, 0x9286, 13, MReason::OffsetCarrying)]
+        );
+        // OECF, SFR and DSD with well-formed contents: copied in the same
+        // order, left out in the other.
+        let s = order_shape(&format!("oecf-sfr-dsd/{be}"));
+        assert!(plan(&s).omissions().is_empty());
+        let got: Vec<_> = cross_plan(&s)
+            .omissions()
+            .iter()
+            .map(|o| (o.tag(), o.field_type(), o.reason()))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                (0x8828, 7, OmitReason::ByteOrder),
+                (0xA20C, 7, OmitReason::ByteOrder),
+                (0xA40B, 7, OmitReason::ByteOrder),
+            ]
+        );
+    }
+}
+
+#[test]
+fn byte_order_mirrors_agree() {
+    // Mirror 1: the model's table. Mirror 2: the shapes file's rows. Mirror 3:
+    // the sweep tables' masks. The library's table is read off its behaviour.
+    let ifds = [
+        ("exif", MIfd::Exif),
+        ("interop", MIfd::Interop),
+        ("gps", MIfd::Gps),
+    ];
+    let idx = |m: MIfd| match m {
+        MIfd::Exif => 0u8,
+        MIfd::Interop => 1,
+        MIfd::Gps => 2,
+    };
+    let mut from_model: BTreeSet<(u8, u16, u16)> = BTreeSet::new();
+    let mut from_shapes: BTreeSet<(u8, u16, u16)> = BTreeSet::new();
+    for (which, mifd) in ifds {
+        for (tag, types) in byte_order_rows(which) {
+            for ty in types {
+                from_shapes.insert((idx(mifd), tag, ty));
+            }
+        }
+        for tag in 0..=0xFFFFu16 {
+            for ty in 1..=12u16 {
+                if byte_order_sensitive(mifd, tag, ty) {
+                    from_model.insert((idx(mifd), tag, ty));
+                }
+            }
+        }
+    }
+    let from_sweep_tables: BTreeSet<(u8, u16, u16)> = exif_block_sweep_tables::byte_order_triples()
+        .into_iter()
+        .collect();
+    // 357 per Exif-style IFD (two of them) and 6 for GPS.
+    assert_eq!(from_model.len(), 720, "size of the table");
+    assert_eq!(from_shapes, from_model, "shapes file vs model");
+    assert_eq!(from_sweep_tables, from_model, "sweep tables vs model");
+
+    // The library: every tag in each IFD under each type, read off the plan.
+    let mut from_library: BTreeSet<(u8, u16, u16)> = BTreeSet::new();
+    for be in [false, true] {
+        for (which, mifd) in [
+            (Sweep::Exif, MIfd::Exif),
+            (Sweep::Interop, MIfd::Interop),
+            (Sweep::Gps, MIfd::Gps),
+        ] {
+            for ty in 1..=12u16 {
+                let s = Shape {
+                    name: format!("typed sweep {which:?} type {ty}"),
+                    bytes: typed_sweep_source(be, which, ty),
+                    expect: Expect::Block,
+                };
+                let same = plan(&s);
+                assert!(
+                    same.omissions()
+                        .iter()
+                        .all(|o| o.reason() != OmitReason::ByteOrder),
+                    "{}: ByteOrder in the same order",
+                    s.name
+                );
+                for o in cross_plan(&s).omissions() {
+                    if o.reason() == OmitReason::ByteOrder {
+                        assert_eq!(o.field_type(), ty, "{}", s.name);
+                        from_library.insert((idx(mifd), o.tag(), o.field_type()));
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(from_library, from_model, "library vs model");
+    // Not on the table for the other IFD: 0x001D is a GPS row only.
+    assert!(!from_model.contains(&(0, 0x001D, 4)));
+    assert!(from_model.contains(&(2, 0x001D, 4)));
+}
+
+/// A source whose swept IFD holds every tag as an entry of declared type `ty`:
+/// count 1 (inline) for types up to 4 bytes, count 0 for the 8-byte ones. The
+/// pointer tags 0x014A, 0x8769, 0x8825 and 0xA005 are skipped: they are not on
+/// the table, and a malformed one would refuse the source.
+fn typed_sweep_source(be: bool, which: Sweep, ty: u16) -> Vec<u8> {
+    let w16 = |v: u16| if be { v.to_be_bytes() } else { v.to_le_bytes() };
+    let w32 = |v: u32| if be { v.to_be_bytes() } else { v.to_le_bytes() };
+    let tags: Vec<u16> = (0..=0xFFFEu16)
+        .filter(|t| ![0x014A, 0x8769, 0x8825, 0xA005].contains(t))
+        .collect();
+    let mut out = Vec::new();
+    out.extend_from_slice(if be { b"MM\0\x2A" } else { b"II\x2A\0" });
+    out.extend_from_slice(&w32(8));
+    out.extend_from_slice(&w16(1));
+    out.extend_from_slice(&w16(if which == Sweep::Gps { 0x8825 } else { 0x8769 }));
+    out.extend_from_slice(&w16(4));
+    out.extend_from_slice(&w32(1));
+    out.extend_from_slice(&w32(26));
+    out.extend_from_slice(&w32(0));
+    if which == Sweep::Interop {
+        out.extend_from_slice(&w16(1));
+        out.extend_from_slice(&w16(0xA005));
+        out.extend_from_slice(&w16(4));
+        out.extend_from_slice(&w32(1));
+        out.extend_from_slice(&w32(44));
+        out.extend_from_slice(&w32(0));
+    }
+    out.extend_from_slice(&w16(u16::try_from(tags.len()).unwrap()));
+    let count = if elem_size(ty) <= 4 { 1 } else { 0 };
+    for tag in tags {
+        out.extend_from_slice(&w16(tag));
+        out.extend_from_slice(&w16(ty));
+        out.extend_from_slice(&w32(count));
+        out.extend_from_slice(&w32(0));
+    }
+    out.extend_from_slice(&w32(0));
+    out
+}
+
+// ── AC5, AC6: the two conversion rules ──────────────────────────────────────
+
+/// The payload of `tag` in the placed block's `which` IFD.
+fn placed_payload(p: &ExifBlock<'_>, block: &[u8], be: bool, which: &str, tag: u16) -> Vec<u8> {
+    let placed = place(be, 8, block, p.exif_position(), p.gps_position());
+    let c = Container::parse(&placed).unwrap();
+    assert!(c.is_clean(), "{:?}", c.issues());
+    let kind = match which {
+        "exif" => IfdKind::Exif,
+        "interop" => IfdKind::Interop,
+        _ => IfdKind::Gps,
+    };
+    let idx = c.ifds().iter().position(|i| i.kind() == kind).unwrap();
+    let e = c.ifds()[idx]
+        .entries()
+        .iter()
+        .find(|e| e.tag() == tag)
+        .unwrap_or_else(|| panic!("{which} {tag:#06x} is not in the block"));
+    c.payload(e).unwrap().to_vec()
+}
+
+#[test]
+fn cfa_pattern_rule_shapes() {
+    for be in [false, true] {
+        let c = Enc { be };
+        for which in ["exif", "interop"] {
+            for (name, src, want) in cfa_cases() {
+                let s = Shape {
+                    name: format!("cfa {which} {name} be {be}"),
+                    bytes: one_entry_source(be, which, c.undef(0xA302, &src)),
+                    expect: Expect::Block,
+                };
+                let p = cross_plan(&s);
+                assert!(p.omissions().is_empty(), "{}", s.name);
+                let block = p.write(8).unwrap();
+                assert_eq!(
+                    placed_payload(&p, &block, !be, which, 0xA302),
+                    want,
+                    "{}",
+                    s.name
+                );
+                // The same order copies every shape.
+                let p = plan(&s);
+                let block = p.write(8).unwrap();
+                assert_eq!(
+                    placed_payload(&p, &block, be, which, 0xA302),
+                    src,
+                    "{} same order",
+                    s.name
+                );
+            }
+            // The block's value is by its declared type: CFAPattern as BYTE is
+            // left out, never converted.
+            let s = Shape {
+                name: format!("cfa as BYTE in {which}"),
+                bytes: one_entry_source(
+                    be,
+                    which,
+                    c.ent(0xA302, 1, 8, vec![0, 2, 0, 2, 1, 2, 2, 1]),
+                ),
+                expect: Expect::Block,
+            };
+            let got: Vec<_> = cross_plan(&s)
+                .omissions()
+                .iter()
+                .map(|o| (o.tag(), o.reason()))
+                .collect();
+            assert_eq!(got, vec![(0xA302, OmitReason::ByteOrder)]);
+        }
+    }
+}
+
+#[test]
+fn unicode_text_rule_shapes() {
+    for be in [false, true] {
+        let c = Enc { be };
+        for (which, tag, types) in unicode_places() {
+            for ty in types {
+                for (name, src, want) in unicode_cases() {
+                    let s = Shape {
+                        name: format!("unicode {which} {tag:#06x} t{ty} {name} be {be}"),
+                        bytes: one_entry_source(
+                            be,
+                            which,
+                            c.ent(tag, ty, src.len() as u32, src.clone()),
+                        ),
+                        expect: Expect::Block,
+                    };
+                    let p = cross_plan(&s);
+                    assert!(p.omissions().is_empty(), "{}", s.name);
+                    let block = p.write(8).unwrap();
+                    assert_eq!(
+                        placed_payload(&p, &block, !be, which, tag),
+                        want,
+                        "{}",
+                        s.name
+                    );
+                }
+            }
+        }
+        // Unchanged by the rule: 0x001B as ASCII (type 2) in the GPS IFD is
+        // copied, and 0x9286 as a multi-byte type is left out.
+        let src = unicode_cases()[0].1.clone();
+        let s = Shape {
+            name: format!("unicode gps type 2 be {be}"),
+            bytes: one_entry_source(be, "gps", c.ent(0x001B, 2, src.len() as u32, src.clone())),
+            expect: Expect::Block,
+        };
+        let p = cross_plan(&s);
+        assert!(p.omissions().is_empty());
+        let block = p.write(8).unwrap();
+        assert_eq!(placed_payload(&p, &block, !be, "gps", 0x001B), src);
+        for ty in [3u16, 4, 5, 8, 9, 10, 11, 12] {
+            let s = Shape {
+                name: format!("0x9286 as type {ty} be {be}"),
+                bytes: one_entry_source(be, "exif", c.ent(0x9286, ty, 1, typed_value(be, ty, 1))),
+                expect: Expect::Block,
+            };
+            let got: Vec<_> = cross_plan(&s)
+                .omissions()
+                .iter()
+                .map(|o| (o.tag(), o.reason()))
+                .collect();
+            assert_eq!(got, vec![(0x9286, OmitReason::ByteOrder)], "{}", s.name);
+        }
+    }
+}
+
+// ── AC8: readback, round trip, determinism ──────────────────────────────────
+
+/// The value of an entry as numbers, read in `be`: each element of its swap
+/// unit (a RATIONAL's halves are elements), and for the two rules the header
+/// words of a CFAPattern or the units of UNICODE text as numbers. This file's
+/// own decoder; it shares nothing with the model's `convert`.
+fn decode(ifd: MIfd, tag: u16, ty: u16, p: &[u8], be: bool) -> Vec<u64> {
+    let num = |chunk: &[u8]| -> u64 {
+        if be {
+            chunk.iter().fold(0u64, |acc, b| (acc << 8) | u64::from(*b))
+        } else {
+            chunk
+                .iter()
+                .rev()
+                .fold(0u64, |acc, b| (acc << 8) | u64::from(*b))
+        }
+    };
+    let unit = match ty {
+        3 | 8 => 2,
+        4 | 5 | 9 | 10 | 11 => 4,
+        12 => 8,
+        _ => 1,
+    };
+    let units = |bytes: &[u8], w: usize| -> Vec<u64> {
+        let mut v: Vec<u64> = bytes.chunks_exact(w).map(num).collect();
+        v.extend(
+            bytes
+                .chunks_exact(w)
+                .remainder()
+                .iter()
+                .map(|b| u64::from(*b)),
+        );
+        v
+    };
+    if ty == 7 && tag == 0xA302 && ifd != MIfd::Gps && p.len() >= 4 {
+        let mut v = units(&p[..4], 2);
+        v.extend(p[4..].iter().map(|b| u64::from(*b)));
+        return v;
+    }
+    let text = (ifd != MIfd::Gps && tag == 0x9286 && [1, 2, 6, 7].contains(&ty))
+        || (ifd == MIfd::Gps && (tag == 0x001B || tag == 0x001C) && ty == 7);
+    if text && p.len() >= 8 && &p[..7] == b"UNICODE" && (p[7] == 0 || p[7] == b' ') {
+        let mut v: Vec<u64> = p[..8].iter().map(|b| u64::from(*b)).collect();
+        v.extend(units(&p[8..], 2));
+        return v;
+    }
+    units(p, unit)
+}
+
+/// The kind index to the model's IFD.
+fn mifd_of(b: BlockIfd) -> MIfd {
+    map_ifd(b)
+}
+
+#[test]
+fn cross_order_readback_and_round_trip() {
+    for s in cross_shapes() {
+        let be = src_be(&s);
+        let p = cross_plan(&s);
+        let src = Container::parse(&s.bytes).unwrap();
+        for base in [8u32, 1000, 65534] {
+            let block = p.write(base).unwrap();
+            let placed = place(!be, base, &block, p.exif_position(), p.gps_position());
+            let c = Container::parse(&placed).unwrap();
+            assert!(c.is_clean(), "{} at {base}: {:?}", s.name, c.issues());
+
+            let s_exif = by_parent(&src, IfdKind::Exif, 0);
+            let s_gps = by_parent(&src, IfdKind::Gps, 0);
+            let s_interop = s_exif.and_then(|e| by_parent(&src, IfdKind::Interop, e));
+            let p_exif = by_parent(&c, IfdKind::Exif, 0);
+            let p_gps = by_parent(&c, IfdKind::Gps, 0);
+            let p_interop = p_exif.and_then(|e| by_parent(&c, IfdKind::Interop, e));
+            for (which, s_idx, p_idx) in [
+                (BlockIfd::Exif, s_exif, p_exif),
+                (BlockIfd::Interop, s_interop, p_interop),
+                (BlockIfd::Gps, s_gps, p_gps),
+            ] {
+                if p.is_empty() {
+                    assert!(p_idx.is_none(), "{}", s.name);
+                    continue;
+                }
+                assert_eq!(s_idx.is_some(), p_idx.is_some(), "{} {which}", s.name);
+                let (Some(si), Some(pi)) = (s_idx, p_idx) else {
+                    continue;
+                };
+                let omitted: BTreeSet<u16> = p
+                    .omissions()
+                    .iter()
+                    .filter(|o| o.ifd() == which)
+                    .map(|o| o.tag())
+                    .collect();
+                let mut want = entries_of(&src, si);
+                want.retain(|e| !omitted.contains(&e.0));
+                want.sort_by_key(|e| e.0);
+                let got = entries_of(&c, pi);
+                assert_eq!(got.len(), want.len(), "{} {which} entry count", s.name);
+                for (g, w) in got.iter().zip(&want) {
+                    assert_eq!((g.0, g.1, g.2), (w.0, w.1, w.2), "{} {which}", s.name);
+                    if g.0 == 0xA005 && which == BlockIfd::Exif {
+                        continue;
+                    }
+                    let m = mifd_of(which);
+                    assert_eq!(
+                        decode(m, g.0, g.1, &g.3, !be),
+                        decode(m, w.0, w.1, &w.3, be),
+                        "{} {which} {:#06x} type {} at {base}",
+                        s.name,
+                        g.0,
+                        g.1
+                    );
+                }
+            }
+            if p.is_empty() {
+                continue;
+            }
+
+            // Rebuilding the placed file in its own order: the same bytes and
+            // nothing left out.
+            let again = exif_block(&placed, &BlockOptions::new()).unwrap();
+            assert!(again.omissions().is_empty(), "{} rebuild", s.name);
+            assert_eq!(
+                again.write(base).unwrap(),
+                block,
+                "{} rebuild bytes",
+                s.name
+            );
+
+            // Back into the source's order, placed, and into the target order
+            // once more: the first block again.
+            let back =
+                exif_block(&placed, &BlockOptions::new().with_byte_order(order_of(be))).unwrap();
+            assert!(back.omissions().is_empty(), "{} back", s.name);
+            let back_block = back.write(base).unwrap();
+            let placed_back = place(
+                be,
+                base,
+                &back_block,
+                back.exif_position(),
+                back.gps_position(),
+            );
+            let there = exif_block(
+                &placed_back,
+                &BlockOptions::new().with_byte_order(order_of(!be)),
+            )
+            .unwrap();
+            assert!(there.omissions().is_empty(), "{} there", s.name);
+            assert_eq!(
+                there.write(base).unwrap(),
+                block,
+                "{} there and back",
+                s.name
+            );
+        }
+    }
+}
+
+#[test]
+fn cross_order_deterministic() {
+    for s in cross_shapes() {
+        let a = cross_plan(&s);
+        let b = cross_plan(&s);
+        assert_eq!(a.len(), b.len(), "{}", s.name);
+        assert_eq!(a.omissions(), b.omissions(), "{}", s.name);
+        for base in [8u32, 1000] {
+            let w1 = a.write(base).unwrap();
+            assert_eq!(w1, b.write(base).unwrap(), "{} at {base}", s.name);
+            let mut out = vec![0xA5u8; usize::try_from(a.len()).unwrap()];
+            a.write_into(base, &mut out).unwrap();
+            assert_eq!(out, w1, "{} write_into at {base}", s.name);
+        }
+    }
+}
+
+// ── AC10 item 10: the refusals are unchanged ────────────────────────────────
+
+#[test]
+fn cross_order_refusals_unchanged() {
+    let mut n = 0;
+    for s in all_shapes() {
+        let Expect::Refuse(want) = &s.expect else {
+            continue;
+        };
+        n += 1;
+        for options in [
+            BlockOptions::new().with_byte_order(ByteOrder::Little),
+            BlockOptions::new().with_byte_order(ByteOrder::Big),
+        ] {
+            match exif_block(&s.bytes, &options) {
+                Err(e) => assert_eq!(&key(&e), want, "{}: {e}", s.name),
+                Ok(_) => panic!("{}: expected a refusal", s.name),
+            }
+        }
+    }
+    assert!(n >= 30, "{n} refusal shapes");
+}
+
+#[test]
+fn cross_order_over_budget_and_bad_base_are_the_same_errors() {
+    let s = shape("shared-2k-x1000/be");
+    let tight = BlockOptions::new()
+        .with_byte_order(ByteOrder::Little)
+        .with_max_len(1 << 20);
+    assert!(matches!(
+        exif_block(&s.bytes, &tight),
+        Err(BlockError::OverBudget { budget, .. }) if budget == 1 << 20
+    ));
+    let s = shape("sample/be");
+    let p = cross_plan(&s);
+    assert_eq!(p.write(7), Err(BlockError::BadBase { base: 7 }));
+    assert_eq!(p.write(4), Err(BlockError::BadBase { base: 4 }));
+    let n = usize::try_from(p.len()).unwrap();
+    assert_eq!(
+        p.write_into(8, &mut vec![0u8; n + 1]),
+        Err(BlockError::BufferLength {
+            expected: p.len(),
+            got: n + 1
+        })
+    );
+}

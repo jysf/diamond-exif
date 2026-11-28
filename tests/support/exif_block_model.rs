@@ -22,6 +22,111 @@ pub const OFFSET_CARRYING: [u16; 23] = [
 ];
 pub const MAKERNOTE: [u16; 2] = [0x927C, 0xEA1D];
 
+// ── the ByteOrder table (SPEC-041, DEC-014 amendment of 2026-11-28, item 3) ──
+//
+// Typed again here by hand, as explicit type lists (the library names masks).
+// Each row is `(tag, the declared types left out in cross order)`.
+
+/// Types 3, 4, 5, 8, 9, 10, 11, 12.
+pub const MULTI_BYTE_TYPES: [u16; 8] = [3, 4, 5, 8, 9, 10, 11, 12];
+/// Types 1, 2, 6, 7.
+pub const ONE_BYTE_TYPES: [u16; 4] = [1, 2, 6, 7];
+/// Types 1 to 12.
+pub const EVERY_TYPE: [u16; 12] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+
+/// The 35 tags every multi-byte type of which is left out (Exif and Interop).
+pub const MULTI_BYTE_TAGS: [u16; 35] = [
+    0x0303, 0x4747, 0x828E, 0x8298, 0x9009, 0x9101, 0x9286, 0x9C9B, 0x9C9C, 0x9C9D, 0x9C9E, 0x9C9F,
+    0xBC01, 0xC615, 0xC65D, 0xC68B, 0xC68C, 0xC68F, 0xC691, 0xC6D2, 0xC6D3, 0xC6F3, 0xC6F4, 0xC6F6,
+    0xC6F8, 0xC6FE, 0xC716, 0xC717, 0xC718, 0xC719, 0xC71C, 0xC71D, 0xC7A7, 0xC7AA, 0xCD48,
+];
+
+/// The rows with their own masks (Exif and Interop).
+pub const OTHER_ROWS: [(u16, &[u16]); 6] = [
+    (0x87AF, &[12]),
+    (0x9201, &ONE_BYTE_TYPES),
+    (0x9204, &[1, 2, 3, 6, 7, 8, 12]),
+    (0xA101, &[4, 5, 9, 10, 11, 12]),
+    (0xA302, &[1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12]),
+    (0xA462, &EVERY_TYPE),
+];
+
+/// The three tags the Exif specification starts with two SHORTs: every type.
+pub const SPEC_TAGS: [u16; 3] = [0x8828, 0xA20C, 0xA40B];
+
+/// The GPS row.
+pub const GPS_ROWS: [(u16, &[u16]); 1] = [(0x001D, &[4, 5, 9, 10, 11, 12])];
+
+/// Every `(tag, types)` row of the Exif and the Interop IFD.
+pub fn exif_rows() -> Vec<(u16, Vec<u16>)> {
+    let mut rows: Vec<(u16, Vec<u16>)> = MULTI_BYTE_TAGS
+        .iter()
+        .map(|t| (*t, MULTI_BYTE_TYPES.to_vec()))
+        .collect();
+    rows.extend(OTHER_ROWS.iter().map(|(t, v)| (*t, v.to_vec())));
+    rows.extend(SPEC_TAGS.iter().map(|t| (*t, EVERY_TYPE.to_vec())));
+    rows
+}
+
+/// Every `(tag, types)` row of the GPS IFD.
+pub fn gps_rows() -> Vec<(u16, Vec<u16>)> {
+    GPS_ROWS.iter().map(|(t, v)| (*t, v.to_vec())).collect()
+}
+
+/// Whether `(ifd, tag, ty)` is on the table.
+pub fn byte_order_sensitive(ifd: Ifd, tag: u16, ty: u16) -> bool {
+    if ifd == Ifd::Gps {
+        return GPS_ROWS
+            .iter()
+            .any(|(t, types)| *t == tag && types.contains(&ty));
+    }
+    (MULTI_BYTE_TAGS.contains(&tag) && MULTI_BYTE_TYPES.contains(&ty))
+        || OTHER_ROWS
+            .iter()
+            .any(|(t, types)| *t == tag && types.contains(&ty))
+        || (SPEC_TAGS.contains(&tag) && EVERY_TYPE.contains(&ty))
+}
+
+/// Where the UNICODE rule applies (item 5): 0x9286 as a one-byte type in the
+/// Exif or Interop IFD; 0x001B and 0x001C as UNDEFINED in the GPS IFD.
+pub fn unicode_place(ifd: Ifd, tag: u16, ty: u16) -> bool {
+    match ifd {
+        Ifd::Exif | Ifd::Interop => tag == 0x9286 && ONE_BYTE_TYPES.contains(&ty),
+        Ifd::Gps => (tag == 0x001B || tag == 0x001C) && ty == 7,
+    }
+}
+
+/// Convert one payload from the source's order into the other (items 2, 4, 5),
+/// with its own swap code.
+pub fn convert(ifd: Ifd, tag: u16, ty: u16, p: &[u8]) -> Vec<u8> {
+    let unit = match ty {
+        3 | 8 => 2,
+        4 | 5 | 9 | 10 | 11 => 4,
+        12 => 8,
+        _ => 1,
+    };
+    let mut out = p.to_vec();
+    if unit > 1 {
+        for c in out.chunks_exact_mut(unit) {
+            c.reverse();
+        }
+    }
+    if ty == 7 && tag == 0xA302 && ifd != Ifd::Gps && out.len() >= 4 {
+        out[0..2].reverse();
+        out[2..4].reverse();
+    }
+    if unicode_place(ifd, tag, ty)
+        && p.len() >= 8
+        && &p[..7] == b"UNICODE"
+        && (p[7] == 0x00 || p[7] == 0x20)
+    {
+        for c in out[8..].chunks_exact_mut(2) {
+            c.reverse();
+        }
+    }
+    out
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Ifd {
     Exif,
@@ -34,6 +139,7 @@ pub enum Reason {
     MakerNote,
     OffsetCarrying,
     UnknownType,
+    ByteOrder,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -46,6 +152,7 @@ pub struct Omit {
 
 #[derive(Clone, Debug)]
 pub struct Model {
+    /// The block's byte order (the target's when one was asked for).
     pub be: bool,
     pub bytes: Vec<u8>,
     pub exif_pos: Option<u32>,
@@ -136,7 +243,7 @@ fn pointed(d: &[u8], be: bool, t: &[Ent], tag: u16) -> Option<Vec<Ent>> {
     table(d, be, at as usize)
 }
 
-fn reason(ifd: Ifd, e: &Ent, interop_present: bool) -> Option<Reason> {
+fn reason(ifd: Ifd, e: &Ent, interop_present: bool, cross: bool) -> Option<Reason> {
     if size_of(e.ty).is_none() {
         return Some(Reason::UnknownType);
     }
@@ -153,6 +260,9 @@ fn reason(ifd: Ifd, e: &Ent, interop_present: bool) -> Option<Reason> {
     if OFFSET_CARRYING.contains(&e.tag) || e.ty == 13 {
         return Some(Reason::OffsetCarrying);
     }
+    if cross && byte_order_sensitive(ifd, e.tag, e.ty) {
+        return Some(Reason::ByteOrder);
+    }
     None
 }
 
@@ -165,9 +275,18 @@ struct Kept {
     interop_ptr: bool,
 }
 
-/// Predict the block for `src` at `base`.
+/// Predict the block for `src` at `base`, in the source's own order.
 pub fn model(src: &[u8], base: u32) -> Model {
-    let be = &src[0..2] == b"MM";
+    model_to(src, base, None)
+}
+
+/// Predict the block for `src` at `base` in `target_be` (`None`: the source's
+/// order). In the other order each kept payload is converted by declared type
+/// and the rules of items 4 and 5, and the `ByteOrder` table applies.
+pub fn model_to(src: &[u8], base: u32, target_be: Option<bool>) -> Model {
+    let src_be = &src[0..2] == b"MM";
+    let be = target_be.unwrap_or(src_be);
+    let cross = be != src_be;
     let empty = Model {
         be,
         bytes: Vec::new(),
@@ -175,16 +294,16 @@ pub fn model(src: &[u8], base: u32) -> Model {
         gps_pos: None,
         omissions: Vec::new(),
     };
-    let ifd0_at = rd32(src, be, 4).unwrap_or(0) as usize;
+    let ifd0_at = rd32(src, src_be, 4).unwrap_or(0) as usize;
     if ifd0_at == 0 {
         return empty;
     }
-    let Some(ifd0) = table(src, be, ifd0_at) else {
+    let Some(ifd0) = table(src, src_be, ifd0_at) else {
         return empty;
     };
-    let exif = pointed(src, be, &ifd0, 0x8769);
-    let gps = pointed(src, be, &ifd0, 0x8825);
-    let interop = exif.as_ref().and_then(|t| pointed(src, be, t, 0xA005));
+    let exif = pointed(src, src_be, &ifd0, 0x8769);
+    let gps = pointed(src, src_be, &ifd0, 0x8825);
+    let interop = exif.as_ref().and_then(|t| pointed(src, src_be, t, 0xA005));
 
     let mut omissions = Vec::new();
     // (ifd, kept entries) in Exif, Interop, GPS order.
@@ -199,7 +318,7 @@ pub fn model(src: &[u8], base: u32) -> Model {
         sorted.sort_by_key(|e| e.tag);
         let mut kept = Vec::new();
         for e in &sorted {
-            match reason(which, e, interop.is_some()) {
+            match reason(which, e, interop.is_some(), cross) {
                 Some(r) => omissions.push(Omit {
                     ifd: which,
                     tag: e.tag,
@@ -214,14 +333,21 @@ pub fn model(src: &[u8], base: u32) -> Model {
                     payload: Vec::new(),
                     interop_ptr: true,
                 }),
-                None => kept.push(Kept {
-                    ifd: which,
-                    tag: e.tag,
-                    ty: e.ty,
-                    count: e.count,
-                    payload: payload(src, be, e).expect("model: readable payload"),
-                    interop_ptr: false,
-                }),
+                None => {
+                    let p = payload(src, src_be, e).expect("model: readable payload");
+                    kept.push(Kept {
+                        ifd: which,
+                        tag: e.tag,
+                        ty: e.ty,
+                        count: e.count,
+                        payload: if cross {
+                            convert(which, e.tag, e.ty, &p)
+                        } else {
+                            p
+                        },
+                        interop_ptr: false,
+                    });
+                }
             }
         }
         tables.push((which, kept));

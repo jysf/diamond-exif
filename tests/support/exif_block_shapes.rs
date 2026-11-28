@@ -1028,3 +1028,392 @@ impl E {
         }
     }
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SPEC-041 (Part A, AC10): the shapes of cross-order conversion. Each shape is
+// built in both source orders, so a loop over [`order_shapes`] covers both
+// directions (a big-endian source to little-endian, and the reverse).
+// ═════════════════════════════════════════════════════════════════════════════
+
+pub const SBYTE: u16 = 6;
+pub const SSHORT: u16 = 8;
+pub const FLOAT: u16 = 11;
+pub const DOUBLE: u16 = 12;
+
+/// A tag that no table of this crate or of ExifTool's sweep names.
+const PLAIN_LOW: u16 = 0xF000;
+const PLAIN_HIGH: u16 = 0xF0F0;
+
+/// The element size of a type 1 to 12, typed again by hand.
+pub fn elem_size(ty: u16) -> usize {
+    match ty {
+        1 | 2 | 6 | 7 => 1,
+        3 | 8 => 2,
+        4 | 9 | 11 => 4,
+        5 | 10 | 12 => 8,
+        _ => panic!("no element size for type {ty}"),
+    }
+}
+
+/// The unit a conversion swaps (a RATIONAL swaps each 4-byte half).
+fn swap_unit(ty: u16) -> usize {
+    match ty {
+        3 | 8 => 2,
+        4 | 5 | 9 | 10 | 11 => 4,
+        12 => 8,
+        _ => 1,
+    }
+}
+
+/// `count` elements of type `ty` with distinct, asymmetric bytes, encoded in
+/// the given byte order, one swap unit at a time.
+pub fn typed_value(be: bool, ty: u16, count: u32) -> Vec<u8> {
+    let n = elem_size(ty) * count as usize;
+    let logical: Vec<u8> = (0..n)
+        .map(|i| (i as u8).wrapping_mul(37).wrapping_add(1))
+        .collect();
+    let mut out = Vec::new();
+    for unit in logical.chunks(swap_unit(ty)) {
+        if be {
+            out.extend_from_slice(unit);
+        } else {
+            out.extend(unit.iter().rev());
+        }
+    }
+    out
+}
+
+/// A source whose `which` IFD (`exif`, `interop` or `gps`) holds `entry`
+/// between two plain SHORTs, so a kept entry's neighbours show that the rest of
+/// the table does not move.
+pub fn one_entry_source(be: bool, which: &str, entry: E) -> Vec<u8> {
+    let c = Enc { be };
+    let ents = vec![
+        c.short(PLAIN_LOW, 0x0102),
+        entry,
+        c.short(PLAIN_HIGH, 0x0304),
+    ];
+    let doc = match which {
+        "exif" => vec![ifd(vec![ptr(0x8769, 1)]), ifd(ents)],
+        "interop" => vec![
+            ifd(vec![ptr(0x8769, 1)]),
+            ifd(vec![ptr(0xA005, 2)]),
+            ifd(ents),
+        ],
+        _ => vec![ifd(vec![ptr(0x8825, 1)]), ifd(ents)],
+    };
+    build(be, &doc)
+}
+
+/// The ByteOrder table's rows for the Exif and Interop IFDs (`which` is
+/// `exif` or `interop`) or the GPS IFD, as `(tag, declared types left out)`.
+/// Typed again by hand for the shapes (a mirror of the decision's table,
+/// compared by `byte_order_mirrors_agree`).
+pub fn byte_order_rows(which: &str) -> Vec<(u16, Vec<u16>)> {
+    if which == "gps" {
+        return vec![(0x001D, vec![4, 5, 9, 10, 11, 12])];
+    }
+    let multi: Vec<u16> = vec![3, 4, 5, 8, 9, 10, 11, 12];
+    let every: Vec<u16> = (1..=12).collect();
+    let mut rows: Vec<(u16, Vec<u16>)> = [
+        0x0303u16, 0x4747, 0x828E, 0x8298, 0x9009, 0x9101, 0x9286, 0x9C9B, 0x9C9C, 0x9C9D, 0x9C9E,
+        0x9C9F, 0xBC01, 0xC615, 0xC65D, 0xC68B, 0xC68C, 0xC68F, 0xC691, 0xC6D2, 0xC6D3, 0xC6F3,
+        0xC6F4, 0xC6F6, 0xC6F8, 0xC6FE, 0xC716, 0xC717, 0xC718, 0xC719, 0xC71C, 0xC71D, 0xC7A7,
+        0xC7AA, 0xCD48,
+    ]
+    .into_iter()
+    .map(|t| (t, multi.clone()))
+    .collect();
+    rows.push((0x87AF, vec![12]));
+    rows.push((0x9201, vec![1, 2, 6, 7]));
+    rows.push((0x9204, vec![1, 2, 3, 6, 7, 8, 12]));
+    rows.push((0xA101, vec![4, 5, 9, 10, 11, 12]));
+    rows.push((0xA302, vec![1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12]));
+    rows.push((0xA462, every.clone()));
+    for tag in [0x8828u16, 0xA20C, 0xA40B] {
+        rows.push((tag, every.clone()));
+    }
+    rows
+}
+
+/// The usual (kept) type of a row: the first of a fixed preference list that
+/// the row does not leave out; `None` when it leaves out all 12.
+pub fn usual_type(masked: &[u16]) -> Option<u16> {
+    [7u16, 2, 1, 3, 10, 4, 5, 6, 8, 9, 11, 12]
+        .into_iter()
+        .find(|t| !masked.contains(t))
+}
+
+/// The design's CFAPattern shapes as `(name, source value, block value)`. The
+/// rule swaps the first two 16-bit words and copies the rest, so the same
+/// literals serve both directions.
+pub fn cfa_cases() -> Vec<(&'static str, Vec<u8>, Vec<u8>)> {
+    let mut wide_src = vec![0x00, 0x01, 0x01, 0x00];
+    let mut wide_want = vec![0x01, 0x00, 0x00, 0x01];
+    for i in 0..=255u8 {
+        wide_src.push(i % 3);
+        wide_want.push(i % 3);
+    }
+    vec![
+        (
+            "2x2",
+            vec![0, 2, 0, 2, 1, 2, 2, 1],
+            vec![2, 0, 2, 0, 1, 2, 2, 1],
+        ),
+        (
+            "3x2",
+            vec![0, 3, 0, 2, 0, 1, 2, 1, 2, 0],
+            vec![3, 0, 2, 0, 0, 1, 2, 1, 2, 0],
+        ),
+        (
+            "wrong-order-header",
+            vec![2, 0, 2, 0, 1, 2, 2, 1],
+            vec![0, 2, 0, 2, 1, 2, 2, 1],
+        ),
+        ("1x256", wide_src, wide_want),
+        (
+            "3x3-over-4-bytes",
+            vec![0, 3, 0, 3, 1, 2, 0, 1],
+            vec![3, 0, 3, 0, 1, 2, 0, 1],
+        ),
+        ("0x0", vec![0, 0, 0, 0], vec![0, 0, 0, 0]),
+        (
+            "2x2-trailing",
+            vec![0, 2, 0, 2, 1, 2, 2, 1, 0xAA, 0xBB],
+            vec![2, 0, 2, 0, 1, 2, 2, 1, 0xAA, 0xBB],
+        ),
+        ("3-bytes", vec![0x12, 0x34, 0x56], vec![0x12, 0x34, 0x56]),
+        ("1-byte", vec![0x12], vec![0x12]),
+        ("count-0", vec![], vec![]),
+    ]
+}
+
+fn comment(code: &[u8; 8], text: &[u8]) -> Vec<u8> {
+    let mut v = code.to_vec();
+    v.extend_from_slice(text);
+    v
+}
+
+/// The UNICODE-text shapes as `(name, source value, block value)`. 中文 is
+/// U+4E2D U+6587; the converted ones swap every 16-bit unit after the code.
+pub fn unicode_cases() -> Vec<(&'static str, Vec<u8>, Vec<u8>)> {
+    let cjk = [0x4E, 0x2D, 0x65, 0x87];
+    let cjk_swapped = [0x2D, 0x4E, 0x87, 0x65];
+    let mut cases = vec![
+        (
+            "unicode-nul",
+            comment(b"UNICODE\0", &cjk),
+            comment(b"UNICODE\0", &cjk_swapped),
+        ),
+        (
+            "unicode-space",
+            comment(b"UNICODE ", &cjk),
+            comment(b"UNICODE ", &cjk_swapped),
+        ),
+        (
+            "unicode-bom",
+            comment(b"UNICODE\0", &[0xFE, 0xFF, 0x4E, 0x2D, 0x65, 0x87]),
+            comment(b"UNICODE\0", &[0xFF, 0xFE, 0x2D, 0x4E, 0x87, 0x65]),
+        ),
+        (
+            "unicode-odd",
+            comment(b"UNICODE\0", &[0x4E, 0x2D, 0x65]),
+            comment(b"UNICODE\0", &[0x2D, 0x4E, 0x65]),
+        ),
+        (
+            "unicode-code-only",
+            comment(b"UNICODE\0", &[]),
+            comment(b"UNICODE\0", &[]),
+        ),
+    ];
+    // Copied: every other code, and values under 8 bytes.
+    for (name, code) in [
+        ("lower-case", b"Unicode\0"),
+        ("trailing-x", b"UNICODEX"),
+        ("leading-space", b" UNICODE"),
+        ("tab", b"UNICODE\t"),
+        ("short-code", b"UNICOD\0\0"),
+        ("ascii", b"ASCII\0\0\0"),
+        ("jis", b"JIS\0\0\0\0\0"),
+        ("zeros", &[0u8; 8]),
+    ] {
+        cases.push((name, comment(code, &cjk), comment(code, &cjk)));
+    }
+    cases.push(("under-8", b"UNICOD".to_vec(), b"UNICOD".to_vec()));
+    cases.push(("exactly-7", b"UNICODE".to_vec(), b"UNICODE".to_vec()));
+    cases
+}
+
+/// Where the UNICODE rule applies: `(IFD, tag, types)`.
+pub fn unicode_places() -> Vec<(&'static str, u16, Vec<u16>)> {
+    vec![
+        ("exif", 0x9286, vec![BYTE, ASCII, SBYTE, UNDEFINED]),
+        ("interop", 0x9286, vec![BYTE, ASCII, SBYTE, UNDEFINED]),
+        ("gps", 0x001B, vec![UNDEFINED]),
+        ("gps", 0x001C, vec![UNDEFINED]),
+    ]
+}
+
+/// The shapes of cross-order conversion, each in both source orders.
+pub fn order_shapes() -> Vec<Shape> {
+    let mut out = Vec::new();
+    for be in [false, true] {
+        let c = Enc { be };
+
+        // 1. Every declared type 1 to 12, inline (count 1 of the small types)
+        // and out of line, in all three IFDs.
+        let types_in = |base_tag: u16| -> Vec<E> {
+            let mut v = Vec::new();
+            for ty in 1..=12u16 {
+                let small = elem_size(ty) <= 4;
+                if small {
+                    v.push(c.ent(base_tag + ty, ty, 1, typed_value(be, ty, 1)));
+                }
+                let count = if elem_size(ty) == 1 { 7 } else { 3 };
+                v.push(c.ent(base_tag + 0x100 + ty, ty, count, typed_value(be, ty, count)));
+            }
+            v
+        };
+        out.push(shape(
+            "every-type",
+            be,
+            &[
+                ifd(vec![ptr(0x8769, 1), ptr(0x8825, 3)]),
+                {
+                    let mut v = types_in(0xF100);
+                    v.push(ptr(0xA005, 2));
+                    ifd(v)
+                },
+                ifd(types_in(0xF100)),
+                ifd(types_in(0xF100)),
+            ],
+            Expect::Block,
+        ));
+
+        // 2. One fixture per ByteOrder row, in its usual type (kept) and in a
+        // masked type (left out), in each IFD the row names.
+        for which in ["exif", "interop", "gps"] {
+            for (tag, masked) in byte_order_rows(which) {
+                if let Some(usual) = usual_type(&masked) {
+                    out.push(Shape {
+                        name: format!("row-kept-{which}-{}/{}", tag_key(tag), tag_be(be)),
+                        bytes: one_entry_source(
+                            be,
+                            which,
+                            c.ent(tag, usual, 1, typed_value(be, usual, 1)),
+                        ),
+                        expect: Expect::Block,
+                    });
+                }
+                let first = masked[0];
+                out.push(Shape {
+                    name: format!("row-masked-{which}-{}/{}", tag_key(tag), tag_be(be)),
+                    bytes: one_entry_source(
+                        be,
+                        which,
+                        c.ent(tag, first, 1, typed_value(be, first, 1)),
+                    ),
+                    expect: Expect::Block,
+                });
+            }
+        }
+
+        // 3. The CFAPattern shapes, in the Exif and the Interop IFD.
+        for which in ["exif", "interop"] {
+            for (name, src, _) in cfa_cases() {
+                out.push(Shape {
+                    name: format!("cfa-{which}-{name}/{}", tag_be(be)),
+                    bytes: one_entry_source(be, which, c.undef(0xA302, &src)),
+                    expect: Expect::Block,
+                });
+            }
+        }
+
+        // 4. The UNICODE shapes, at every place the rule applies.
+        for (which, tag, types) in unicode_places() {
+            for ty in types {
+                for (name, src, _) in unicode_cases() {
+                    out.push(Shape {
+                        name: format!(
+                            "unicode-{which}-{}-t{ty}-{name}/{}",
+                            tag_key(tag),
+                            tag_be(be)
+                        ),
+                        bytes: one_entry_source(
+                            be,
+                            which,
+                            c.ent(tag, ty, src.len() as u32, src.clone()),
+                        ),
+                        expect: Expect::Block,
+                    });
+                }
+            }
+        }
+
+        // 5. OECF, SpatialFrequencyResponse and DeviceSettingDescription with
+        // well-formed contents: two SHORTs in the file's order, then data.
+        let two_shorts = |a: u16, b: u16, rest: &[u8]| -> Vec<u8> {
+            let mut v = c.w16(a).to_vec();
+            v.extend_from_slice(&c.w16(b));
+            v.extend_from_slice(rest);
+            v
+        };
+        out.push(shape(
+            "oecf-sfr-dsd",
+            be,
+            &[
+                ifd(vec![ptr(0x8769, 1)]),
+                ifd(vec![
+                    c.undef(
+                        0x8828,
+                        &two_shorts(2, 2, b"A\0B\0\x01\x02\x03\x04\x05\x06\x07\x08"),
+                    ),
+                    c.undef(0xA20C, &two_shorts(1, 3, b"F\0\x09\x0A\x0B\x0C\x0D\x0E")),
+                    c.undef(0xA40B, &two_shorts(2, 1, b"X\0\x01\x00\x02\x00")),
+                    c.short(0x8827, 100),
+                ]),
+            ],
+            Expect::Block,
+        ));
+
+        // 6. Precedence: UnknownType, then MakerNote, then OffsetCarrying,
+        // then ByteOrder.
+        out.push(shape(
+            "precedence",
+            be,
+            &[
+                ifd(vec![ptr(0x8769, 1)]),
+                ifd(vec![
+                    raw(0x8828, 0, 1, [1, 2, 3, 4]),
+                    c.short(0x9286, 7),
+                    ptr_ty(0x9287, IFD, 2),
+                    c.undef(0x927C, b"Nikon\0\x02\x10"),
+                    raw(0xA20C, 14, 1, [1, 2, 3, 4]),
+                    c.ent(0xA40B, UNDEFINED, 4, vec![0, 1, 0, 2]),
+                ]),
+                empty(),
+            ],
+            Expect::Block,
+        ));
+        // 0x9286 as type 13 (an IFD, so offset-carrying).
+        out.push(shape(
+            "precedence-9286-type13",
+            be,
+            &[
+                ifd(vec![ptr(0x8769, 1)]),
+                ifd(vec![ptr_ty(0x9286, IFD, 2)]),
+                empty(),
+            ],
+            Expect::Block,
+        ));
+    }
+    out
+}
+
+fn tag_be(be: bool) -> &'static str {
+    if be {
+        "be"
+    } else {
+        "le"
+    }
+}
